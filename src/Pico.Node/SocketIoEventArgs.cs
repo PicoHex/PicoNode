@@ -1,21 +1,25 @@
+using System.Threading.Tasks.Sources;
+
 namespace Pico.Node;
 
-internal sealed class SocketIoEventArgs : SocketAsyncEventArgs
+internal sealed class SocketIoEventArgs : SocketAsyncEventArgs, IValueTaskSource<SocketAsyncEventArgs>
 {
-    private TaskCompletionSource<SocketAsyncEventArgs>? _completion;
+    private ManualResetValueTaskSourceCore<SocketAsyncEventArgs> _source;
+    private bool _pending;
 
     public SocketIoEventArgs()
     {
+        _source.RunContinuationsAsynchronously = true;
         Completed += OnCompleted;
     }
 
-    public Task<SocketAsyncEventArgs> ReceiveAsync(Socket socket)
+    public ValueTask<SocketAsyncEventArgs> ReceiveAsync(Socket socket)
         => ExecuteAsync(socket.ReceiveAsync);
 
-    public Task<SocketAsyncEventArgs> SendAsync(Socket socket)
+    public ValueTask<SocketAsyncEventArgs> SendAsync(Socket socket)
         => ExecuteAsync(socket.SendAsync);
 
-    public Task<SocketAsyncEventArgs> AcceptAsync(Socket socket)
+    public ValueTask<SocketAsyncEventArgs> AcceptAsync(Socket socket)
         => ExecuteAsync(socket.AcceptAsync);
 
     public void Reset()
@@ -27,40 +31,49 @@ internal sealed class SocketIoEventArgs : SocketAsyncEventArgs
         SetBuffer(null, 0, 0);
     }
 
-    private Task<SocketAsyncEventArgs> ExecuteAsync(Func<SocketAsyncEventArgs, bool> start)
-    {
-        var completion = new TaskCompletionSource<SocketAsyncEventArgs>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
+    public SocketAsyncEventArgs GetResult(short token)
+        => _source.GetResult(token);
 
-        if (Interlocked.CompareExchange(ref _completion, completion, null) is not null)
+    public ValueTaskSourceStatus GetStatus(short token)
+        => _source.GetStatus(token);
+
+    public void OnCompleted(
+        Action<object?> continuation,
+        object? state,
+        short token,
+        ValueTaskSourceOnCompletedFlags flags
+    ) => _source.OnCompleted(continuation, state, token, flags);
+
+    private ValueTask<SocketAsyncEventArgs> ExecuteAsync(Func<SocketAsyncEventArgs, bool> start)
+    {
+        if (_pending)
         {
             throw new InvalidOperationException("Socket async operation is already pending.");
         }
+
+        _pending = true;
+        _source.Reset();
 
         try
         {
             if (!start(this))
             {
-                Complete(this);
+                _pending = false;
+                return ValueTask.FromResult<SocketAsyncEventArgs>(this);
             }
         }
         catch
         {
-            Interlocked.Exchange(ref _completion, null);
+            _pending = false;
             throw;
         }
 
-        return completion.Task;
+        return new ValueTask<SocketAsyncEventArgs>(this, _source.Version);
     }
 
     private void OnCompleted(object? sender, SocketAsyncEventArgs eventArgs)
     {
-        Complete(eventArgs);
-    }
-
-    private void Complete(SocketAsyncEventArgs eventArgs)
-    {
-        Interlocked.Exchange(ref _completion, null)?.TrySetResult(eventArgs);
+        _pending = false;
+        _source.SetResult(eventArgs);
     }
 }

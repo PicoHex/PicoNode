@@ -45,7 +45,11 @@ internal sealed class TcpConnection : IAsyncDisposable
         {
             var context = _context;
             var ct = _cts.Token;
-            await handler.OnConnectedAsync(context, ct);
+            var connectedTask = handler.OnConnectedAsync(context, ct);
+            if (!connectedTask.IsCompletedSuccessfully)
+            {
+                await connectedTask;
+            }
 
             while (!_cts.IsCancellationRequested)
             {
@@ -77,11 +81,8 @@ internal sealed class TcpConnection : IAsyncDisposable
                 }
 
                 Touch();
-                var receiveTask = handler.OnReceivedAsync(
-                    context,
-                    new ArraySegment<byte>(receiveBuffer, 0, bytesRead),
-                    ct
-                );
+                var buffer = new ArraySegment<byte>(receiveBuffer, 0, bytesRead);
+                var receiveTask = handler.OnReceivedAsync(context, buffer, ct);
                 if (!receiveTask.IsCompletedSuccessfully)
                 {
                     await receiveTask;
