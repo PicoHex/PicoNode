@@ -55,7 +55,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
     public NodeState State => _state;
 
-    public async Task StartAsync(CancellationToken cancellationToken = default)
+    public Task StartAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -80,7 +80,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
             _receiveTask = Task.Run(() => ReceiveLoopAsync(_cts.Token), CancellationToken.None);
             _state = NodeState.Running;
-            await Task.CompletedTask;
+            return Task.CompletedTask;
         }
         catch (Exception ex)
         {
@@ -225,7 +225,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 {
                     try
                     {
-                        var context = UdpDatagramContext.Create(this, lease.RemoteEndPoint);
+                        var context = new UdpDatagramContext(this, lease.RemoteEndPoint);
                         var handleTask = Options.Handler.OnDatagramAsync(
                             context,
                             lease.Datagram,
@@ -261,7 +261,19 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
     internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null)
     {
-        Options.FaultHandler?.Invoke(new NodeFault(code, operation, exception));
+        var faultHandler = Options.FaultHandler;
+        if (faultHandler is null)
+        {
+            return;
+        }
+
+        try
+        {
+            faultHandler(new NodeFault(code, operation, exception));
+        }
+        catch
+        {
+        }
     }
 
     public async ValueTask DisposeAsync()

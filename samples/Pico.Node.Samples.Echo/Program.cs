@@ -32,8 +32,10 @@ await tcpNode.DisposeAsync();
 
 file sealed class EchoTcpHandler : ITcpConnectionHandler
 {
-    public Task OnConnectedAsync(ITcpConnectionContext connection, CancellationToken cancellationToken)
-        => Task.CompletedTask;
+    public Task OnConnectedAsync(
+        ITcpConnectionContext connection,
+        CancellationToken cancellationToken
+    ) => Task.CompletedTask;
 
     public Task OnClosedAsync(
         ITcpConnectionContext connection,

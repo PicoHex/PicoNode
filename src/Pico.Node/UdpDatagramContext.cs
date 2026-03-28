@@ -14,7 +14,4 @@ public sealed class UdpDatagramContext : IUdpDatagramContext
 
     public Task SendAsync(ArraySegment<byte> datagram, CancellationToken cancellationToken = default)
         => _node.SendAsync(datagram, RemoteEndPoint, cancellationToken);
-
-    internal static UdpDatagramContext Create(UdpNode node, IPEndPoint remoteEndPoint)
-        => new(node, remoteEndPoint);
 }

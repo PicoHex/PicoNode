@@ -4,7 +4,6 @@ public sealed class TcpNode : INode, IAsyncDisposable
 {
     private readonly Socket _listener;
     private readonly SocketIoEventArgsPool _eventArgsPool;
-    private readonly TcpConnectionPool _connectionPool;
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentDictionary<long, TcpConnection> _connections = new();
     private readonly object _stateLock = new();
@@ -30,7 +29,6 @@ public sealed class TcpNode : INode, IAsyncDisposable
             LingerState = options.LingerState,
         };
         _eventArgsPool = new SocketIoEventArgsPool(options.ReceiveBufferSize);
-        _connectionPool = new TcpConnectionPool(this);
 
         if (options.Endpoint.AddressFamily == AddressFamily.InterNetworkV6)
         {
@@ -49,7 +47,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
     public NodeState State => _state;
 
-    public async Task StartAsync(CancellationToken cancellationToken = default)
+    public Task StartAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
@@ -70,7 +68,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
             _acceptTask = AcceptLoopAsync();
             _idleMonitorTask = MonitorIdleConnectionsAsync();
             _state = NodeState.Running;
-            await Task.CompletedTask;
+            return Task.CompletedTask;
         }
         catch (Exception ex)
         {
@@ -138,75 +136,79 @@ public sealed class TcpNode : INode, IAsyncDisposable
     private async Task AcceptLoopAsync()
     {
         var acceptArgs = _eventArgsPool.RentAcceptArgs();
-
-        while (!_cts.IsCancellationRequested)
+        try
         {
-            try
+            while (!_cts.IsCancellationRequested)
             {
-                var acceptResult = await acceptArgs.AcceptAsync(_listener);
-                if (acceptResult.SocketError != SocketError.Success)
-                {
-                    throw new SocketException((int)acceptResult.SocketError);
-                }
-
-                var socket = acceptArgs.AcceptSocket ?? throw new SocketException((int)SocketError.NotSocket);
-                acceptArgs.AcceptSocket = null;
-                socket.NoDelay = Options.NoDelay;
-                socket.LingerState = Options.LingerState;
-
-                if (_connections.Count >= Options.MaxConnections)
-                {
-                    ReportFault(NodeFaultCode.ConnectionRejected, "tcp-max-connections");
-                    try
-                    {
-                        socket.Shutdown(SocketShutdown.Both);
-                    }
-                    catch
-                    {
-                    }
-
-                    socket.Dispose();
-                    continue;
-                }
-
-                var connection = _connectionPool.Rent(socket);
-                if (!_connections.TryAdd(connection.Id, connection))
-                {
-                    ReportFault(NodeFaultCode.ConnectionRejected, "tcp-track-connection");
-                    await connection.DisposeAsync();
-                    continue;
-                }
-
-                _ = connection.RunAsync(Options.Handler);
-            }
-            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (SocketException ex) when (_cts.IsCancellationRequested)
-            {
-                ReportFault(NodeFaultCode.AcceptFailed, "tcp-accept-cancelled", ex);
-                break;
-            }
-            catch (ObjectDisposedException) when (_cts.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                ReportFault(NodeFaultCode.AcceptFailed, "tcp-accept", ex);
                 try
                 {
-                    await Task.Delay(50, _cts.Token);
+                    var acceptResult = await acceptArgs.AcceptAsync(_listener);
+                    if (acceptResult.SocketError != SocketError.Success)
+                    {
+                        throw new SocketException((int)acceptResult.SocketError);
+                    }
+
+                    var socket = acceptArgs.AcceptSocket ?? throw new SocketException((int)SocketError.NotSocket);
+                    acceptArgs.AcceptSocket = null;
+                    socket.NoDelay = Options.NoDelay;
+                    socket.LingerState = Options.LingerState;
+
+                    if (_connections.Count >= Options.MaxConnections)
+                    {
+                        ReportFault(NodeFaultCode.ConnectionRejected, "tcp-max-connections");
+                        try
+                        {
+                            socket.Shutdown(SocketShutdown.Both);
+                        }
+                        catch
+                        {
+                        }
+
+                        socket.Dispose();
+                        continue;
+                    }
+
+                    var connection = new TcpConnection(this, socket);
+                    if (!_connections.TryAdd(connection.Id, connection))
+                    {
+                        ReportFault(NodeFaultCode.ConnectionRejected, "tcp-track-connection");
+                        await connection.DisposeAsync();
+                        continue;
+                    }
+
+                    _ = connection.RunAsync(Options.Handler);
                 }
                 catch (OperationCanceledException) when (_cts.IsCancellationRequested)
                 {
                     break;
                 }
+                catch (SocketException ex) when (_cts.IsCancellationRequested)
+                {
+                    ReportFault(NodeFaultCode.AcceptFailed, "tcp-accept-cancelled", ex);
+                    break;
+                }
+                catch (ObjectDisposedException) when (_cts.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    ReportFault(NodeFaultCode.AcceptFailed, "tcp-accept", ex);
+                    try
+                    {
+                        await Task.Delay(50, _cts.Token);
+                    }
+                    catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                }
             }
         }
-
-        _eventArgsPool.Return(acceptArgs);
+        finally
+        {
+            _eventArgsPool.Return(acceptArgs);
+        }
     }
 
     private async Task MonitorIdleConnectionsAsync()
@@ -247,7 +249,19 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
     internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null)
     {
-        Options.FaultHandler?.Invoke(new NodeFault(code, operation, exception));
+        var faultHandler = Options.FaultHandler;
+        if (faultHandler is null)
+        {
+            return;
+        }
+
+        try
+        {
+            faultHandler(new NodeFault(code, operation, exception));
+        }
+        catch
+        {
+        }
     }
 
     public async ValueTask DisposeAsync()
