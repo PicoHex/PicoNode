@@ -14,7 +14,8 @@ static async Task RunTcpSmokeAsync()
         new TcpNodeOptions
         {
             Endpoint = new IPEndPoint(IPAddress.Loopback, 7101),
-            Handler = new TcpCollectorHandler(),
+            ConnectionHandler = new TcpCollectorHandler(),
+            DrainTimeout = TimeSpan.FromSeconds(2),
         }
     );
 
@@ -51,7 +52,7 @@ static async Task RunUdpSmokeAsync()
         new UdpNodeOptions
         {
             Endpoint = new IPEndPoint(IPAddress.Loopback, 7102),
-            Handler = new UdpEchoHandler(),
+            DatagramHandler = new UdpEchoHandler(),
         }
     );
 

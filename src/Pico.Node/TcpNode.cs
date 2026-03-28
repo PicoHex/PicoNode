@@ -2,6 +2,13 @@ namespace Pico.Node;
 
 public sealed class TcpNode : INode, IAsyncDisposable
 {
+    private const string OperationStart = "tcp.start";
+    private const string OperationStop = "tcp.stop.listener";
+    private const string OperationAccept = "tcp.accept";
+    private const string OperationAcceptCancelled = "tcp.accept.cancelled";
+    private const string OperationRejectLimit = "tcp.reject.limit";
+    private const string OperationRejectTracking = "tcp.reject.tracking";
+
     private readonly Socket _listener;
     private readonly SocketIoEventArgsPool _eventArgsPool;
     private readonly CancellationTokenSource _cts = new();
@@ -17,26 +24,40 @@ public sealed class TcpNode : INode, IAsyncDisposable
     {
         Options = options ?? throw new ArgumentNullException(nameof(options));
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.MaxConnections, 0);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.ReceiveBufferSize, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.ReceiveSocketBufferSize, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.SendSocketBufferSize, 0);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.Backlog, 0);
         if (options.IdleTimeout < TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(options.IdleTimeout));
         }
 
+        if (options.AcceptFaultBackoff < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.AcceptFaultBackoff));
+        }
+
+        if (options.DrainTimeout < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.DrainTimeout));
+        }
+
         _listener = new Socket(options.Endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
         {
             NoDelay = options.NoDelay,
             LingerState = options.LingerState,
+            ReceiveBufferSize = options.ReceiveSocketBufferSize,
+            SendBufferSize = options.SendSocketBufferSize,
         };
-        _eventArgsPool = new SocketIoEventArgsPool(options.ReceiveBufferSize);
+        _eventArgsPool = new SocketIoEventArgsPool(options.ReceiveSocketBufferSize);
 
         if (options.Endpoint.AddressFamily == AddressFamily.InterNetworkV6)
         {
-            _listener.DualMode = options.DualMode;
+            _listener.DualMode = options.EnableDualMode;
         }
 
-        _listener.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+        _listener.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, options.EnableAddressReuse);
+        _listener.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, options.EnableKeepAlive);
         _state = NodeState.Created;
     }
 
@@ -74,7 +95,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
         catch (Exception ex)
         {
             _state = NodeState.Stopped;
-            ReportFault(NodeFaultCode.StartFailed, "tcp-start", ex);
+            ReportFault(NodeFaultCode.StartFailed, OperationStart, ex);
             throw;
         }
     }
@@ -84,6 +105,15 @@ public sealed class TcpNode : INode, IAsyncDisposable
         if (_state is NodeState.Stopped or NodeState.Disposed or NodeState.Created)
         {
             return;
+        }
+
+        using var stopCts = Options.DrainTimeout > TimeSpan.Zero
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : null;
+        if (stopCts is not null)
+        {
+            stopCts.CancelAfter(Options.DrainTimeout);
+            cancellationToken = stopCts.Token;
         }
 
         _state = NodeState.Stopping;
@@ -99,7 +129,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            ReportFault(NodeFaultCode.StopFailed, "tcp-stop-close-listener", ex);
+            ReportFault(NodeFaultCode.StopFailed, OperationStop, ex);
         }
 
         if (_acceptTask is not null)
@@ -160,7 +190,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
                     if (_connections.Count >= Options.MaxConnections)
                     {
-                        ReportFault(NodeFaultCode.ConnectionRejected, "tcp-max-connections");
+                        ReportFault(NodeFaultCode.SessionRejected, OperationRejectLimit);
                         try
                         {
                             socket.Shutdown(SocketShutdown.Both);
@@ -176,12 +206,12 @@ public sealed class TcpNode : INode, IAsyncDisposable
                     var connection = new TcpConnection(this, socket);
                     if (!_connections.TryAdd(connection.Id, connection))
                     {
-                        ReportFault(NodeFaultCode.ConnectionRejected, "tcp-track-connection");
+                        ReportFault(NodeFaultCode.SessionRejected, OperationRejectTracking);
                         await connection.DisposeAsync();
                         continue;
                     }
 
-                    _ = connection.RunAsync(Options.Handler);
+                    _ = connection.RunAsync(Options.ConnectionHandler);
                 }
                 catch (OperationCanceledException) when (_cts.IsCancellationRequested)
                 {
@@ -189,7 +219,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
                 }
                 catch (SocketException ex) when (_cts.IsCancellationRequested)
                 {
-                    ReportFault(NodeFaultCode.AcceptFailed, "tcp-accept-cancelled", ex);
+                    ReportFault(NodeFaultCode.AcceptFailed, OperationAcceptCancelled, ex);
                     break;
                 }
                 catch (ObjectDisposedException) when (_cts.IsCancellationRequested)
@@ -198,10 +228,15 @@ public sealed class TcpNode : INode, IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
-                    ReportFault(NodeFaultCode.AcceptFailed, "tcp-accept", ex);
+                    ReportFault(NodeFaultCode.AcceptFailed, OperationAccept, ex);
+                    if (Options.AcceptFaultBackoff <= TimeSpan.Zero)
+                    {
+                        continue;
+                    }
+
                     try
                     {
-                        await Task.Delay(50, _cts.Token);
+                        await Task.Delay(Options.AcceptFaultBackoff, _cts.Token);
                     }
                     catch (OperationCanceledException) when (_cts.IsCancellationRequested)
                     {

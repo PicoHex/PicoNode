@@ -42,7 +42,7 @@ static async Task RunTcpThroughputAsync(Dictionary<string, string> options)
         new TcpNodeOptions
         {
             Endpoint = new IPEndPoint(IPAddress.Loopback, port),
-            Handler = new TcpEchoHandler(),
+            ConnectionHandler = new TcpEchoHandler(),
             MaxConnections = GetInt(options, "max-connections", 128),
         }
     );
@@ -78,7 +78,7 @@ static async Task RunTcpThroughputParallelAsync(Dictionary<string, string> optio
         new TcpNodeOptions
         {
             Endpoint = new IPEndPoint(IPAddress.Loopback, port),
-            Handler = new TcpEchoHandler(),
+            ConnectionHandler = new TcpEchoHandler(),
             MaxConnections = Math.Max(clients * 2, 128),
         }
     );
@@ -112,7 +112,7 @@ static async Task RunTcpChurnAsync(Dictionary<string, string> options)
         new TcpNodeOptions
         {
             Endpoint = new IPEndPoint(IPAddress.Loopback, port),
-            Handler = new TcpEchoHandler(),
+            ConnectionHandler = new TcpEchoHandler(),
             MaxConnections = GetInt(options, "max-connections", 256),
         }
     );
@@ -145,8 +145,8 @@ static async Task RunUdpRateAsync(Dictionary<string, string> options)
         new UdpNodeOptions
         {
             Endpoint = new IPEndPoint(IPAddress.Loopback, port),
-            Handler = new UdpEchoHandler(),
-            WorkerCount = GetInt(options, "workers", 2),
+            DatagramHandler = new UdpEchoHandler(),
+            DispatchWorkerCount = GetInt(options, "workers", 2),
         }
     );
 
@@ -179,8 +179,8 @@ static async Task RunUdpRateParallelAsync(Dictionary<string, string> options)
         new UdpNodeOptions
         {
             Endpoint = new IPEndPoint(IPAddress.Loopback, port),
-            Handler = new UdpEchoHandler(),
-            WorkerCount = GetInt(options, "workers", 4),
+            DatagramHandler = new UdpEchoHandler(),
+            DispatchWorkerCount = GetInt(options, "workers", 4),
         }
     );
 

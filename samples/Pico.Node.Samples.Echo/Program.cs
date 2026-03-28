@@ -7,7 +7,8 @@ var tcpNode = new TcpNode(
     new TcpNodeOptions
     {
         Endpoint = new IPEndPoint(IPAddress.Loopback, 7001),
-        Handler = new EchoTcpHandler(),
+        ConnectionHandler = new EchoTcpHandler(),
+        EnableKeepAlive = true,
     }
 );
 
@@ -15,7 +16,7 @@ var udpNode = new UdpNode(
     new UdpNodeOptions
     {
         Endpoint = new IPEndPoint(IPAddress.Loopback, 7002),
-        Handler = new EchoUdpHandler(),
+        DatagramHandler = new EchoUdpHandler(),
     }
 );
 

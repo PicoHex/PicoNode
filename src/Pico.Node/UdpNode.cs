@@ -2,6 +2,13 @@ namespace Pico.Node;
 
 public sealed class UdpNode : INode, IAsyncDisposable
 {
+    private const string OperationStart = "udp.start";
+    private const string OperationStop = "udp.stop.socket";
+    private const string OperationSend = "udp.send";
+    private const string OperationReceive = "udp.receive";
+    private const string OperationQueueDrop = "udp.queue.drop";
+    private const string OperationDatagramHandler = "udp.datagram.handler";
+
     private readonly Socket _socket;
     private readonly CancellationTokenSource _cts = new();
     private readonly Channel<UdpDatagramLease>[] _queues;
@@ -13,30 +20,30 @@ public sealed class UdpNode : INode, IAsyncDisposable
     public UdpNode(UdpNodeOptions options)
     {
         Options = options ?? throw new ArgumentNullException(nameof(options));
-        if (options.WorkerCount <= 0)
+        if (options.DispatchWorkerCount <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(options.WorkerCount));
+            throw new ArgumentOutOfRangeException(nameof(options.DispatchWorkerCount));
         }
 
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.QueueCapacityPerWorker, 0);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.ReceiveBufferSize, 0);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.SendBufferSize, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.DatagramQueueCapacity, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.ReceiveSocketBufferSize, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.SendSocketBufferSize, 0);
 
         _socket = new Socket(options.Endpoint.AddressFamily, SocketType.Dgram, ProtocolType.Udp)
         {
-            ReceiveBufferSize = options.ReceiveBufferSize,
-            SendBufferSize = options.SendBufferSize,
+            ReceiveBufferSize = options.ReceiveSocketBufferSize,
+            SendBufferSize = options.SendSocketBufferSize,
             EnableBroadcast = options.EnableBroadcast,
         };
 
-        _queues = new Channel<UdpDatagramLease>[options.WorkerCount];
-        _workers = new Task[options.WorkerCount];
-        for (var i = 0; i < options.WorkerCount; i++)
+        _queues = new Channel<UdpDatagramLease>[options.DispatchWorkerCount];
+        _workers = new Task[options.DispatchWorkerCount];
+        for (var i = 0; i < options.DispatchWorkerCount; i++)
         {
             _queues[i] = Channel.CreateBounded<UdpDatagramLease>(
-                new BoundedChannelOptions(options.QueueCapacityPerWorker)
+                new BoundedChannelOptions(options.DatagramQueueCapacity)
                 {
-                    FullMode = options.OverflowMode == UdpOverflowMode.Wait
+                    FullMode = options.QueueOverflowMode == UdpOverflowMode.Wait
                         ? BoundedChannelFullMode.Wait
                         : BoundedChannelFullMode.DropWrite,
                     SingleReader = true,
@@ -85,7 +92,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
         catch (Exception ex)
         {
             _state = NodeState.Stopped;
-            ReportFault(NodeFaultCode.StartFailed, "udp-start", ex);
+            ReportFault(NodeFaultCode.StartFailed, OperationStart, ex);
             throw;
         }
     }
@@ -106,7 +113,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            ReportFault(NodeFaultCode.StopFailed, "udp-stop-close-socket", ex);
+            ReportFault(NodeFaultCode.StopFailed, OperationStop, ex);
         }
 
         foreach (var queue in _queues)
@@ -148,7 +155,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            ReportFault(NodeFaultCode.SendFailed, "udp-send", ex);
+            ReportFault(NodeFaultCode.SendFailed, OperationSend, ex);
             throw;
         }
     }
@@ -179,14 +186,14 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 var lease = new UdpDatagramLease(buffer, result.ReceivedBytes, sender);
                 var queue = _queues[GetQueueIndex(sender)];
 
-                if (Options.OverflowMode == UdpOverflowMode.Wait)
+                if (Options.QueueOverflowMode == UdpOverflowMode.Wait)
                 {
                     await queue.Writer.WriteAsync(lease, cancellationToken);
                 }
                 else if (!queue.Writer.TryWrite(lease))
                 {
                     lease.Dispose();
-                    ReportFault(NodeFaultCode.UdpDatagramDropped, "udp-queue-full");
+                    ReportFault(NodeFaultCode.DatagramDropped, OperationQueueDrop);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -202,7 +209,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
             catch (Exception ex)
             {
                 ArrayPool<byte>.Shared.Return(buffer);
-                ReportFault(NodeFaultCode.UdpReceiveFailed, "udp-receive", ex);
+                ReportFault(NodeFaultCode.DatagramReceiveFailed, OperationReceive, ex);
                 try
                 {
                     await Task.Delay(10, cancellationToken);
@@ -226,7 +233,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
                     try
                     {
                         var context = new UdpDatagramContext(this, lease.RemoteEndPoint);
-                        var handleTask = Options.Handler.OnDatagramAsync(
+                        var handleTask = Options.DatagramHandler.OnDatagramAsync(
                             context,
                             lease.Datagram,
                             cancellationToken
@@ -242,7 +249,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
                     }
                     catch (Exception ex)
                     {
-                        ReportFault(NodeFaultCode.UdpHandlerFailed, "udp-handler", ex);
+                        ReportFault(NodeFaultCode.DatagramHandlerFailed, OperationDatagramHandler, ex);
                     }
                 }
             }

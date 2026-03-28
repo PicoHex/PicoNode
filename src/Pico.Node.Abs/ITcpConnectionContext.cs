@@ -2,7 +2,7 @@ namespace Pico.Node.Abs;
 
 public interface ITcpConnectionContext
 {
-    long Id { get; }
+    long ConnectionId { get; }
     IPEndPoint RemoteEndPoint { get; }
     DateTimeOffset ConnectedAtUtc { get; }
     DateTimeOffset LastActivityUtc { get; }

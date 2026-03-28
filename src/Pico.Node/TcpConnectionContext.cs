@@ -9,7 +9,7 @@ public sealed class TcpConnectionContext : ITcpConnectionContext
         _connection = connection;
     }
 
-    public long Id => _connection.Id;
+    public long ConnectionId => _connection.Id;
 
     public IPEndPoint RemoteEndPoint => _connection.RemoteEndPoint;
 

@@ -2,6 +2,11 @@ namespace Pico.Node;
 
 internal sealed class TcpConnection : IAsyncDisposable
 {
+    private const string OperationReceive = "tcp.receive";
+    private const string OperationSend = "tcp.send";
+    private const string OperationHandler = "tcp.handler";
+    private const string OperationCloseHandler = "tcp.close.handler";
+
     private readonly TcpNode _node;
     private readonly Socket _socket;
     private readonly SocketIoEventArgs _receiveArgs;
@@ -110,13 +115,13 @@ internal sealed class TcpConnection : IAsyncDisposable
         {
             error = ex;
             reason = TcpCloseReason.ReceiveFault;
-            _node.ReportFault(NodeFaultCode.ReceiveFailed, "tcp-receive", ex);
+            _node.ReportFault(NodeFaultCode.ReceiveFailed, OperationReceive, ex);
         }
         catch (Exception ex)
         {
             error = ex;
             reason = TcpCloseReason.HandlerFault;
-            _node.ReportFault(NodeFaultCode.HandlerFailed, "tcp-handler", ex);
+            _node.ReportFault(NodeFaultCode.HandlerFailed, OperationHandler, ex);
         }
         finally
         {
@@ -183,8 +188,8 @@ internal sealed class TcpConnection : IAsyncDisposable
         }
         catch (SocketException ex)
         {
-            _node.ReportFault(NodeFaultCode.SendFailed, "tcp-send", ex);
-            _ = CloseCoreAsync(TcpCloseReason.SendFault, ex, _node.Options.Handler);
+            _node.ReportFault(NodeFaultCode.SendFailed, OperationSend, ex);
+            _ = CloseCoreAsync(TcpCloseReason.SendFault, ex, _node.Options.ConnectionHandler);
             throw;
         }
         catch (ObjectDisposedException) when (Volatile.Read(ref _closeState) != 0)
@@ -199,12 +204,12 @@ internal sealed class TcpConnection : IAsyncDisposable
 
     public void Close()
     {
-        _ = CloseCoreAsync(TcpCloseReason.LocalClose, null, _node.Options.Handler);
+        _ = CloseCoreAsync(TcpCloseReason.LocalClose, null, _node.Options.ConnectionHandler);
     }
 
     public void Close(TcpCloseReason reason)
     {
-        _ = CloseCoreAsync(reason, null, _node.Options.Handler);
+        _ = CloseCoreAsync(reason, null, _node.Options.ConnectionHandler);
     }
 
     internal bool IsIdle(TimeSpan idleTimeout)
@@ -254,7 +259,7 @@ internal sealed class TcpConnection : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _node.ReportFault(NodeFaultCode.HandlerFailed, "tcp-close-handler", ex);
+            _node.ReportFault(NodeFaultCode.HandlerFailed, OperationCloseHandler, ex);
         }
 
         await DisposeAsync();
