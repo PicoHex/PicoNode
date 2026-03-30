@@ -15,6 +15,9 @@ switch (mode)
     case "tcp-throughput":
         await RunTcpThroughputAsync(options);
         break;
+    case "tcp-throughput-sweep":
+        await RunTcpThroughputSweepAsync(options);
+        break;
     case "tcp-throughput-parallel":
         await RunTcpThroughputParallelAsync(options);
         break;
@@ -28,7 +31,7 @@ switch (mode)
         await RunUdpRateParallelAsync(options);
         break;
     default:
-        Console.WriteLine("Modes: tcp-throughput | tcp-throughput-parallel | tcp-churn | udp-rate | udp-rate-parallel");
+        Console.WriteLine("Modes: tcp-throughput | tcp-throughput-sweep | tcp-throughput-parallel | tcp-churn | udp-rate | udp-rate-parallel");
         Environment.ExitCode = 1;
         break;
 }
@@ -102,6 +105,48 @@ static async Task RunTcpThroughputParallelAsync(Dictionary<string, string> optio
         stopwatch.Elapsed,
         "messages/s"
     );
+}
+
+static async Task RunTcpThroughputSweepAsync(Dictionary<string, string> options)
+{
+    var payloads = GetIntList(options, "payloads", [64, 256, 1024, 4096]);
+    var messages = GetInt(options, "messages", 4000);
+    var port = GetInt(options, "port", 7210);
+
+    foreach (var payloadSize in payloads)
+    {
+        var payload = CreatePayload(payloadSize, payloadSize);
+
+        await using var node = new TcpNode(
+            new TcpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                ConnectionHandler = new TcpEchoHandler(),
+                MaxConnections = GetInt(options, "max-connections", 128),
+            }
+        );
+
+        await node.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, port);
+        using var stream = client.GetStream();
+        var readBuffer = new byte[payload.Length];
+
+        var stopwatch = Stopwatch.StartNew();
+        for (var i = 0; i < messages; i++)
+        {
+            await stream.WriteAsync(payload);
+            await ReadExactAsync(stream, readBuffer, payload.Length);
+        }
+
+        stopwatch.Stop();
+        var totalBytes = (long)messages * payload.Length * 2;
+        PrintMetrics($"tcp-throughput-sweep payload={payloadSize}", messages, totalBytes, stopwatch.Elapsed, "messages/s");
+
+        await node.DisposeAsync();
+        port++;
+    }
 }
 
 static async Task RunTcpChurnAsync(Dictionary<string, string> options)
@@ -263,6 +308,24 @@ static int GetInt(Dictionary<string, string> options, string key, int fallback)
     return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
         ? parsed
         : fallback;
+}
+
+static int[] GetIntList(Dictionary<string, string> options, string key, int[] fallback)
+{
+    if (!options.TryGetValue(key, out var value))
+    {
+        return fallback;
+    }
+
+    var values = value
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(item => int.TryParse(item, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : -1)
+        .Where(item => item > 0)
+        .ToArray();
+
+    return values.Length > 0 ? values : fallback;
 }
 
 static byte[] CreatePayload(int size, int seed)

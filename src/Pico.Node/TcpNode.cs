@@ -49,7 +49,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
             ReceiveBufferSize = options.ReceiveSocketBufferSize,
             SendBufferSize = options.SendSocketBufferSize,
         };
-        _eventArgsPool = new SocketIoEventArgsPool(options.ReceiveSocketBufferSize);
+        _eventArgsPool = new SocketIoEventArgsPool();
 
         if (options.Endpoint.AddressFamily == AddressFamily.InterNetworkV6)
         {

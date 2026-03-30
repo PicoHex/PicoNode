@@ -3,28 +3,15 @@ namespace Pico.Node;
 internal sealed class SocketIoEventArgsPool : IDisposable
 {
     private readonly ConcurrentBag<SocketIoEventArgs> _pool = new();
-    private readonly int _receiveBufferSize;
     private bool _disposed;
 
-    public SocketIoEventArgsPool(int receiveBufferSize)
-    {
-        _receiveBufferSize = receiveBufferSize;
-    }
+    public SocketIoEventArgsPool() { }
 
     public SocketIoEventArgs RentAcceptArgs()
     {
         var eventArgs = RentCore();
         eventArgs.AcceptSocket = null;
         eventArgs.SetBuffer(null, 0, 0);
-        return eventArgs;
-    }
-
-    public SocketIoEventArgs RentReceiveArgs()
-    {
-        var eventArgs = RentCore();
-        var buffer = ArrayPool<byte>.Shared.Rent(_receiveBufferSize);
-        eventArgs.SetBuffer(buffer, 0, buffer.Length);
-        eventArgs.AcceptSocket = null;
         return eventArgs;
     }
 

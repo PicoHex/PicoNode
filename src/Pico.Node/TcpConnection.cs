@@ -6,16 +6,16 @@ internal sealed class TcpConnection : IAsyncDisposable
     private const string OperationSend = "tcp.send";
     private const string OperationHandler = "tcp.handler";
     private const string OperationCloseHandler = "tcp.close.handler";
+    private const int MinimumReceiveBufferSize = 512;
+    private const int PipeSegmentMultiplier = 4;
 
     private readonly TcpNode _node;
     private readonly Socket _socket;
-    private readonly SocketIoEventArgs _receiveArgs;
-    private readonly byte[] _receiveBuffer;
-    private readonly SocketIoEventArgs _sendArgs;
     private readonly Pipe _pipe;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
     private readonly TcpConnectionContext _context;
+    private readonly int _receiveBufferSize;
     private int _closeState;
     private int _disposeState;
 
@@ -23,12 +23,8 @@ internal sealed class TcpConnection : IAsyncDisposable
     {
         _node = node;
         _socket = socket;
-        _receiveArgs = node.EventArgsPool.RentReceiveArgs();
-        _receiveBuffer =
-            _receiveArgs.Buffer
-            ?? throw new InvalidOperationException("Receive buffer is not available.");
-        _sendArgs = node.EventArgsPool.RentSendArgs();
-        _pipe = new Pipe();
+        _receiveBufferSize = Math.Max(node.Options.ReceiveSocketBufferSize, MinimumReceiveBufferSize);
+        _pipe = new Pipe(CreatePipeOptions(_receiveBufferSize));
         Id = Interlocked.Increment(ref _nextId);
         RemoteEndPoint = (IPEndPoint)socket.RemoteEndPoint!;
         ConnectedAtUtc = DateTimeOffset.UtcNow;
@@ -71,29 +67,11 @@ internal sealed class TcpConnection : IAsyncDisposable
             // 接收循环，将数据写入 PipeWriter
             while (!_cts.IsCancellationRequested)
             {
-                var receiveOperation = _receiveArgs.ReceiveAsync(_socket);
-                var receiveResult = receiveOperation.IsCompletedSuccessfully
+                var memory = _pipe.Writer.GetMemory(_receiveBufferSize);
+                var receiveOperation = _socket.ReceiveAsync(memory, SocketFlags.None, ct);
+                var bytesRead = receiveOperation.IsCompletedSuccessfully
                     ? receiveOperation.Result
                     : await receiveOperation;
-                if (receiveResult.SocketError != SocketError.Success)
-                {
-                    if (
-                        receiveResult.SocketError
-                        is SocketError.ConnectionReset
-                            or SocketError.ConnectionAborted
-                            or SocketError.OperationAborted
-                    )
-                    {
-                        reason = _cts.IsCancellationRequested
-                            ? TcpCloseReason.LocalClose
-                            : TcpCloseReason.RemoteClosed;
-                        break;
-                    }
-
-                    throw new SocketException((int)receiveResult.SocketError);
-                }
-
-                var bytesRead = receiveResult.BytesTransferred;
                 if (bytesRead <= 0)
                 {
                     reason = TcpCloseReason.RemoteClosed;
@@ -102,11 +80,11 @@ internal sealed class TcpConnection : IAsyncDisposable
 
                 Touch();
 
-                // 将数据写入管道
-                var memory = _pipe.Writer.GetMemory(bytesRead);
-                _receiveBuffer.AsMemory(0, bytesRead).CopyTo(memory);
                 _pipe.Writer.Advance(bytesRead);
-                var flushResult = await _pipe.Writer.FlushAsync(ct);
+                var flushOperation = _pipe.Writer.FlushAsync(ct);
+                var flushResult = flushOperation.IsCompletedSuccessfully
+                    ? flushOperation.Result
+                    : await flushOperation;
                 if (flushResult.IsCompleted || flushResult.IsCanceled)
                 {
                     break;
@@ -133,9 +111,28 @@ internal sealed class TcpConnection : IAsyncDisposable
         }
         catch (SocketException ex)
         {
+            if (
+                ex.SocketErrorCode
+                is SocketError.ConnectionReset
+                    or SocketError.ConnectionAborted
+                    or SocketError.OperationAborted
+            )
+            {
+                reason = _cts.IsCancellationRequested
+                    ? TcpCloseReason.LocalClose
+                    : TcpCloseReason.RemoteClosed;
+            }
+
             error = ex;
-            reason = TcpCloseReason.ReceiveFault;
-            _node.ReportFault(NodeFaultCode.ReceiveFailed, OperationReceive, ex);
+            if (reason == TcpCloseReason.RemoteClosed)
+            {
+                _node.ReportFault(NodeFaultCode.ReceiveFailed, OperationReceive, ex);
+            }
+            else if (reason != TcpCloseReason.LocalClose)
+            {
+                reason = TcpCloseReason.ReceiveFault;
+                _node.ReportFault(NodeFaultCode.ReceiveFailed, OperationReceive, ex);
+            }
         }
         catch (Exception ex)
         {
@@ -155,7 +152,10 @@ internal sealed class TcpConnection : IAsyncDisposable
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                var readResult = await _pipe.Reader.ReadAsync(cancellationToken);
+                var readOperation = _pipe.Reader.ReadAsync(cancellationToken);
+                var readResult = readOperation.IsCompletedSuccessfully
+                    ? readOperation.Result
+                    : await readOperation;
                 var buffer = readResult.Buffer;
 
                 if (buffer.Length > 0)
@@ -209,38 +209,9 @@ internal sealed class TcpConnection : IAsyncDisposable
                 return;
             }
 
-            // 如果序列是单个段且可以获取数组段，直接发送
-            if (buffer.IsSingleSegment && MemoryMarshal.TryGetArray(buffer.First, out var arraySegment))
+            if (buffer.IsSingleSegment)
             {
-                var remaining = arraySegment;
-                while (remaining.Count > 0)
-                {
-                    _sendArgs.SetBuffer(remaining.Array, remaining.Offset, remaining.Count);
-                    var sendOperation = _sendArgs.SendAsync(_socket);
-                    var sendResult = sendOperation.IsCompletedSuccessfully
-                        ? sendOperation.Result
-                        : await sendOperation;
-                    if (sendResult.SocketError != SocketError.Success)
-                    {
-                        throw new SocketException((int)sendResult.SocketError);
-                    }
-
-                    if (sendResult.BytesTransferred <= 0)
-                    {
-                        throw new SocketException((int)SocketError.ConnectionAborted);
-                    }
-
-                    if (sendResult.BytesTransferred == remaining.Count)
-                    {
-                        break;
-                    }
-
-                    remaining = new ArraySegment<byte>(
-                        remaining.Array!,
-                        remaining.Offset + sendResult.BytesTransferred,
-                        remaining.Count - sendResult.BytesTransferred
-                    );
-                }
+                await SendMemoryAsync(buffer.First, cancellationToken);
             }
             else
             {
@@ -249,39 +220,11 @@ internal sealed class TcpConnection : IAsyncDisposable
                 try
                 {
                     buffer.CopyTo(tempBuffer);
-                    var remaining = new ArraySegment<byte>(tempBuffer, 0, (int)buffer.Length);
-                    while (remaining.Count > 0)
-                    {
-                        _sendArgs.SetBuffer(remaining.Array, remaining.Offset, remaining.Count);
-                        var sendOperation = _sendArgs.SendAsync(_socket);
-                        var sendResult = sendOperation.IsCompletedSuccessfully
-                            ? sendOperation.Result
-                            : await sendOperation;
-                        if (sendResult.SocketError != SocketError.Success)
-                        {
-                            throw new SocketException((int)sendResult.SocketError);
-                        }
-
-                        if (sendResult.BytesTransferred <= 0)
-                        {
-                            throw new SocketException((int)SocketError.ConnectionAborted);
-                        }
-
-                        if (sendResult.BytesTransferred == remaining.Count)
-                        {
-                            break;
-                        }
-
-                        remaining = new ArraySegment<byte>(
-                            remaining.Array!,
-                            remaining.Offset + sendResult.BytesTransferred,
-                            remaining.Count - sendResult.BytesTransferred
-                        );
-                    }
+                    await SendMemoryAsync(tempBuffer.AsMemory(0, (int)buffer.Length), cancellationToken);
                 }
                 finally
                 {
-                    ArrayPool<byte>.Shared.Return(tempBuffer);
+                    ArrayPool<byte>.Shared.Return(tempBuffer, clearArray: false);
                 }
             }
 
@@ -371,13 +314,39 @@ internal sealed class TcpConnection : IAsyncDisposable
             return ValueTask.CompletedTask;
         }
 
-        _node.EventArgsPool.Return(_receiveArgs);
-        _node.EventArgsPool.Return(_sendArgs);
         _pipe.Reader.Complete();
         _pipe.Writer.Complete();
         _sendLock.Dispose();
         _cts.Dispose();
         _socket.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private static PipeOptions CreatePipeOptions(int receiveBufferSize)
+    {
+        var pauseThreshold = receiveBufferSize * PipeSegmentMultiplier;
+        return new PipeOptions(
+            pauseWriterThreshold: pauseThreshold,
+            resumeWriterThreshold: pauseThreshold / 2,
+            minimumSegmentSize: receiveBufferSize,
+            useSynchronizationContext: false
+        );
+    }
+
+    private async Task SendMemoryAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken)
+    {
+        while (!buffer.IsEmpty)
+        {
+            var sendOperation = _socket.SendAsync(buffer, SocketFlags.None, cancellationToken);
+            var bytesSent = sendOperation.IsCompletedSuccessfully
+                ? sendOperation.Result
+                : await sendOperation;
+            if (bytesSent <= 0)
+            {
+                throw new SocketException((int)SocketError.ConnectionAborted);
+            }
+
+            buffer = buffer[bytesSent..];
+        }
     }
 }

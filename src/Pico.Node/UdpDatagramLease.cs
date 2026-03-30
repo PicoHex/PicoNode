@@ -27,6 +27,6 @@ internal sealed class UdpDatagramLease : IDisposable
         }
 
         _disposed = true;
-        ArrayPool<byte>.Shared.Return(Buffer);
+        ArrayPool<byte>.Shared.Return(Buffer, clearArray: false);
     }
 }

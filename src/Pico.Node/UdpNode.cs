@@ -8,6 +8,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
     private const string OperationReceive = "udp.receive";
     private const string OperationQueueDrop = "udp.queue.drop";
     private const string OperationDatagramHandler = "udp.datagram.handler";
+    private const int MaxUdpDatagramSize = 65527;
 
     private readonly Socket _socket;
     private readonly CancellationTokenSource _cts = new();
@@ -28,6 +29,8 @@ public sealed class UdpNode : INode, IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.DatagramQueueCapacity, 0);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.ReceiveSocketBufferSize, 0);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.SendSocketBufferSize, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.ReceiveDatagramBufferSize, 0);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(options.ReceiveDatagramBufferSize, MaxUdpDatagramSize);
 
         _socket = new Socket(options.Endpoint.AddressFamily, SocketType.Dgram, ProtocolType.Udp)
         {
@@ -171,7 +174,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var buffer = ArrayPool<byte>.Shared.Rent(65527);
+            var buffer = ArrayPool<byte>.Shared.Rent(Options.ReceiveDatagramBufferSize);
 
             try
             {
