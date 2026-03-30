@@ -3,9 +3,9 @@
 public interface ITcpConnectionHandler
 {
     Task OnConnectedAsync(ITcpConnectionContext connection, CancellationToken cancellationToken);
-    Task OnReceivedAsync(
+    ValueTask<SequencePosition> OnReceivedAsync(
         ITcpConnectionContext connection,
-        ArraySegment<byte> buffer,
+        ReadOnlySequence<byte> buffer,
         CancellationToken cancellationToken
     );
     Task OnClosedAsync(

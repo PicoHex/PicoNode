@@ -6,6 +6,6 @@ public interface ITcpConnectionContext
     IPEndPoint RemoteEndPoint { get; }
     DateTimeOffset ConnectedAtUtc { get; }
     DateTimeOffset LastActivityUtc { get; }
-    Task SendAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken = default);
+    Task SendAsync(ReadOnlySequence<byte> buffer, CancellationToken cancellationToken = default);
     void Close();
 }

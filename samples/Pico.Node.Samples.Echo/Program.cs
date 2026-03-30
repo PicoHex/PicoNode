@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
 using Pico.Node;
@@ -45,11 +47,16 @@ file sealed class EchoTcpHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     ) => Task.CompletedTask;
 
-    public Task OnReceivedAsync(
+    public ValueTask<SequencePosition> OnReceivedAsync(
         ITcpConnectionContext connection,
-        ArraySegment<byte> buffer,
+        ReadOnlySequence<byte> buffer,
         CancellationToken cancellationToken
-    ) => connection.SendAsync(buffer, cancellationToken);
+    )
+    {
+        // Echo: 将接收到的数据原样发送回去，并消费整个缓冲区
+        _ = connection.SendAsync(buffer, cancellationToken);
+        return ValueTask.FromResult(buffer.End);
+    }
 }
 
 file sealed class EchoUdpHandler : IUdpDatagramHandler

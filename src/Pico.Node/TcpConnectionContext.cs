@@ -17,8 +17,10 @@ public sealed class TcpConnectionContext : ITcpConnectionContext
 
     public DateTimeOffset LastActivityUtc => _connection.LastActivityUtc;
 
-    public Task SendAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken = default)
-        => _connection.SendAsync(buffer, cancellationToken);
+    public Task SendAsync(
+        ReadOnlySequence<byte> buffer,
+        CancellationToken cancellationToken = default
+    ) => _connection.SendAsync(buffer, cancellationToken);
 
     public void Close() => _connection.Close();
 }

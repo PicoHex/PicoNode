@@ -13,7 +13,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
     private readonly SocketIoEventArgsPool _eventArgsPool;
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentDictionary<long, TcpConnection> _connections = new();
-    private readonly object _stateLock = new();
+    private readonly Lock _stateLock = new();
     private Task? _acceptTask;
     private Task? _idleMonitorTask;
     private TaskCompletionSource<bool>? _drained;
@@ -56,8 +56,16 @@ public sealed class TcpNode : INode, IAsyncDisposable
             _listener.DualMode = options.EnableDualMode;
         }
 
-        _listener.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, options.EnableAddressReuse);
-        _listener.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, options.EnableKeepAlive);
+        _listener.SetSocketOption(
+            SocketOptionLevel.Socket,
+            SocketOptionName.ReuseAddress,
+            options.EnableAddressReuse
+        );
+        _listener.SetSocketOption(
+            SocketOptionLevel.Socket,
+            SocketOptionName.KeepAlive,
+            options.EnableKeepAlive
+        );
         _state = NodeState.Created;
     }
 
@@ -107,9 +115,10 @@ public sealed class TcpNode : INode, IAsyncDisposable
             return;
         }
 
-        using var stopCts = Options.DrainTimeout > TimeSpan.Zero
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-            : null;
+        using var stopCts =
+            Options.DrainTimeout > TimeSpan.Zero
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : null;
         if (stopCts is not null)
         {
             stopCts.CancelAfter(Options.DrainTimeout);
@@ -138,9 +147,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 await _acceptTask.WaitAsync(cancellationToken);
             }
-            catch (OperationCanceledException)
-            {
-            }
+            catch (OperationCanceledException) { }
         }
 
         if (_idleMonitorTask is not null)
@@ -149,9 +156,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 await _idleMonitorTask.WaitAsync(cancellationToken);
             }
-            catch (OperationCanceledException)
-            {
-            }
+            catch (OperationCanceledException) { }
         }
 
         foreach (var connection in _connections.Values)
@@ -183,7 +188,9 @@ public sealed class TcpNode : INode, IAsyncDisposable
                         throw new SocketException((int)acceptResult.SocketError);
                     }
 
-                    var socket = acceptArgs.AcceptSocket ?? throw new SocketException((int)SocketError.NotSocket);
+                    var socket =
+                        acceptArgs.AcceptSocket
+                        ?? throw new SocketException((int)SocketError.NotSocket);
                     acceptArgs.AcceptSocket = null;
                     socket.NoDelay = Options.NoDelay;
                     socket.LingerState = Options.LingerState;
@@ -195,9 +202,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
                         {
                             socket.Shutdown(SocketShutdown.Both);
                         }
-                        catch
-                        {
-                        }
+                        catch { }
 
                         socket.Dispose();
                         continue;
@@ -258,9 +263,10 @@ public sealed class TcpNode : INode, IAsyncDisposable
             return;
         }
 
-        var interval = Options.IdleTimeout < TimeSpan.FromSeconds(1)
-            ? Options.IdleTimeout
-            : TimeSpan.FromSeconds(1);
+        var interval =
+            Options.IdleTimeout < TimeSpan.FromSeconds(1)
+                ? Options.IdleTimeout
+                : TimeSpan.FromSeconds(1);
 
         try
         {
@@ -277,9 +283,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
                 }
             }
         }
-        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
-        {
-        }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested) { }
     }
 
     internal void OnConnectionClosed(TcpConnection connection)
@@ -302,9 +306,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
         {
             faultHandler(new NodeFault(code, operation, exception));
         }
-        catch
-        {
-        }
+        catch { }
     }
 
     public async ValueTask DisposeAsync()

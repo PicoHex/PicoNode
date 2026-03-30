@@ -7,4 +7,6 @@ global using System.Net.Sockets;
 global using System.Threading;
 global using System.Threading.Channels;
 global using System.Threading.Tasks;
+global using System.IO.Pipelines;
+global using System.Runtime.InteropServices;
 global using Pico.Node.Abs;
