@@ -58,46 +58,11 @@ internal sealed class TcpConnection : IAsyncDisposable
             var context = _context;
             var ct = _cts.Token;
 
-            // 启动管道处理任务
             var processingTask = ProcessPipeAsync(handler, context, ct);
 
-            // 调用 OnConnectedAsync
-            var connectedTask = handler.OnConnectedAsync(context, ct);
-            if (!connectedTask.IsCompletedSuccessfully)
-            {
-                await connectedTask;
-            }
-
-            // 接收循环，将数据写入 PipeWriter
-            while (!_cts.IsCancellationRequested)
-            {
-                var memory = _pipe.Writer.GetMemory(_receiveBufferSize);
-                var receiveOperation = _socket.ReceiveAsync(memory, SocketFlags.None, ct);
-                var bytesRead = receiveOperation.IsCompletedSuccessfully
-                    ? receiveOperation.Result
-                    : await receiveOperation;
-                if (bytesRead <= 0)
-                {
-                    reason = TcpCloseReason.RemoteClosed;
-                    break;
-                }
-
-                Touch();
-
-                _pipe.Writer.Advance(bytesRead);
-                var flushOperation = _pipe.Writer.FlushAsync(ct);
-                var flushResult = flushOperation.IsCompletedSuccessfully
-                    ? flushOperation.Result
-                    : await flushOperation;
-                if (flushResult.IsCompleted || flushResult.IsCanceled)
-                {
-                    break;
-                }
-            }
-
-            // 完成写入，等待处理任务结束
-            await _pipe.Writer.CompleteAsync();
-            await processingTask;
+            await InvokeConnectedAsync(handler, context, ct);
+            reason = await PumpSocketToPipeAsync(ct);
+            await CompletePipeAsync(processingTask);
 
             if (_cts.IsCancellationRequested && reason == TcpCloseReason.RemoteClosed)
             {
@@ -225,31 +190,7 @@ internal sealed class TcpConnection : IAsyncDisposable
                 return;
             }
 
-            if (buffer.IsSingleSegment)
-            {
-                await SendMemoryAsync(buffer.First, cancellationToken);
-            }
-            else if (TryBuildBufferList(buffer, out var segments))
-            {
-                await SendBufferListAsync(segments, cancellationToken);
-            }
-            else
-            {
-                // 复制到连续缓冲区
-                var tempBuffer = ArrayPool<byte>.Shared.Rent((int)buffer.Length);
-                try
-                {
-                    buffer.CopyTo(tempBuffer);
-                    await SendMemoryAsync(
-                        tempBuffer.AsMemory(0, (int)buffer.Length),
-                        cancellationToken
-                    );
-                }
-                finally
-                {
-                    ArrayPool<byte>.Shared.Return(tempBuffer, clearArray: false);
-                }
-            }
+            await SendSequenceAsync(buffer, cancellationToken);
 
             Touch();
         }
@@ -306,7 +247,6 @@ internal sealed class TcpConnection : IAsyncDisposable
         }
 
         _cts.Cancel();
-        _node.OnConnectionClosed(this);
 
         try
         {
@@ -328,6 +268,7 @@ internal sealed class TcpConnection : IAsyncDisposable
         }
 
         await DisposeAsync();
+        _node.OnConnectionClosed(this);
     }
 
     public ValueTask DisposeAsync()
@@ -354,6 +295,92 @@ internal sealed class TcpConnection : IAsyncDisposable
             minimumSegmentSize: receiveBufferSize,
             useSynchronizationContext: false
         );
+    }
+
+    private async Task InvokeConnectedAsync(
+        ITcpConnectionHandler handler,
+        ITcpConnectionContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        var connectedTask = handler.OnConnectedAsync(context, cancellationToken);
+        if (!connectedTask.IsCompletedSuccessfully)
+        {
+            await connectedTask;
+        }
+    }
+
+    private async Task<TcpCloseReason> PumpSocketToPipeAsync(CancellationToken cancellationToken)
+    {
+        while (!_cts.IsCancellationRequested)
+        {
+            var memory = _pipe.Writer.GetMemory(_receiveBufferSize);
+            var receiveOperation = _socket.ReceiveAsync(memory, SocketFlags.None, cancellationToken);
+            var bytesRead = receiveOperation.IsCompletedSuccessfully
+                ? receiveOperation.Result
+                : await receiveOperation;
+            if (bytesRead <= 0)
+            {
+                return TcpCloseReason.RemoteClosed;
+            }
+
+            Touch();
+
+            _pipe.Writer.Advance(bytesRead);
+            var flushOperation = _pipe.Writer.FlushAsync(cancellationToken);
+            var flushResult = flushOperation.IsCompletedSuccessfully
+                ? flushOperation.Result
+                : await flushOperation;
+            if (flushResult.IsCompleted || flushResult.IsCanceled)
+            {
+                break;
+            }
+        }
+
+        return TcpCloseReason.RemoteClosed;
+    }
+
+    private async Task CompletePipeAsync(Task processingTask)
+    {
+        await _pipe.Writer.CompleteAsync();
+        await processingTask;
+    }
+
+    private async Task SendSequenceAsync(
+        ReadOnlySequence<byte> buffer,
+        CancellationToken cancellationToken
+    )
+    {
+        if (buffer.IsSingleSegment)
+        {
+            await SendMemoryAsync(buffer.First, cancellationToken);
+            return;
+        }
+
+        if (TryBuildBufferList(buffer, out var segments))
+        {
+            await SendBufferListAsync(segments, cancellationToken);
+            return;
+        }
+
+        await CopyAndSendAsync(buffer, cancellationToken);
+    }
+
+    private async Task CopyAndSendAsync(
+        ReadOnlySequence<byte> buffer,
+        CancellationToken cancellationToken
+    )
+    {
+        var tempBuffer = ArrayPool<byte>.Shared.Rent((int)buffer.Length);
+        try
+        {
+            buffer.CopyTo(tempBuffer);
+            await SendMemoryAsync(tempBuffer.AsMemory(0, (int)buffer.Length), cancellationToken);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(tempBuffer, clearArray: false);
+        }
     }
 
     private async Task SendMemoryAsync(

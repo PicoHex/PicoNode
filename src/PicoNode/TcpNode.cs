@@ -125,52 +125,73 @@ public sealed class TcpNode : INode, IAsyncDisposable
             cancellationToken = stopCts.Token;
         }
 
-        _state = NodeState.Stopping;
-        _cts.Cancel();
-        var drained = _connections.IsEmpty
-            ? null
-            : new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _drained = drained;
+        TaskCompletionSource<bool>? drained;
+        lock (_stateLock)
+        {
+            if (_state is NodeState.Stopped or NodeState.Disposed or NodeState.Created)
+            {
+                return;
+            }
+
+            _state = NodeState.Stopping;
+            drained = _connections.IsEmpty
+                ? null
+                : new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _drained = drained;
+        }
 
         try
         {
-            _listener.Close();
-        }
-        catch (Exception ex)
-        {
-            ReportFault(NodeFaultCode.StopFailed, OperationStop, ex);
-        }
+            _cts.Cancel();
 
-        if (_acceptTask is not null)
-        {
             try
             {
-                await _acceptTask.WaitAsync(cancellationToken);
+                _listener.Close();
             }
-            catch (OperationCanceledException) { }
-        }
-
-        if (_idleMonitorTask is not null)
-        {
-            try
+            catch (Exception ex)
             {
-                await _idleMonitorTask.WaitAsync(cancellationToken);
+                ReportFault(NodeFaultCode.StopFailed, OperationStop, ex);
             }
-            catch (OperationCanceledException) { }
-        }
 
-        foreach (var connection in _connections.Values)
+            if (_acceptTask is not null)
+            {
+                try
+                {
+                    await _acceptTask.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) { }
+            }
+
+            if (_idleMonitorTask is not null)
+            {
+                try
+                {
+                    await _idleMonitorTask.WaitAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) { }
+            }
+
+            foreach (var connection in _connections.Values)
+            {
+                connection.Close(TcpCloseReason.NodeStopping);
+            }
+
+            if (drained is not null)
+            {
+                await drained.Task.WaitAsync(cancellationToken);
+            }
+        }
+        finally
         {
-            connection.Close(TcpCloseReason.NodeStopping);
+            lock (_stateLock)
+            {
+                _drained = null;
+                if (_state != NodeState.Disposed)
+                {
+                    _state = NodeState.Stopped;
+                }
+            }
         }
-
-        if (drained is not null)
-        {
-            await drained.Task.WaitAsync(cancellationToken);
-        }
-
-        _state = NodeState.Stopped;
-        _drained = null;
     }
 
     private async Task AcceptLoopAsync()
@@ -192,31 +213,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
                         acceptArgs.AcceptSocket
                         ?? throw new SocketException((int)SocketError.NotSocket);
                     acceptArgs.AcceptSocket = null;
-                    socket.NoDelay = Options.NoDelay;
-                    socket.LingerState = Options.LingerState;
-
-                    if (_connections.Count >= Options.MaxConnections)
-                    {
-                        ReportFault(NodeFaultCode.SessionRejected, OperationRejectLimit);
-                        try
-                        {
-                            socket.Shutdown(SocketShutdown.Both);
-                        }
-                        catch { }
-
-                        socket.Dispose();
-                        continue;
-                    }
-
-                    var connection = new TcpConnection(this, socket);
-                    if (!_connections.TryAdd(connection.Id, connection))
-                    {
-                        ReportFault(NodeFaultCode.SessionRejected, OperationRejectTracking);
-                        await connection.DisposeAsync();
-                        continue;
-                    }
-
-                    _ = connection.RunAsync(Options.ConnectionHandler);
+                    await ProcessAcceptedSocketAsync(socket);
                 }
                 catch (OperationCanceledException) when (_cts.IsCancellationRequested)
                 {
@@ -256,6 +253,40 @@ public sealed class TcpNode : INode, IAsyncDisposable
         }
     }
 
+    private async Task ProcessAcceptedSocketAsync(Socket socket)
+    {
+        socket.NoDelay = Options.NoDelay;
+        socket.LingerState = Options.LingerState;
+
+        if (_connections.Count >= Options.MaxConnections)
+        {
+            RejectAcceptedSocket(socket, NodeFaultCode.SessionRejected, OperationRejectLimit);
+            return;
+        }
+
+        var connection = new TcpConnection(this, socket);
+        if (!TryTrackConnection(connection))
+        {
+            ReportFault(NodeFaultCode.SessionRejected, OperationRejectTracking);
+            await connection.DisposeAsync();
+            return;
+        }
+
+        _ = connection.RunAsync(Options.ConnectionHandler);
+    }
+
+    private void RejectAcceptedSocket(Socket socket, NodeFaultCode code, string operation)
+    {
+        ReportFault(code, operation);
+        try
+        {
+            socket.Shutdown(SocketShutdown.Both);
+        }
+        catch { }
+
+        socket.Dispose();
+    }
+
     private async Task MonitorIdleConnectionsAsync()
     {
         if (Options.IdleTimeout <= TimeSpan.Zero)
@@ -286,11 +317,27 @@ public sealed class TcpNode : INode, IAsyncDisposable
         catch (OperationCanceledException) when (_cts.IsCancellationRequested) { }
     }
 
+    private bool TryTrackConnection(TcpConnection connection)
+    {
+        lock (_stateLock)
+        {
+            if (_state is NodeState.Stopping or NodeState.Stopped or NodeState.Disposed)
+            {
+                return false;
+            }
+
+            return _connections.TryAdd(connection.Id, connection);
+        }
+    }
+
     internal void OnConnectionClosed(TcpConnection connection)
     {
-        if (_connections.TryRemove(connection.Id, out _) && _connections.IsEmpty)
+        lock (_stateLock)
         {
-            _drained?.TrySetResult(true);
+            if (_connections.TryRemove(connection.Id, out _) && _connections.IsEmpty)
+            {
+                _drained?.TrySetResult(true);
+            }
         }
     }
 
@@ -317,11 +364,28 @@ public sealed class TcpNode : INode, IAsyncDisposable
         }
 
         _disposed = true;
-        await StopAsync();
-        _cts.Dispose();
-        _listener.Dispose();
-        _eventArgsPool.Dispose();
-        _state = NodeState.Disposed;
-        GC.SuppressFinalize(this);
+        Exception? stopException = null;
+
+        try
+        {
+            await StopAsync();
+        }
+        catch (Exception ex)
+        {
+            stopException = ex;
+        }
+        finally
+        {
+            _cts.Dispose();
+            _listener.Dispose();
+            _eventArgsPool.Dispose();
+            _state = NodeState.Disposed;
+            GC.SuppressFinalize(this);
+        }
+
+        if (stopException is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(stopException).Throw();
+        }
     }
 }
