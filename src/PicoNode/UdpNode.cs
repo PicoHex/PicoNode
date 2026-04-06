@@ -12,6 +12,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
     private readonly Socket _socket;
     private readonly CancellationTokenSource _cts = new();
+    private readonly CancellationTokenSource _receiveCts = new();
     private readonly Channel<UdpDatagramLease>[] _queues;
     private readonly Task[] _workers;
     private Task? _receiveTask;
@@ -49,10 +50,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
             _queues[i] = Channel.CreateBounded<UdpDatagramLease>(
                 new BoundedChannelOptions(options.DatagramQueueCapacity)
                 {
-                    FullMode =
-                        options.QueueOverflowMode == UdpOverflowMode.Wait
-                            ? BoundedChannelFullMode.Wait
-                            : BoundedChannelFullMode.DropWrite,
+                    FullMode = BoundedChannelFullMode.Wait,
                     SingleReader = true,
                     SingleWriter = true,
                 }
@@ -92,7 +90,10 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 );
             }
 
-            _receiveTask = Task.Run(() => ReceiveLoopAsync(_cts.Token), CancellationToken.None);
+            _receiveTask = Task.Run(
+                () => ReceiveLoopAsync(_receiveCts.Token),
+                CancellationToken.None
+            );
             _state = NodeState.Running;
             return Task.CompletedTask;
         }
@@ -112,7 +113,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
         }
 
         _state = NodeState.Stopping;
-        _cts.Cancel();
+        _receiveCts.Cancel();
 
         try
         {
@@ -128,22 +129,23 @@ public sealed class UdpNode : INode, IAsyncDisposable
             queue.Writer.TryComplete();
         }
 
-        if (_receiveTask is not null)
+        try
         {
-            try
+            if (_receiveTask is not null)
             {
                 await _receiveTask.WaitAsync(cancellationToken);
             }
-            catch (OperationCanceledException) { }
-        }
 
-        try
-        {
             await Task.WhenAll(_workers).WaitAsync(cancellationToken);
+            _state = NodeState.Stopped;
         }
-        catch (OperationCanceledException) when (_cts.IsCancellationRequested) { }
-
-        _state = NodeState.Stopped;
+        catch (OperationCanceledException)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+        }
     }
 
     internal async Task SendAsync(
@@ -302,6 +304,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
         _disposed = true;
         await StopAsync();
+        _receiveCts.Dispose();
         _cts.Dispose();
         _socket.Dispose();
         _state = NodeState.Disposed;

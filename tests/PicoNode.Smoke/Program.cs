@@ -1,12 +1,9 @@
 using System.Buffers;
-using System.IO.Pipelines;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using PicoNode;
 using PicoNode.Abs;
-using TUnit.Assertions;
-using TUnit.Assertions.Extensions;
-using TUnit.Core;
 
 public sealed class SmokeTests
 {
@@ -88,9 +85,8 @@ public sealed class SmokeTests
             stopTask = node.StopAsync();
             await handler.CloseStarted.WaitAsync(TimeSpan.FromSeconds(5));
 
-            await Assert.That(
-                    await CompletesWithinAsync(stopTask, TimeSpan.FromMilliseconds(200))
-                )
+            await Assert
+                .That(await CompletesWithinAsync(stopTask, TimeSpan.FromMilliseconds(200)))
                 .IsFalse();
         }
         finally
@@ -146,6 +142,148 @@ public sealed class SmokeTests
         }
     }
 
+    [Test]
+    public async Task StopAsync_waits_for_inflight_udp_handler_completion()
+    {
+        var port = GetAvailablePort(SocketType.Dgram, ProtocolType.Udp);
+        var handler = new BlockingUdpHandler();
+
+        await using var node = new UdpNode(
+            new UdpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                DatagramHandler = handler,
+            }
+        );
+
+        await node.StartAsync();
+
+        using var client = new UdpClient();
+        await client.SendAsync(new byte[] { 1, 2, 3 }, 3, new IPEndPoint(IPAddress.Loopback, port));
+        await handler.Started.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Task? stopTask = null;
+        try
+        {
+            stopTask = node.StopAsync();
+            await Assert
+                .That(await CompletesWithinAsync(stopTask, TimeSpan.FromMilliseconds(200)))
+                .IsFalse();
+        }
+        finally
+        {
+            handler.Release();
+            if (stopTask is not null)
+            {
+                await stopTask.WaitAsync(TimeSpan.FromSeconds(5));
+                await handler.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+        }
+    }
+
+    [Test]
+    public async Task Udp_handler_fault_reports_fault_and_subsequent_datagram_still_processes()
+    {
+        var port = GetAvailablePort(SocketType.Dgram, ProtocolType.Udp);
+        var faults = new ConcurrentQueue<NodeFaultCode>();
+
+        await using var node = new UdpNode(
+            new UdpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                DatagramHandler = new ThrowOnceThenEchoUdpHandler(),
+                FaultHandler = fault => faults.Enqueue(fault.Code),
+            }
+        );
+
+        await node.StartAsync();
+
+        using var client = new UdpClient();
+        var remote = new IPEndPoint(IPAddress.Loopback, port);
+
+        await client.SendAsync(new byte[] { 0x10 }, 1, remote);
+        await Task.Delay(200);
+
+        await client.SendAsync(new byte[] { 0x20, 0x21 }, 2, remote);
+        var echoed = await client.ReceiveAsync().WaitAsync(TimeSpan.FromSeconds(5));
+
+        await Assert.That(faults.Contains(NodeFaultCode.DatagramHandlerFailed)).IsTrue();
+        await AssertPayloadEqualAsync(echoed.Buffer, new byte[] { 0x20, 0x21 });
+    }
+
+    [Test]
+    public async Task Udp_drop_newest_reports_fault_when_dispatch_queue_is_saturated()
+    {
+        var port = GetAvailablePort(SocketType.Dgram, ProtocolType.Udp);
+        var handler = new BlockingUdpHandler();
+        var faults = new ConcurrentQueue<NodeFaultCode>();
+
+        await using var node = new UdpNode(
+            new UdpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                DatagramHandler = handler,
+                DispatchWorkerCount = 1,
+                DatagramQueueCapacity = 1,
+                QueueOverflowMode = UdpOverflowMode.DropNewest,
+                FaultHandler = fault => faults.Enqueue(fault.Code),
+            }
+        );
+
+        await node.StartAsync();
+
+        using var client = new UdpClient();
+        var remote = new IPEndPoint(IPAddress.Loopback, port);
+
+        await client.SendAsync(new byte[] { 1 }, 1, remote);
+        await handler.Started.WaitAsync(TimeSpan.FromSeconds(5));
+
+        for (var i = 0; i < 32; i++)
+        {
+            await client.SendAsync(new byte[] { (byte)(i + 2) }, 1, remote);
+        }
+
+        await EventuallyAsync(
+            () => Task.FromResult(faults.Contains(NodeFaultCode.DatagramDropped)),
+            TimeSpan.FromSeconds(5)
+        );
+
+        handler.Release();
+        await handler.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.That(faults.Contains(NodeFaultCode.DatagramDropped)).IsTrue();
+    }
+
+    [Test]
+    public async Task Udp_stop_cancellation_leaves_state_as_stopping_until_drain_finishes()
+    {
+        var port = GetAvailablePort(SocketType.Dgram, ProtocolType.Udp);
+        var handler = new BlockingUdpHandler();
+
+        await using var node = new UdpNode(
+            new UdpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                DatagramHandler = handler,
+            }
+        );
+
+        await node.StartAsync();
+
+        using var client = new UdpClient();
+        await client.SendAsync(new byte[] { 0x33 }, 1, new IPEndPoint(IPAddress.Loopback, port));
+        await handler.Started.WaitAsync(TimeSpan.FromSeconds(5));
+
+        using var stopCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        await Assert.That(async () => await node.StopAsync(stopCts.Token))
+            .Throws<OperationCanceledException>();
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopping);
+
+        handler.Release();
+        await node.StopAsync();
+        await handler.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+    }
+
     private static int GetAvailablePort(SocketType socketType, ProtocolType protocolType)
     {
         using var socket = new Socket(AddressFamily.InterNetwork, socketType, protocolType);
@@ -180,6 +318,28 @@ public sealed class SmokeTests
 
     private static async Task<bool> CompletesWithinAsync(Task task, TimeSpan timeout) =>
         await Task.WhenAny(task, Task.Delay(timeout)) == task;
+
+    private static async Task EventuallyAsync(
+        Func<Task<bool>> condition,
+        TimeSpan timeout,
+        TimeSpan? pollInterval = null
+    )
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        var interval = pollInterval ?? TimeSpan.FromMilliseconds(25);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await condition())
+            {
+                return;
+            }
+
+            await Task.Delay(interval);
+        }
+
+        throw new TimeoutException("Condition was not met before the timeout elapsed.");
+    }
 
     private static async Task<bool> AttemptLateTcpConnectionAsync(int port)
     {
@@ -261,18 +421,14 @@ file sealed class TcpEchoHandler : ITcpConnectionHandler
 file sealed class BlockingCloseHandler : ITcpConnectionHandler
 {
     private int _connectionCount;
-    private readonly TaskCompletionSource _connected = new(
-        TaskCreationOptions.RunContinuationsAsynchronously
-    );
-    private readonly TaskCompletionSource _closeStarted = new(
-        TaskCreationOptions.RunContinuationsAsynchronously
-    );
-    private readonly TaskCompletionSource _allowClose = new(
-        TaskCreationOptions.RunContinuationsAsynchronously
-    );
-    private readonly TaskCompletionSource _closeCompleted = new(
-        TaskCreationOptions.RunContinuationsAsynchronously
-    );
+    private readonly TaskCompletionSource _connected =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _closeStarted =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _allowClose =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _closeCompleted =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public Task Connected => _connected.Task;
 
@@ -327,4 +483,58 @@ file sealed class UdpEchoHandler : IUdpDatagramHandler
         ArraySegment<byte> datagram,
         CancellationToken cancellationToken
     ) => context.SendAsync(datagram, cancellationToken);
+}
+
+file sealed class BlockingUdpHandler : IUdpDatagramHandler
+{
+    private readonly TaskCompletionSource _started =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _release =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _completed =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Task Started => _started.Task;
+
+    public Task Completed => _completed.Task;
+
+    public async Task OnDatagramAsync(
+        IUdpDatagramContext context,
+        ArraySegment<byte> datagram,
+        CancellationToken cancellationToken
+    )
+    {
+        _started.TrySetResult();
+
+        try
+        {
+            await _release.Task.WaitAsync(cancellationToken);
+            await context.SendAsync(datagram, cancellationToken);
+        }
+        finally
+        {
+            _completed.TrySetResult();
+        }
+    }
+
+    public void Release() => _release.TrySetResult();
+}
+
+file sealed class ThrowOnceThenEchoUdpHandler : IUdpDatagramHandler
+{
+    private int _failed;
+
+    public Task OnDatagramAsync(
+        IUdpDatagramContext context,
+        ArraySegment<byte> datagram,
+        CancellationToken cancellationToken
+    )
+    {
+        if (Interlocked.Exchange(ref _failed, 1) == 0)
+        {
+            throw new InvalidOperationException("boom");
+        }
+
+        return context.SendAsync(datagram, cancellationToken);
+    }
 }
