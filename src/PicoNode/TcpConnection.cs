@@ -16,6 +16,7 @@ internal sealed class TcpConnection : IAsyncDisposable
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
     private readonly TcpConnectionContext _context;
+    private readonly SendPath _sendPath;
     private readonly int _receiveBufferSize;
     private int _closeState;
     private int _disposeState;
@@ -29,6 +30,7 @@ internal sealed class TcpConnection : IAsyncDisposable
             MinimumReceiveBufferSize
         );
         _pipe = new Pipe(CreatePipeOptions(_receiveBufferSize));
+        _sendPath = new SendPath(socket);
         Id = Interlocked.Increment(ref _nextId);
         RemoteEndPoint = (IPEndPoint)socket.RemoteEndPoint!;
         ConnectedAtUtc = DateTimeOffset.UtcNow;
@@ -190,7 +192,7 @@ internal sealed class TcpConnection : IAsyncDisposable
                 return;
             }
 
-            await SendSequenceAsync(buffer, cancellationToken);
+            await _sendPath.SendSequenceAsync(buffer, cancellationToken);
 
             Touch();
         }
@@ -346,174 +348,184 @@ internal sealed class TcpConnection : IAsyncDisposable
         await processingTask;
     }
 
-    private async Task SendSequenceAsync(
-        ReadOnlySequence<byte> buffer,
-        CancellationToken cancellationToken
-    )
+    private sealed class SendPath(Socket socket)
     {
-        if (buffer.IsSingleSegment)
+        public async Task SendSequenceAsync(
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken
+        )
         {
-            await SendMemoryAsync(buffer.First, cancellationToken);
-            return;
-        }
-
-        if (TryBuildBufferList(buffer, out var segments))
-        {
-            await SendBufferListAsync(segments, cancellationToken);
-            return;
-        }
-
-        await CopyAndSendAsync(buffer, cancellationToken);
-    }
-
-    private async Task CopyAndSendAsync(
-        ReadOnlySequence<byte> buffer,
-        CancellationToken cancellationToken
-    )
-    {
-        var tempBuffer = ArrayPool<byte>.Shared.Rent((int)buffer.Length);
-        try
-        {
-            buffer.CopyTo(tempBuffer);
-            await SendMemoryAsync(tempBuffer.AsMemory(0, (int)buffer.Length), cancellationToken);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(tempBuffer, clearArray: false);
-        }
-    }
-
-    private async Task SendMemoryAsync(
-        ReadOnlyMemory<byte> buffer,
-        CancellationToken cancellationToken
-    )
-    {
-        while (!buffer.IsEmpty)
-        {
-            var sendOperation = _socket.SendAsync(buffer, SocketFlags.None, cancellationToken);
-            var bytesSent = sendOperation.IsCompletedSuccessfully
-                ? sendOperation.Result
-                : await sendOperation;
-            if (bytesSent <= 0)
+            if (buffer.IsSingleSegment)
             {
-                throw new SocketException((int)SocketError.ConnectionAborted);
+                await SendMemoryAsync(socket, buffer.First, cancellationToken);
+                return;
             }
 
-            buffer = buffer[bytesSent..];
-        }
-    }
-
-    private async Task SendBufferListAsync(
-        ArraySegment<byte>[] segments,
-        CancellationToken cancellationToken
-    )
-    {
-        try
-        {
-            var remainingOffset = 0;
-            while (remainingOffset < segments.Length)
+            if (TryBuildBufferList(buffer, out var segments))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var sendOperation = _socket.SendAsync(
-                    (IList<ArraySegment<byte>>)segments,
-                    SocketFlags.None
+                await SendBufferListAsync(socket, segments, cancellationToken);
+                return;
+            }
+
+            await CopyAndSendAsync(socket, buffer, cancellationToken);
+        }
+
+        private static async Task CopyAndSendAsync(
+            Socket socket,
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken
+        )
+        {
+            var tempBuffer = ArrayPool<byte>.Shared.Rent((int)buffer.Length);
+            try
+            {
+                buffer.CopyTo(tempBuffer);
+                await SendMemoryAsync(
+                    socket,
+                    tempBuffer.AsMemory(0, (int)buffer.Length),
+                    cancellationToken
                 );
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(tempBuffer, clearArray: false);
+            }
+        }
+
+        private static async Task SendMemoryAsync(
+            Socket socket,
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken
+        )
+        {
+            while (!buffer.IsEmpty)
+            {
+                var sendOperation = socket.SendAsync(buffer, SocketFlags.None, cancellationToken);
                 var bytesSent = sendOperation.IsCompletedSuccessfully
                     ? sendOperation.Result
-                    : await sendOperation.WaitAsync(cancellationToken);
+                    : await sendOperation;
                 if (bytesSent <= 0)
                 {
                     throw new SocketException((int)SocketError.ConnectionAborted);
                 }
 
-                remainingOffset = AdvanceSentSegments(segments, remainingOffset, bytesSent);
+                buffer = buffer[bytesSent..];
             }
         }
-        finally
-        {
-            Array.Clear(segments, 0, segments.Length);
-        }
-    }
 
-    private static int AdvanceSentSegments(
-        ArraySegment<byte>[] segments,
-        int startIndex,
-        int bytesSent
-    )
-    {
-        while (startIndex < segments.Length)
+        private static async Task SendBufferListAsync(
+            Socket socket,
+            ArraySegment<byte>[] segments,
+            CancellationToken cancellationToken
+        )
         {
-            var segment = segments[startIndex];
-            if (segment.Count == 0)
+            try
             {
+                var remainingOffset = 0;
+                while (remainingOffset < segments.Length)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var sendOperation = socket.SendAsync(
+                        (IList<ArraySegment<byte>>)segments,
+                        SocketFlags.None
+                    );
+                    var bytesSent = sendOperation.IsCompletedSuccessfully
+                        ? sendOperation.Result
+                        : await sendOperation.WaitAsync(cancellationToken);
+                    if (bytesSent <= 0)
+                    {
+                        throw new SocketException((int)SocketError.ConnectionAborted);
+                    }
+
+                    remainingOffset = AdvanceSentSegments(segments, remainingOffset, bytesSent);
+                }
+            }
+            finally
+            {
+                Array.Clear(segments, 0, segments.Length);
+            }
+        }
+
+        private static int AdvanceSentSegments(
+            ArraySegment<byte>[] segments,
+            int startIndex,
+            int bytesSent
+        )
+        {
+            while (startIndex < segments.Length)
+            {
+                var segment = segments[startIndex];
+                if (segment.Count == 0)
+                {
+                    startIndex++;
+                    continue;
+                }
+
+                if (bytesSent < segment.Count)
+                {
+                    segments[startIndex] = new ArraySegment<byte>(
+                        segment.Array!,
+                        segment.Offset + bytesSent,
+                        segment.Count - bytesSent
+                    );
+                    return startIndex;
+                }
+
+                bytesSent -= segment.Count;
+                segments[startIndex] = default;
                 startIndex++;
-                continue;
             }
 
-            if (bytesSent < segment.Count)
-            {
-                segments[startIndex] = new ArraySegment<byte>(
-                    segment.Array!,
-                    segment.Offset + bytesSent,
-                    segment.Count - bytesSent
-                );
-                return startIndex;
-            }
-
-            bytesSent -= segment.Count;
-            segments[startIndex] = default;
-            startIndex++;
+            return startIndex;
         }
 
-        return startIndex;
-    }
-
-    private static bool TryBuildBufferList(
-        ReadOnlySequence<byte> buffer,
-        out ArraySegment<byte>[] segments
-    )
-    {
-        var segmentCount = 0;
-        foreach (var memory in buffer)
+        private static bool TryBuildBufferList(
+            ReadOnlySequence<byte> buffer,
+            out ArraySegment<byte>[] segments
+        )
         {
-            if (memory.IsEmpty)
+            var segmentCount = 0;
+            foreach (var memory in buffer)
             {
-                continue;
+                if (memory.IsEmpty)
+                {
+                    continue;
+                }
+
+                if (!MemoryMarshal.TryGetArray(memory, out _))
+                {
+                    segments = [];
+                    return false;
+                }
+
+                segmentCount++;
+                if (segmentCount > MaxScatterGatherSegments)
+                {
+                    segments = [];
+                    return false;
+                }
             }
 
-            if (!MemoryMarshal.TryGetArray(memory, out _))
+            if (segmentCount == 0)
             {
-                segments =  [];
-                return false;
+                segments = [];
+                return true;
             }
 
-            segmentCount++;
-            if (segmentCount > MaxScatterGatherSegments)
+            segments = new ArraySegment<byte>[segmentCount];
+            var index = 0;
+            foreach (var memory in buffer)
             {
-                segments =  [];
-                return false;
-            }
-        }
+                if (memory.IsEmpty)
+                {
+                    continue;
+                }
 
-        if (segmentCount == 0)
-        {
-            segments =  [];
+                MemoryMarshal.TryGetArray(memory, out segments[index]);
+                index++;
+            }
+
             return true;
         }
-
-        segments = new ArraySegment<byte>[segmentCount];
-        var index = 0;
-        foreach (var memory in buffer)
-        {
-            if (memory.IsEmpty)
-            {
-                continue;
-            }
-
-            MemoryMarshal.TryGetArray(memory, out segments[index]);
-            index++;
-        }
-
-        return true;
     }
 }
