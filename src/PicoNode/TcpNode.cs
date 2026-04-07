@@ -196,7 +196,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
     private async Task AcceptLoopAsync()
     {
-        var acceptArgs = _eventArgsPool.RentAcceptArgs();
+        var acceptArgs = _eventArgsPool.Rent();
         try
         {
             while (!_cts.IsCancellationRequested)
@@ -341,20 +341,8 @@ public sealed class TcpNode : INode, IAsyncDisposable
         }
     }
 
-    internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null)
-    {
-        var faultHandler = Options.FaultHandler;
-        if (faultHandler is null)
-        {
-            return;
-        }
-
-        try
-        {
-            faultHandler(new NodeFault(code, operation, exception));
-        }
-        catch { }
-    }
+    internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null) =>
+        NodeHelper.ReportFault(Options.FaultHandler, code, operation, exception);
 
     public async ValueTask DisposeAsync()
     {

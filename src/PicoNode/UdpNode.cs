@@ -15,6 +15,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
     private readonly CancellationTokenSource _receiveCts = new();
     private readonly Channel<UdpDatagramLease>[] _queues;
     private readonly Task[] _workers;
+    private readonly Lock _stateLock = new();
     private Task? _receiveTask;
     private volatile NodeState _state;
     private bool _disposed;
@@ -71,12 +72,15 @@ public sealed class UdpNode : INode, IAsyncDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (_state != NodeState.Created)
+        lock (_stateLock)
         {
-            throw new InvalidOperationException("Node can only be started once.");
-        }
+            if (_state != NodeState.Created)
+            {
+                throw new InvalidOperationException("Node can only be started once.");
+            }
 
-        _state = NodeState.Starting;
+            _state = NodeState.Starting;
+        }
 
         try
         {
@@ -112,7 +116,16 @@ public sealed class UdpNode : INode, IAsyncDisposable
             return;
         }
 
-        _state = NodeState.Stopping;
+        lock (_stateLock)
+        {
+            if (_state is NodeState.Stopped or NodeState.Disposed or NodeState.Created)
+            {
+                return;
+            }
+
+            _state = NodeState.Stopping;
+        }
+
         _receiveCts.Cancel();
 
         try
@@ -137,13 +150,22 @@ public sealed class UdpNode : INode, IAsyncDisposable
             }
 
             await Task.WhenAll(_workers).WaitAsync(cancellationToken);
-            _state = NodeState.Stopped;
         }
         catch (OperationCanceledException)
         {
             if (cancellationToken.IsCancellationRequested)
             {
                 throw;
+            }
+        }
+        finally
+        {
+            lock (_stateLock)
+            {
+                if (_state != NodeState.Disposed)
+                {
+                    _state = NodeState.Stopped;
+                }
             }
         }
     }
@@ -280,20 +302,8 @@ public sealed class UdpNode : INode, IAsyncDisposable
         return hash % _queues.Length;
     }
 
-    internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null)
-    {
-        var faultHandler = Options.FaultHandler;
-        if (faultHandler is null)
-        {
-            return;
-        }
-
-        try
-        {
-            faultHandler(new NodeFault(code, operation, exception));
-        }
-        catch { }
-    }
+    internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null) =>
+        NodeHelper.ReportFault(Options.FaultHandler, code, operation, exception);
 
     public async ValueTask DisposeAsync()
     {
@@ -303,11 +313,28 @@ public sealed class UdpNode : INode, IAsyncDisposable
         }
 
         _disposed = true;
-        await StopAsync();
-        _receiveCts.Dispose();
-        _cts.Dispose();
-        _socket.Dispose();
-        _state = NodeState.Disposed;
-        GC.SuppressFinalize(this);
+        Exception? stopException = null;
+
+        try
+        {
+            await StopAsync();
+        }
+        catch (Exception ex)
+        {
+            stopException = ex;
+        }
+        finally
+        {
+            _receiveCts.Dispose();
+            _cts.Dispose();
+            _socket.Dispose();
+            _state = NodeState.Disposed;
+            GC.SuppressFinalize(this);
+        }
+
+        if (stopException is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(stopException).Throw();
+        }
     }
 }

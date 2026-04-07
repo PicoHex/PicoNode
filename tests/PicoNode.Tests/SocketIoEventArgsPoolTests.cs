@@ -3,10 +3,10 @@ namespace PicoNode.Tests;
 public sealed class SocketIoEventArgsPoolTests
 {
     [Test]
-    public async Task RentAcceptArgs_resets_socket_specific_state()
+    public async Task Rent_resets_socket_specific_state()
     {
         using var pool = new SocketIoEventArgsPool();
-        var eventArgs = pool.RentAcceptArgs();
+        var eventArgs = pool.Rent();
 
         eventArgs.AcceptSocket = new Socket(
             AddressFamily.InterNetwork,
@@ -20,7 +20,7 @@ public sealed class SocketIoEventArgsPoolTests
 
         pool.Return(eventArgs);
 
-        var rentedAgain = pool.RentAcceptArgs();
+        var rentedAgain = pool.Rent();
         try
         {
             await Assert.That(ReferenceEquals(eventArgs, rentedAgain)).IsTrue();
@@ -37,10 +37,10 @@ public sealed class SocketIoEventArgsPoolTests
     }
 
     [Test]
-    public async Task RentSendArgs_resets_buffer_and_accept_socket()
+    public async Task Rent_resets_buffer_and_accept_socket()
     {
         using var pool = new SocketIoEventArgsPool();
-        var eventArgs = pool.RentSendArgs();
+        var eventArgs = pool.Rent();
 
         await Assert.That(eventArgs.AcceptSocket).IsNull();
         await Assert.That(eventArgs.Count).IsEqualTo(0);
@@ -52,7 +52,7 @@ public sealed class SocketIoEventArgsPoolTests
     public async Task Return_after_dispose_does_not_throw()
     {
         var pool = new SocketIoEventArgsPool();
-        var eventArgs = pool.RentSendArgs();
+        var eventArgs = pool.Rent();
         eventArgs.SetBuffer(ArrayPool<byte>.Shared.Rent(8), 0, 8);
 
         pool.Dispose();
@@ -67,7 +67,7 @@ public sealed class SocketIoEventArgsPoolTests
         using var pool = new SocketIoEventArgsPool();
         pool.Dispose();
 
-        await Assert.That(() => pool.RentAcceptArgs()).Throws<ObjectDisposedException>();
+        await Assert.That(() => pool.Rent()).Throws<ObjectDisposedException>();
     }
 
     [Test]
@@ -77,6 +77,6 @@ public sealed class SocketIoEventArgsPoolTests
         pool.Dispose();
         pool.Dispose();
 
-        await Assert.That(() => pool.RentAcceptArgs()).Throws<ObjectDisposedException>();
+        await Assert.That(() => pool.Rent()).Throws<ObjectDisposedException>();
     }
 }

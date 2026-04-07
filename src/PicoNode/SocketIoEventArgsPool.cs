@@ -7,19 +7,11 @@ internal sealed class SocketIoEventArgsPool : IDisposable
 
     public SocketIoEventArgsPool() { }
 
-    public SocketIoEventArgs RentAcceptArgs()
+    public SocketIoEventArgs Rent()
     {
         var eventArgs = RentCore();
         eventArgs.AcceptSocket = null;
         eventArgs.SetBuffer(null, 0, 0);
-        return eventArgs;
-    }
-
-    public SocketIoEventArgs RentSendArgs()
-    {
-        var eventArgs = RentCore();
-        eventArgs.SetBuffer(null, 0, 0);
-        eventArgs.AcceptSocket = null;
         return eventArgs;
     }
 
