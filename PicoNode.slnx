@@ -12,5 +12,6 @@
     <File Path="tests\README.md" />
     <Project Path="tests/PicoNode.PerfHarness/PicoNode.PerfHarness.csproj" />
     <Project Path="tests/PicoNode.Smoke/PicoNode.Smoke.csproj" />
+    <Project Path="tests/PicoNode.Tests/PicoNode.Tests.csproj" />
   </Folder>
 </Solution>
