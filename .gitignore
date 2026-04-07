@@ -9,6 +9,7 @@
 *.user
 *.userosscache
 *.sln.docstates
+*.coverage
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
@@ -41,6 +42,7 @@ bld/
 
 # Visual Studio 2017 auto generated files
 Generated\ Files/
+.coverage-results/
 
 # MSTest test Results
 [Tt]est[Rr]esult*/
