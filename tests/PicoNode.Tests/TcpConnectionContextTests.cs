@@ -1,9 +1,4 @@
-using System.Buffers;
-using System.Net;
-using System.Net.Sockets;
-using System.Reflection;
-using PicoNode;
-using PicoNode.Abs;
+namespace PicoNode.Tests;
 
 public sealed class TcpConnectionContextTests
 {
@@ -20,6 +15,7 @@ public sealed class TcpConnectionContextTests
             await Assert.That(context.ConnectionId).IsEqualTo(connection.Id);
             await Assert.That(context.RemoteEndPoint).IsEqualTo(connection.RemoteEndPoint);
             await Assert.That(context.ConnectedAtUtc).IsEqualTo(connection.ConnectedAtUtc);
+            await Assert.That(context.LastActivityUtc).IsEqualTo(connection.LastActivityUtc);
         }
         finally
         {
@@ -67,7 +63,8 @@ public sealed class TcpConnectionContextTests
             context.Close();
             await Task.Delay(100);
 
-            await Assert.That(() => context.SendAsync(new ReadOnlySequence<byte>(new byte[] { 7 })))
+            await Assert
+                .That(() => context.SendAsync(new ReadOnlySequence<byte>(new byte[] { 7 })))
                 .Throws<InvalidOperationException>();
         }
         finally
@@ -119,13 +116,7 @@ public sealed class TcpConnectionContextTests
     }
 
     private static TcpNode CreateNode(IPEndPoint endpoint) =>
-        new(
-            new TcpNodeOptions
-            {
-                Endpoint = endpoint,
-                ConnectionHandler = new NoOpTcpHandler(),
-            }
-        );
+        new(new TcpNodeOptions { Endpoint = endpoint, ConnectionHandler = new NoOpTcpHandler(), });
 
     private static async Task<(Socket Client, Socket Server)> CreateConnectedSocketsAsync()
     {
@@ -143,8 +134,10 @@ public sealed class TcpConnectionContextTests
 
     private sealed class NoOpTcpHandler : ITcpConnectionHandler
     {
-        public Task OnConnectedAsync(ITcpConnectionContext connection, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public Task OnConnectedAsync(
+            ITcpConnectionContext connection,
+            CancellationToken cancellationToken
+        ) => Task.CompletedTask;
 
         public ValueTask<SequencePosition> OnReceivedAsync(
             ITcpConnectionContext connection,
