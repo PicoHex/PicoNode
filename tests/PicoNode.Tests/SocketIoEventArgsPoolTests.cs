@@ -1,7 +1,4 @@
-using System.Buffers;
-using System.Net;
-using System.Net.Sockets;
-using PicoNode;
+namespace PicoNode.Tests;
 
 public sealed class SocketIoEventArgsPoolTests
 {
@@ -11,7 +8,11 @@ public sealed class SocketIoEventArgsPoolTests
         using var pool = new SocketIoEventArgsPool();
         var eventArgs = pool.RentAcceptArgs();
 
-        eventArgs.AcceptSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        eventArgs.AcceptSocket = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
         eventArgs.DisconnectReuseSocket = true;
         eventArgs.RemoteEndPoint = new IPEndPoint(IPAddress.Loopback, 12345);
         eventArgs.UserToken = new object();

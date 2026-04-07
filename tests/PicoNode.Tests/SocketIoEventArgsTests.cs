@@ -1,8 +1,4 @@
-using System.Net;
-using System.Net.Sockets;
-using System.Reflection;
-using System.Threading.Tasks.Sources;
-using PicoNode;
+namespace PicoNode.Tests;
 
 public sealed class SocketIoEventArgsTests
 {
@@ -11,7 +7,11 @@ public sealed class SocketIoEventArgsTests
     {
         using var eventArgs = new SocketIoEventArgs
         {
-            AcceptSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp),
+            AcceptSocket = new Socket(
+                AddressFamily.InterNetwork,
+                SocketType.Stream,
+                ProtocolType.Tcp
+            ),
             DisconnectReuseSocket = true,
             RemoteEndPoint = new IPEndPoint(IPAddress.Loopback, 12345),
             UserToken = new object(),
@@ -30,12 +30,20 @@ public sealed class SocketIoEventArgsTests
     [Test]
     public async Task AcceptAsync_returns_completed_value_task_when_socket_completes_synchronously()
     {
-        using var listener = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        using var listener = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
         listener.Bind(new IPEndPoint(IPAddress.Loopback, 0));
         listener.Listen(1);
 
         var endpoint = (IPEndPoint)listener.LocalEndPoint!;
-        using var client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
         await client.ConnectAsync(endpoint);
 
         using var eventArgs = new SocketIoEventArgs();
@@ -64,7 +72,9 @@ public sealed class SocketIoEventArgsTests
 
             await Assert.That(ReferenceEquals(completedArgs, eventArgs)).IsTrue();
             await Assert.That(eventArgs.BytesTransferred).IsEqualTo(payload.Length);
-            await Assert.That(eventArgs.Buffer!.Take(payload.Length).ToArray()).IsEquivalentTo(payload);
+            await Assert
+                .That(eventArgs.Buffer!.Take(payload.Length).ToArray())
+                .IsEquivalentTo(payload);
         }
         finally
         {
@@ -104,17 +114,23 @@ public sealed class SocketIoEventArgsTests
     public async Task ExecuteAsync_throws_when_operation_is_already_pending()
     {
         using var eventArgs = new SocketIoEventArgs();
-        var startSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var startSignal = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
-        _ = InvokeExecuteAsync(eventArgs, _ =>
-        {
-            startSignal.TrySetResult();
-            return true;
-        });
+        _ = InvokeExecuteAsync(
+            eventArgs,
+            _ =>
+            {
+                startSignal.TrySetResult();
+                return true;
+            }
+        );
 
         await startSignal.Task.WaitAsync(TimeSpan.FromSeconds(1));
 
-        var exception = await Assert.That(async () => await InvokeExecuteAsync(eventArgs, _ => false))
+        var exception = await Assert
+            .That(async () => await InvokeExecuteAsync(eventArgs, _ => false))
             .Throws<TargetInvocationException>();
         await Assert.That(exception).IsNotNull();
         await Assert.That(exception!.InnerException).IsAssignableTo<InvalidOperationException>();
@@ -127,7 +143,8 @@ public sealed class SocketIoEventArgsTests
     {
         using var eventArgs = new SocketIoEventArgs();
 
-        var exception = await Assert.That(
+        var exception = await Assert
+            .That(
                 async () =>
                     await InvokeExecuteAsync(
                         eventArgs,
@@ -181,5 +198,4 @@ public sealed class SocketIoEventArgsTests
 
         method.Invoke(eventArgs, [eventArgs, eventArgs]);
     }
-
 }

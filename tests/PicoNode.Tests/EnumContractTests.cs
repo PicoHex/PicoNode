@@ -1,4 +1,4 @@
-using PicoNode.Abs;
+namespace PicoNode.Tests;
 
 public sealed class EnumContractTests
 {

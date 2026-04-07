@@ -1,24 +1,28 @@
-using System.Reflection;
-using System.Net;
-using PicoNode.Abs;
+namespace PicoNode.Tests;
 
 public sealed class InterfaceContractTests
 {
     [Test]
     public async Task INode_exposes_expected_members()
     {
-        var properties = typeof(INode).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+        var properties = typeof(INode)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Select(x => x.Name)
             .OrderBy(x => x)
             .ToArray();
-        var methods = typeof(INode).GetMethods(BindingFlags.Public | BindingFlags.Instance)
+        var methods = typeof(INode)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
             .Where(x => !x.IsSpecialName)
             .Select(x => x.Name)
             .OrderBy(x => x)
             .ToArray();
 
-        await Assert.That(properties).IsEquivalentTo([nameof(INode.LocalEndPoint), nameof(INode.State)]);
-        await Assert.That(methods).IsEquivalentTo([nameof(INode.StartAsync), nameof(INode.StopAsync)]);
+        await Assert
+            .That(properties)
+            .IsEquivalentTo([nameof(INode.LocalEndPoint), nameof(INode.State)]);
+        await Assert
+            .That(methods)
+            .IsEquivalentTo([nameof(INode.StartAsync), nameof(INode.StopAsync)]);
     }
 
     [Test]
@@ -26,17 +30,23 @@ public sealed class InterfaceContractTests
     {
         var type = typeof(ITcpConnectionContext);
 
-        await Assert.That(type.GetProperty(nameof(ITcpConnectionContext.ConnectionId))?.PropertyType)
+        await Assert
+            .That(type.GetProperty(nameof(ITcpConnectionContext.ConnectionId))?.PropertyType)
             .IsEqualTo(typeof(long));
-        await Assert.That(type.GetProperty(nameof(ITcpConnectionContext.RemoteEndPoint))?.PropertyType)
+        await Assert
+            .That(type.GetProperty(nameof(ITcpConnectionContext.RemoteEndPoint))?.PropertyType)
             .IsEqualTo(typeof(IPEndPoint));
-        await Assert.That(type.GetProperty(nameof(ITcpConnectionContext.ConnectedAtUtc))?.PropertyType)
+        await Assert
+            .That(type.GetProperty(nameof(ITcpConnectionContext.ConnectedAtUtc))?.PropertyType)
             .IsEqualTo(typeof(DateTimeOffset));
-        await Assert.That(type.GetProperty(nameof(ITcpConnectionContext.LastActivityUtc))?.PropertyType)
+        await Assert
+            .That(type.GetProperty(nameof(ITcpConnectionContext.LastActivityUtc))?.PropertyType)
             .IsEqualTo(typeof(DateTimeOffset));
-        await Assert.That(type.GetMethod(nameof(ITcpConnectionContext.SendAsync))?.ReturnType)
+        await Assert
+            .That(type.GetMethod(nameof(ITcpConnectionContext.SendAsync))?.ReturnType)
             .IsEqualTo(typeof(Task));
-        await Assert.That(type.GetMethod(nameof(ITcpConnectionContext.Close))?.ReturnType)
+        await Assert
+            .That(type.GetMethod(nameof(ITcpConnectionContext.Close))?.ReturnType)
             .IsEqualTo(typeof(void));
     }
 
@@ -45,11 +55,14 @@ public sealed class InterfaceContractTests
     {
         var type = typeof(ITcpConnectionHandler);
 
-        await Assert.That(type.GetMethod(nameof(ITcpConnectionHandler.OnConnectedAsync))?.ReturnType)
+        await Assert
+            .That(type.GetMethod(nameof(ITcpConnectionHandler.OnConnectedAsync))?.ReturnType)
             .IsEqualTo(typeof(Task));
-        await Assert.That(type.GetMethod(nameof(ITcpConnectionHandler.OnReceivedAsync))?.ReturnType)
+        await Assert
+            .That(type.GetMethod(nameof(ITcpConnectionHandler.OnReceivedAsync))?.ReturnType)
             .IsEqualTo(typeof(ValueTask<SequencePosition>));
-        await Assert.That(type.GetMethod(nameof(ITcpConnectionHandler.OnClosedAsync))?.ReturnType)
+        await Assert
+            .That(type.GetMethod(nameof(ITcpConnectionHandler.OnClosedAsync))?.ReturnType)
             .IsEqualTo(typeof(Task));
     }
 
@@ -58,9 +71,11 @@ public sealed class InterfaceContractTests
     {
         var type = typeof(IUdpDatagramContext);
 
-        await Assert.That(type.GetProperty(nameof(IUdpDatagramContext.RemoteEndPoint))?.PropertyType)
+        await Assert
+            .That(type.GetProperty(nameof(IUdpDatagramContext.RemoteEndPoint))?.PropertyType)
             .IsEqualTo(typeof(IPEndPoint));
-        await Assert.That(type.GetMethod(nameof(IUdpDatagramContext.SendAsync))?.ReturnType)
+        await Assert
+            .That(type.GetMethod(nameof(IUdpDatagramContext.SendAsync))?.ReturnType)
             .IsEqualTo(typeof(Task));
     }
 
@@ -69,7 +84,8 @@ public sealed class InterfaceContractTests
     {
         var type = typeof(IUdpDatagramHandler);
 
-        await Assert.That(type.GetMethod(nameof(IUdpDatagramHandler.OnDatagramAsync))?.ReturnType)
+        await Assert
+            .That(type.GetMethod(nameof(IUdpDatagramHandler.OnDatagramAsync))?.ReturnType)
             .IsEqualTo(typeof(Task));
     }
 }
