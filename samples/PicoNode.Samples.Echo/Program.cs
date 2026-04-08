@@ -53,7 +53,6 @@ file sealed class EchoTcpHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     )
     {
-        // Echo: 将接收到的数据原样发送回去，并消费整个缓冲区
         _ = connection.SendAsync(buffer, cancellationToken);
         return ValueTask.FromResult(buffer.End);
     }
