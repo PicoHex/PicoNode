@@ -136,10 +136,10 @@ internal static class HttpResponseSerializer
 
     private static void ValidateHeaderValue(string value, string headerName)
     {
-        if (ContainsInvalidHeaderText(value))
+        if (!IsValidHeaderValue(value))
         {
             throw new ArgumentException(
-                $"HTTP header '{headerName}' cannot contain CR or LF characters.",
+                $"HTTP header '{headerName}' contains invalid characters.",
                 nameof(HttpResponse.Headers)
             );
         }
@@ -152,17 +152,49 @@ internal static class HttpResponseSerializer
             return;
         }
 
-        if (ContainsInvalidHeaderText(value))
+        if (!IsValidHeaderValue(value))
         {
-            throw new ArgumentException("HTTP header values cannot contain CR or LF characters.", paramName);
+            throw new ArgumentException("HTTP header values contain invalid characters.", paramName);
         }
     }
 
     private static bool ContainsInvalidHeaderText(string value) =>
         value.Contains('\r') || value.Contains('\n');
 
-    private static bool IsHttpToken(string value) =>
-        value.Length > 0 && value.IndexOfAny([' ', '\t', '\r', '\n', ':']) < 0;
+    private static bool IsValidHeaderValue(string value)
+    {
+        foreach (var character in value)
+        {
+            if ((character < 0x20 && character != '\t') || character == 0x7F)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsHttpToken(string value)
+    {
+        if (value.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var character in value)
+        {
+            if (!IsHttpTokenCharacter(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsHttpTokenCharacter(char character) =>
+        char.IsAsciiLetterOrDigit(character)
+        || character is '!' or '#' or '$' or '%' or '&' or '\'' or '*' or '+' or '-' or '.' or '^' or '_' or '`' or '|' or '~';
 
     private static void WriteHeader(ArrayBufferWriter<byte> buffer, string name, string value)
     {

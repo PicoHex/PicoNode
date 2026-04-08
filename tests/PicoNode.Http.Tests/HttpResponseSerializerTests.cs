@@ -124,6 +124,20 @@ public sealed class HttpResponseSerializerTests
     }
 
     [Test]
+    public async Task Serialize_rejects_non_token_header_names()
+    {
+        var response = new HttpResponse
+        {
+            StatusCode = 200,
+            ReasonPhrase = "OK",
+            Headers = [new KeyValuePair<string, string>("Bad/Header", "value")],
+        };
+
+        await Assert.That(() => HttpResponseSerializer.Serialize(response))
+            .Throws<ArgumentException>();
+    }
+
+    [Test]
     public async Task Serialize_rejects_header_values_with_line_breaks()
     {
         var response = new HttpResponse
@@ -148,6 +162,34 @@ public sealed class HttpResponseSerializerTests
 
         await Assert.That(
             () => HttpResponseSerializer.Serialize(response, serverHeader: "PicoNode\r\nInjected: true")
+        ).Throws<ArgumentException>();
+    }
+
+    [Test]
+    public async Task Serialize_rejects_header_values_with_control_characters()
+    {
+        var response = new HttpResponse
+        {
+            StatusCode = 200,
+            ReasonPhrase = "OK",
+            Headers = [new KeyValuePair<string, string>("X-Test", $"value{(char)1}")],
+        };
+
+        await Assert.That(() => HttpResponseSerializer.Serialize(response))
+            .Throws<ArgumentException>();
+    }
+
+    [Test]
+    public async Task Serialize_rejects_server_header_values_with_control_characters()
+    {
+        var response = new HttpResponse
+        {
+            StatusCode = 204,
+            ReasonPhrase = "No Content",
+        };
+
+        await Assert.That(
+            () => HttpResponseSerializer.Serialize(response, serverHeader: $"PicoNode{(char)1}")
         ).Throws<ArgumentException>();
     }
 
