@@ -64,6 +64,30 @@ public sealed class HttpConnectionHandlerTests
     }
 
     [Test]
+    public async Task OnReceivedAsync_keeps_incomplete_declared_bodies_buffered_without_invoking_handler()
+    {
+        var buffer = new ReadOnlySequence<byte>(
+            Encoding.ASCII.GetBytes("POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhe")
+        );
+        var context = new RecordingConnectionContext();
+        var requestHandlerCalled = false;
+        var handler = CreateHandler(
+            (_, _) =>
+            {
+                requestHandlerCalled = true;
+                return ValueTask.FromResult(new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" });
+            }
+        );
+
+        var consumed = await handler.OnReceivedAsync(context, buffer, CancellationToken.None);
+
+        await Assert.That(buffer.Slice(consumed).Length).IsEqualTo(buffer.Length);
+        await Assert.That(requestHandlerCalled).IsFalse();
+        await Assert.That(context.SendCount).IsEqualTo(0);
+        await Assert.That(context.CloseCount).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task OnReceivedAsync_maps_malformed_requests_to_400_and_closes_connection()
     {
         var buffer = new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes("GET /bad\r\n\r\n"));
@@ -160,7 +184,7 @@ public sealed class HttpConnectionHandlerTests
     public async Task OnReceivedAsync_honors_connection_close_requests()
     {
         var buffer = new ReadOnlySequence<byte>(
-            Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nConnection: close\r\n\r\n")
+            Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
         );
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" }));
@@ -179,7 +203,7 @@ public sealed class HttpConnectionHandlerTests
     public async Task OnReceivedAsync_honors_connection_close_across_repeated_header_fields()
     {
         var buffer = new ReadOnlySequence<byte>(
-            Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nConnection: keep-alive\r\nConnection: close\r\n\r\n")
+            Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: keep-alive\r\nConnection: close\r\n\r\n")
         );
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" }));
@@ -188,6 +212,114 @@ public sealed class HttpConnectionHandlerTests
 
         await Assert.That(buffer.Slice(consumed).Length).IsEqualTo(0);
         await Assert.That(context.CloseCount).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task OnReceivedAsync_maps_missing_host_requests_to_400_and_closes_connection()
+    {
+        var buffer = new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nAccept: text/plain\r\n\r\n"));
+        var context = new RecordingConnectionContext();
+        var handler = CreateHandler(static (_, _) => throw new InvalidOperationException("should not be called"));
+
+        var consumed = await handler.OnReceivedAsync(context, buffer, CancellationToken.None);
+
+        await Assert.That(buffer.Slice(consumed).Length).IsEqualTo(buffer.Length);
+        await Assert.That(context.CloseCount).IsEqualTo(1);
+        await Assert.That(Encoding.ASCII.GetString(context.LastSent.ToArray()))
+            .IsEqualTo(
+                "HTTP/1.1 400 Bad Request\r\n"
+                    + "Connection: close\r\n"
+                    + "Content-Length: 0\r\n"
+                    + "\r\n"
+            );
+    }
+
+    [Test]
+    public async Task OnReceivedAsync_maps_duplicate_host_requests_to_400_and_closes_connection()
+    {
+        var buffer = new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: example.com\r\nHost: example.org\r\n\r\n"));
+        var context = new RecordingConnectionContext();
+        var handler = CreateHandler(static (_, _) => throw new InvalidOperationException("should not be called"));
+
+        var consumed = await handler.OnReceivedAsync(context, buffer, CancellationToken.None);
+
+        await Assert.That(buffer.Slice(consumed).Length).IsEqualTo(buffer.Length);
+        await Assert.That(context.CloseCount).IsEqualTo(1);
+        await Assert.That(Encoding.ASCII.GetString(context.LastSent.ToArray()))
+            .IsEqualTo(
+                "HTTP/1.1 400 Bad Request\r\n"
+                    + "Connection: close\r\n"
+                    + "Content-Length: 0\r\n"
+                    + "\r\n"
+            );
+    }
+
+    [Test]
+    public async Task OnReceivedAsync_maps_invalid_header_values_to_400_and_closes_connection()
+    {
+        var prefix = Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: example.com\r\nX-Test: ok");
+        var suffix = Encoding.ASCII.GetBytes("bad\r\n\r\n");
+        var bytes = new byte[prefix.Length + 1 + suffix.Length];
+
+        prefix.CopyTo(bytes, 0);
+        bytes[prefix.Length] = 0x01;
+        suffix.CopyTo(bytes, prefix.Length + 1);
+
+        var buffer = new ReadOnlySequence<byte>(bytes);
+        var context = new RecordingConnectionContext();
+        var handler = CreateHandler(static (_, _) => throw new InvalidOperationException("should not be called"));
+
+        var consumed = await handler.OnReceivedAsync(context, buffer, CancellationToken.None);
+
+        await Assert.That(buffer.Slice(consumed).Length).IsEqualTo(buffer.Length);
+        await Assert.That(context.CloseCount).IsEqualTo(1);
+        await Assert.That(Encoding.ASCII.GetString(context.LastSent.ToArray()))
+            .IsEqualTo(
+                "HTTP/1.1 400 Bad Request\r\n"
+                    + "Connection: close\r\n"
+                    + "Content-Length: 0\r\n"
+                    + "\r\n"
+            );
+    }
+
+    [Test]
+    public async Task OnReceivedAsync_maps_invalid_host_formats_to_400_and_closes_connection()
+    {
+        var buffer = new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes("GET / HTTP/1.1\r\nHost: http://example.com\r\n\r\n"));
+        var context = new RecordingConnectionContext();
+        var handler = CreateHandler(static (_, _) => throw new InvalidOperationException("should not be called"));
+
+        var consumed = await handler.OnReceivedAsync(context, buffer, CancellationToken.None);
+
+        await Assert.That(buffer.Slice(consumed).Length).IsEqualTo(buffer.Length);
+        await Assert.That(context.CloseCount).IsEqualTo(1);
+        await Assert.That(Encoding.ASCII.GetString(context.LastSent.ToArray()))
+            .IsEqualTo(
+                "HTTP/1.1 400 Bad Request\r\n"
+                    + "Connection: close\r\n"
+                    + "Content-Length: 0\r\n"
+                    + "\r\n"
+            );
+    }
+
+    [Test]
+    public async Task OnReceivedAsync_maps_invalid_request_targets_to_400_and_closes_connection()
+    {
+        var buffer = new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes("GET foo HTTP/1.1\r\nHost: example.com\r\n\r\n"));
+        var context = new RecordingConnectionContext();
+        var handler = CreateHandler(static (_, _) => throw new InvalidOperationException("should not be called"));
+
+        var consumed = await handler.OnReceivedAsync(context, buffer, CancellationToken.None);
+
+        await Assert.That(buffer.Slice(consumed).Length).IsEqualTo(buffer.Length);
+        await Assert.That(context.CloseCount).IsEqualTo(1);
+        await Assert.That(Encoding.ASCII.GetString(context.LastSent.ToArray()))
+            .IsEqualTo(
+                "HTTP/1.1 400 Bad Request\r\n"
+                    + "Connection: close\r\n"
+                    + "Content-Length: 0\r\n"
+                    + "\r\n"
+            );
     }
 
     [Test]

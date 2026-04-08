@@ -109,6 +109,8 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             HttpRequestParseError.UnsupportedFraming => (501, "Not Implemented"),
             HttpRequestParseError.InvalidRequestLine
             or HttpRequestParseError.InvalidHeader
+            or HttpRequestParseError.InvalidHostHeader
+            or HttpRequestParseError.MissingHostHeader
             or HttpRequestParseError.DuplicateContentLength
             or HttpRequestParseError.InvalidContentLength => (400, "Bad Request"),
             _ => (400, "Bad Request"),

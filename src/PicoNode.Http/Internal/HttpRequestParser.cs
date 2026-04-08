@@ -14,6 +14,8 @@ internal enum HttpRequestParseError
 {
     InvalidRequestLine,
     InvalidHeader,
+    InvalidHostHeader,
+    MissingHostHeader,
     DuplicateContentLength,
     InvalidContentLength,
     UnsupportedFraming,
@@ -73,6 +75,7 @@ internal static class HttpRequestParser
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var contentLength = 0L;
         var hasContentLength = false;
+        var hasHost = false;
 
         while (true)
         {
@@ -119,12 +122,32 @@ internal static class HttpRequestParser
                 hasContentLength = true;
             }
 
+            if (name.Equals("Host", StringComparison.OrdinalIgnoreCase))
+            {
+                if (hasHost)
+                {
+                    return HttpRequestParseResult.Rejected(buffer.Start, HttpRequestParseError.InvalidHostHeader);
+                }
+
+                if (!IsValidHostHeaderValue(value))
+                {
+                    return HttpRequestParseResult.Rejected(buffer.Start, HttpRequestParseError.InvalidHostHeader);
+                }
+
+                hasHost = true;
+            }
+
             headerFields.Add(new KeyValuePair<string, string>(name, value));
 
             if (!headers.TryAdd(name, value))
             {
                 headers[name] = headers[name] + ", " + value;
             }
+        }
+
+        if (!headers.ContainsKey("Host"))
+        {
+            return HttpRequestParseResult.Rejected(buffer.Start, HttpRequestParseError.MissingHostHeader);
         }
 
         if (contentLength > 0)
@@ -259,14 +282,225 @@ internal static class HttpRequestParser
         name = headerLine[..colonIndex];
         value = headerLine[(colonIndex + 1)..].Trim();
 
-        return IsHttpToken(name);
+        return IsHttpToken(name) && IsValidHeaderValue(value);
     }
 
-    private static bool IsHttpToken(string value) =>
-        value.Length > 0 && value.IndexOfAny([' ', '\t', '\r', '\n']) < 0;
+    private static bool IsHttpToken(string value)
+    {
+        if (value.Length == 0)
+        {
+            return false;
+        }
 
-    private static bool IsRequestTarget(string value) =>
-        value.Length > 0 && value.IndexOfAny([' ', '\t', '\r', '\n']) < 0;
+        foreach (var character in value)
+        {
+            if (!IsHttpTokenCharacter(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsRequestTarget(string value)
+    {
+        if (value.Length == 0 || value[0] != '/')
+        {
+            return false;
+        }
+
+        if (value.IndexOfAny([' ', '\t', '\r', '\n', '#']) >= 0)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < value.Length; index++)
+        {
+            if (value[index] != '%')
+            {
+                continue;
+            }
+
+            if (index + 2 >= value.Length || !IsHexDigit(value[index + 1]) || !IsHexDigit(value[index + 2]))
+            {
+                return false;
+            }
+
+            index += 2;
+        }
+
+        return true;
+    }
+
+    private static bool IsValidHeaderValue(string value)
+    {
+        foreach (var character in value)
+        {
+            if ((character < 0x20 && character != '\t') || character == 0x7F)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsValidHostHeaderValue(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        foreach (var character in value)
+        {
+            if (char.IsWhiteSpace(character) || character is ',' or '/' or '?' or '#' or '@')
+            {
+                return false;
+            }
+        }
+
+        if (value.Contains("://", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (value[0] == '[')
+        {
+            return TryParseBracketedIpv6Host(value);
+        }
+
+        var lastColon = value.LastIndexOf(':');
+        string hostPart;
+
+        if (lastColon >= 0)
+        {
+            hostPart = value[..lastColon];
+            var portPart = value[(lastColon + 1)..];
+
+            if (hostPart.Length == 0 || !IsValidPort(portPart))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            hostPart = value;
+        }
+
+        return IsValidHostName(hostPart) || IsValidIpv4Address(hostPart);
+    }
+
+    private static bool IsHttpTokenCharacter(char character) =>
+        char.IsAsciiLetterOrDigit(character)
+        || character is '!' or '#' or '$' or '%' or '&' or '\'' or '*' or '+' or '-' or '.' or '^' or '_' or '`' or '|' or '~';
+
+    private static bool TryParseBracketedIpv6Host(string value)
+    {
+        var closingBracketIndex = value.IndexOf(']');
+        if (closingBracketIndex <= 1)
+        {
+            return false;
+        }
+
+        var addressPart = value[1..closingBracketIndex];
+        if (!System.Net.IPAddress.TryParse(addressPart, out var address)
+            || address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6)
+        {
+            return false;
+        }
+
+        if (closingBracketIndex == value.Length - 1)
+        {
+            return true;
+        }
+
+        if (value[closingBracketIndex + 1] != ':')
+        {
+            return false;
+        }
+
+        return IsValidPort(value[(closingBracketIndex + 2)..]);
+    }
+
+    private static bool IsValidPort(string value)
+    {
+        if (value.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var character in value)
+        {
+            if (!char.IsAsciiDigit(character))
+            {
+                return false;
+            }
+        }
+
+        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var port)
+            && port is >= 0 and <= 65535;
+    }
+
+    private static bool IsValidHostName(string value)
+    {
+        if (value.Length == 0 || value.EndsWith(".", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var labels = value.Split('.');
+        foreach (var label in labels)
+        {
+            if (label.Length == 0)
+            {
+                return false;
+            }
+
+            if (!char.IsAsciiLetterOrDigit(label[0]) || !char.IsAsciiLetterOrDigit(label[^1]))
+            {
+                return false;
+            }
+
+            foreach (var character in label)
+            {
+                if (!char.IsAsciiLetterOrDigit(character) && character != '-')
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsValidIpv4Address(string value)
+    {
+        var segments = value.Split('.');
+        if (segments.Length != 4)
+        {
+            return false;
+        }
+
+        foreach (var segment in segments)
+        {
+            if (segment.Length == 0)
+            {
+                return false;
+            }
+
+            if (!byte.TryParse(segment, NumberStyles.None, CultureInfo.InvariantCulture, out _))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsHexDigit(char character) =>
+        character is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f';
 
     private static byte[] ToArray(ReadOnlySequence<byte> sequence)
     {
