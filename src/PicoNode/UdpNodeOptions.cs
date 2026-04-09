@@ -14,4 +14,7 @@ public sealed class UdpNodeOptions
     public int DatagramQueueCapacity { get; init; } = 1024;
     public bool EnableBroadcast { get; init; } = true;
     public UdpOverflowMode QueueOverflowMode { get; init; } = UdpOverflowMode.DropNewest;
+    public IPAddress? MulticastGroup { get; init; }
+    public int MulticastTtl { get; init; } = 1;
+    public bool MulticastLoopback { get; init; } = true;
 }

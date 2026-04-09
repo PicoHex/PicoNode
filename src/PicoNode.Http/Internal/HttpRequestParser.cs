@@ -20,17 +20,21 @@ internal enum HttpRequestParseError
     InvalidContentLength,
     UnsupportedFraming,
     RequestTooLarge,
+    InvalidChunkedBody,
 }
 
 internal readonly record struct HttpRequestParseResult(
     HttpRequestParseStatus Status,
     HttpRequest? Request,
     SequencePosition Consumed,
-    HttpRequestParseError? Error
+    HttpRequestParseError? Error,
+    bool ExpectsContinue = false
 )
 {
-    public static HttpRequestParseResult Incomplete(SequencePosition consumed) =>
-        new(HttpRequestParseStatus.Incomplete, null, consumed, null);
+    public static HttpRequestParseResult Incomplete(
+        SequencePosition consumed,
+        bool expectsContinue = false
+    ) => new(HttpRequestParseStatus.Incomplete, null, consumed, null, expectsContinue);
 
     public static HttpRequestParseResult Success(HttpRequest request, SequencePosition consumed) =>
         new(HttpRequestParseStatus.Success, request, consumed, null);
@@ -86,7 +90,7 @@ internal static class HttpRequestParser
             );
         }
 
-        var headerResult = ParseHeaders(ref reader, options);
+        var headerResult = ParseHeaders(ref reader, options, version);
 
         if (headerResult.IsIncomplete)
         {
@@ -98,6 +102,20 @@ internal static class HttpRequestParser
             return HttpRequestParseResult.Rejected(buffer.Start, headerError);
         }
 
+        if (headerResult.IsChunked)
+        {
+            return ParseChunkedBody(
+                ref reader,
+                options,
+                method,
+                target,
+                version,
+                headerResult.HeaderFields,
+                headerResult.Headers,
+                headerResult.ExpectsContinue
+            );
+        }
+
         return ParseBody(
             ref reader,
             options,
@@ -106,7 +124,8 @@ internal static class HttpRequestParser
             version,
             headerResult.HeaderFields,
             headerResult.Headers,
-            headerResult.ContentLength
+            headerResult.ContentLength,
+            headerResult.ExpectsContinue
         );
     }
 
@@ -194,13 +213,16 @@ internal static class HttpRequestParser
         List<KeyValuePair<string, string>> HeaderFields,
         Dictionary<string, string> Headers,
         long ContentLength,
+        bool IsChunked,
+        bool ExpectsContinue,
         HttpRequestParseError? Error,
         bool IsIncomplete
     );
 
     private static HeaderParseState ParseHeaders(
         ref BufferReader reader,
-        HttpConnectionHandlerOptions options
+        HttpConnectionHandlerOptions options,
+        string version
     )
     {
         var headerFields = new List<KeyValuePair<string, string>>();
@@ -208,6 +230,7 @@ internal static class HttpRequestParser
         var contentLength = 0L;
         var hasContentLength = false;
         var hasHost = false;
+        var isChunked = false;
 
         while (true)
         {
@@ -221,8 +244,24 @@ internal static class HttpRequestParser
             )
             {
                 return error is null
-                    ? new HeaderParseState(headerFields, headers, contentLength, null, true)
-                    : new HeaderParseState(headerFields, headers, contentLength, error, false);
+                    ? new HeaderParseState(
+                        headerFields,
+                        headers,
+                        contentLength,
+                        false,
+                        false,
+                        null,
+                        true
+                    )
+                    : new HeaderParseState(
+                        headerFields,
+                        headers,
+                        contentLength,
+                        false,
+                        false,
+                        error,
+                        false
+                    );
             }
 
             if (headerLineBytes.Length == 0)
@@ -236,6 +275,8 @@ internal static class HttpRequestParser
                     headerFields,
                     headers,
                     contentLength,
+                    false,
+                    false,
                     HttpRequestParseError.InvalidHeader,
                     false
                 );
@@ -243,13 +284,20 @@ internal static class HttpRequestParser
 
             if (name.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
             {
-                return new HeaderParseState(
-                    headerFields,
-                    headers,
-                    contentLength,
-                    HttpRequestParseError.UnsupportedFraming,
-                    false
-                );
+                if (!value.Equals("chunked", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new HeaderParseState(
+                        headerFields,
+                        headers,
+                        contentLength,
+                        false,
+                        false,
+                        HttpRequestParseError.UnsupportedFraming,
+                        false
+                    );
+                }
+
+                isChunked = true;
             }
 
             if (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
@@ -260,6 +308,8 @@ internal static class HttpRequestParser
                         headerFields,
                         headers,
                         contentLength,
+                        false,
+                        false,
                         HttpRequestParseError.DuplicateContentLength,
                         false
                     );
@@ -279,6 +329,8 @@ internal static class HttpRequestParser
                         headerFields,
                         headers,
                         contentLength,
+                        false,
+                        false,
                         HttpRequestParseError.InvalidContentLength,
                         false
                     );
@@ -295,6 +347,8 @@ internal static class HttpRequestParser
                         headerFields,
                         headers,
                         contentLength,
+                        false,
+                        false,
                         HttpRequestParseError.InvalidHostHeader,
                         false
                     );
@@ -306,6 +360,8 @@ internal static class HttpRequestParser
                         headerFields,
                         headers,
                         contentLength,
+                        false,
+                        false,
                         HttpRequestParseError.InvalidHostHeader,
                         false
                     );
@@ -322,18 +378,46 @@ internal static class HttpRequestParser
             }
         }
 
-        if (!hasHost)
+        if (!hasHost && version == "HTTP/1.1")
         {
             return new HeaderParseState(
                 headerFields,
                 headers,
                 contentLength,
+                false,
+                false,
                 HttpRequestParseError.MissingHostHeader,
                 false
             );
         }
 
-        return new HeaderParseState(headerFields, headers, contentLength, null, false);
+        if (isChunked && hasContentLength)
+        {
+            return new HeaderParseState(
+                headerFields,
+                headers,
+                contentLength,
+                false,
+                false,
+                HttpRequestParseError.InvalidRequestLine,
+                false
+            );
+        }
+
+        var expectsContinue =
+            version == "HTTP/1.1"
+            && headers.TryGetValue("Expect", out var expectValue)
+            && expectValue.Equals("100-continue", StringComparison.OrdinalIgnoreCase);
+
+        return new HeaderParseState(
+            headerFields,
+            headers,
+            contentLength,
+            isChunked,
+            expectsContinue,
+            null,
+            false
+        );
     }
 
     private static HttpRequestParseResult ParseBody(
@@ -344,7 +428,8 @@ internal static class HttpRequestParser
         string version,
         List<KeyValuePair<string, string>> headerFields,
         Dictionary<string, string> headers,
-        long contentLength
+        long contentLength,
+        bool expectsContinue
     )
     {
         var body = ReadOnlyMemory<byte>.Empty;
@@ -365,7 +450,7 @@ internal static class HttpRequestParser
             var bodyBytes = reader.SliceFromPosition();
             if (bodyBytes.Length < contentLength)
             {
-                return HttpRequestParseResult.Incomplete(reader.BufferStart);
+                return HttpRequestParseResult.Incomplete(reader.BufferStart, expectsContinue);
             }
 
             var bodyArray = new byte[contentLength];
@@ -387,6 +472,174 @@ internal static class HttpRequestParser
             reader.Position
         );
     }
+
+    private static HttpRequestParseResult ParseChunkedBody(
+        ref BufferReader reader,
+        HttpConnectionHandlerOptions options,
+        string method,
+        string target,
+        string version,
+        List<KeyValuePair<string, string>> headerFields,
+        Dictionary<string, string> headers,
+        bool expectsContinue
+    )
+    {
+        var bodyParts = new List<byte[]>();
+        var totalBodyLength = 0L;
+
+        while (true)
+        {
+            if (
+                !reader.TryReadLine(
+                    options.MaxRequestBytes,
+                    HttpRequestParseError.InvalidChunkedBody,
+                    out var chunkSizeLine,
+                    out var error
+                )
+            )
+            {
+                return error is null
+                    ? HttpRequestParseResult.Incomplete(reader.BufferStart, expectsContinue)
+                    : HttpRequestParseResult.Rejected(reader.BufferStart, error.Value);
+            }
+
+            var chunkSize = ParseChunkSize(chunkSizeLine);
+            if (chunkSize < 0)
+            {
+                return HttpRequestParseResult.Rejected(
+                    reader.BufferStart,
+                    HttpRequestParseError.InvalidChunkedBody
+                );
+            }
+
+            if (chunkSize == 0)
+            {
+                while (true)
+                {
+                    if (
+                        !reader.TryReadLine(
+                            options.MaxRequestBytes,
+                            HttpRequestParseError.InvalidChunkedBody,
+                            out var trailerLine,
+                            out var trailerError
+                        )
+                    )
+                    {
+                        return trailerError is null
+                            ? HttpRequestParseResult.Incomplete(reader.BufferStart, expectsContinue)
+                            : HttpRequestParseResult.Rejected(
+                                reader.BufferStart,
+                                trailerError.Value
+                            );
+                    }
+
+                    if (trailerLine.Length == 0)
+                    {
+                        break;
+                    }
+                }
+
+                break;
+            }
+
+            totalBodyLength += chunkSize;
+            if (
+                totalBodyLength > int.MaxValue
+                || reader.ConsumedBytes + totalBodyLength > options.MaxRequestBytes
+            )
+            {
+                return HttpRequestParseResult.Rejected(
+                    reader.BufferStart,
+                    HttpRequestParseError.RequestTooLarge
+                );
+            }
+
+            var remaining = reader.SliceFromPosition();
+            if (remaining.Length < chunkSize + 2)
+            {
+                return HttpRequestParseResult.Incomplete(reader.BufferStart, expectsContinue);
+            }
+
+            var crlfStart = remaining.Slice(chunkSize, 2);
+            if (GetFirstByte(crlfStart) != (byte)'\r' || GetLastByte(crlfStart) != (byte)'\n')
+            {
+                return HttpRequestParseResult.Rejected(
+                    reader.BufferStart,
+                    HttpRequestParseError.InvalidChunkedBody
+                );
+            }
+
+            var chunkData = new byte[chunkSize];
+            remaining.Slice(0, chunkSize).CopyTo(chunkData);
+            bodyParts.Add(chunkData);
+
+            reader.Advance(chunkSize + 2);
+            reader.ConsumedBytes += chunkSize + 2;
+        }
+
+        var body = new byte[totalBodyLength];
+        var offset = 0;
+        foreach (var part in bodyParts)
+        {
+            part.CopyTo(body, offset);
+            offset += part.Length;
+        }
+
+        return HttpRequestParseResult.Success(
+            new HttpRequest
+            {
+                Method = method,
+                Target = target,
+                Version = version,
+                HeaderFields = headerFields,
+                Headers = headers,
+                Body = body,
+            },
+            reader.Position
+        );
+    }
+
+    private static int ParseChunkSize(ReadOnlySpan<byte> line)
+    {
+        if (line.Length == 0)
+        {
+            return -1;
+        }
+
+        var semiColon = line.IndexOf((byte)';');
+        var hexPart = semiColon >= 0 ? line[..semiColon] : line;
+
+        if (hexPart.Length == 0)
+        {
+            return -1;
+        }
+
+        var size = 0;
+        foreach (var b in hexPart)
+        {
+            if (!IsHexDigit(b))
+            {
+                return -1;
+            }
+
+            size = (size << 4) | HexValue(b);
+            if (size < 0)
+            {
+                return -1;
+            }
+        }
+
+        return size;
+    }
+
+    private static int HexValue(byte b) =>
+        b switch
+        {
+            >= (byte)'0' and <= (byte)'9' => b - (byte)'0',
+            >= (byte)'A' and <= (byte)'F' => b - (byte)'A' + 10,
+            >= (byte)'a' and <= (byte)'f' => b - (byte)'a' + 10,
+            _ => -1,
+        };
 
     private static bool TryParseRequestLine(
         ReadOnlySpan<byte> line,
@@ -421,18 +674,26 @@ internal static class HttpRequestParser
         var methodSpan = line[..firstSpace];
         var targetSpan = rest[..secondSpace];
 
-        if (
-            !HttpCharacters.IsHttpToken(methodSpan)
-            || !IsRequestTarget(targetSpan)
-            || !versionSpan.SequenceEqual("HTTP/1.1"u8)
-        )
+        if (!HttpCharacters.IsHttpToken(methodSpan) || !IsRequestTarget(targetSpan))
+        {
+            return false;
+        }
+
+        if (versionSpan.SequenceEqual("HTTP/1.1"u8))
+        {
+            version = "HTTP/1.1";
+        }
+        else if (versionSpan.SequenceEqual("HTTP/1.0"u8))
+        {
+            version = "HTTP/1.0";
+        }
+        else
         {
             return false;
         }
 
         method = Encoding.ASCII.GetString(methodSpan);
         target = Encoding.ASCII.GetString(targetSpan);
-        version = "HTTP/1.1";
         return true;
     }
 
@@ -525,6 +786,8 @@ internal static class HttpRequestParser
                 and <= (byte)'F'
                 or >= (byte)'a'
                 and <= (byte)'f';
+
+    private static byte GetFirstByte(ReadOnlySequence<byte> sequence) => sequence.FirstSpan[0];
 
     private static byte GetLastByte(ReadOnlySequence<byte> sequence) =>
         sequence.Slice(sequence.Length - 1).FirstSpan[0];

@@ -8,6 +8,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
     private const string OperationAcceptCancelled = "tcp.accept.cancelled";
     private const string OperationRejectLimit = "tcp.reject.limit";
     private const string OperationRejectTracking = "tcp.reject.tracking";
+    private const string OperationTls = "tcp.tls";
 
     private readonly Socket _listener;
     private readonly SocketIoEventArgsPool _eventArgsPool;
@@ -19,6 +20,11 @@ public sealed class TcpNode : INode, IAsyncDisposable
     private TaskCompletionSource<bool>? _drained;
     private volatile NodeState _state;
     private bool _disposed;
+    private long _totalAccepted;
+    private long _totalRejected;
+    private long _totalClosed;
+    private long _totalBytesSent;
+    private long _totalBytesReceived;
 
     public TcpNode(TcpNodeOptions options)
     {
@@ -76,6 +82,21 @@ public sealed class TcpNode : INode, IAsyncDisposable
     public EndPoint LocalEndPoint => _listener.LocalEndPoint ?? Options.Endpoint;
 
     public NodeState State => _state;
+
+    public TcpNodeMetrics GetMetrics() =>
+        new(
+            Interlocked.Read(ref _totalAccepted),
+            Interlocked.Read(ref _totalRejected),
+            Interlocked.Read(ref _totalClosed),
+            _connections.Count,
+            Interlocked.Read(ref _totalBytesSent),
+            Interlocked.Read(ref _totalBytesReceived)
+        );
+
+    internal void RecordBytesSent(long count) => Interlocked.Add(ref _totalBytesSent, count);
+
+    internal void RecordBytesReceived(long count) =>
+        Interlocked.Add(ref _totalBytesReceived, count);
 
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -136,7 +157,9 @@ public sealed class TcpNode : INode, IAsyncDisposable
             _state = NodeState.Stopping;
             drained = _connections.IsEmpty
                 ? null
-                : new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                : new TaskCompletionSource<bool>(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
             _drained = drained;
         }
 
@@ -260,19 +283,61 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
         if (_connections.Count >= Options.MaxConnections)
         {
+            Interlocked.Increment(ref _totalRejected);
             RejectAcceptedSocket(socket, NodeFaultCode.SessionRejected, OperationRejectLimit);
             return;
         }
 
-        var connection = new TcpConnection(this, socket);
+        Stream? stream = null;
+        if (Options.SslOptions is not null)
+        {
+            stream = await NegotiateTlsAsync(socket);
+            if (stream is null)
+            {
+                return;
+            }
+        }
+
+        var connection = new TcpConnection(this, socket, stream);
         if (!TryTrackConnection(connection))
         {
             ReportFault(NodeFaultCode.SessionRejected, OperationRejectTracking);
+            Interlocked.Increment(ref _totalRejected);
             await connection.DisposeAsync();
             return;
         }
 
+        Interlocked.Increment(ref _totalAccepted);
         _ = connection.RunAsync(Options.ConnectionHandler);
+    }
+
+    private async Task<SslStream?> NegotiateTlsAsync(Socket socket)
+    {
+        var networkStream = new NetworkStream(socket, ownsSocket: false);
+        var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
+        try
+        {
+            await sslStream.AuthenticateAsServerAsync(Options.SslOptions!, _cts.Token);
+            return sslStream;
+        }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+            await sslStream.DisposeAsync();
+            socket.Dispose();
+            return null;
+        }
+        catch (Exception ex)
+        {
+            ReportFault(NodeFaultCode.TlsFailed, OperationTls, ex);
+            await sslStream.DisposeAsync();
+            try
+            {
+                socket.Shutdown(SocketShutdown.Both);
+            }
+            catch { }
+            socket.Dispose();
+            return null;
+        }
     }
 
     private void RejectAcceptedSocket(Socket socket, NodeFaultCode code, string operation)
@@ -332,6 +397,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
     internal void OnConnectionClosed(TcpConnection connection)
     {
+        Interlocked.Increment(ref _totalClosed);
         lock (_stateLock)
         {
             if (_connections.TryRemove(connection.Id, out _) && _connections.IsEmpty)

@@ -25,7 +25,8 @@ public sealed class HttpResponseSerializerTests
         var segments = GetSegments(serialized);
 
         await Assert.That(segments.Length).IsEqualTo(2);
-        await Assert.That(GetAsciiString(segments[0]))
+        await Assert
+            .That(GetAsciiString(segments[0]))
             .IsEqualTo(
                 "HTTP/1.1 200 OK\r\n"
                     + "Content-Type: text/plain\r\n"
@@ -33,7 +34,8 @@ public sealed class HttpResponseSerializerTests
                     + "\r\n"
             );
         await Assert.That(GetAsciiString(segments[1])).IsEqualTo("pong");
-        await Assert.That(GetAsciiString(serialized.ToArray()))
+        await Assert
+            .That(GetAsciiString(serialized.ToArray()))
             .IsEqualTo(
                 "HTTP/1.1 200 OK\r\n"
                     + "Content-Type: text/plain\r\n"
@@ -64,7 +66,8 @@ public sealed class HttpResponseSerializerTests
         );
 
         await Assert.That(serialized.IsSingleSegment).IsTrue();
-        await Assert.That(GetAsciiString(serialized.ToArray()))
+        await Assert
+            .That(GetAsciiString(serialized.ToArray()))
             .IsEqualTo(
                 "HTTP/1.1 204 No Content\r\n"
                     + "X-Trace-Id: abc123\r\n"
@@ -82,17 +85,15 @@ public sealed class HttpResponseSerializerTests
         {
             StatusCode = 200,
             ReasonPhrase = "OK",
-            Headers = [new KeyValuePair<string, string>("Server", "application")],
+            Headers =  [new KeyValuePair<string, string>("Server", "application")],
         };
 
         var serialized = HttpResponseSerializer.Serialize(response);
 
-        await Assert.That(GetAsciiString(serialized.ToArray()))
+        await Assert
+            .That(GetAsciiString(serialized.ToArray()))
             .IsEqualTo(
-                "HTTP/1.1 200 OK\r\n"
-                    + "Server: application\r\n"
-                    + "Content-Length: 0\r\n"
-                    + "\r\n"
+                "HTTP/1.1 200 OK\r\n" + "Server: application\r\n" + "Content-Length: 0\r\n" + "\r\n"
             );
     }
 
@@ -105,7 +106,8 @@ public sealed class HttpResponseSerializerTests
             ReasonPhrase = "OK\r\nInjected: value",
         };
 
-        await Assert.That(() => HttpResponseSerializer.Serialize(response))
+        await Assert
+            .That(() => HttpResponseSerializer.Serialize(response))
             .Throws<ArgumentException>();
     }
 
@@ -116,10 +118,11 @@ public sealed class HttpResponseSerializerTests
         {
             StatusCode = 200,
             ReasonPhrase = "OK",
-            Headers = [new KeyValuePair<string, string>("Bad:Header", "value")],
+            Headers =  [new KeyValuePair<string, string>("Bad:Header", "value")],
         };
 
-        await Assert.That(() => HttpResponseSerializer.Serialize(response))
+        await Assert
+            .That(() => HttpResponseSerializer.Serialize(response))
             .Throws<ArgumentException>();
     }
 
@@ -130,10 +133,11 @@ public sealed class HttpResponseSerializerTests
         {
             StatusCode = 200,
             ReasonPhrase = "OK",
-            Headers = [new KeyValuePair<string, string>("Bad/Header", "value")],
+            Headers =  [new KeyValuePair<string, string>("Bad/Header", "value")],
         };
 
-        await Assert.That(() => HttpResponseSerializer.Serialize(response))
+        await Assert
+            .That(() => HttpResponseSerializer.Serialize(response))
             .Throws<ArgumentException>();
     }
 
@@ -144,25 +148,28 @@ public sealed class HttpResponseSerializerTests
         {
             StatusCode = 200,
             ReasonPhrase = "OK",
-            Headers = [new KeyValuePair<string, string>("X-Test", "value\r\nInjected: true")],
+            Headers =  [new KeyValuePair<string, string>("X-Test", "value\r\nInjected: true")],
         };
 
-        await Assert.That(() => HttpResponseSerializer.Serialize(response))
+        await Assert
+            .That(() => HttpResponseSerializer.Serialize(response))
             .Throws<ArgumentException>();
     }
 
     [Test]
     public async Task Serialize_rejects_invalid_server_header_input()
     {
-        var response = new HttpResponse
-        {
-            StatusCode = 204,
-            ReasonPhrase = "No Content",
-        };
+        var response = new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content", };
 
-        await Assert.That(
-            () => HttpResponseSerializer.Serialize(response, serverHeader: "PicoNode\r\nInjected: true")
-        ).Throws<ArgumentException>();
+        await Assert
+            .That(
+                () =>
+                    HttpResponseSerializer.Serialize(
+                        response,
+                        serverHeader: "PicoNode\r\nInjected: true"
+                    )
+            )
+            .Throws<ArgumentException>();
     }
 
     [Test]
@@ -172,25 +179,64 @@ public sealed class HttpResponseSerializerTests
         {
             StatusCode = 200,
             ReasonPhrase = "OK",
-            Headers = [new KeyValuePair<string, string>("X-Test", $"value{(char)1}")],
+            Headers =  [new KeyValuePair<string, string>("X-Test", $"value{(char)1}")],
         };
 
-        await Assert.That(() => HttpResponseSerializer.Serialize(response))
+        await Assert
+            .That(() => HttpResponseSerializer.Serialize(response))
             .Throws<ArgumentException>();
     }
 
     [Test]
     public async Task Serialize_rejects_server_header_values_with_control_characters()
     {
+        var response = new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content", };
+
+        await Assert
+            .That(
+                () => HttpResponseSerializer.Serialize(response, serverHeader: $"PicoNode{(char)1}")
+            )
+            .Throws<ArgumentException>();
+    }
+
+    [Test]
+    public async Task SerializeChunkedHeaders_emits_transfer_encoding_and_no_content_length()
+    {
         var response = new HttpResponse
         {
-            StatusCode = 204,
-            ReasonPhrase = "No Content",
+            StatusCode = 200,
+            ReasonPhrase = "OK",
+            Headers =
+            [
+                new KeyValuePair<string, string>("X-Custom", "value"),
+                new KeyValuePair<string, string>("Content-Length", "999"),
+            ],
         };
 
-        await Assert.That(
-            () => HttpResponseSerializer.Serialize(response, serverHeader: $"PicoNode{(char)1}")
-        ).Throws<ArgumentException>();
+        var serialized = HttpResponseSerializer.SerializeChunkedHeaders(response);
+
+        var text = GetAsciiString(serialized.ToArray());
+        await Assert.That(text).Contains("Transfer-Encoding: chunked");
+        await Assert.That(text).DoesNotContain("Content-Length");
+        await Assert.That(text).Contains("X-Custom: value");
+        await Assert.That(text).EndsWith("\r\n\r\n");
+    }
+
+    [Test]
+    public async Task FormatChunk_formats_data_with_hex_size_and_crlf_delimiters()
+    {
+        var data = System.Text.Encoding.ASCII.GetBytes("Hello");
+        var chunk = HttpResponseSerializer.FormatChunk(data);
+
+        await Assert.That(GetAsciiString(chunk.ToArray())).IsEqualTo("5\r\nHello\r\n");
+    }
+
+    [Test]
+    public async Task ChunkTerminator_returns_final_chunk()
+    {
+        var terminator = HttpResponseSerializer.ChunkTerminator;
+
+        await Assert.That(GetAsciiString(terminator.ToArray())).IsEqualTo("0\r\n\r\n");
     }
 
     private static ReadOnlyMemory<byte>[] GetSegments(ReadOnlySequence<byte> sequence)

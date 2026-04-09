@@ -3,10 +3,13 @@ namespace PicoNode.Http.Internal;
 internal static class HttpResponseSerializer
 {
     private const string ContentLengthHeaderName = "Content-Length";
+    private const string TransferEncodingHeaderName = "Transfer-Encoding";
     private const string ConnectionHeaderName = "Connection";
     private const string ServerHeaderName = "Server";
     private const string CloseConnectionHeaderValue = "close";
+    private const string ChunkedHeaderValue = "chunked";
     private static readonly System.Text.Encoding HeaderEncoding = System.Text.Encoding.ASCII;
+    private static readonly byte[] ChunkTerminatorBytes = "0\r\n\r\n"u8.ToArray();
 
     public static ReadOnlySequence<byte> Serialize(
         HttpResponse response,
@@ -26,7 +29,9 @@ internal static class HttpResponseSerializer
             ValidateHeaderValue(header.Value, header.Key);
         }
 
-        var headerBuffer = new ArrayBufferWriter<byte>(EstimateHeaderLength(response, closeConnection, serverHeader));
+        var headerBuffer = new ArrayBufferWriter<byte>(
+            EstimateHeaderLength(response, closeConnection, serverHeader)
+        );
 
         WriteAscii(headerBuffer, response.Version);
         WriteAscii(headerBuffer, " ");
@@ -55,11 +60,7 @@ internal static class HttpResponseSerializer
             WriteHeader(headerBuffer, ConnectionHeaderName, CloseConnectionHeaderValue);
         }
 
-        WriteHeader(
-            headerBuffer,
-            ContentLengthHeaderName,
-            response.Body.Length
-        );
+        WriteHeader(headerBuffer, ContentLengthHeaderName, response.Body.Length);
         WriteCrlf(headerBuffer);
 
         if (response.Body.IsEmpty)
@@ -72,7 +73,94 @@ internal static class HttpResponseSerializer
         return new ReadOnlySequence<byte>(firstSegment, 0, lastSegment, lastSegment.Memory.Length);
     }
 
-    private static int EstimateHeaderLength(HttpResponse response, bool closeConnection, string? serverHeader)
+    public static ReadOnlySequence<byte> SerializeChunkedHeaders(
+        HttpResponse response,
+        bool closeConnection = false,
+        string? serverHeader = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(response);
+
+        ValidateStatusLinePart(response.Version, nameof(response.Version));
+        ValidateStatusLinePart(response.ReasonPhrase, nameof(response.ReasonPhrase));
+        ValidateOptionalHeaderValue(serverHeader, nameof(serverHeader));
+
+        foreach (var header in response.Headers)
+        {
+            ValidateHeaderName(header.Key);
+            ValidateHeaderValue(header.Value, header.Key);
+        }
+
+        var headerBuffer = new ArrayBufferWriter<byte>(256);
+
+        WriteAscii(headerBuffer, response.Version);
+        WriteAscii(headerBuffer, " ");
+        WriteInt(headerBuffer, response.StatusCode);
+        WriteAscii(headerBuffer, " ");
+        WriteAscii(headerBuffer, response.ReasonPhrase);
+        WriteCrlf(headerBuffer);
+
+        foreach (var header in response.Headers)
+        {
+            if (ShouldSkipChunkedHeader(header.Key, serverHeader))
+            {
+                continue;
+            }
+
+            WriteHeader(headerBuffer, header.Key, header.Value);
+        }
+
+        if (!string.IsNullOrEmpty(serverHeader))
+        {
+            WriteHeader(headerBuffer, ServerHeaderName, serverHeader);
+        }
+
+        WriteHeader(headerBuffer, TransferEncodingHeaderName, ChunkedHeaderValue);
+
+        if (closeConnection)
+        {
+            WriteHeader(headerBuffer, ConnectionHeaderName, CloseConnectionHeaderValue);
+        }
+
+        WriteCrlf(headerBuffer);
+
+        return new ReadOnlySequence<byte>(headerBuffer.WrittenMemory);
+    }
+
+    public static ReadOnlySequence<byte> FormatChunk(ReadOnlyMemory<byte> data)
+    {
+        if (data.IsEmpty)
+        {
+            return ReadOnlySequence<byte>.Empty;
+        }
+
+        var sizeText = data.Length.ToString("x");
+        var prefix = System.Text.Encoding.ASCII.GetBytes(sizeText + "\r\n");
+        var suffix = "\r\n"u8.ToArray();
+
+        var first = new BufferSegment(prefix);
+        var dataSegment = first.Append(data);
+        var last = dataSegment.Append(suffix);
+
+        return new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);
+    }
+
+    public static ReadOnlySequence<byte> ChunkTerminator => new(ChunkTerminatorBytes);
+
+    private static bool ShouldSkipChunkedHeader(string name, string? serverHeader) =>
+        name.Equals(ContentLengthHeaderName, StringComparison.OrdinalIgnoreCase)
+        || name.Equals(TransferEncodingHeaderName, StringComparison.OrdinalIgnoreCase)
+        || name.Equals(ConnectionHeaderName, StringComparison.OrdinalIgnoreCase)
+        || (
+            !string.IsNullOrEmpty(serverHeader)
+            && name.Equals(ServerHeaderName, StringComparison.OrdinalIgnoreCase)
+        );
+
+    private static int EstimateHeaderLength(
+        HttpResponse response,
+        bool closeConnection,
+        string? serverHeader
+    )
     {
         var length = response.Version.Length + response.ReasonPhrase.Length + 32;
 
@@ -116,13 +204,19 @@ internal static class HttpResponseSerializer
     private static bool ShouldSkipApplicationHeader(string name, string? serverHeader) =>
         name.Equals(ContentLengthHeaderName, StringComparison.OrdinalIgnoreCase)
         || name.Equals(ConnectionHeaderName, StringComparison.OrdinalIgnoreCase)
-        || (!string.IsNullOrEmpty(serverHeader) && name.Equals(ServerHeaderName, StringComparison.OrdinalIgnoreCase));
+        || (
+            !string.IsNullOrEmpty(serverHeader)
+            && name.Equals(ServerHeaderName, StringComparison.OrdinalIgnoreCase)
+        );
 
     private static void ValidateStatusLinePart(string value, string paramName)
     {
         if (ContainsInvalidHeaderText(value))
         {
-            throw new ArgumentException("HTTP status metadata cannot contain CR or LF characters.", paramName);
+            throw new ArgumentException(
+                "HTTP status metadata cannot contain CR or LF characters.",
+                paramName
+            );
         }
     }
 
@@ -130,7 +224,10 @@ internal static class HttpResponseSerializer
     {
         if (!HttpCharacters.IsHttpToken(value))
         {
-            throw new ArgumentException("HTTP header names must be valid tokens.", nameof(HttpResponse.Headers));
+            throw new ArgumentException(
+                "HTTP header names must be valid tokens.",
+                nameof(HttpResponse.Headers)
+            );
         }
     }
 
@@ -154,7 +251,10 @@ internal static class HttpResponseSerializer
 
         if (!HttpCharacters.IsValidHeaderValue(value))
         {
-            throw new ArgumentException("HTTP header values contain invalid characters.", paramName);
+            throw new ArgumentException(
+                "HTTP header values contain invalid characters.",
+                paramName
+            );
         }
     }
 
@@ -214,10 +314,7 @@ internal static class HttpResponseSerializer
 
         public BufferSegment Append(ReadOnlyMemory<byte> memory)
         {
-            var next = new BufferSegment(memory)
-            {
-                RunningIndex = RunningIndex + Memory.Length,
-            };
+            var next = new BufferSegment(memory) { RunningIndex = RunningIndex + Memory.Length, };
 
             Next = next;
             return next;

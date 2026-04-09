@@ -8,6 +8,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
     private const string OperationReceive = "udp.receive";
     private const string OperationQueueDrop = "udp.queue.drop";
     private const string OperationDatagramHandler = "udp.datagram.handler";
+    private const string OperationMulticast = "udp.multicast";
     private const int MaxUdpDatagramSize = 65527;
 
     private readonly Socket _socket;
@@ -19,6 +20,11 @@ public sealed class UdpNode : INode, IAsyncDisposable
     private Task? _receiveTask;
     private volatile NodeState _state;
     private bool _disposed;
+    private long _totalDatagramsReceived;
+    private long _totalDatagramsSent;
+    private long _totalBytesReceived;
+    private long _totalBytesSent;
+    private long _totalDropped;
 
     public UdpNode(UdpNodeOptions options)
     {
@@ -68,6 +74,59 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
     public NodeState State => _state;
 
+    public UdpNodeMetrics GetMetrics() =>
+        new(
+            Interlocked.Read(ref _totalDatagramsReceived),
+            Interlocked.Read(ref _totalDatagramsSent),
+            Interlocked.Read(ref _totalBytesReceived),
+            Interlocked.Read(ref _totalBytesSent),
+            Interlocked.Read(ref _totalDropped)
+        );
+
+    public void JoinMulticastGroup(IPAddress groupAddress)
+    {
+        ArgumentNullException.ThrowIfNull(groupAddress);
+
+        try
+        {
+            _socket.SetSocketOption(
+                SocketOptionLevel.IP,
+                SocketOptionName.AddMembership,
+                new MulticastOption(groupAddress)
+            );
+            _socket.SetSocketOption(
+                SocketOptionLevel.IP,
+                SocketOptionName.MulticastTimeToLive,
+                Options.MulticastTtl
+            );
+            _socket.MulticastLoopback = Options.MulticastLoopback;
+        }
+        catch (Exception ex)
+        {
+            ReportFault(NodeFaultCode.StartFailed, OperationMulticast, ex);
+            throw;
+        }
+    }
+
+    public void LeaveMulticastGroup(IPAddress groupAddress)
+    {
+        ArgumentNullException.ThrowIfNull(groupAddress);
+
+        try
+        {
+            _socket.SetSocketOption(
+                SocketOptionLevel.IP,
+                SocketOptionName.DropMembership,
+                new MulticastOption(groupAddress)
+            );
+        }
+        catch (Exception ex)
+        {
+            ReportFault(NodeFaultCode.StopFailed, OperationMulticast, ex);
+            throw;
+        }
+    }
+
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -85,6 +144,12 @@ public sealed class UdpNode : INode, IAsyncDisposable
         try
         {
             _socket.Bind(Options.Endpoint);
+
+            if (Options.MulticastGroup is not null)
+            {
+                JoinMulticastGroup(Options.MulticastGroup);
+            }
+
             for (var i = 0; i < _workers.Length; i++)
             {
                 var queue = _queues[i];
@@ -184,6 +249,8 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 remoteEndPoint,
                 cancellationToken
             );
+            Interlocked.Increment(ref _totalDatagramsSent);
+            Interlocked.Add(ref _totalBytesSent, datagram.Count);
         }
         catch (Exception ex)
         {
@@ -218,6 +285,9 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 var lease = new UdpDatagramLease(buffer, result.ReceivedBytes, sender);
                 var queue = _queues[GetQueueIndex(sender)];
 
+                Interlocked.Increment(ref _totalDatagramsReceived);
+                Interlocked.Add(ref _totalBytesReceived, result.ReceivedBytes);
+
                 if (Options.QueueOverflowMode == UdpOverflowMode.Wait)
                 {
                     await queue.Writer.WriteAsync(lease, cancellationToken);
@@ -225,6 +295,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 else if (!queue.Writer.TryWrite(lease))
                 {
                     lease.Dispose();
+                    Interlocked.Increment(ref _totalDropped);
                     ReportFault(NodeFaultCode.DatagramDropped, OperationQueueDrop);
                 }
             }

@@ -12,4 +12,6 @@ public sealed class HttpResponse
         Array.Empty<KeyValuePair<string, string>>();
 
     public ReadOnlyMemory<byte> Body { get; init; } = ReadOnlyMemory<byte>.Empty;
+
+    public Stream? BodyStream { get; init; }
 }

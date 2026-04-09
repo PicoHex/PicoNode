@@ -22,6 +22,7 @@ public sealed class EnumContractTests
                     nameof(NodeFaultCode.DatagramReceiveFailed),
                     nameof(NodeFaultCode.DatagramDropped),
                     nameof(NodeFaultCode.DatagramHandlerFailed),
+                    nameof(NodeFaultCode.TlsFailed),
                 ]
             );
     }

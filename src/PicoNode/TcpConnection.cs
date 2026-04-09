@@ -12,6 +12,7 @@ internal sealed class TcpConnection : IAsyncDisposable
 
     private readonly TcpNode _node;
     private readonly Socket _socket;
+    private readonly Stream? _stream;
     private readonly Pipe _pipe;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
@@ -21,16 +22,17 @@ internal sealed class TcpConnection : IAsyncDisposable
     private int _closeState;
     private int _disposeState;
 
-    public TcpConnection(TcpNode node, Socket socket)
+    public TcpConnection(TcpNode node, Socket socket, Stream? stream = null)
     {
         _node = node;
         _socket = socket;
+        _stream = stream;
         _receiveBufferSize = Math.Max(
             node.Options.ReceiveSocketBufferSize,
             MinimumReceiveBufferSize
         );
         _pipe = new Pipe(CreatePipeOptions(_receiveBufferSize));
-        _sendPath = new SendPath(socket);
+        _sendPath = new SendPath(socket, stream);
         Id = Interlocked.Increment(ref _nextId);
         RemoteEndPoint = (IPEndPoint)socket.RemoteEndPoint!;
         ConnectedAtUtc = DateTimeOffset.UtcNow;
@@ -78,6 +80,21 @@ internal sealed class TcpConnection : IAsyncDisposable
             {
                 _node.ReportFault(NodeFaultCode.ReceiveFailed, OperationReceive, ex);
             }
+        }
+        catch (IOException ex) when (ex.InnerException is SocketException socketEx)
+        {
+            error = ex;
+            reason = MapSocketExceptionReason(socketEx, reason);
+            if (ShouldReportReceiveFault(reason))
+            {
+                _node.ReportFault(NodeFaultCode.ReceiveFailed, OperationReceive, ex);
+            }
+        }
+        catch (IOException ex)
+        {
+            error = ex;
+            reason = TcpCloseReason.ReceiveFault;
+            _node.ReportFault(NodeFaultCode.ReceiveFailed, OperationReceive, ex);
         }
         catch (Exception ex)
         {
@@ -188,9 +205,16 @@ internal sealed class TcpConnection : IAsyncDisposable
 
             await _sendPath.SendSequenceAsync(buffer, cancellationToken);
 
+            _node.RecordBytesSent(buffer.Length);
             Touch();
         }
         catch (SocketException ex)
+        {
+            _node.ReportFault(NodeFaultCode.SendFailed, OperationSend, ex);
+            _ = CloseCoreAsync(TcpCloseReason.SendFault, ex, _node.Options.ConnectionHandler);
+            throw;
+        }
+        catch (IOException ex)
         {
             _node.ReportFault(NodeFaultCode.SendFailed, OperationSend, ex);
             _ = CloseCoreAsync(TcpCloseReason.SendFault, ex, _node.Options.ConnectionHandler);
@@ -259,8 +283,20 @@ internal sealed class TcpConnection : IAsyncDisposable
         _pipe.Writer.Complete();
         _sendLock.Dispose();
         _cts.Dispose();
+
+        if (_stream is not null)
+        {
+            return DisposeStreamAndSocketAsync();
+        }
+
         _socket.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private async ValueTask DisposeStreamAndSocketAsync()
+    {
+        await _stream!.DisposeAsync();
+        _socket.Dispose();
     }
 
     private static PipeOptions CreatePipeOptions(int receiveBufferSize)
@@ -297,6 +333,7 @@ internal sealed class TcpConnection : IAsyncDisposable
                 return TcpCloseReason.RemoteClosed;
             }
 
+            _node.RecordBytesReceived(bytesRead);
             Touch();
 
             var flushResult = await FlushReceivedBytesAsync(bytesRead, cancellationToken);
@@ -325,6 +362,13 @@ internal sealed class TcpConnection : IAsyncDisposable
     private async ValueTask<int> ReceiveIntoPipeBufferAsync(CancellationToken cancellationToken)
     {
         var memory = _pipe.Writer.GetMemory(_receiveBufferSize);
+
+        if (_stream is not null)
+        {
+            var readOp = _stream.ReadAsync(memory, cancellationToken);
+            return readOp.IsCompletedSuccessfully ? readOp.Result : await readOp;
+        }
+
         var receiveOperation = _socket.ReceiveAsync(memory, SocketFlags.None, cancellationToken);
         return receiveOperation.IsCompletedSuccessfully
             ? receiveOperation.Result
@@ -410,13 +454,19 @@ internal sealed class TcpConnection : IAsyncDisposable
         _node.OnConnectionClosed(this);
     }
 
-    private sealed class SendPath(Socket socket)
+    private sealed class SendPath(Socket socket, Stream? stream)
     {
         public async Task SendSequenceAsync(
             ReadOnlySequence<byte> buffer,
             CancellationToken cancellationToken
         )
         {
+            if (stream is not null)
+            {
+                await SendViaStreamAsync(buffer, cancellationToken);
+                return;
+            }
+
             if (buffer.IsSingleSegment)
             {
                 await SendMemoryAsync(socket, buffer.First, cancellationToken);
@@ -430,6 +480,29 @@ internal sealed class TcpConnection : IAsyncDisposable
             }
 
             await CopyAndSendAsync(socket, buffer, cancellationToken);
+        }
+
+        private async Task SendViaStreamAsync(
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken
+        )
+        {
+            if (buffer.IsSingleSegment)
+            {
+                await stream!.WriteAsync(buffer.First, cancellationToken);
+            }
+            else
+            {
+                foreach (var segment in buffer)
+                {
+                    if (!segment.IsEmpty)
+                    {
+                        await stream!.WriteAsync(segment, cancellationToken);
+                    }
+                }
+            }
+
+            await stream!.FlushAsync(cancellationToken);
         }
 
         private static async Task CopyAndSendAsync(

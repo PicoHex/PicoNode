@@ -15,4 +15,6 @@ public sealed class HttpRequest
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     public ReadOnlyMemory<byte> Body { get; init; } = ReadOnlyMemory<byte>.Empty;
+
+    public Stream BodyStream => new MemoryStream(Body.ToArray(), writable: false);
 }

@@ -12,4 +12,5 @@ public enum NodeFaultCode
     DatagramReceiveFailed,
     DatagramDropped,
     DatagramHandlerFailed,
+    TlsFailed,
 }
