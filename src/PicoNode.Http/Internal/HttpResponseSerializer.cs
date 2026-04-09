@@ -30,7 +30,7 @@ internal static class HttpResponseSerializer
 
         WriteAscii(headerBuffer, response.Version);
         WriteAscii(headerBuffer, " ");
-        WriteAscii(headerBuffer, response.StatusCode.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        WriteInt(headerBuffer, response.StatusCode);
         WriteAscii(headerBuffer, " ");
         WriteAscii(headerBuffer, response.ReasonPhrase);
         WriteCrlf(headerBuffer);
@@ -58,7 +58,7 @@ internal static class HttpResponseSerializer
         WriteHeader(
             headerBuffer,
             ContentLengthHeaderName,
-            response.Body.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            response.Body.Length
         );
         WriteCrlf(headerBuffer);
 
@@ -169,6 +169,14 @@ internal static class HttpResponseSerializer
         WriteCrlf(buffer);
     }
 
+    private static void WriteHeader(ArrayBufferWriter<byte> buffer, string name, int value)
+    {
+        WriteAscii(buffer, name);
+        WriteAscii(buffer, ": ");
+        WriteInt(buffer, value);
+        WriteCrlf(buffer);
+    }
+
     private static void WriteAscii(IBufferWriter<byte> buffer, string value)
     {
         if (string.IsNullOrEmpty(value))
@@ -180,6 +188,13 @@ internal static class HttpResponseSerializer
         var destination = buffer.GetSpan(bytesNeeded);
         var written = HeaderEncoding.GetBytes(value, destination);
         buffer.Advance(written);
+    }
+
+    private static void WriteInt(IBufferWriter<byte> buffer, int value)
+    {
+        var span = buffer.GetSpan(11);
+        value.TryFormat(span, out var bytesWritten);
+        buffer.Advance(bytesWritten);
     }
 
     private static void WriteCrlf(IBufferWriter<byte> buffer)

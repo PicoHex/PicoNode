@@ -24,33 +24,32 @@ internal static class HostValidator
             return false;
         }
 
-        if (value[0] == '[')
+        ReadOnlySpan<char> span = value;
+
+        if (span[0] == '[')
         {
-            return TryParseBracketedIpv6Host(value);
+            return TryParseBracketedIpv6Host(span);
         }
 
-        var lastColon = value.LastIndexOf(':');
-        string hostPart;
+        var lastColon = span.LastIndexOf(':');
 
         if (lastColon >= 0)
         {
-            hostPart = value[..lastColon];
-            var portPart = value[(lastColon + 1)..];
+            var hostPart = span[..lastColon];
+            var portPart = span[(lastColon + 1)..];
 
             if (hostPart.Length == 0 || !IsValidPort(portPart))
             {
                 return false;
             }
-        }
-        else
-        {
-            hostPart = value;
+
+            return IsValidHostName(hostPart) || IsValidIpv4Address(hostPart);
         }
 
-        return IsValidHostName(hostPart) || IsValidIpv4Address(hostPart);
+        return IsValidHostName(span) || IsValidIpv4Address(span);
     }
 
-    private static bool TryParseBracketedIpv6Host(string value)
+    private static bool TryParseBracketedIpv6Host(ReadOnlySpan<char> value)
     {
         var closingBracketIndex = value.IndexOf(']');
         if (closingBracketIndex <= 1)
@@ -78,7 +77,7 @@ internal static class HostValidator
         return IsValidPort(value[(closingBracketIndex + 2)..]);
     }
 
-    private static bool IsValidPort(string value)
+    private static bool IsValidPort(ReadOnlySpan<char> value)
     {
         if (value.Length == 0)
         {
@@ -97,16 +96,18 @@ internal static class HostValidator
             && port is >= 0 and <= 65535;
     }
 
-    private static bool IsValidHostName(string value)
+    private static bool IsValidHostName(ReadOnlySpan<char> value)
     {
-        if (value.Length == 0 || value.EndsWith(".", StringComparison.Ordinal))
+        if (value.Length == 0 || value[^1] == '.')
         {
             return false;
         }
 
-        var labels = value.Split('.');
-        foreach (var label in labels)
+        while (value.Length > 0)
         {
+            var dotIndex = value.IndexOf('.');
+            var label = dotIndex >= 0 ? value[..dotIndex] : value;
+
             if (label.Length == 0)
             {
                 return false;
@@ -124,32 +125,43 @@ internal static class HostValidator
                     return false;
                 }
             }
+
+            if (dotIndex < 0)
+            {
+                break;
+            }
+
+            value = value[(dotIndex + 1)..];
         }
 
         return true;
     }
 
-    private static bool IsValidIpv4Address(string value)
+    private static bool IsValidIpv4Address(ReadOnlySpan<char> value)
     {
-        var segments = value.Split('.');
-        if (segments.Length != 4)
-        {
-            return false;
-        }
+        var segmentCount = 0;
 
-        foreach (var segment in segments)
+        while (value.Length > 0)
         {
-            if (segment.Length == 0)
+            var dotIndex = value.IndexOf('.');
+            var segment = dotIndex >= 0 ? value[..dotIndex] : value;
+
+            if (segment.Length == 0
+                || !byte.TryParse(segment, NumberStyles.None, CultureInfo.InvariantCulture, out _))
             {
                 return false;
             }
 
-            if (!byte.TryParse(segment, NumberStyles.None, CultureInfo.InvariantCulture, out _))
+            segmentCount++;
+
+            if (dotIndex < 0)
             {
-                return false;
+                break;
             }
+
+            value = value[(dotIndex + 1)..];
         }
 
-        return true;
+        return segmentCount == 4;
     }
 }

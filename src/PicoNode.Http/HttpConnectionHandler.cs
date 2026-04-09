@@ -161,12 +161,23 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
                 continue;
             }
 
-            foreach (var token in header.Value.Split(','))
+            ReadOnlySpan<char> remaining = header.Value;
+            while (remaining.Length > 0)
             {
-                if (string.Equals(token.Trim(), "close", StringComparison.OrdinalIgnoreCase))
+                var commaIndex = remaining.IndexOf(',');
+                var token = commaIndex >= 0 ? remaining[..commaIndex] : remaining;
+
+                if (token.Trim().Equals("close", StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
+
+                if (commaIndex < 0)
+                {
+                    break;
+                }
+
+                remaining = remaining[(commaIndex + 1)..];
             }
         }
 
