@@ -3,11 +3,13 @@
     <File Path="samples\README.md" />
     <Project Path="samples/PicoNode.Samples.Echo/PicoNode.Samples.Echo.csproj" />
     <Project Path="samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj" />
+    <Project Path="samples/PicoNode.Samples.Web/PicoNode.Samples.Web.csproj" />
   </Folder>
   <Folder Name="/src/">
     <File Path="src\README.md" />
     <Project Path="src/PicoNode.Abs/PicoNode.Abs.csproj" />
     <Project Path="src/PicoNode.Http/PicoNode.Http.csproj" />
+    <Project Path="src/PicoNode.Web/PicoNode.Web.csproj" />
     <Project Path="src/PicoNode/PicoNode.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -16,6 +18,7 @@
     <Project Path="tests/PicoNode.PerfHarness/PicoNode.PerfHarness.csproj" />
     <Project Path="tests/PicoNode.Smoke/PicoNode.Smoke.csproj" />
     <Project Path="tests/PicoNode.Tests/PicoNode.Tests.csproj" />
+    <Project Path="tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <File Path="benchmarks\README.md" />
