@@ -17,4 +17,8 @@
     <Project Path="tests/PicoNode.Smoke/PicoNode.Smoke.csproj" />
     <Project Path="tests/PicoNode.Tests/PicoNode.Tests.csproj" />
   </Folder>
+  <Folder Name="/benchmarks/">
+    <File Path="benchmarks\README.md" />
+    <Project Path="benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj" />
+  </Folder>
 </Solution>
