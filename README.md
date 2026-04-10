@@ -7,15 +7,15 @@ A lightweight, high-performance networking stack for .NET — from raw TCP/UDP s
 PicoNode is a layered networking library built from the ground up in modern C#. Each layer is independently usable, so you can pick exactly the abstraction level you need:
 
 ```
-PicoNode.Abs        Core interfaces (netstandard2.0)
+PicoNode.Abs        Core interfaces                          (netstandard2.0)
     ↓
-PicoNode             TCP & UDP transports (net10.0)
+PicoNode             TCP & UDP transports                     (net10.0)
     ↓
-PicoNode.Http        HTTP/1.1 protocol handler
+PicoNode.Http        HTTP/1.1 protocol handler                (net10.0)
     ↓
-PicoNode.Web         Web framework (routing, middleware, static files, CORS, …)
+PicoNode.Web         Web framework (routing, middleware, …)   (net10.0)
     ↓
-PicoWeb              Ready-to-run web server
+PicoWeb              Ready-to-run web server                  (net10.0)
 ```
 
 ## Features
