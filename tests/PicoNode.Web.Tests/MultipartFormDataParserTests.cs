@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace PicoNode.Http.Tests;
+namespace PicoNode.Web.Tests;
 
 public sealed class MultipartFormDataParserTests
 {

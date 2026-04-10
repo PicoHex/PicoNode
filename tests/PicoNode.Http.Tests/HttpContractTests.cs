@@ -67,7 +67,6 @@ public sealed class HttpContractTests
 
                 [
                     nameof(HttpRequest.Body),
-                    nameof(HttpRequest.BodyStream),
                     nameof(HttpRequest.HeaderFields),
                     nameof(HttpRequest.Headers),
                     nameof(HttpRequest.Method),
@@ -75,6 +74,8 @@ public sealed class HttpContractTests
                     nameof(HttpRequest.Version),
                 ]
             );
+
+        await Assert.That(type.GetMethod(nameof(HttpRequest.CreateBodyStream))).IsNotNull();
         await Assert
             .That(type.GetProperty(nameof(HttpRequest.Method))?.PropertyType)
             .IsEqualTo(typeof(string));

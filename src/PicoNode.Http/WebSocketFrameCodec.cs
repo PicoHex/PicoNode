@@ -65,10 +65,9 @@ public static class WebSocketFrameCodec
             return false;
 
         var payload = new byte[payloadLength];
-        for (long i = 0; i < payloadLength; i++)
-        {
-            reader.TryRead(out payload[i]);
-        }
+        var payloadSlice = buffer.Slice(reader.Consumed, payloadLength);
+        payloadSlice.CopyTo(payload);
+        reader.Advance(payloadLength);
 
         if (masked)
         {

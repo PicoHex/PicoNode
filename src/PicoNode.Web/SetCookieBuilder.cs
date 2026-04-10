@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace PicoNode.Http;
+namespace PicoNode.Web;
 
 public sealed class SetCookieBuilder
 {

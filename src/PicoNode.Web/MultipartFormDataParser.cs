@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace PicoNode.Http;
+namespace PicoNode.Web;
 
 public static class MultipartFormDataParser
 {

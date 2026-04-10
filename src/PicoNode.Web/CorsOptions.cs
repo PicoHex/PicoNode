@@ -1,4 +1,4 @@
-namespace PicoNode.Http;
+namespace PicoNode.Web;
 
 public sealed class CorsOptions
 {

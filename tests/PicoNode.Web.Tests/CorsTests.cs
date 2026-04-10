@@ -1,4 +1,4 @@
-namespace PicoNode.Http.Tests;
+namespace PicoNode.Web.Tests;
 
 public sealed class CorsTests
 {
@@ -23,7 +23,7 @@ public sealed class CorsTests
     }
 
     private static CorsOptions DefaultOptions =>
-        new() { AllowedOrigins = ["https://example.com"] };
+        new() { AllowedOrigins =  ["https://example.com"] };
 
     [Test]
     public async Task HandlePreflight_returns_204_for_valid_options_request()
@@ -102,7 +102,7 @@ public sealed class CorsTests
     {
         var options = new CorsOptions
         {
-            AllowedOrigins = ["https://example.com"],
+            AllowedOrigins =  ["https://example.com"],
             AllowCredentials = true,
         };
         var request = CreateRequest(
@@ -114,18 +114,15 @@ public sealed class CorsTests
         var response = CorsHandler.HandlePreflight(request, options);
 
         var header = response!
-            .Headers.FirstOrDefault(h => h.Key == "Access-Control-Allow-Credentials");
+            .Headers
+            .FirstOrDefault(h => h.Key == "Access-Control-Allow-Credentials");
         await Assert.That(header.Value).IsEqualTo("true");
     }
 
     [Test]
     public async Task HandlePreflight_includes_max_age_when_set()
     {
-        var options = new CorsOptions
-        {
-            AllowedOrigins = ["https://example.com"],
-            MaxAge = 3600,
-        };
+        var options = new CorsOptions { AllowedOrigins =  ["https://example.com"], MaxAge = 3600, };
         var request = CreateRequest(
             "OPTIONS",
             new("Origin", "https://example.com"),
@@ -156,10 +153,7 @@ public sealed class CorsTests
     [Test]
     public async Task GetResponseHeaders_returns_empty_for_no_origin()
     {
-        var request = CreateRequest(
-            "GET",
-            new KeyValuePair<string, string>("Host", "localhost")
-        );
+        var request = CreateRequest("GET", new KeyValuePair<string, string>("Host", "localhost"));
 
         var headers = CorsHandler.GetResponseHeaders(request, DefaultOptions);
 
@@ -183,7 +177,7 @@ public sealed class CorsTests
     [Test]
     public async Task Wildcard_origin_allows_any_origin()
     {
-        var options = new CorsOptions { AllowedOrigins = ["*"] };
+        var options = new CorsOptions { AllowedOrigins =  ["*"] };
         var request = CreateRequest(
             "OPTIONS",
             new("Origin", "https://any.com"),
@@ -201,8 +195,8 @@ public sealed class CorsTests
     {
         var options = new CorsOptions
         {
-            AllowedOrigins = ["https://example.com"],
-            ExposedHeaders = ["X-Custom", "X-Request-Id"],
+            AllowedOrigins =  ["https://example.com"],
+            ExposedHeaders =  ["X-Custom", "X-Request-Id"],
         };
         var request = CreateRequest(
             "GET",

@@ -16,5 +16,5 @@ public sealed class HttpRequest
 
     public ReadOnlyMemory<byte> Body { get; init; } = ReadOnlyMemory<byte>.Empty;
 
-    public Stream BodyStream => new MemoryStream(Body.ToArray(), writable: false);
+    public Stream CreateBodyStream() => new MemoryStream(Body.ToArray(), writable: false);
 }

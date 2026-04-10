@@ -5,11 +5,19 @@ namespace PicoNode.Web;
 
 public sealed class CompressionMiddleware
 {
-    private readonly CompressionLevel _level;
+    private const int DefaultMinimumBodySize = 860;
 
-    public CompressionMiddleware(CompressionLevel level = CompressionLevel.Fastest)
+    private readonly CompressionLevel _level;
+    private readonly int _minimumBodySize;
+
+    public CompressionMiddleware(
+        CompressionLevel level = CompressionLevel.Fastest,
+        int minimumBodySize = DefaultMinimumBodySize
+    )
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(minimumBodySize);
         _level = level;
+        _minimumBodySize = minimumBodySize;
     }
 
     public async ValueTask<HttpResponse> InvokeAsync(
@@ -20,7 +28,7 @@ public sealed class CompressionMiddleware
     {
         var response = await next(context, cancellationToken);
 
-        if (response.Body.IsEmpty)
+        if (response.Body.Length < _minimumBodySize)
         {
             return response;
         }

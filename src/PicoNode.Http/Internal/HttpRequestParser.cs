@@ -209,15 +209,37 @@ internal static class HttpRequestParser
         }
     }
 
-    private readonly record struct HeaderParseState(
-        List<KeyValuePair<string, string>> HeaderFields,
-        Dictionary<string, string> Headers,
-        long ContentLength,
-        bool IsChunked,
-        bool ExpectsContinue,
-        HttpRequestParseError? Error,
-        bool IsIncomplete
-    );
+    private readonly record struct HeaderParseState
+    {
+        public List<KeyValuePair<string, string>> HeaderFields { get; init; }
+        public Dictionary<string, string> Headers { get; init; }
+        public long ContentLength { get; init; }
+        public bool IsChunked { get; init; }
+        public bool ExpectsContinue { get; init; }
+        public HttpRequestParseError? Error { get; init; }
+        public bool IsIncomplete { get; init; }
+
+        public static HeaderParseState Incomplete() => new() { IsIncomplete = true };
+
+        public static HeaderParseState Rejected(HttpRequestParseError error) =>
+            new() { Error = error };
+
+        public static HeaderParseState Success(
+            List<KeyValuePair<string, string>> headerFields,
+            Dictionary<string, string> headers,
+            long contentLength,
+            bool isChunked,
+            bool expectsContinue
+        ) =>
+            new()
+            {
+                HeaderFields = headerFields,
+                Headers = headers,
+                ContentLength = contentLength,
+                IsChunked = isChunked,
+                ExpectsContinue = expectsContinue,
+            };
+    };
 
     private static HeaderParseState ParseHeaders(
         ref BufferReader reader,
@@ -244,24 +266,8 @@ internal static class HttpRequestParser
             )
             {
                 return error is null
-                    ? new HeaderParseState(
-                        headerFields,
-                        headers,
-                        contentLength,
-                        false,
-                        false,
-                        null,
-                        true
-                    )
-                    : new HeaderParseState(
-                        headerFields,
-                        headers,
-                        contentLength,
-                        false,
-                        false,
-                        error,
-                        false
-                    );
+                    ? HeaderParseState.Incomplete()
+                    : HeaderParseState.Rejected(error.Value);
             }
 
             if (headerLineBytes.Length == 0)
@@ -271,30 +277,14 @@ internal static class HttpRequestParser
 
             if (!TryParseHeaderLine(headerLineBytes, out var name, out var value))
             {
-                return new HeaderParseState(
-                    headerFields,
-                    headers,
-                    contentLength,
-                    false,
-                    false,
-                    HttpRequestParseError.InvalidHeader,
-                    false
-                );
+                return HeaderParseState.Rejected(HttpRequestParseError.InvalidHeader);
             }
 
             if (name.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
             {
                 if (!value.Equals("chunked", StringComparison.OrdinalIgnoreCase))
                 {
-                    return new HeaderParseState(
-                        headerFields,
-                        headers,
-                        contentLength,
-                        false,
-                        false,
-                        HttpRequestParseError.UnsupportedFraming,
-                        false
-                    );
+                    return HeaderParseState.Rejected(HttpRequestParseError.UnsupportedFraming);
                 }
 
                 isChunked = true;
@@ -304,15 +294,7 @@ internal static class HttpRequestParser
             {
                 if (hasContentLength)
                 {
-                    return new HeaderParseState(
-                        headerFields,
-                        headers,
-                        contentLength,
-                        false,
-                        false,
-                        HttpRequestParseError.DuplicateContentLength,
-                        false
-                    );
+                    return HeaderParseState.Rejected(HttpRequestParseError.DuplicateContentLength);
                 }
 
                 if (
@@ -325,15 +307,7 @@ internal static class HttpRequestParser
                     || contentLength < 0
                 )
                 {
-                    return new HeaderParseState(
-                        headerFields,
-                        headers,
-                        contentLength,
-                        false,
-                        false,
-                        HttpRequestParseError.InvalidContentLength,
-                        false
-                    );
+                    return HeaderParseState.Rejected(HttpRequestParseError.InvalidContentLength);
                 }
 
                 hasContentLength = true;
@@ -343,28 +317,12 @@ internal static class HttpRequestParser
             {
                 if (hasHost)
                 {
-                    return new HeaderParseState(
-                        headerFields,
-                        headers,
-                        contentLength,
-                        false,
-                        false,
-                        HttpRequestParseError.InvalidHostHeader,
-                        false
-                    );
+                    return HeaderParseState.Rejected(HttpRequestParseError.InvalidHostHeader);
                 }
 
                 if (!HostValidator.IsValidHostHeaderValue(value))
                 {
-                    return new HeaderParseState(
-                        headerFields,
-                        headers,
-                        contentLength,
-                        false,
-                        false,
-                        HttpRequestParseError.InvalidHostHeader,
-                        false
-                    );
+                    return HeaderParseState.Rejected(HttpRequestParseError.InvalidHostHeader);
                 }
 
                 hasHost = true;
@@ -380,28 +338,12 @@ internal static class HttpRequestParser
 
         if (!hasHost && version == "HTTP/1.1")
         {
-            return new HeaderParseState(
-                headerFields,
-                headers,
-                contentLength,
-                false,
-                false,
-                HttpRequestParseError.MissingHostHeader,
-                false
-            );
+            return HeaderParseState.Rejected(HttpRequestParseError.MissingHostHeader);
         }
 
         if (isChunked && hasContentLength)
         {
-            return new HeaderParseState(
-                headerFields,
-                headers,
-                contentLength,
-                false,
-                false,
-                HttpRequestParseError.InvalidRequestLine,
-                false
-            );
+            return HeaderParseState.Rejected(HttpRequestParseError.InvalidRequestLine);
         }
 
         var expectsContinue =
@@ -409,14 +351,12 @@ internal static class HttpRequestParser
             && headers.TryGetValue("Expect", out var expectValue)
             && expectValue.Equals("100-continue", StringComparison.OrdinalIgnoreCase);
 
-        return new HeaderParseState(
+        return HeaderParseState.Success(
             headerFields,
             headers,
             contentLength,
             isChunked,
-            expectsContinue,
-            null,
-            false
+            expectsContinue
         );
     }
 

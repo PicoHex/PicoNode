@@ -9,7 +9,7 @@ public sealed class CompressionMiddlewareTests
     public async Task Compresses_with_gzip_when_accepted()
     {
         var body = Encoding.UTF8.GetBytes("Hello, world! This is a test body for compression.");
-        var middleware = new CompressionMiddleware();
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
         var context = CreateContext("GET", "/", "gzip");
 
         var response = await middleware.InvokeAsync(
@@ -32,7 +32,7 @@ public sealed class CompressionMiddlewareTests
     public async Task Compresses_with_brotli_when_accepted()
     {
         var body = Encoding.UTF8.GetBytes("Hello, world! This is a test body for brotli.");
-        var middleware = new CompressionMiddleware();
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
         var context = CreateContext("GET", "/", "br, gzip");
 
         var response = await middleware.InvokeAsync(
@@ -53,7 +53,7 @@ public sealed class CompressionMiddlewareTests
     public async Task Compresses_with_deflate_when_only_deflate_accepted()
     {
         var body = Encoding.UTF8.GetBytes("deflate test body");
-        var middleware = new CompressionMiddleware();
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
         var context = CreateContext("GET", "/", "deflate");
 
         var response = await middleware.InvokeAsync(
@@ -72,7 +72,7 @@ public sealed class CompressionMiddlewareTests
     public async Task Does_not_compress_when_no_accept_encoding()
     {
         var body = Encoding.UTF8.GetBytes("plain body");
-        var middleware = new CompressionMiddleware();
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
         var context = CreateContext("GET", "/", acceptEncoding: null);
 
         var response = await middleware.InvokeAsync(
@@ -104,7 +104,7 @@ public sealed class CompressionMiddlewareTests
     public async Task Removes_stale_content_length_header()
     {
         var body = Encoding.UTF8.GetBytes("some content");
-        var middleware = new CompressionMiddleware();
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
         var context = CreateContext("GET", "/", "gzip");
 
         var response = await middleware.InvokeAsync(
@@ -114,6 +114,23 @@ public sealed class CompressionMiddlewareTests
         );
 
         await Assert.That(GetHeader(response, "Content-Length")).IsNull();
+    }
+
+    [Test]
+    public async Task Skips_compression_when_body_below_minimum_size()
+    {
+        var body = Encoding.UTF8.GetBytes("small");
+        var middleware = new CompressionMiddleware(minimumBodySize: 100);
+        var context = CreateContext("GET", "/", "gzip");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            (_, _) => ValueTask.FromResult(TextResponse(body)),
+            CancellationToken.None
+        );
+
+        await Assert.That(GetHeader(response, "Content-Encoding")).IsNull();
+        await Assert.That(Encoding.UTF8.GetString(response.Body.Span)).IsEqualTo("small");
     }
 
     [Test]
