@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
+    <PublishAot>true</PublishAot>
+    <TrimMode>full</TrimMode>
   </PropertyGroup>
 
   <ItemGroup>
