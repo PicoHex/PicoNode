@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PicoNode.WebServer\PicoNode.WebServer.csproj" />
+    <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
   </ItemGroup>
 
 </Project>

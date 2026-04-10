@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using PicoNode.Http;
 using PicoNode.Web;
-using PicoNode.WebServer;
+using PicoWeb;
 
 var app = new WebApp(new WebAppOptions { ServerHeader = "PicoNode.Samples.Web", });
 

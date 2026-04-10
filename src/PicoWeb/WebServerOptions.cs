@@ -1,4 +1,4 @@
-namespace PicoNode.WebServer;
+namespace PicoWeb;
 
 public sealed class WebServerOptions
 {

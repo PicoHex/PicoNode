@@ -10,8 +10,8 @@
     <Project Path="src/PicoNode.Abs/PicoNode.Abs.csproj" />
     <Project Path="src/PicoNode.Http/PicoNode.Http.csproj" />
     <Project Path="src/PicoNode.Web/PicoNode.Web.csproj" />
-    <Project Path="src/PicoNode.WebServer/PicoNode.WebServer.csproj" />
     <Project Path="src/PicoNode/PicoNode.csproj" />
+    <Project Path="src/PicoWeb/PicoWeb.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests\README.md" />

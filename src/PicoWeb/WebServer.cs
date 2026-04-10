@@ -1,4 +1,6 @@
-namespace PicoNode.WebServer;
+using PicoNode;
+
+namespace PicoWeb;
 
 public sealed class WebServer : IAsyncDisposable
 {
