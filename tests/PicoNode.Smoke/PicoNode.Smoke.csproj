@@ -13,6 +13,7 @@
     <ProjectReference Include="..\..\src\PicoNode.Abs\PicoNode.Abs.csproj" />
     <ProjectReference Include="..\..\src\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Http\PicoNode.Http.csproj" />
+    <ProjectReference Include="..\..\samples\PicoWeb.Samples\PicoWeb.Samples.csproj" />
   </ItemGroup>
 
 </Project>
