@@ -10,8 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\PicoNode.Abs\PicoNode.Abs.csproj" />
-    <ProjectReference Include="..\PicoNode.Http\PicoNode.Http.csproj" />
+    <ProjectReference Include="..\PicoNode\PicoNode.csproj" />
+    <ProjectReference Include="..\PicoNode.Web\PicoNode.Web.csproj" />
   </ItemGroup>
 
 </Project>

@@ -2,14 +2,9 @@ using System.Net;
 using System.Text;
 using PicoNode.Http;
 using PicoNode.Web;
+using PicoNode.WebServer;
 
-var app = new WebApp(
-    new WebAppOptions
-    {
-        Endpoint = new IPEndPoint(IPAddress.Loopback, 7004),
-        ServerHeader = "PicoNode.Samples.Web",
-    }
-);
+var app = new WebApp(new WebAppOptions { ServerHeader = "PicoNode.Samples.Web", });
 
 app.Use(
     async (context, next, cancellationToken) =>
@@ -52,13 +47,18 @@ app.MapPost(
     }
 );
 
-await app.StartAsync();
+await using var server = new WebServer(
+    app,
+    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, 7004) }
+);
 
-Console.WriteLine($"Web sample listening on {app.LocalEndPoint}");
+await server.StartAsync();
+
+Console.WriteLine($"Web sample listening on {server.LocalEndPoint}");
 Console.WriteLine("GET  /           -> text greeting");
 Console.WriteLine("GET  /users/{id} -> JSON user by id");
 Console.WriteLine("POST /echo       -> echoes request body");
 Console.WriteLine("Press Enter to stop...");
 Console.ReadLine();
 
-await app.DisposeAsync();
+await server.StopAsync();
