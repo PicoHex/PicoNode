@@ -3,7 +3,7 @@
     <File Path="samples\README.md" />
     <Project Path="samples/PicoNode.Samples.Echo/PicoNode.Samples.Echo.csproj" />
     <Project Path="samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj" />
-    <Project Path="samples/PicoNode.Samples.Web/PicoNode.Samples.Web.csproj" />
+    <Project Path="samples/PicoWeb.Samples/PicoWeb.Samples.csproj" />
   </Folder>
   <Folder Name="/src/">
     <File Path="src\README.md" />
