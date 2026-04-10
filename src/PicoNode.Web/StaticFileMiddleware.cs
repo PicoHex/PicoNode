@@ -75,12 +75,16 @@ public sealed class StaticFileMiddleware
             new("Content-Length", fileInfo.Length.ToString()),
         };
 
+        var isHead = context.Request.Method.Equals("HEAD", StringComparison.OrdinalIgnoreCase);
+
         return new HttpResponse
         {
             StatusCode = 200,
             ReasonPhrase = "OK",
             Headers = headers,
-            Body = await File.ReadAllBytesAsync(fullPath, cancellationToken),
+            Body = isHead
+                ? ReadOnlyMemory<byte>.Empty
+                : await File.ReadAllBytesAsync(fullPath, cancellationToken),
         };
     }
 }

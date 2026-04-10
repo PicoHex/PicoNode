@@ -58,6 +58,7 @@ public sealed class CompressionMiddleware
         }
 
         headers.Add(new KeyValuePair<string, string>("Content-Encoding", encoding));
+        headers.Add(new KeyValuePair<string, string>("Vary", "Accept-Encoding"));
 
         return new HttpResponse
         {
