@@ -25,11 +25,13 @@ internal static class HttpParseHelpers
                 return -1;
             }
 
-            size = (size << 4) | HexValue(b);
-            if (size < 0)
+            var digit = HexValue(b);
+            if (size > ((int.MaxValue - digit) >> 4))
             {
                 return -1;
             }
+
+            size = (size << 4) | digit;
         }
 
         return size;

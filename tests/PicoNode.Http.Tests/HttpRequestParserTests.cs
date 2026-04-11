@@ -261,6 +261,46 @@ public sealed class HttpRequestParserTests
     }
 
     [Test]
+    public async Task Parse_rejects_chunk_size_that_overflows_to_zero()
+    {
+        var buffer = CreateSequence(
+            Encoding
+                .ASCII
+                .GetBytes(
+                    "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n100000000\r\n0\r\n\r\n"
+                )
+        );
+
+        var result = HttpRequestParser.Parse(
+            buffer,
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+        );
+
+        await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
+        await Assert.That(result.Error).IsEqualTo(HttpRequestParseError.InvalidChunkedBody);
+    }
+
+    [Test]
+    public async Task Parse_rejects_chunk_size_that_overflows_to_small_positive_value()
+    {
+        var buffer = CreateSequence(
+            Encoding
+                .ASCII
+                .GetBytes(
+                    "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n100000001\r\nA\r\n0\r\n\r\n"
+                )
+        );
+
+        var result = HttpRequestParser.Parse(
+            buffer,
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+        );
+
+        await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
+        await Assert.That(result.Error).IsEqualTo(HttpRequestParseError.InvalidChunkedBody);
+    }
+
+    [Test]
     public async Task Parse_rejects_duplicate_content_length()
     {
         var buffer = CreateSequence(
