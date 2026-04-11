@@ -406,6 +406,43 @@ public sealed class HttpRequestParserTests
     }
 
     [Test]
+    public async Task Parse_rejects_request_targets_with_raw_backslashes()
+    {
+        var buffer = CreateSequence(
+            Encoding.ASCII.GetBytes("GET /path\\segment HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        );
+
+        var result = HttpRequestParser.Parse(
+            buffer,
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+        );
+
+        await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
+        await Assert.That(result.Error).IsEqualTo(HttpRequestParseError.InvalidRequestLine);
+    }
+
+    [Test]
+    public async Task Parse_rejects_request_targets_with_raw_non_ascii_bytes()
+    {
+        var prefix = Encoding.ASCII.GetBytes("GET /");
+        var suffix = Encoding.ASCII.GetBytes(" HTTP/1.1\r\nHost: example.com\r\n\r\n");
+        var bytes = new byte[prefix.Length + 1 + suffix.Length];
+
+        prefix.CopyTo(bytes, 0);
+        bytes[prefix.Length] = 0xFF;
+        suffix.CopyTo(bytes, prefix.Length + 1);
+
+        var buffer = CreateSequence(bytes);
+        var result = HttpRequestParser.Parse(
+            buffer,
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+        );
+
+        await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
+        await Assert.That(result.Error).IsEqualTo(HttpRequestParseError.InvalidRequestLine);
+    }
+
+    [Test]
     public async Task Parse_rejects_size_limit_violations()
     {
         var buffer = CreateSequence(

@@ -3,7 +3,7 @@ namespace PicoNode.Http.Internal.HttpRequestParsing;
 internal static class HttpRequestLineParser
 {
     private static readonly SearchValues<byte> InvalidTargetBytes = SearchValues.Create(
-        " \t\r\n#"u8
+        " \t\r\n#\\"u8
     );
 
     public static bool TryParse(
@@ -76,6 +76,11 @@ internal static class HttpRequestLineParser
 
         for (var index = 0; index < value.Length; index++)
         {
+            if (value[index] < 0x20 || value[index] >= 0x7F)
+            {
+                return false;
+            }
+
             if (value[index] != (byte)'%')
             {
                 continue;
