@@ -132,6 +132,69 @@ public sealed class MultipartFormDataParserTests
     }
 
     [Test]
+    public async Task File_content_can_contain_boundary_like_bytes_without_truncation()
+    {
+        var fileContent = "prefix--boundarysuffix";
+        var body =
+            "--boundary\r\n"
+            + "Content-Disposition: form-data; name=\"file\"; filename=\"data.txt\"\r\n"
+            + "Content-Type: text/plain\r\n"
+            + "\r\n"
+            + fileContent
+            + "\r\n"
+            + "--boundary--\r\n";
+
+        var request = CreateMultipartRequest("boundary", body);
+        var result = MultipartFormDataParser.Parse(request);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Files.Count).IsEqualTo(1);
+        await Assert.That(Encoding.UTF8.GetString(result.Files[0].Content.Span)).IsEqualTo(fileContent);
+        await Assert.That(result.Files[0].Content.Span.Overlaps(request.Body.Span)).IsTrue();
+    }
+
+    [Test]
+    public async Task File_content_can_contain_boundary_like_line_without_closing_or_crlf_match()
+    {
+        var fileContent = "prefix\r\n--boundaryX\r\nsuffix";
+        var body =
+            "--boundary\r\n"
+            + "Content-Disposition: form-data; name=\"file\"; filename=\"data.txt\"\r\n"
+            + "Content-Type: text/plain\r\n"
+            + "\r\n"
+            + fileContent
+            + "\r\n"
+            + "--boundary--\r\n";
+
+        var request = CreateMultipartRequest("boundary", body);
+        var result = MultipartFormDataParser.Parse(request);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Files.Count).IsEqualTo(1);
+        await Assert.That(Encoding.UTF8.GetString(result.Files[0].Content.Span)).IsEqualTo(fileContent);
+    }
+
+    [Test]
+    public async Task Proper_closing_boundary_terminates_multipart_body()
+    {
+        var body =
+            "--boundary\r\n"
+            + "Content-Disposition: form-data; name=\"username\"\r\n"
+            + "\r\n"
+            + "alice\r\n"
+            + "--boundary--\r\n"
+            + "ignored trailer";
+
+        var request = CreateMultipartRequest("boundary", body);
+        var result = MultipartFormDataParser.Parse(request);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Fields.Count).IsEqualTo(1);
+        await Assert.That(result.Fields[0].Value).IsEqualTo("alice");
+        await Assert.That(result.Files.Count).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task Returns_null_for_non_multipart_content_type()
     {
         var request = new HttpRequest

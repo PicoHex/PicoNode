@@ -41,7 +41,7 @@ public static class MultipartFormDataParser
         DashDash.CopyTo(delimiter.AsSpan());
         boundary.CopyTo(delimiter.AsSpan(2));
 
-        var pos = IndexOf(bodySpan, delimiter);
+        var pos = FindBoundary(bodySpan, delimiter, searchStart: 0, requireLeadingCrLf: false);
         if (pos < 0)
             return new MultipartFormData(fields, files);
 
@@ -64,16 +64,21 @@ public static class MultipartFormDataParser
             var headerBytes = bodySpan[pos..(pos + headerEnd)];
             pos += headerEnd + DoubleCrLf.Length;
 
-            var nextDelimiter = IndexOf(bodySpan[pos..], delimiter);
+            var nextDelimiter = FindBoundary(
+                bodySpan,
+                delimiter,
+                searchStart: pos,
+                requireLeadingCrLf: true
+            );
             if (nextDelimiter < 0)
                 break;
 
-            var contentLength = nextDelimiter - CrLf.Length;
-            if (contentLength < 0)
+            var contentEnd = nextDelimiter - CrLf.Length;
+            if (contentEnd < pos)
                 break;
 
-            var content = body.Slice(pos, contentLength);
-            pos += nextDelimiter + delimiter.Length;
+            var content = body[pos..contentEnd];
+            pos = nextDelimiter + delimiter.Length;
 
             ParsePart(headerBytes, content, fields, files);
         }
@@ -160,5 +165,53 @@ public static class MultipartFormDataParser
     private static int IndexOf(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
     {
         return haystack.IndexOf(needle);
+    }
+
+    private static int FindBoundary(
+        ReadOnlySpan<byte> body,
+        ReadOnlySpan<byte> delimiter,
+        int searchStart,
+        bool requireLeadingCrLf
+    )
+    {
+        var searchOffset = searchStart;
+        while (searchOffset < body.Length)
+        {
+            var relativeIndex = IndexOf(body[searchOffset..], delimiter);
+            if (relativeIndex < 0)
+                return -1;
+
+            var boundaryStart = searchOffset + relativeIndex;
+            if (requireLeadingCrLf)
+            {
+                if (
+                    boundaryStart < CrLf.Length
+                    || !body[(boundaryStart - CrLf.Length)..boundaryStart].SequenceEqual(CrLf)
+                )
+                {
+                    searchOffset = boundaryStart + 1;
+                    continue;
+                }
+            }
+
+            var boundaryEnd = boundaryStart + delimiter.Length;
+            if (boundaryEnd > body.Length)
+                return -1;
+
+            if (IsBoundaryTerminator(body[boundaryEnd..]))
+                return boundaryStart;
+
+            searchOffset = boundaryStart + 1;
+        }
+
+        return -1;
+    }
+
+    private static bool IsBoundaryTerminator(ReadOnlySpan<byte> remaining)
+    {
+        if (remaining.StartsWith(CrLf))
+            return true;
+
+        return remaining.StartsWith(DashDash);
     }
 }
