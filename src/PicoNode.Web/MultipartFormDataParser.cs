@@ -28,16 +28,7 @@ public static class MultipartFormDataParser
         if (idx < 0)
             return null;
 
-        var value = span[(idx + 9)..];
-
-        if (value.Length >= 2 && value[0] == '"')
-        {
-            var endQuote = value[1..].IndexOf('"');
-            return endQuote < 0 ? null : value[1..(endQuote + 1)].ToString();
-        }
-
-        var end = value.IndexOfAny(';', ' ');
-        return (end >= 0 ? value[..end] : value).ToString();
+        return ExtractValue(span[(idx + 9)..], [';', ' ']);
     }
 
     private static MultipartFormData ParseBody(ReadOnlyMemory<byte> body, byte[] boundary)
@@ -127,15 +118,18 @@ public static class MultipartFormDataParser
         if (idx < 0)
             return null;
 
-        var value = span[(idx + searchKey.Length)..];
+        return ExtractValue(span[(idx + searchKey.Length)..], [';', ' ', '\r', '\n']);
+    }
 
+    private static string? ExtractValue(ReadOnlySpan<char> value, ReadOnlySpan<char> terminators)
+    {
         if (value.Length >= 2 && value[0] == '"')
         {
             var endQuote = value[1..].IndexOf('"');
             return endQuote < 0 ? null : value[1..(endQuote + 1)].ToString();
         }
 
-        var end = value.IndexOfAny([';', ' ', '\r', '\n']);
+        var end = value.IndexOfAny(terminators);
         return (end >= 0 ? value[..end] : value).ToString();
     }
 

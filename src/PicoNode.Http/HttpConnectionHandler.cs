@@ -11,8 +11,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
 
     private readonly HttpConnectionHandlerOptions _options;
     private readonly HttpRequestHandler _requestHandler;
-    private readonly ConcurrentDictionary<long, byte> _continueSent = new();
-    private readonly ConcurrentDictionary<long, ConnectionProtocol> _protocols = new();
+    private readonly ConcurrentDictionary<long, ConnectionRuntimeState> _connectionStates = new();
 
     public HttpConnectionHandler(HttpConnectionHandlerOptions options)
     {
@@ -44,9 +43,9 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     )
     {
-        if (_protocols.TryGetValue(connection.ConnectionId, out var protocol))
+        if (_connectionStates.TryGetValue(connection.ConnectionId, out var state))
         {
-            return protocol switch
+            return state.Protocol switch
             {
                 ConnectionProtocol.WebSocket => WebSocketConnectionProcessor.ProcessAsync(
                     connection,
@@ -69,7 +68,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             case DetectedProtocolKind.IncompleteHttp2Preface:
                 return ValueTask.FromResult(buffer.Start);
             case DetectedProtocolKind.Http2:
-                _protocols[connection.ConnectionId] = ConnectionProtocol.Http2;
+                SetConnectionState(connection.ConnectionId, ConnectionProtocol.Http2);
                 return Http2ConnectionProcessor.ProcessAsync(
                     connection,
                     protocolDecision.Buffer,
@@ -78,7 +77,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
                 );
             case DetectedProtocolKind.Http1:
             default:
-                _protocols[connection.ConnectionId] = ConnectionProtocol.Http1;
+                SetConnectionState(connection.ConnectionId, ConnectionProtocol.Http1);
                 return HandleHttp1Async(connection, buffer, cancellationToken);
         }
     }
@@ -117,8 +116,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     )
     {
-        _continueSent.TryRemove(connection.ConnectionId, out _);
-        _protocols.TryRemove(connection.ConnectionId, out _);
+        _connectionStates.TryRemove(connection.ConnectionId, out _);
         return Task.CompletedTask;
     }
 
@@ -128,8 +126,10 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     )
     {
-        if (_continueSent.TryAdd(connection.ConnectionId, 0))
+        var state = GetOrCreateConnectionState(connection.ConnectionId, ConnectionProtocol.Http1);
+        if (!state.ContinueSent)
         {
+            state.ContinueSent = true;
             await connection.SendAsync(
                 new ReadOnlySequence<byte>(ContinueResponse),
                 cancellationToken
@@ -146,7 +146,8 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     )
     {
-        _continueSent.TryRemove(connection.ConnectionId, out _);
+        var state = GetOrCreateConnectionState(connection.ConnectionId, ConnectionProtocol.Http1);
+        state.ContinueSent = false;
 
         try
         {
@@ -177,7 +178,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
 
             if (WebSocketUpgrade.IsUpgradeResponse(response))
             {
-                _protocols[connection.ConnectionId] = ConnectionProtocol.WebSocket;
+                state.Protocol = ConnectionProtocol.WebSocket;
             }
 
             return consumed;
@@ -361,6 +362,30 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         }
 
         return isHttp10;
+    }
+
+    private ConnectionRuntimeState GetOrCreateConnectionState(
+        long connectionId,
+        ConnectionProtocol defaultProtocol
+    ) =>
+        _connectionStates.GetOrAdd(
+            connectionId,
+            static (_, protocol) => new ConnectionRuntimeState { Protocol = protocol },
+            defaultProtocol
+        );
+
+    private void SetConnectionState(long connectionId, ConnectionProtocol protocol)
+    {
+        _connectionStates.AddOrUpdate(
+            connectionId,
+            static (_, value) => new ConnectionRuntimeState { Protocol = value },
+            static (_, existing, value) =>
+            {
+                existing.Protocol = value;
+                return existing;
+            },
+            protocol
+        );
     }
 
     private static ProtocolDecision DetectProtocol(ReadOnlySequence<byte> buffer)
