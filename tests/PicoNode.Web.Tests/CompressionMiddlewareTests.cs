@@ -101,6 +101,101 @@ public sealed class CompressionMiddlewareTests
     }
 
     [Test]
+    public async Task Compresses_body_stream_when_content_length_is_large_enough()
+    {
+        var body = Encoding.UTF8.GetBytes("streamed body that should be compressed");
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
+        var context = CreateContext("GET", "/", "gzip");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Headers =
+                        [
+                            new KeyValuePair<string, string>("Content-Type", "text/plain"),
+                            new KeyValuePair<string, string>("Content-Length", body.Length.ToString()),
+                        ],
+                        BodyStream = new MemoryStream(body),
+                    }
+                ),
+            CancellationToken.None
+        );
+
+        await Assert.That(GetHeader(response, "Content-Encoding")).IsEqualTo("gzip");
+        await Assert.That(GetHeader(response, "Content-Length")).IsNull();
+        await Assert.That(response.Body.IsEmpty).IsTrue();
+        await Assert.That(response.BodyStream).IsNotNull();
+
+        var compressed = await ReadAllBytesAsync(response.BodyStream!);
+        var decompressed = Decompress(compressed, "gzip");
+        await Assert.That(Encoding.UTF8.GetString(decompressed)).IsEqualTo(
+            "streamed body that should be compressed"
+        );
+    }
+
+    [Test]
+    public async Task Does_not_compress_body_stream_without_content_length()
+    {
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
+        var context = CreateContext("GET", "/", "gzip");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Headers =
+                        [new KeyValuePair<string, string>("Content-Type", "text/plain")],
+                        BodyStream = new MemoryStream(Encoding.UTF8.GetBytes("stream")),
+                    }
+                ),
+            CancellationToken.None
+        );
+
+        await Assert.That(GetHeader(response, "Content-Encoding")).IsNull();
+        await Assert.That(response.BodyStream).IsNotNull();
+    }
+
+    [Test]
+    public async Task Does_not_recompress_when_content_encoding_already_present()
+    {
+        var body = Encoding.UTF8.GetBytes("already encoded");
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
+        var context = CreateContext("GET", "/", "gzip");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Headers =
+                        [
+                            new KeyValuePair<string, string>("Content-Type", "text/plain"),
+                            new KeyValuePair<string, string>("Content-Encoding", "gzip"),
+                            new KeyValuePair<string, string>("Content-Length", body.Length.ToString()),
+                        ],
+                        Body = body,
+                    }
+                ),
+            CancellationToken.None
+        );
+
+        await Assert.That(GetHeader(response, "Content-Encoding")).IsEqualTo("gzip");
+        await Assert.That(Encoding.UTF8.GetString(response.Body.Span)).IsEqualTo("already encoded");
+    }
+
+    [Test]
     public async Task Removes_stale_content_length_header()
     {
         var body = Encoding.UTF8.GetBytes("some content");
@@ -144,6 +239,19 @@ public sealed class CompressionMiddlewareTests
         var result = CompressionMiddleware.SelectEncoding(headers);
 
         await Assert.That(result).IsEqualTo("br");
+    }
+
+    [Test]
+    public async Task SelectEncoding_honors_zero_quality_values()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Accept-Encoding"] = "br;q=0, gzip;q=1, deflate;q=0",
+        };
+
+        var result = CompressionMiddleware.SelectEncoding(headers);
+
+        await Assert.That(result).IsEqualTo("gzip");
     }
 
     private static WebContext CreateContext(string method, string target, string? acceptEncoding)
@@ -201,5 +309,15 @@ public sealed class CompressionMiddlewareTests
         using var output = new MemoryStream();
         decompressor.CopyTo(output);
         return output.ToArray();
+    }
+
+    private static async Task<ReadOnlyMemory<byte>> ReadAllBytesAsync(Stream stream)
+    {
+        await using (stream)
+        {
+            using var output = new MemoryStream();
+            await stream.CopyToAsync(output);
+            return output.ToArray();
+        }
     }
 }
