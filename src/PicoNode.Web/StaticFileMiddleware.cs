@@ -38,7 +38,7 @@ public sealed class StaticFileMiddleware
 
         if (_requestPathPrefix.Length > 0)
         {
-            if (!requestPath.StartsWith(_requestPathPrefix, StringComparison.Ordinal))
+            if (!MatchesRequestPathPrefix(requestPath))
             {
                 return await next(context, cancellationToken);
             }
@@ -54,10 +54,7 @@ public sealed class StaticFileMiddleware
         var relativePath = requestPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
         var fullPath = Path.GetFullPath(Path.Combine(_rootPath, relativePath));
 
-        if (
-            !fullPath.StartsWith(_rootPath, StringComparison.OrdinalIgnoreCase)
-            || !File.Exists(fullPath)
-        )
+        if (!IsUnderRoot(fullPath) || !File.Exists(fullPath))
         {
             return await next(context, cancellationToken);
         }
@@ -92,5 +89,28 @@ public sealed class StaticFileMiddleware
                     }
                 ),
         };
+    }
+
+    private bool MatchesRequestPathPrefix(string requestPath)
+    {
+        if (!requestPath.StartsWith(_requestPathPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return requestPath.Length == _requestPathPrefix.Length
+            || requestPath[_requestPathPrefix.Length] == '/';
+    }
+
+    private bool IsUnderRoot(string fullPath)
+    {
+        if (!fullPath.StartsWith(_rootPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return fullPath.Length == _rootPath.Length
+            || fullPath[_rootPath.Length] == Path.DirectorySeparatorChar
+            || fullPath[_rootPath.Length] == Path.AltDirectorySeparatorChar;
     }
 }

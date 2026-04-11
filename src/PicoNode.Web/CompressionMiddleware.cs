@@ -335,6 +335,7 @@ public sealed class CompressionMiddleware
         private readonly string _encoding;
         private readonly CompressionLevel _level;
         private readonly Pipe _pipe = new();
+        private readonly CancellationTokenSource _disposeCts = new();
         private Task? _producerTask;
         private bool _disposed;
 
@@ -386,7 +387,7 @@ public sealed class CompressionMiddleware
 
             while (true)
             {
-                var result = await _pipe.Reader.ReadAsync(cancellationToken);
+                var result = await _pipe.Reader.ReadAsync(CreateLinkedToken(cancellationToken).Token);
                 var available = result.Buffer;
 
                 if (!available.IsEmpty)
@@ -434,6 +435,7 @@ public sealed class CompressionMiddleware
             }
 
             _disposed = true;
+            _disposeCts.Cancel();
 
             if (_producerTask is null)
             {
@@ -452,6 +454,7 @@ public sealed class CompressionMiddleware
             }
 
             await _pipe.Reader.CompleteAsync().ConfigureAwait(false);
+            _disposeCts.Dispose();
             await base.DisposeAsync().ConfigureAwait(false);
         }
 
@@ -476,13 +479,18 @@ public sealed class CompressionMiddleware
 
             try
             {
+                using var linkedCts = CreateLinkedToken(cancellationToken);
                 await using (_source)
                 {
                     await using var output = _pipe.Writer.AsStream(leaveOpen: true);
                     await using var compressor = CreateCompressor(output, _encoding, _level);
-                    await _source.CopyToAsync(compressor, cancellationToken).ConfigureAwait(false);
-                    await compressor.FlushAsync(cancellationToken).ConfigureAwait(false);
+                    await _source.CopyToAsync(compressor, linkedCts.Token).ConfigureAwait(false);
+                    await compressor.FlushAsync(linkedCts.Token).ConfigureAwait(false);
                 }
+            }
+            catch (OperationCanceledException) when (_disposeCts.IsCancellationRequested)
+            {
+                error = null;
             }
             catch (Exception ex)
             {
@@ -504,5 +512,10 @@ public sealed class CompressionMiddleware
                 copied += segment.Length;
             }
         }
+
+        private CancellationTokenSource CreateLinkedToken(CancellationToken cancellationToken) =>
+            cancellationToken.CanBeCanceled
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _disposeCts.Token)
+                : CancellationTokenSource.CreateLinkedTokenSource(_disposeCts.Token);
     }
 }

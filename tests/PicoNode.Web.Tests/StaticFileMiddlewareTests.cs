@@ -147,6 +147,42 @@ public sealed class StaticFileMiddlewareTests
     }
 
     [Test]
+    public async Task Prevents_sibling_root_prefix_bypass()
+    {
+        var baseDir = Path.Combine(Path.GetTempPath(), "pico_static_root_" + Guid.NewGuid().ToString("N"));
+        var siblingDir = baseDir + "2";
+        Directory.CreateDirectory(baseDir);
+        Directory.CreateDirectory(siblingDir);
+        File.WriteAllText(Path.Combine(siblingDir, "secret.txt"), "secret");
+
+        try
+        {
+            var middleware = new StaticFileMiddleware(baseDir);
+            var context = CreateContext("GET", "/../" + Path.GetFileName(siblingDir) + "/secret.txt");
+
+            var response = await middleware.InvokeAsync(
+                context,
+                NotFoundHandler,
+                CancellationToken.None
+            );
+
+            await Assert.That(response.StatusCode).IsEqualTo(404);
+        }
+        finally
+        {
+            if (Directory.Exists(baseDir))
+            {
+                Directory.Delete(baseDir, recursive: true);
+            }
+
+            if (Directory.Exists(siblingDir))
+            {
+                Directory.Delete(siblingDir, recursive: true);
+            }
+        }
+    }
+
+    [Test]
     public async Task Serves_file_with_prefix()
     {
         File.WriteAllText(Path.Combine(_tempDir, "style.css"), "body{}");
@@ -181,6 +217,42 @@ public sealed class StaticFileMiddlewareTests
         );
 
         await Assert.That(response.StatusCode).IsEqualTo(404);
+    }
+
+    [Test]
+    public async Task Passes_through_when_request_only_shares_prefix_text()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "style.css"), "body{}");
+        var middleware = new StaticFileMiddleware(_tempDir, "/static");
+        var context = CreateContext("GET", "/staticity/style.css");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            NotFoundHandler,
+            CancellationToken.None
+        );
+
+        await Assert.That(response.StatusCode).IsEqualTo(404);
+    }
+
+    [Test]
+    public async Task Prefix_exact_match_still_resolves_index_html()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "index.html"), "prefix-home");
+        var middleware = new StaticFileMiddleware(_tempDir, "/static");
+        var context = CreateContext("GET", "/static");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            NotFoundHandler,
+            CancellationToken.None
+        );
+
+        await Assert.That(response.StatusCode).IsEqualTo(200);
+        await Assert.That(response.BodyStream).IsNotNull();
+        await using var bodyStream = response.BodyStream!;
+        using var reader = new StreamReader(bodyStream, Encoding.UTF8, leaveOpen: false);
+        await Assert.That(await reader.ReadToEndAsync()).IsEqualTo("prefix-home");
     }
 
     [Test]

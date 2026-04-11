@@ -165,6 +165,39 @@ public sealed class CompressionMiddlewareTests
     }
 
     [Test]
+    public async Task Disposing_streaming_compression_body_before_drain_does_not_hang()
+    {
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
+        var context = CreateContext("GET", "/", "gzip");
+        var source = new BlockingReadStream(Encoding.UTF8.GetBytes("streamed body that should not hang"));
+
+        var response = await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Headers =
+                        [
+                            new KeyValuePair<string, string>("Content-Type", "text/plain"),
+                            new KeyValuePair<string, string>("Content-Length", "35"),
+                        ],
+                        BodyStream = source,
+                    }
+                ),
+            CancellationToken.None
+        );
+
+        await Assert.That(response.BodyStream).IsNotNull();
+
+        var disposeTask = response.BodyStream!.DisposeAsync().AsTask();
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(3));
+        await Assert.That(source.DisposeCount).IsEqualTo(1);
+    }
+
+    [Test]
     public async Task Does_not_recompress_when_content_encoding_already_present()
     {
         var body = Encoding.UTF8.GetBytes("already encoded");
@@ -318,6 +351,53 @@ public sealed class CompressionMiddlewareTests
             using var output = new MemoryStream();
             await stream.CopyToAsync(output);
             return output.ToArray();
+        }
+    }
+
+    private sealed class BlockingReadStream(byte[] data) : Stream
+    {
+        private readonly byte[] _data = data;
+
+        public int DisposeCount { get; private set; }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => _data.Length;
+
+        public override long Position
+        {
+            get => 0;
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() { }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return base.DisposeAsync();
         }
     }
 }
