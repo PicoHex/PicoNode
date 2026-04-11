@@ -7,7 +7,6 @@
     <LangVersion>latest</LangVersion>
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
-    <TrimMode>full</TrimMode>
   </PropertyGroup>
 
   <ItemGroup>
