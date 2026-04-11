@@ -704,6 +704,40 @@ public sealed class SmokeTests
     }
 
     [Test]
+    public async Task Tcp_stop_cancellation_leaves_state_as_stopping_until_drain_finishes()
+    {
+        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var handler = new BlockingCloseHandler();
+
+        await using var node = new TcpNode(
+            new TcpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                ConnectionHandler = handler,
+                DrainTimeout = TimeSpan.FromSeconds(5),
+            }
+        );
+
+        await node.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, port);
+        await handler.Connected.WaitAsync(TimeSpan.FromSeconds(5));
+
+        using var stopCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        var stopTask = node.StopAsync(stopCts.Token);
+        await handler.CloseStarted.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await Assert.That(async () => await stopTask).Throws<OperationCanceledException>();
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopping);
+
+        handler.AllowClose();
+        await node.StopAsync();
+        await handler.CloseCompleted.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+    }
+
+    [Test]
     public async Task RunTlsTcpEchoSmokeAsync()
     {
         var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);

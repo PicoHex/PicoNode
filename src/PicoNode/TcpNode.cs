@@ -136,6 +136,8 @@ public sealed class TcpNode : INode, IAsyncDisposable
             return;
         }
 
+        var stopCompleted = false;
+
         using var stopCts =
             Options.DrainTimeout > TimeSpan.Zero
                 ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
@@ -203,13 +205,19 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 await drained.Task.WaitAsync(cancellationToken);
             }
+
+            stopCompleted = true;
         }
         finally
         {
             lock (_stateLock)
             {
-                _drained = null;
-                if (_state != NodeState.Disposed)
+                if (stopCompleted)
+                {
+                    _drained = null;
+                }
+
+                if (_state != NodeState.Disposed && stopCompleted)
                 {
                     _state = NodeState.Stopped;
                 }

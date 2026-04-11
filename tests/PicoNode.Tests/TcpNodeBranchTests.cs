@@ -304,6 +304,30 @@ public sealed class TcpNodeBranchTests
     }
 
     [Test]
+    public async Task StopAsync_cancellation_leaves_state_as_stopping_until_drain_finishes()
+    {
+        var handler = new RecordingTcpHandler(blockClose: true);
+        await using var node = CreateNode(handler);
+        using var client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
+        await node.StartAsync();
+        await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+        await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        using var stopCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        var stopTask = node.StopAsync(stopCts.Token);
+        await handler.CloseStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        await Assert.That(async () => await stopTask).Throws<OperationCanceledException>();
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopping);
+
+        handler.AllowClose();
+        await node.StopAsync();
+        await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+    }
+
+    [Test]
     public async Task TryTrackConnection_returns_false_when_node_is_stopping()
     {
         var pair = await CreateConnectedSocketsAsync();
@@ -518,11 +542,23 @@ public sealed class TcpNodeBranchTests
 
     private sealed class RecordingTcpHandler : ITcpConnectionHandler
     {
+        private readonly bool _blockClose;
+        private readonly TaskCompletionSource _allowClose =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public TaskCompletionSource<ConnectedTcpConnection> Connected { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public TaskCompletionSource<ClosedTcpConnection> Closed { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource CloseStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public RecordingTcpHandler(bool blockClose = false)
+        {
+            _blockClose = blockClose;
+        }
 
         public Task OnConnectedAsync(
             ITcpConnectionContext connection,
@@ -548,8 +584,27 @@ public sealed class TcpNodeBranchTests
             CancellationToken cancellationToken
         )
         {
+            CloseStarted.TrySetResult();
+
+            if (_blockClose)
+            {
+                return WaitForCloseAsync(reason, error, cancellationToken);
+            }
+
             Closed.TrySetResult(new ClosedTcpConnection(reason, error));
             return Task.CompletedTask;
+        }
+
+        public void AllowClose() => _allowClose.TrySetResult();
+
+        private async Task WaitForCloseAsync(
+            TcpCloseReason reason,
+            Exception? error,
+            CancellationToken cancellationToken
+        )
+        {
+            await _allowClose.Task.WaitAsync(cancellationToken);
+            Closed.TrySetResult(new ClosedTcpConnection(reason, error));
         }
     }
 
