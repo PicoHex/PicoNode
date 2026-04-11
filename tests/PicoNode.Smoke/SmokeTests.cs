@@ -177,7 +177,7 @@ public sealed class SmokeTests
 
         await SendHttpRequestAsync(
             stream,
-            "POST /submit HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
+            "POST /submit HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: gzip\r\n\r\n"
         );
 
         var response = await ReadHttpResponseAsync(stream);
