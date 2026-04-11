@@ -18,7 +18,7 @@ public static class MultipartFormDataParser
         var boundary = ExtractBoundary(contentType);
         return boundary is null
             ? null
-            : ParseBody(request.Body.Span, Encoding.UTF8.GetBytes(boundary));
+            : ParseBody(request.Body, Encoding.UTF8.GetBytes(boundary));
     }
 
     internal static string? ExtractBoundary(string contentType)
@@ -40,8 +40,9 @@ public static class MultipartFormDataParser
         return (end >= 0 ? value[..end] : value).ToString();
     }
 
-    private static MultipartFormData ParseBody(ReadOnlySpan<byte> body, byte[] boundary)
+    private static MultipartFormData ParseBody(ReadOnlyMemory<byte> body, byte[] boundary)
     {
+        var bodySpan = body.Span;
         var fields = new List<MultipartFormField>();
         var files = new List<MultipartFormFile>();
 
@@ -49,38 +50,38 @@ public static class MultipartFormDataParser
         DashDash.CopyTo(delimiter.AsSpan());
         boundary.CopyTo(delimiter.AsSpan(2));
 
-        var closeDelimiter = new byte[delimiter.Length + 2];
-        delimiter.CopyTo(closeDelimiter.AsSpan());
-        DashDash.CopyTo(closeDelimiter.AsSpan(delimiter.Length));
-
-        var pos = IndexOf(body, delimiter);
+        var pos = IndexOf(bodySpan, delimiter);
         if (pos < 0)
             return new MultipartFormData(fields, files);
 
         pos += delimiter.Length;
 
-        while (pos < body.Length)
+        while (pos < bodySpan.Length)
         {
-            if (pos + CrLf.Length <= body.Length && body[pos..].StartsWith(DashDash))
+            if (pos + CrLf.Length <= bodySpan.Length && bodySpan[pos..].StartsWith(DashDash))
                 break;
 
-            if (pos + CrLf.Length <= body.Length && body[pos..].StartsWith(CrLf))
+            if (pos + CrLf.Length <= bodySpan.Length && bodySpan[pos..].StartsWith(CrLf))
                 pos += CrLf.Length;
             else
                 break;
 
-            var headerEnd = IndexOf(body[pos..], DoubleCrLf);
+            var headerEnd = IndexOf(bodySpan[pos..], DoubleCrLf);
             if (headerEnd < 0)
                 break;
 
-            var headerBytes = body[pos..(pos + headerEnd)];
+            var headerBytes = bodySpan[pos..(pos + headerEnd)];
             pos += headerEnd + DoubleCrLf.Length;
 
-            var nextDelimiter = IndexOf(body[pos..], delimiter);
+            var nextDelimiter = IndexOf(bodySpan[pos..], delimiter);
             if (nextDelimiter < 0)
                 break;
 
-            var content = body[pos..(pos + nextDelimiter - CrLf.Length)];
+            var contentLength = nextDelimiter - CrLf.Length;
+            if (contentLength < 0)
+                break;
+
+            var content = body.Slice(pos, contentLength);
             pos += nextDelimiter + delimiter.Length;
 
             ParsePart(headerBytes, content, fields, files);
@@ -91,7 +92,7 @@ public static class MultipartFormDataParser
 
     private static void ParsePart(
         ReadOnlySpan<byte> headerBytes,
-        ReadOnlySpan<byte> content,
+        ReadOnlyMemory<byte> content,
         List<MultipartFormField> fields,
         List<MultipartFormFile> files
     )
@@ -110,11 +111,11 @@ public static class MultipartFormDataParser
         if (fileName is not null)
         {
             var ct = GetPartHeaderValue(headers, "Content-Type") ?? "application/octet-stream";
-            files.Add(new MultipartFormFile(name, fileName, ct, content.ToArray()));
+            files.Add(new MultipartFormFile(name, fileName, ct, content));
         }
         else
         {
-            fields.Add(new MultipartFormField(name, Encoding.UTF8.GetString(content)));
+            fields.Add(new MultipartFormField(name, Encoding.UTF8.GetString(content.Span)));
         }
     }
 

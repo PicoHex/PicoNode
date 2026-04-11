@@ -98,6 +98,7 @@ public sealed class MultipartFormDataParserTests
         await Assert
             .That(Encoding.UTF8.GetString(result.Files[0].Content.Span))
             .IsEqualTo(fileContent);
+        await Assert.That(result.Files[0].Content.Span.Overlaps(request.Body.Span)).IsTrue();
     }
 
     [Test]
@@ -126,6 +127,8 @@ public sealed class MultipartFormDataParserTests
         await Assert.That(result.Files[0].Name).IsEqualTo("doc");
         await Assert.That(result.Files[0].FileName).IsEqualTo("doc.pdf");
         await Assert.That(result.Files[0].ContentType).IsEqualTo("application/pdf");
+        await Assert.That(Encoding.UTF8.GetString(result.Files[0].Content.Span)).IsEqualTo("PDF-DATA");
+        await Assert.That(result.Files[0].Content.Span.Overlaps(request.Body.Span)).IsTrue();
     }
 
     [Test]
