@@ -91,9 +91,9 @@ public sealed class CompressionMiddleware
         }
 
         ReadOnlySpan<char> remaining = acceptEncoding;
-        var hasBr = false;
-        var hasGzip = false;
-        var hasDeflate = false;
+        string? bestEncoding = null;
+        var bestQuality = double.NegativeInfinity;
+        var bestPriority = int.MinValue;
 
         while (remaining.Length > 0)
         {
@@ -102,8 +102,9 @@ public sealed class CompressionMiddleware
 
             var semicolon = token.IndexOf(';');
             var encoding = (semicolon >= 0 ? token[..semicolon] : token).Trim();
+            var parameters = token[(semicolon >= 0 ? semicolon : token.Length)..];
 
-            if (!HasPositiveQuality(token[(semicolon >= 0 ? semicolon : token.Length)..]))
+            if (!TryGetQuality(parameters, out var quality) || quality <= 0)
             {
                 if (comma < 0)
                 {
@@ -114,17 +115,16 @@ public sealed class CompressionMiddleware
                 continue;
             }
 
-            if (encoding.Equals("br", StringComparison.OrdinalIgnoreCase))
+            var candidate = GetSupportedEncoding(encoding);
+            if (candidate is { } supportedEncoding)
             {
-                hasBr = true;
-            }
-            else if (encoding.Equals("gzip", StringComparison.OrdinalIgnoreCase))
-            {
-                hasGzip = true;
-            }
-            else if (encoding.Equals("deflate", StringComparison.OrdinalIgnoreCase))
-            {
-                hasDeflate = true;
+                var priority = GetEncodingPriority(supportedEncoding);
+                if (quality > bestQuality || (quality == bestQuality && priority > bestPriority))
+                {
+                    bestEncoding = supportedEncoding;
+                    bestQuality = quality;
+                    bestPriority = priority;
+                }
             }
 
             if (comma < 0)
@@ -135,22 +135,7 @@ public sealed class CompressionMiddleware
             remaining = remaining[(comma + 1)..];
         }
 
-        if (hasBr)
-        {
-            return "br";
-        }
-
-        if (hasGzip)
-        {
-            return "gzip";
-        }
-
-        if (hasDeflate)
-        {
-            return "deflate";
-        }
-
-        return null;
+        return bestEncoding;
     }
 
     private static bool HasHeader(IReadOnlyList<KeyValuePair<string, string>> headers, string name)
@@ -260,8 +245,38 @@ public sealed class CompressionMiddleware
         return existing + ", " + value;
     }
 
-    private static bool HasPositiveQuality(ReadOnlySpan<char> parameters)
+    private static string? GetSupportedEncoding(ReadOnlySpan<char> encoding)
     {
+        if (encoding.Equals("br", StringComparison.OrdinalIgnoreCase))
+        {
+            return "br";
+        }
+
+        if (encoding.Equals("gzip", StringComparison.OrdinalIgnoreCase))
+        {
+            return "gzip";
+        }
+
+        if (encoding.Equals("deflate", StringComparison.OrdinalIgnoreCase))
+        {
+            return "deflate";
+        }
+
+        return null;
+    }
+
+    private static int GetEncodingPriority(string encoding) =>
+        encoding switch
+        {
+            "br" => 3,
+            "gzip" => 2,
+            "deflate" => 1,
+            _ => 0,
+        };
+
+    private static bool TryGetQuality(ReadOnlySpan<char> parameters, out double quality)
+    {
+        quality = 1.0;
         if (parameters.IsEmpty)
         {
             return true;
@@ -281,12 +296,11 @@ public sealed class CompressionMiddleware
             if (part.StartsWith("q=", StringComparison.OrdinalIgnoreCase))
             {
                 return double.TryParse(
-                        part[2..],
-                        NumberStyles.AllowDecimalPoint,
-                        CultureInfo.InvariantCulture,
-                        out var quality
-                    )
-                    && quality > 0;
+                    part[2..],
+                    NumberStyles.AllowDecimalPoint,
+                    CultureInfo.InvariantCulture,
+                    out quality
+                );
             }
 
             if (separator < 0)
@@ -387,7 +401,8 @@ public sealed class CompressionMiddleware
 
             while (true)
             {
-                var result = await _pipe.Reader.ReadAsync(CreateLinkedToken(cancellationToken).Token);
+                using var linkedCts = CreateLinkedToken(cancellationToken);
+                var result = await _pipe.Reader.ReadAsync(linkedCts.Token);
                 var available = result.Buffer;
 
                 if (!available.IsEmpty)

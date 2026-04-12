@@ -287,6 +287,71 @@ public sealed class CompressionMiddlewareTests
         await Assert.That(result).IsEqualTo("gzip");
     }
 
+    [Test]
+    public async Task SelectEncoding_prefers_highest_quality_supported_encoding()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Accept-Encoding"] = "br;q=0.5, gzip;q=1, deflate;q=0.8",
+        };
+
+        var result = CompressionMiddleware.SelectEncoding(headers);
+
+        await Assert.That(result).IsEqualTo("gzip");
+    }
+
+    [Test]
+    public async Task SelectEncoding_preserves_supported_equal_quality_tie_break_order()
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Accept-Encoding"] = "gzip;q=0.8, deflate;q=0.8, br;q=0.8",
+        };
+
+        var result = CompressionMiddleware.SelectEncoding(headers);
+
+        await Assert.That(result).IsEqualTo("br");
+    }
+
+    [Test]
+    public async Task Disposing_streaming_compression_body_after_read_start_does_not_hang()
+    {
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
+        var context = CreateContext("GET", "/", "gzip");
+        var source = new ControlledReadStream(Encoding.UTF8.GetBytes("streamed body that should not hang after read start"));
+
+        var response = await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Headers =
+                        [
+                            new KeyValuePair<string, string>("Content-Type", "text/plain"),
+                            new KeyValuePair<string, string>("Content-Length", "50"),
+                        ],
+                        BodyStream = source,
+                    }
+                ),
+            CancellationToken.None
+        );
+
+        await Assert.That(response.BodyStream).IsNotNull();
+
+        var readBuffer = new byte[16];
+        Task<int> readTask = response.BodyStream!.ReadAsync(readBuffer, 0, readBuffer.Length);
+        await source.FirstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        var disposeTask = response.BodyStream.DisposeAsync().AsTask();
+        source.AllowReadToContinue.TrySetCanceled();
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(3));
+        await Assert.That(readTask.IsCompleted).IsTrue();
+        await Assert.That(source.DisposeCount).IsEqualTo(1);
+    }
+
     private static WebContext CreateContext(string method, string target, string? acceptEncoding)
     {
         var headers = new List<KeyValuePair<string, string>>();
@@ -386,6 +451,75 @@ public sealed class CompressionMiddlewareTests
         {
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return 0;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return base.DisposeAsync();
+        }
+    }
+
+    private sealed class ControlledReadStream(byte[] data) : Stream
+    {
+        private readonly byte[] _data = data;
+        private int _position;
+
+        public TaskCompletionSource FirstReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowReadToContinue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int DisposeCount { get; private set; }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => _data.Length;
+
+        public override long Position
+        {
+            get => _position;
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() { }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            FirstReadStarted.TrySetResult();
+            try
+            {
+                await AllowReadToContinue.Task.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            if (_position >= _data.Length)
+            {
+                return 0;
+            }
+
+            var bytesToRead = Math.Min(buffer.Length, _data.Length - _position);
+            _data.AsMemory(_position, bytesToRead).CopyTo(buffer);
+            _position += bytesToRead;
+            return bytesToRead;
         }
 
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
