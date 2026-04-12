@@ -256,6 +256,71 @@ public sealed class StaticFileMiddlewareTests
     }
 
     [Test]
+    public async Task Serves_custom_default_document_for_root_path()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "home.html"), "custom-home");
+        var middleware = new StaticFileMiddleware(
+            _tempDir,
+            new StaticFileMiddlewareOptions { DefaultDocument = "home.html" }
+        );
+        var context = CreateContext("GET", "/");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            NotFoundHandler,
+            CancellationToken.None
+        );
+
+        await Assert.That(response.StatusCode).IsEqualTo(200);
+        await using var bodyStream = response.BodyStream!;
+        using var reader = new StreamReader(bodyStream, Encoding.UTF8, leaveOpen: false);
+        await Assert.That(await reader.ReadToEndAsync()).IsEqualTo("custom-home");
+    }
+
+    [Test]
+    public async Task Serves_custom_default_document_for_directory_path()
+    {
+        var docsDir = Path.Combine(_tempDir, "docs");
+        Directory.CreateDirectory(docsDir);
+        File.WriteAllText(Path.Combine(docsDir, "home.html"), "docs-home");
+        var middleware = new StaticFileMiddleware(
+            _tempDir,
+            new StaticFileMiddlewareOptions { DefaultDocument = "home.html" }
+        );
+        var context = CreateContext("GET", "/docs/");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            NotFoundHandler,
+            CancellationToken.None
+        );
+
+        await Assert.That(response.StatusCode).IsEqualTo(200);
+        await using var bodyStream = response.BodyStream!;
+        using var reader = new StreamReader(bodyStream, Encoding.UTF8, leaveOpen: false);
+        await Assert.That(await reader.ReadToEndAsync()).IsEqualTo("docs-home");
+    }
+
+    [Test]
+    public async Task Passes_through_when_default_document_is_disabled()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "index.html"), "home");
+        var middleware = new StaticFileMiddleware(
+            _tempDir,
+            new StaticFileMiddlewareOptions { DefaultDocument = null }
+        );
+        var context = CreateContext("GET", "/");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            NotFoundHandler,
+            CancellationToken.None
+        );
+
+        await Assert.That(response.StatusCode).IsEqualTo(404);
+    }
+
+    [Test]
     public async Task Maps_correct_content_types()
     {
         File.WriteAllText(Path.Combine(_tempDir, "app.js"), "console.log(1)");
@@ -285,6 +350,18 @@ public sealed class StaticFileMiddlewareTests
     {
         Assert.Throws<DirectoryNotFoundException>(
             () => new StaticFileMiddleware(Path.Combine(_tempDir, "nonexistent"))
+        );
+    }
+
+    [Test]
+    public void Constructor_rejects_invalid_default_document()
+    {
+        Assert.Throws<ArgumentException>(
+            () =>
+                new StaticFileMiddleware(
+                    _tempDir,
+                    new StaticFileMiddlewareOptions { DefaultDocument = "docs/home.html" }
+                )
         );
     }
 

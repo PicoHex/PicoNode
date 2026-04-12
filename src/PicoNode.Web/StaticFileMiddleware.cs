@@ -4,13 +4,22 @@ public sealed class StaticFileMiddleware
 {
     private readonly string _rootPath;
     private readonly string _requestPathPrefix;
+    private readonly string? _defaultDocument;
 
     public StaticFileMiddleware(string rootPath, string requestPathPrefix = "/")
+        : this(rootPath, new StaticFileMiddlewareOptions { RequestPathPrefix = requestPathPrefix }) { }
+
+    public StaticFileMiddleware(string rootPath, StaticFileMiddlewareOptions options)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
+        ArgumentNullException.ThrowIfNull(options);
+
+        ValidateRequestPathPrefix(options.RequestPathPrefix);
+        ValidateDefaultDocument(options.DefaultDocument);
 
         _rootPath = Path.GetFullPath(rootPath);
-        _requestPathPrefix = requestPathPrefix.TrimEnd('/');
+        _requestPathPrefix = options.RequestPathPrefix.TrimEnd('/');
+        _defaultDocument = options.DefaultDocument;
 
         if (!Directory.Exists(_rootPath))
         {
@@ -46,10 +55,7 @@ public sealed class StaticFileMiddleware
             requestPath = requestPath[_requestPathPrefix.Length..];
         }
 
-        if (requestPath.Length == 0 || requestPath == "/")
-        {
-            requestPath = "/index.html";
-        }
+        requestPath = TryApplyDefaultDocument(requestPath);
 
         var relativePath = requestPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
         var fullPath = Path.GetFullPath(Path.Combine(_rootPath, relativePath));
@@ -100,6 +106,57 @@ public sealed class StaticFileMiddleware
 
         return requestPath.Length == _requestPathPrefix.Length
             || requestPath[_requestPathPrefix.Length] == '/';
+    }
+
+    private string TryApplyDefaultDocument(string requestPath)
+    {
+        if (_defaultDocument is null)
+        {
+            return requestPath;
+        }
+
+        if (requestPath.Length == 0 || requestPath == "/")
+        {
+            return "/" + _defaultDocument;
+        }
+
+        if (requestPath[^1] == '/')
+        {
+            return requestPath + _defaultDocument;
+        }
+
+        return requestPath;
+    }
+
+    private static void ValidateRequestPathPrefix(string requestPathPrefix)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(requestPathPrefix);
+        if (requestPathPrefix[0] != '/')
+        {
+            throw new ArgumentException("RequestPathPrefix must start with '/'.", nameof(requestPathPrefix));
+        }
+    }
+
+    private static void ValidateDefaultDocument(string? defaultDocument)
+    {
+        if (defaultDocument is null)
+        {
+            return;
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(defaultDocument);
+        if (
+            defaultDocument.Contains('/')
+            || defaultDocument.Contains('\\')
+            || Path.IsPathRooted(defaultDocument)
+            || defaultDocument is "." or ".."
+        )
+        {
+            throw new ArgumentException(
+                "DefaultDocument must be a single relative file name.",
+                nameof(defaultDocument)
+            );
+        }
     }
 
     private bool IsUnderRoot(string fullPath)
