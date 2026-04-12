@@ -28,6 +28,16 @@ internal static class Http2ConnectionProcessor
         {
             if (!Http2FrameCodec.TryReadFrame(remaining, out var frame, out var frameConsumed))
             {
+                if (Http2FrameCodec.IsFrameTooLarge(remaining))
+                {
+                    await SendGoAwayAndCloseAsync(
+                        connection,
+                        Http2ErrorCode.FrameSizeError,
+                        cancellationToken
+                    );
+                    return consumed;
+                }
+
                 return consumed;
             }
 
