@@ -13,6 +13,8 @@ public sealed class WebApp
     public WebApp(WebAppOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.MaxRequestBytes, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.StreamingResponseBufferSize, 0);
         _options = options;
     }
 
@@ -71,6 +73,8 @@ public sealed class WebApp
                 RequestHandler = httpHandler,
                 ServerHeader = _options?.ServerHeader,
                 MaxRequestBytes = _options?.MaxRequestBytes ?? 8192,
+                StreamingResponseBufferSize = _options?.StreamingResponseBufferSize
+                    ?? HttpConnectionHandlerOptions.DefaultStreamingResponseBufferSize,
             }
         );
     }
