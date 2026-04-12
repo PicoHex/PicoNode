@@ -42,6 +42,10 @@ public sealed class UdpNode : INode, IAsyncDisposable
             options.ReceiveDatagramBufferSize,
             MaxUdpDatagramSize
         );
+        if (options.ReceiveFaultBackoff < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.ReceiveFaultBackoff));
+        }
 
         _socket = new Socket(options.Endpoint.AddressFamily, SocketType.Dgram, ProtocolType.Udp)
         {
@@ -318,7 +322,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 ReportFault(NodeFaultCode.DatagramReceiveFailed, OperationReceive, ex);
                 try
                 {
-                    await Task.Delay(10, cancellationToken);
+                    await Task.Delay(Options.ReceiveFaultBackoff, cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

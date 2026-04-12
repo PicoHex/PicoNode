@@ -95,6 +95,24 @@ public sealed class UdpNodeBranchTests
     }
 
     [Test]
+    public async Task Constructor_rejects_negative_receive_fault_backoff()
+    {
+        await Assert
+            .That(
+                () =>
+                    new UdpNode(
+                        new UdpNodeOptions
+                        {
+                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                            DatagramHandler = new NoOpUdpHandler(),
+                            ReceiveFaultBackoff = TimeSpan.FromMilliseconds(-1),
+                        }
+                    )
+            )
+            .Throws<ArgumentOutOfRangeException>();
+    }
+
+    [Test]
     public async Task ReportFault_returns_when_handler_is_null()
     {
         var node = new UdpNode(
