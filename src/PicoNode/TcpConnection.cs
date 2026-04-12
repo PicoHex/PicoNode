@@ -7,7 +7,7 @@ internal sealed class TcpConnection : IAsyncDisposable
     private const string OperationHandler = "tcp.handler";
     private const string OperationCloseHandler = "tcp.close.handler";
     private const int MinimumReceiveBufferSize = 512;
-    private const int PipeSegmentMultiplier = 4;
+    private const int DefaultReceivePipePauseThresholdMultiplier = 4;
     private const int MaxScatterGatherSegments = 16;
 
     private readonly TcpNode _node;
@@ -31,7 +31,7 @@ internal sealed class TcpConnection : IAsyncDisposable
             node.Options.ReceiveSocketBufferSize,
             MinimumReceiveBufferSize
         );
-        _pipe = new Pipe(CreatePipeOptions(_receiveBufferSize));
+        _pipe = new Pipe(CreatePipeOptions(node.Options, _receiveBufferSize));
         _sendPath = new SendPath(socket, stream);
         Id = Interlocked.Increment(ref _nextId);
         RemoteEndPoint = (IPEndPoint)socket.RemoteEndPoint!;
@@ -299,9 +299,10 @@ internal sealed class TcpConnection : IAsyncDisposable
         _socket.Dispose();
     }
 
-    private static PipeOptions CreatePipeOptions(int receiveBufferSize)
+    private static PipeOptions CreatePipeOptions(TcpNodeOptions options, int receiveBufferSize)
     {
-        var pauseThreshold = receiveBufferSize * PipeSegmentMultiplier;
+        var pauseThreshold = options.ReceivePipePauseThresholdBytes
+            ?? checked(receiveBufferSize * DefaultReceivePipePauseThresholdMultiplier);
         return new PipeOptions(
             pauseWriterThreshold: pauseThreshold,
             resumeWriterThreshold: pauseThreshold / 2,

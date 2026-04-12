@@ -14,8 +14,10 @@ public sealed class TcpNodeOptions
     public LingerOption LingerState { get; init; } = new(false, 0);
     public int Backlog { get; init; } = 128;
     public TimeSpan IdleTimeout { get; init; } = TimeSpan.FromMinutes(2);
+    public TimeSpan IdleScanInterval { get; init; } = TimeSpan.FromSeconds(1);
     public TimeSpan AcceptFaultBackoff { get; init; } = TimeSpan.FromMilliseconds(50);
     public TimeSpan DrainTimeout { get; init; } = TimeSpan.FromSeconds(5);
+    public int? ReceivePipePauseThresholdBytes { get; init; }
     public bool EnableDualMode { get; init; }
     public SslServerAuthenticationOptions? SslOptions { get; init; }
 }

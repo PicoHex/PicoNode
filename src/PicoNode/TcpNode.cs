@@ -38,6 +38,11 @@ public sealed class TcpNode : INode, IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(options.IdleTimeout));
         }
 
+        if (options.IdleScanInterval <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.IdleScanInterval));
+        }
+
         if (options.AcceptFaultBackoff < TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(options.AcceptFaultBackoff));
@@ -46,6 +51,11 @@ public sealed class TcpNode : INode, IAsyncDisposable
         if (options.DrainTimeout < TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(options.DrainTimeout));
+        }
+
+        if (options.ReceivePipePauseThresholdBytes is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options.ReceivePipePauseThresholdBytes));
         }
 
         _listener = new Socket(options.Endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
@@ -367,10 +377,9 @@ public sealed class TcpNode : INode, IAsyncDisposable
             return;
         }
 
-        var interval =
-            Options.IdleTimeout < TimeSpan.FromSeconds(1)
-                ? Options.IdleTimeout
-                : TimeSpan.FromSeconds(1);
+        var interval = Options.IdleTimeout < Options.IdleScanInterval
+            ? Options.IdleTimeout
+            : Options.IdleScanInterval;
 
         try
         {

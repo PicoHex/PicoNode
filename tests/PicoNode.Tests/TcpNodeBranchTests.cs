@@ -106,6 +106,56 @@ public sealed class TcpNodeBranchTests
                     )
             )
             .Throws<ArgumentOutOfRangeException>();
+
+        await Assert
+            .That(
+                () =>
+                    new TcpNode(
+                        new TcpNodeOptions
+                        {
+                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                            ConnectionHandler = new NoOpTcpHandler(),
+                            IdleScanInterval = TimeSpan.FromMilliseconds(-1),
+                        }
+                    )
+            )
+            .Throws<ArgumentOutOfRangeException>();
+    }
+
+    [Test]
+    public async Task Constructor_rejects_non_positive_idle_scan_interval()
+    {
+        await Assert
+            .That(
+                () =>
+                    new TcpNode(
+                        new TcpNodeOptions
+                        {
+                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                            ConnectionHandler = new NoOpTcpHandler(),
+                            IdleScanInterval = TimeSpan.Zero,
+                        }
+                    )
+            )
+            .Throws<ArgumentOutOfRangeException>();
+    }
+
+    [Test]
+    public async Task Constructor_rejects_non_positive_receive_pipe_pause_threshold()
+    {
+        await Assert
+            .That(
+                () =>
+                    new TcpNode(
+                        new TcpNodeOptions
+                        {
+                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                            ConnectionHandler = new NoOpTcpHandler(),
+                            ReceivePipePauseThresholdBytes = 0,
+                        }
+                    )
+            )
+            .Throws<ArgumentOutOfRangeException>();
     }
 
     [Test]
@@ -397,6 +447,48 @@ public sealed class TcpNodeBranchTests
     }
 
     [Test]
+    public async Task MonitorIdleConnectionsAsync_does_not_delay_short_idle_timeout_beyond_scan_interval()
+    {
+        var handler = new RecordingTcpHandler();
+        await using var node = CreateNode(
+            handler,
+            endpoint: new IPEndPoint(IPAddress.Loopback, 0),
+            idleTimeout: TimeSpan.FromMilliseconds(150),
+            idleScanInterval: TimeSpan.FromSeconds(5)
+        );
+        using var client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
+        await node.StartAsync();
+        await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+
+        var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.IdleTimeout);
+        await Assert.That(closed.Error).IsNull();
+    }
+
+    [Test]
+    public async Task MonitorIdleConnectionsAsync_remains_disabled_when_idle_timeout_is_zero()
+    {
+        var handler = new RecordingTcpHandler();
+        await using var node = CreateNode(
+            handler,
+            endpoint: new IPEndPoint(IPAddress.Loopback, 0),
+            idleTimeout: TimeSpan.Zero,
+            idleScanInterval: TimeSpan.FromMilliseconds(10)
+        );
+        using var client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
+        await node.StartAsync();
+        await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+        await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        await Task.Delay(250);
+
+        await Assert.That(handler.Closed.Task.IsCompleted).IsFalse();
+    }
+
+    [Test]
     public async Task ProcessAcceptedSocketAsync_reports_tracking_rejection_when_node_is_stopping()
     {
         var faults = new ConcurrentQueue<NodeFault>();
@@ -433,7 +525,8 @@ public sealed class TcpNodeBranchTests
         Action<NodeFault>? faultHandler = null,
         IPEndPoint? endpoint = null,
         bool enableDualMode = false,
-        TimeSpan? idleTimeout = null
+        TimeSpan? idleTimeout = null,
+        TimeSpan? idleScanInterval = null
     ) =>
         new(
             new TcpNodeOptions
@@ -443,6 +536,7 @@ public sealed class TcpNodeBranchTests
             FaultHandler = faultHandler,
             EnableDualMode = enableDualMode,
             IdleTimeout = idleTimeout ?? TimeSpan.Zero,
+            IdleScanInterval = idleScanInterval ?? TimeSpan.FromSeconds(1),
         }
         );
 
