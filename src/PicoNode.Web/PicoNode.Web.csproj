@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="PicoDI.Abs" Version="2026.2.2" />
     <ProjectReference Include="..\PicoNode.Abs\PicoNode.Abs.csproj" />
     <ProjectReference Include="..\PicoNode.Http\PicoNode.Http.csproj" />
   </ItemGroup>
