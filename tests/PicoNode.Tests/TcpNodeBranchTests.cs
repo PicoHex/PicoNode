@@ -282,13 +282,6 @@ public sealed class TcpNodeBranchTests
         await Assert.That(node.LocalEndPoint).IsEqualTo(endpoint);
     }
 
-    [Test]
-    public async Task EventArgsPool_exposes_internal_pool_instance()
-    {
-        await using var node = CreateNode(_ => { });
-
-        await Assert.That(GetEventArgsPool(node)).IsNotNull();
-    }
 
     [Test]
     public async Task Constructor_applies_ipv6_dual_mode_when_requested()
@@ -588,16 +581,6 @@ public sealed class TcpNodeBranchTests
         )!;
 
         await (Task)method.Invoke(node, [socket])!;
-    }
-
-    private static SocketIoEventArgsPool GetEventArgsPool(TcpNode node)
-    {
-        var property = typeof(TcpNode).GetProperty(
-            "EventArgsPool",
-            BindingFlags.Instance | BindingFlags.NonPublic
-        )!;
-
-        return (SocketIoEventArgsPool)property.GetValue(node)!;
     }
 
     private static Socket GetListener(TcpNode node)

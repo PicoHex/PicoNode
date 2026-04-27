@@ -88,8 +88,6 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
     internal TcpNodeOptions Options { get; }
 
-    internal SocketIoEventArgsPool EventArgsPool => _eventArgsPool;
-
     public EndPoint LocalEndPoint => _listener.LocalEndPoint ?? Options.Endpoint;
 
     public NodeState State => _state;
@@ -178,7 +176,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
         try
         {
-            _cts.Cancel();
+            await _cts.CancelAsync();
 
             try
             {
@@ -353,7 +351,9 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 socket.Shutdown(SocketShutdown.Both);
             }
-            catch { /* socket may already be disconnected — safe to ignore */ }
+            catch
+            { /* socket may already be disconnected — safe to ignore */
+            }
             socket.Dispose();
             return null;
         }
@@ -366,7 +366,9 @@ public sealed class TcpNode : INode, IAsyncDisposable
         {
             socket.Shutdown(SocketShutdown.Both);
         }
-        catch { /* socket may already be disconnected — safe to ignore */ }
+        catch
+        { /* socket may already be disconnected — safe to ignore */
+        }
 
         socket.Dispose();
     }
@@ -378,9 +380,10 @@ public sealed class TcpNode : INode, IAsyncDisposable
             return;
         }
 
-        var interval = Options.IdleTimeout < Options.IdleScanInterval
-            ? Options.IdleTimeout
-            : Options.IdleScanInterval;
+        var interval =
+            Options.IdleTimeout < Options.IdleScanInterval
+                ? Options.IdleTimeout
+                : Options.IdleScanInterval;
 
         try
         {
