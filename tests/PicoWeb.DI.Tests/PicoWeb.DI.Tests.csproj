@@ -9,8 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="TUnit" Version="1.39.0" />
-    <PackageReference Include="PicoDI" Version="2026.2.2" />
+    <PackageReference Include="TUnit" Version="1.40.10" />
+    <PackageReference Include="PicoDI" Version="2026.3.4" />
     <ProjectReference Include="..\..\src\PicoNode.Abs\PicoNode.Abs.csproj" />
     <ProjectReference Include="..\..\src\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />
