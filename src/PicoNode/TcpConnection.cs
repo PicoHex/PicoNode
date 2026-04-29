@@ -35,14 +35,14 @@ internal sealed class TcpConnection : IAsyncDisposable
         );
         _lifecycle = new TcpConnectionLifecycle(
             node,
-            this,
             socket,
             stream,
             _pipe,
             _sendLock,
             _cts,
             context,
-            _receiveLoop
+            _receiveLoop,
+            onClosed: () => _node.OnConnectionClosed(this)
         );
         Id = Interlocked.Increment(ref _nextId);
         RemoteEndPoint = (IPEndPoint)socket.RemoteEndPoint!;

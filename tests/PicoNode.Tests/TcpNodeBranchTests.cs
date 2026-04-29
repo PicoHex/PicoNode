@@ -679,7 +679,7 @@ public sealed class TcpNodeBranchTests
             CancellationToken cancellationToken
         ) => ValueTask.FromResult(buffer.End);
 
-        public Task OnClosedAsync(
+        public ValueTask OnClosedAsync(
             ITcpConnectionContext connection,
             TcpCloseReason reason,
             Exception? error,
@@ -690,11 +690,11 @@ public sealed class TcpNodeBranchTests
 
             if (_blockClose)
             {
-                return WaitForCloseAsync(reason, error, cancellationToken);
+                return new ValueTask(WaitForCloseAsync(reason, error, cancellationToken));
             }
 
             Closed.TrySetResult(new ClosedTcpConnection(reason, error));
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
 
         public void AllowClose() => _allowClose.TrySetResult();
@@ -723,15 +723,17 @@ public sealed class TcpNodeBranchTests
             CancellationToken cancellationToken
         ) => ValueTask.FromResult(buffer.End);
 
-        public Task OnClosedAsync(
+        public ValueTask OnClosedAsync(
             ITcpConnectionContext connection,
             TcpCloseReason reason,
             Exception? error,
             CancellationToken cancellationToken
-        ) => Task.CompletedTask;
+        ) => ValueTask.CompletedTask;
     }
 
     private sealed record ConnectedTcpConnection(long ConnectionId, IPEndPoint RemoteEndPoint);
 
     private sealed record ClosedTcpConnection(TcpCloseReason Reason, Exception? Error);
 }
+
+

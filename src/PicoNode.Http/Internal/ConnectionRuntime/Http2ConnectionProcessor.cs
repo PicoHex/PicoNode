@@ -1,5 +1,7 @@
 namespace PicoNode.Http.Internal.ConnectionRuntime;
 
+using System.Buffers;
+
 internal static class Http2ConnectionProcessor
 {
     public static async ValueTask<SequencePosition> ProcessAsync(
@@ -15,14 +17,25 @@ internal static class Http2ConnectionProcessor
 
         if (sendInitialSettings)
         {
-            await SendFrameAsync(
-                connection,
-                Http2FrameCodec.EncodeSettings(
-                    new Http2Setting(Http2SettingId.MaxConcurrentStreams, 100),
-                    new Http2Setting(Http2SettingId.InitialWindowSize, 65535)
-                ),
-                cancellationToken
-            );
+            var settings = (ReadOnlySpan<Http2Setting>)
+            [
+                new(Http2SettingId.MaxConcurrentStreams, 100),
+                new(Http2SettingId.InitialWindowSize, 65535),
+            ];
+            var size = Http2FrameCodec.FrameHeaderSize + settings.Length * 6;
+            var rented = ArrayPool<byte>.Shared.Rent(size);
+            try
+            {
+                Http2FrameCodec.WriteSettings(rented, settings);
+                await connection.SendAsync(
+                    new ReadOnlySequence<byte>(rented.AsMemory(0, size)),
+                    cancellationToken
+                );
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
         }
 
         while (remaining.Length > 0)
@@ -89,9 +102,9 @@ internal static class Http2ConnectionProcessor
                     return false;
                 }
 
-                await SendFrameAsync(
-                    connection,
-                    Http2FrameCodec.EncodeSettingsAck(),
+                // SettingsAck: small fixed-size frame, allocation is trivial
+                await connection.SendAsync(
+                    new ReadOnlySequence<byte>(Http2FrameCodec.EncodeSettingsAck()),
                     cancellationToken
                 );
                 return false;
@@ -109,9 +122,11 @@ internal static class Http2ConnectionProcessor
 
                 if (!frame.HasFlag(Http2FrameFlags.Ack))
                 {
-                    await SendFrameAsync(
-                        connection,
-                        Http2FrameCodec.EncodePing(frame.Payload.Span, ack: true),
+                    // Ping ack: small fixed-size frame, allocation is trivial
+                    await connection.SendAsync(
+                        new ReadOnlySequence<byte>(
+                            Http2FrameCodec.EncodePing(frame.Payload.Span, ack: true)
+                        ),
                         cancellationToken
                     );
                 }
@@ -161,17 +176,8 @@ internal static class Http2ConnectionProcessor
         CancellationToken cancellationToken
     )
     {
-        await SendFrameAsync(
-            connection,
-            Http2FrameCodec.EncodeGoAway(0, errorCode),
-            cancellationToken
-        );
+        var frame = Http2FrameCodec.EncodeGoAway(0, errorCode);
+        await connection.SendAsync(new ReadOnlySequence<byte>(frame), cancellationToken);
         connection.Close();
     }
-
-    private static Task SendFrameAsync(
-        ITcpConnectionContext connection,
-        byte[] frame,
-        CancellationToken cancellationToken
-    ) => connection.SendAsync(new ReadOnlySequence<byte>(frame), cancellationToken);
 }

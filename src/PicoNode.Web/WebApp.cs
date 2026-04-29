@@ -18,6 +18,7 @@ public sealed class WebApp
         _options = options;
     }
 
+    /// <summary>Registers middleware in the pipeline. Middleware are composed in reverse registration order (last added runs closest to the handler).</summary>
     public WebApp Use(WebMiddleware middleware)
     {
         ArgumentNullException.ThrowIfNull(middleware);
@@ -25,6 +26,7 @@ public sealed class WebApp
         return this;
     }
 
+    /// <summary>Maps a route to a handler for the specified HTTP method and URL pattern.</summary>
     public WebApp Map(string method, string pattern, WebRequestHandler handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
@@ -39,6 +41,7 @@ public sealed class WebApp
         return this;
     }
 
+    /// <summary>Convenience to register a GET route.</summary>
     public WebApp MapGet(string pattern, WebRequestHandler handler) => Map("GET", pattern, handler);
 
     public WebApp MapPost(string pattern, WebRequestHandler handler) =>
@@ -56,6 +59,7 @@ public sealed class WebApp
         return this;
     }
 
+    /// <summary>Builds the middleware pipeline and returns an <c>ITcpConnectionHandler</c> (backed by <c>HttpConnectionHandler</c>) ready for use with TcpNode.</summary>
     public ITcpConnectionHandler Build(PicoNode.Web.Abstractions.IServiceProvider? container = null)
     {
         if (container is not null)

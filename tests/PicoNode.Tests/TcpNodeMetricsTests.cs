@@ -219,7 +219,7 @@ public sealed class TcpNodeMetricsTests
             return buffer.End;
         }
 
-        public Task OnClosedAsync(
+        public ValueTask OnClosedAsync(
             ITcpConnectionContext connection,
             TcpCloseReason reason,
             Exception? error,
@@ -227,7 +227,9 @@ public sealed class TcpNodeMetricsTests
         )
         {
             _closed.TrySetResult();
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
     }
 }
+
+

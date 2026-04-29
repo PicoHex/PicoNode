@@ -252,6 +252,7 @@ public sealed class HttpContractTests
             .IsEqualTo(typeof(ValueTask<SequencePosition>));
         await Assert
             .That(type.GetMethod(nameof(HttpConnectionHandler.OnClosedAsync))?.ReturnType)
-            .IsEqualTo(typeof(Task));
+            .IsEqualTo(typeof(ValueTask));
     }
 }
+

@@ -86,76 +86,77 @@ public static class WebSocketFrameCodec
         return true;
     }
 
+    public static int MeasureFrameSize(int payloadLength, bool mask = false)
+    {
+        var headerSize = 2;
+        if (payloadLength is >= 126 and <= 65535)
+            headerSize += 2;
+        else if (payloadLength > 65535)
+            headerSize += 8;
+        if (mask)
+            headerSize += 4;
+        return headerSize + payloadLength;
+    }
+
+    public static int WriteFrame(
+        Span<byte> destination,
+        WebSocketOpCode opCode,
+        ReadOnlySpan<byte> payload,
+        bool mask = false
+    )
+    {
+        var pos = 0;
+
+        destination[pos++] = (byte)(0x80 | (byte)opCode);
+
+        switch (payload.Length)
+        {
+            case < 126:
+                destination[pos++] = (byte)((mask ? 0x80 : 0) | payload.Length);
+                break;
+            case <= 65535:
+                destination[pos++] = (byte)((mask ? 0x80 : 0) | 126);
+                destination[pos++] = (byte)(payload.Length >> 8);
+                destination[pos++] = (byte)(payload.Length & 0xFF);
+                break;
+            default:
+            {
+                destination[pos++] = (byte)((mask ? 0x80 : 0) | 127);
+                var len = (long)payload.Length;
+                for (var i = 7; i >= 0; i--)
+                    destination[pos++] = (byte)((len >> (i * 8)) & 0xFF);
+                break;
+            }
+        }
+
+        if (mask)
+        {
+            Span<byte> maskKey = stackalloc byte[4];
+            Random.Shared.NextBytes(maskKey);
+            maskKey.CopyTo(destination.Slice(pos));
+            pos += 4;
+        }
+
+        payload.CopyTo(destination.Slice(pos));
+
+        if (mask)
+        {
+            var maskStart = pos - 4;
+            for (var i = 0; i < payload.Length; i++)
+                destination[pos + i] ^= destination[maskStart + (i % 4)];
+        }
+
+        return destination.Length;
+    }
+
     public static byte[] EncodeFrame(
         WebSocketOpCode opCode,
         ReadOnlySpan<byte> payload,
         bool mask = false
     )
     {
-        var headerSize = 2;
-        switch (payload.Length)
-        {
-            case >= 126
-            and <= 65535:
-                headerSize += 2;
-                break;
-            case > 65535:
-                headerSize += 8;
-                break;
-        }
-
-        byte[] maskKey = [];
-        if (mask)
-        {
-            maskKey = new byte[4];
-            Random.Shared.NextBytes(maskKey);
-            headerSize += 4;
-        }
-
-        var result = new byte[headerSize + payload.Length];
-        var pos = 0;
-
-        result[pos++] = (byte)(0x80 | (byte)opCode);
-
-        switch (payload.Length)
-        {
-            case < 126:
-                result[pos++] = (byte)((mask ? 0x80 : 0) | payload.Length);
-                break;
-            case <= 65535:
-                result[pos++] = (byte)((mask ? 0x80 : 0) | 126);
-                result[pos++] = (byte)(payload.Length >> 8);
-                result[pos++] = (byte)(payload.Length & 0xFF);
-                break;
-            default:
-            {
-                result[pos++] = (byte)((mask ? 0x80 : 0) | 127);
-                var len = (long)payload.Length;
-                for (var i = 7; i >= 0; i--)
-                {
-                    result[pos++] = (byte)((len >> (i * 8)) & 0xFF);
-                }
-
-                break;
-            }
-        }
-
-        if (mask)
-        {
-            maskKey.CopyTo(result.AsSpan(pos));
-            pos += 4;
-        }
-
-        payload.CopyTo(result.AsSpan(pos));
-
-        if (mask)
-        {
-            for (var i = 0; i < payload.Length; i++)
-            {
-                result[pos + i] ^= maskKey[i % 4];
-            }
-        }
-
+        var result = new byte[MeasureFrameSize(payload.Length, mask)];
+        WriteFrame(result, opCode, payload, mask);
         return result;
     }
 }

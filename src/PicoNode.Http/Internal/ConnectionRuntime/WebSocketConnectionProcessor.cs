@@ -1,5 +1,7 @@
 namespace PicoNode.Http.Internal.ConnectionRuntime;
 
+using System.Buffers;
+
 internal static class WebSocketConnectionProcessor
 {
     public static async ValueTask<SequencePosition> ProcessAsync(
@@ -24,28 +26,56 @@ internal static class WebSocketConnectionProcessor
             switch (frame!.OpCode)
             {
                 case WebSocketOpCode.Ping:
-                    await connection.SendAsync(
-                        new ReadOnlySequence<byte>(
-                            WebSocketFrameCodec.EncodeFrame(
-                                WebSocketOpCode.Pong,
-                                frame.Payload.Span
-                            )
-                        ),
-                        cancellationToken
+                {
+                    var size = WebSocketFrameCodec.MeasureFrameSize(
+                        frame.Payload.Length
                     );
+                    var rented = ArrayPool<byte>.Shared.Rent(size);
+                    try
+                    {
+                        WebSocketFrameCodec.WriteFrame(
+                            rented,
+                            WebSocketOpCode.Pong,
+                            frame.Payload.Span
+                        );
+                        await connection.SendAsync(
+                            new ReadOnlySequence<byte>(rented.AsMemory(0, size)),
+                            cancellationToken
+                        );
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(rented);
+                    }
+
                     break;
+                }
                 case WebSocketOpCode.Close:
-                    await connection.SendAsync(
-                        new ReadOnlySequence<byte>(
-                            WebSocketFrameCodec.EncodeFrame(
-                                WebSocketOpCode.Close,
-                                frame.Payload.Span
-                            )
-                        ),
-                        cancellationToken
+                {
+                    var size = WebSocketFrameCodec.MeasureFrameSize(
+                        frame.Payload.Length
                     );
+                    var rented = ArrayPool<byte>.Shared.Rent(size);
+                    try
+                    {
+                        WebSocketFrameCodec.WriteFrame(
+                            rented,
+                            WebSocketOpCode.Close,
+                            frame.Payload.Span
+                        );
+                        await connection.SendAsync(
+                            new ReadOnlySequence<byte>(rented.AsMemory(0, size)),
+                            cancellationToken
+                        );
+                    }
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(rented);
+                    }
+
                     connection.Close();
                     return consumed;
+                }
                 case WebSocketOpCode.Pong:
                 case WebSocketOpCode.Text:
                 case WebSocketOpCode.Binary:

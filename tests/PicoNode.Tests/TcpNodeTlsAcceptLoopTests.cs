@@ -209,11 +209,13 @@ public sealed class TcpNodeTlsAcceptLoopTests
             CancellationToken cancellationToken
         ) => ValueTask.FromResult(buffer.End);
 
-        public Task OnClosedAsync(
+        public ValueTask OnClosedAsync(
             ITcpConnectionContext connection,
             TcpCloseReason reason,
             Exception? error,
             CancellationToken cancellationToken
-        ) => Task.CompletedTask;
+        ) => ValueTask.CompletedTask;
     }
 }
+
+

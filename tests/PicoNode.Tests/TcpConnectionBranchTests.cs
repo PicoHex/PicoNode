@@ -949,12 +949,12 @@ public sealed class TcpConnectionBranchTests
             CancellationToken cancellationToken
         ) => ValueTask.FromResult(buffer.End);
 
-        public Task OnClosedAsync(
+        public ValueTask OnClosedAsync(
             ITcpConnectionContext connection,
             TcpCloseReason reason,
             Exception? error,
             CancellationToken cancellationToken
-        ) => Task.CompletedTask;
+        ) => ValueTask.CompletedTask;
 
         public void Release()
         {
@@ -981,12 +981,12 @@ public sealed class TcpConnectionBranchTests
             CancellationToken cancellationToken
         ) => throw new ObjectDisposedException(nameof(TcpConnection));
 
-        public Task OnClosedAsync(
+        public ValueTask OnClosedAsync(
             ITcpConnectionContext connection,
             TcpCloseReason reason,
             Exception? error,
             CancellationToken cancellationToken
-        ) => Task.CompletedTask;
+        ) => ValueTask.CompletedTask;
     }
 
     private sealed class SocketExceptionTcpHandler(
@@ -1008,7 +1008,7 @@ public sealed class TcpConnectionBranchTests
             CancellationToken cancellationToken
         ) => ValueTask.FromException<SequencePosition>(_exception);
 
-        public Task OnClosedAsync(
+        public ValueTask OnClosedAsync(
             ITcpConnectionContext connection,
             TcpCloseReason reason,
             Exception? error,
@@ -1033,7 +1033,7 @@ public sealed class TcpConnectionBranchTests
             CancellationToken cancellationToken
         ) => ValueTask.FromResult(buffer.End);
 
-        public async Task OnClosedAsync(
+        public async ValueTask OnClosedAsync(
             ITcpConnectionContext connection,
             TcpCloseReason reason,
             Exception? error,
@@ -1088,7 +1088,7 @@ public sealed class TcpConnectionBranchTests
                 : ValueTask.FromException<SequencePosition>(_receiveException);
         }
 
-        public Task OnClosedAsync(
+        public ValueTask OnClosedAsync(
             ITcpConnectionContext connection,
             TcpCloseReason reason,
             Exception? error,
@@ -1096,7 +1096,7 @@ public sealed class TcpConnectionBranchTests
         )
         {
             Closed.TrySetResult(new ClosedTcpConnection(reason, error));
-            return Task.CompletedTask;
+            return ValueTask.CompletedTask;
         }
     }
 
@@ -1113,15 +1113,17 @@ public sealed class TcpConnectionBranchTests
             CancellationToken cancellationToken
         ) => ValueTask.FromResult(buffer.End);
 
-        public Task OnClosedAsync(
+        public ValueTask OnClosedAsync(
             ITcpConnectionContext connection,
             TcpCloseReason reason,
             Exception? error,
             CancellationToken cancellationToken
-        ) => Task.CompletedTask;
+        ) => ValueTask.CompletedTask;
     }
 
     private sealed record ConnectedTcpConnection(long ConnectionId, IPEndPoint RemoteEndPoint);
 
     private sealed record ClosedTcpConnection(TcpCloseReason Reason, Exception? Error);
 }
+
+

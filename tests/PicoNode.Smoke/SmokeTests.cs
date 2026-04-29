@@ -1215,12 +1215,12 @@ file sealed class TcpEchoHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     ) => Task.CompletedTask;
 
-    public Task OnClosedAsync(
+    public ValueTask OnClosedAsync(
         ITcpConnectionContext connection,
         TcpCloseReason reason,
         Exception? error,
         CancellationToken cancellationToken
-    ) => Task.CompletedTask;
+    ) => ValueTask.CompletedTask;
 
     public ValueTask<SequencePosition> OnReceivedAsync(
         ITcpConnectionContext connection,
@@ -1269,7 +1269,7 @@ file sealed class BlockingCloseHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     ) => ValueTask.FromResult(buffer.End);
 
-    public async Task OnClosedAsync(
+    public async ValueTask OnClosedAsync(
         ITcpConnectionContext connection,
         TcpCloseReason reason,
         Exception? error,
@@ -1353,3 +1353,5 @@ file sealed class ThrowOnceThenEchoUdpHandler : IUdpDatagramHandler
         return context.SendAsync(datagram, cancellationToken);
     }
 }
+
+

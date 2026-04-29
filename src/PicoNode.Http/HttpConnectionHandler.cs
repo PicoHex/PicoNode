@@ -100,7 +100,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             cancellationToken
         );
 
-    public Task OnClosedAsync(
+    public ValueTask OnClosedAsync(
         ITcpConnectionContext connection,
         TcpCloseReason reason,
         Exception? error,
@@ -108,7 +108,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
     )
     {
         _connectionStates.TryRemove(connection.ConnectionId, out _);
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
     private void SetConnectionState(long connectionId, ConnectionProtocol protocol)
     {
@@ -189,3 +189,6 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         Http2,
     }
 }
+
+
+

@@ -1,15 +1,12 @@
 namespace PicoNode.Http.Internal.ConnectionRuntime;
 
+using System.Buffers;
 using PicoNode.Http.Internal.Hpack;
 
 internal static class Http2StreamHandler
 {
     private const int SingleStreamId = 1;
 
-    /// <summary>
-    /// Process a single HTTP/2 HEADERS frame through the request pipeline.
-    /// Returns true if the connection should be closed.
-    /// </summary>
     public static async ValueTask<bool> ProcessHeadersFrame(
         ITcpConnectionContext connection,
         Http2Frame frame,
@@ -131,110 +128,190 @@ internal static class Http2StreamHandler
             responseHeaders.Add((header.Key, header.Value));
         }
 
-        // Encode response headers as HPACK block
-        var hpackBlock = EncodeResponseHeaders(responseHeaders);
-
-        // Determine HEADERS flags
+        // Encode response headers as HPACK block and send HEADERS frame in one allocation
+        var hpackSize = MeasureResponseHeadersSize(responseHeaders);
         var headersFlags = Http2FrameFlags.EndHeaders;
-        var hasBody = response.Body.Length > 0;
 
-        if (!hasBody)
+        if (response.Body.Length == 0)
         {
             headersFlags |= Http2FrameFlags.EndStream;
-        }
-
-        // Send HEADERS frame
-        var headersFrame = Http2FrameCodec.EncodeFrame(
-            Http2FrameType.Headers,
-            headersFlags,
-            SingleStreamId,
-            hpackBlock
-        );
-
-        await connection.SendAsync(new ReadOnlySequence<byte>(headersFrame), ct);
-
-        // Send DATA frame if body present
-        if (hasBody)
-        {
-            var dataFrame = Http2FrameCodec.EncodeFrame(
-                Http2FrameType.Data,
-                Http2FrameFlags.EndStream,
-                SingleStreamId,
-                response.Body.Span
+            var frameRented = ArrayPool<byte>.Shared.Rent(
+                Http2FrameCodec.FrameHeaderSize + hpackSize
             );
+            try
+            {
+                Http2FrameCodec.WriteFrameHeader(
+                    frameRented,
+                    hpackSize,
+                    Http2FrameType.Headers,
+                    headersFlags,
+                    SingleStreamId
+                );
+                WriteResponseHeaders(
+                    frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
+                    responseHeaders
+                );
+                await connection.SendAsync(
+                    new ReadOnlySequence<byte>(
+                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + hpackSize)
+                    ),
+                    ct
+                );
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(frameRented);
+            }
 
-            await connection.SendAsync(new ReadOnlySequence<byte>(dataFrame), ct);
+            return false;
         }
 
-        return false; // keep connection alive
+        // Has body: send HEADERS frame first (no END_STREAM), then DATA frame
+        {
+            var frameRented = ArrayPool<byte>.Shared.Rent(
+                Http2FrameCodec.FrameHeaderSize + hpackSize
+            );
+            try
+            {
+                Http2FrameCodec.WriteFrameHeader(
+                    frameRented,
+                    hpackSize,
+                    Http2FrameType.Headers,
+                    headersFlags,
+                    SingleStreamId
+                );
+                WriteResponseHeaders(
+                    frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
+                    responseHeaders
+                );
+                await connection.SendAsync(
+                    new ReadOnlySequence<byte>(
+                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + hpackSize)
+                    ),
+                    ct
+                );
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(frameRented);
+            }
+        }
+
+        // Send DATA frame with body
+        {
+            var bodySize = response.Body.Length;
+            var frameRented = ArrayPool<byte>.Shared.Rent(
+                Http2FrameCodec.FrameHeaderSize + bodySize
+            );
+            try
+            {
+                Http2FrameCodec.WriteFrame(
+                    frameRented,
+                    Http2FrameType.Data,
+                    Http2FrameFlags.EndStream,
+                    SingleStreamId,
+                    response.Body.Span
+                );
+                await connection.SendAsync(
+                    new ReadOnlySequence<byte>(
+                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + bodySize)
+                    ),
+                    ct
+                );
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(frameRented);
+            }
+        }
+
+        return false;
     }
 
     // ── Minimal HPACK encoder (no Huffman, literal-without-indexing only) ──
 
-    /// <summary>
-    /// Encodes a list of (name, value) header pairs into an HPACK block.
-    /// Uses Literal Header Field without Indexing for every header.
-    /// No Huffman encoding (acceptable for MVP; ~20% header size overhead).
-    /// </summary>
-    internal static byte[] EncodeResponseHeaders(List<(string Name, string Value)> headers)
+    internal static int MeasureResponseHeadersSize(List<(string Name, string Value)> headers)
     {
-        var output = new List<byte>();
+        var size = 0;
         foreach (var (name, value) in headers)
         {
-            // Literal Header Field without Indexing — new name (index 0)
-            //  0   1   2   3   4   5   6   7
-            // +---+---+---+---+---+---+---+---+
-            // | 0 | 0 | 0 | 0 |       0      |
-            // +---+---+-----------------------+
-            output.Add(0x00);
-
-            // Name string (raw, no Huffman)
-            EncodeRawString(output, name);
-
-            // Value string (raw, no Huffman)
-            EncodeRawString(output, value);
+            size += 1; // literal header field without indexing prefix
+            size += MeasureRawStringSize(name);
+            size += MeasureRawStringSize(value);
         }
-
-        return output.ToArray();
+        return size;
     }
 
-    /// <summary>
-    /// Encodes a string using the HPACK string format:
-    /// H | Value Length (7+) | Value String
-    /// H=0 (no Huffman), 7-bit prefix integer for length.
-    /// </summary>
-    private static void EncodeRawString(List<byte> output, string value)
+    internal static void WriteResponseHeaders(
+        Span<byte> destination,
+        List<(string Name, string Value)> headers
+    )
+    {
+        var pos = 0;
+        foreach (var (name, value) in headers)
+        {
+            destination[pos++] = 0x00;
+            pos += WriteRawString(destination.Slice(pos), name);
+            pos += WriteRawString(destination.Slice(pos), value);
+        }
+    }
+
+    internal static byte[] EncodeResponseHeaders(List<(string Name, string Value)> headers)
+    {
+        var result = new byte[MeasureResponseHeadersSize(headers)];
+        WriteResponseHeaders(result, headers);
+        return result;
+    }
+
+    private static int MeasureRawStringSize(string value)
+    {
+        var rawLength = Encoding.ASCII.GetByteCount(value);
+        var size = rawLength;
+        if (rawLength < 127)
+            size += 1;
+        else
+        {
+            size += 1;
+            var remaining = rawLength - 127;
+            while (remaining >= 128)
+            {
+                size++;
+                remaining >>= 7;
+            }
+            size++;
+        }
+        return size;
+    }
+
+    private static int WriteRawString(Span<byte> destination, string value)
     {
         var rawBytes = Encoding.ASCII.GetBytes(value);
         var length = rawBytes.Length;
+        var pos = 0;
 
-        // 7-bit prefix integer encoding (RFC 7541 §5.1)
         if (length < 127)
         {
-            // Fits in 7-bit prefix; MSB=0 means raw (no Huffman)
-            output.Add((byte)length);
+            destination[pos++] = (byte)length;
         }
         else
         {
-            // Prefix all-1s signals continuation
-            output.Add(0x7F);
+            destination[pos++] = 0x7F;
             var remaining = length - 127;
-
             while (remaining >= 128)
             {
-                // MSB=1 (more bytes follow), lower 7 bits = data
-                output.Add((byte)((remaining & 0x7F) | 0x80));
+                destination[pos++] = (byte)((remaining & 0x7F) | 0x80);
                 remaining >>= 7;
             }
-
-            // Final byte: MSB=0
-            output.Add((byte)remaining);
+            destination[pos++] = (byte)remaining;
         }
 
         if (length > 0)
         {
-            output.AddRange(rawBytes);
+            rawBytes.CopyTo(destination.Slice(pos));
+            pos += length;
         }
+
+        return pos;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

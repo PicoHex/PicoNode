@@ -34,6 +34,24 @@ public sealed class CompressionMiddleware
             return response;
         }
 
+        if (response.BodyStream is not null)
+        {
+            if (!TryGetContentLength(response.Headers, out var contentLength)
+                && !TryGetStreamLength(response.BodyStream, out contentLength))
+            {
+                contentLength = long.MaxValue;
+            }
+
+            if (contentLength < _minimumBodySize)
+            {
+                return response;
+            }
+        }
+        else if (response.Body.Length < _minimumBodySize)
+        {
+            return response;
+        }
+
         var encoding = SelectEncoding(context.Request.Headers);
         if (encoding is null)
         {
@@ -42,19 +60,6 @@ public sealed class CompressionMiddleware
 
         if (response.BodyStream is not null)
         {
-            if (!TryGetContentLength(response.Headers, out var contentLength))
-            {
-                if (!TryGetStreamLength(response.BodyStream, out contentLength))
-                {
-                    contentLength = long.MaxValue;
-                }
-            }
-
-            if (contentLength < _minimumBodySize)
-            {
-                return response;
-            }
-
             return new HttpResponse
             {
                 StatusCode = response.StatusCode,
@@ -64,11 +69,6 @@ public sealed class CompressionMiddleware
                 Body = ReadOnlyMemory<byte>.Empty,
                 BodyStream = new CompressedReadStream(response.BodyStream, encoding, _level),
             };
-        }
-
-        if (response.Body.Length < _minimumBodySize)
-        {
-            return response;
         }
 
         var compressed = Compress(response.Body, encoding, _level);

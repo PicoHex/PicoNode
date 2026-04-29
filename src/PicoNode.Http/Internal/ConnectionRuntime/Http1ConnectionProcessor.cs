@@ -24,14 +24,22 @@ internal static class Http1ConnectionProcessor
     // Pre-serialized byte sequences for error responses that always force
     // connection: close.  Serialized once at type-init to eliminate per-request
     // HttpResponse allocations and serializer overhead on protocol errors.
-    private static readonly ReadOnlySequence<byte> BadRequestBytes =
-        new(HttpResponseSerializer.Serialize(BadRequestResponse, closeConnection: true).ToArray());
-    private static readonly ReadOnlySequence<byte> PayloadTooLargeBytes =
-        new(HttpResponseSerializer.Serialize(PayloadTooLargeResponse, closeConnection: true).ToArray());
-    private static readonly ReadOnlySequence<byte> InternalServerErrorBytes =
-        new(HttpResponseSerializer.Serialize(InternalServerErrorResponse, closeConnection: true).ToArray());
-    private static readonly ReadOnlySequence<byte> NotImplementedBytes =
-        new(HttpResponseSerializer.Serialize(NotImplementedResponse, closeConnection: true).ToArray());
+    private static readonly ReadOnlySequence<byte> BadRequestBytes = BuildErrorBytes(400, "Bad Request");
+    private static readonly ReadOnlySequence<byte> PayloadTooLargeBytes = BuildErrorBytes(413, "Payload Too Large");
+    private static readonly ReadOnlySequence<byte> InternalServerErrorBytes = BuildErrorBytes(500, "Internal Server Error");
+    private static readonly ReadOnlySequence<byte> NotImplementedBytes = BuildErrorBytes(501, "Not Implemented");
+
+    private static ReadOnlySequence<byte> BuildErrorBytes(int statusCode, string reasonPhrase)
+    {
+        var response = new HttpResponse
+        {
+            StatusCode = statusCode,
+            ReasonPhrase = reasonPhrase,
+        };
+        return new ReadOnlySequence<byte>(
+            HttpResponseSerializer.Serialize(response, closeConnection: true).ToArray()
+        );
+    }
 
     public static ValueTask<SequencePosition> ProcessAsync(
         ITcpConnectionContext connection,

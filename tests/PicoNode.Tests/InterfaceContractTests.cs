@@ -63,7 +63,7 @@ public sealed class InterfaceContractTests
             .IsEqualTo(typeof(ValueTask<SequencePosition>));
         await Assert
             .That(type.GetMethod(nameof(ITcpConnectionHandler.OnClosedAsync))?.ReturnType)
-            .IsEqualTo(typeof(Task));
+            .IsEqualTo(typeof(ValueTask));
     }
 
     [Test]
@@ -76,7 +76,7 @@ public sealed class InterfaceContractTests
             .IsEqualTo(typeof(IPEndPoint));
         await Assert
             .That(type.GetMethod(nameof(IUdpDatagramContext.SendAsync))?.ReturnType)
-            .IsEqualTo(typeof(Task));
+            .IsEqualTo(typeof(ValueTask));
     }
 
     [Test]
@@ -86,6 +86,7 @@ public sealed class InterfaceContractTests
 
         await Assert
             .That(type.GetMethod(nameof(IUdpDatagramHandler.OnDatagramAsync))?.ReturnType)
-            .IsEqualTo(typeof(Task));
+            .IsEqualTo(typeof(ValueTask));
     }
 }
+

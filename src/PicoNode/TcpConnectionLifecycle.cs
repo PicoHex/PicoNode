@@ -8,7 +8,6 @@ internal sealed class TcpConnectionLifecycle
     private const string OperationCloseCore = "tcp.close.core";
 
     private readonly TcpNode _node;
-    private readonly TcpConnection _connection;
     private readonly Socket _socket;
     private readonly Stream? _stream;
     private readonly Pipe _pipe;
@@ -16,23 +15,23 @@ internal sealed class TcpConnectionLifecycle
     private readonly CancellationTokenSource _cts;
     private readonly TcpConnectionContext _context;
     private readonly TcpConnectionReceiveLoop _receiveLoop;
+    private readonly Action? _onClosed;
     private int _closeState;
     private int _disposeState;
 
     internal TcpConnectionLifecycle(
         TcpNode node,
-        TcpConnection connection,
         Socket socket,
         Stream? stream,
         Pipe pipe,
         SemaphoreSlim sendLock,
         CancellationTokenSource cts,
         TcpConnectionContext context,
-        TcpConnectionReceiveLoop receiveLoop
+        TcpConnectionReceiveLoop receiveLoop,
+        Action? onClosed = null
     )
     {
         _node = node;
-        _connection = connection;
         _socket = socket;
         _stream = stream;
         _pipe = pipe;
@@ -40,6 +39,7 @@ internal sealed class TcpConnectionLifecycle
         _cts = cts;
         _context = context;
         _receiveLoop = receiveLoop;
+        _onClosed = onClosed;
     }
 
     internal bool IsCloseInitiated => Volatile.Read(ref _closeState) != 0;
@@ -186,7 +186,7 @@ internal sealed class TcpConnectionLifecycle
     private async Task FinalizeCloseAsync()
     {
         await DisposeAsync();
-        _node.OnConnectionClosed(_connection);
+        _onClosed?.Invoke();
     }
 
     private bool TryBeginClose() =>

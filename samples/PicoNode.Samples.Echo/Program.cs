@@ -38,12 +38,12 @@ file sealed class EchoTcpHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     ) => Task.CompletedTask;
 
-    public Task OnClosedAsync(
+    public ValueTask OnClosedAsync(
         ITcpConnectionContext connection,
         TcpCloseReason reason,
         Exception? error,
         CancellationToken cancellationToken
-    ) => Task.CompletedTask;
+    ) => ValueTask.CompletedTask;
 
     public ValueTask<SequencePosition> OnReceivedAsync(
         ITcpConnectionContext connection,
@@ -64,3 +64,5 @@ file sealed class EchoUdpHandler : IUdpDatagramHandler
         CancellationToken cancellationToken
     ) => context.SendAsync(datagram, cancellationToken);
 }
+
+

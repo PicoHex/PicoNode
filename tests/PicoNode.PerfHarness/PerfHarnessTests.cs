@@ -419,12 +419,12 @@ file sealed class TcpEchoHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     ) => Task.CompletedTask;
 
-    public Task OnClosedAsync(
+    public ValueTask OnClosedAsync(
         ITcpConnectionContext connection,
         TcpCloseReason reason,
         Exception? error,
         CancellationToken cancellationToken
-    ) => Task.CompletedTask;
+    ) => ValueTask.CompletedTask;
 
     public ValueTask<SequencePosition> OnReceivedAsync(
         ITcpConnectionContext connection,
@@ -447,3 +447,5 @@ file sealed class UdpEchoHandler : IUdpDatagramHandler
 }
 
 readonly record struct PerfMetrics(double OpsPerSecond, double MiBPerSecond);
+
+
