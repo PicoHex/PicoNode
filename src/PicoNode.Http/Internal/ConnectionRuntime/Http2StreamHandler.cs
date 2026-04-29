@@ -20,33 +20,21 @@ internal static class Http2StreamHandler
         // Validate stream — MVP supports only stream 1
         if (frame.StreamId != SingleStreamId)
         {
-            await SendGoAwayAndCloseAsync(
-                connection,
-                Http2ErrorCode.ProtocolError,
-                ct
-            );
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct);
             return true;
         }
 
         // Require END_HEADERS — CONTINUATION not supported in MVP
         if (!frame.HasFlag(Http2FrameFlags.EndHeaders))
         {
-            await SendGoAwayAndCloseAsync(
-                connection,
-                Http2ErrorCode.ProtocolError,
-                ct
-            );
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct);
             return true;
         }
 
         // Decode HPACK header block
         if (!HpackDecoder.TryDecode(frame.Payload.Span, out var headerFields))
         {
-            await SendGoAwayAndCloseAsync(
-                connection,
-                Http2ErrorCode.CompressionError,
-                ct
-            );
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.CompressionError, ct);
             return true;
         }
 
@@ -85,11 +73,7 @@ internal static class Http2StreamHandler
         // Validate required pseudo-headers
         if (method is null || path is null)
         {
-            await SendGoAwayAndCloseAsync(
-                connection,
-                Http2ErrorCode.ProtocolError,
-                ct
-            );
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct);
             return true;
         }
 
@@ -123,17 +107,23 @@ internal static class Http2StreamHandler
         }
 
         // Build response pseudo-headers and headers
-        var responseHeaders = new List<(string, string)> { (":status", response.StatusCode.ToString()) };
+        var responseHeaders = new List<(string, string)>
+        {
+            (":status", response.StatusCode.ToString())
+        };
 
         // Map response headers — skip connection-specific fields
         foreach (var header in response.Headers)
         {
             var keyLower = header.Key.ToLowerInvariant();
-            if (keyLower is "connection"
-                or "transfer-encoding"
-                or "keep-alive"
-                or "proxy-connection"
-                or "upgrade")
+            if (
+                keyLower
+                is "connection"
+                    or "transfer-encoding"
+                    or "keep-alive"
+                    or "proxy-connection"
+                    or "upgrade"
+            )
             {
                 continue;
             }

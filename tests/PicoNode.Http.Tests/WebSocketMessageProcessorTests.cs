@@ -106,9 +106,7 @@ public sealed class WebSocketMessageProcessorTests
         );
         await Assert.That(success).IsTrue();
         await Assert.That(pong!.OpCode).IsEqualTo(WebSocketOpCode.Pong);
-        await Assert
-            .That(Encoding.UTF8.GetString(pong.Payload.Span))
-            .IsEqualTo("are-you-there");
+        await Assert.That(Encoding.UTF8.GetString(pong.Payload.Span)).IsEqualTo("are-you-there");
     }
 
     [Test]
@@ -266,9 +264,17 @@ public sealed class WebSocketMessageProcessorTests
     public async Task Multiple_complete_frames_in_single_buffer_all_processed()
     {
         var textPayload = "msg1"u8.ToArray();
-        var textFrame = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Text, textPayload, mask: true);
+        var textFrame = WebSocketFrameCodec.EncodeFrame(
+            WebSocketOpCode.Text,
+            textPayload,
+            mask: true
+        );
         var binaryPayload = new byte[] { 0x01, 0x02 };
-        var binaryFrame = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Binary, binaryPayload, mask: true);
+        var binaryFrame = WebSocketFrameCodec.EncodeFrame(
+            WebSocketOpCode.Binary,
+            binaryPayload,
+            mask: true
+        );
 
         var combined = new byte[textFrame.Length + binaryFrame.Length];
         textFrame.CopyTo(combined, 0);
@@ -426,7 +432,12 @@ public sealed class WebSocketMessageProcessorTests
         var continuationPayload = "More"u8.ToArray();
         var textFrame = CreateFrame(WebSocketOpCode.Text, textPayload, fin: false, mask: true);
         var pingFrame = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Ping, "ping"u8);
-        var continuationFrame = CreateFrame(WebSocketOpCode.Continuation, continuationPayload, fin: true, mask: true);
+        var continuationFrame = CreateFrame(
+            WebSocketOpCode.Continuation,
+            continuationPayload,
+            fin: true,
+            mask: true
+        );
 
         var combined = new byte[textFrame.Length + pingFrame.Length + continuationFrame.Length];
         textFrame.CopyTo(combined, 0);

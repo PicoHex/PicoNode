@@ -11,9 +11,9 @@ public static class HpackDecoder
     private static readonly (uint Code, int BitLength)[] HuffmanCodes = new (uint, int)[257];
 
     // Binary tree for fast Huffman decoding: three parallel arrays
-    private static readonly int[] HuffLeft;   // left child index, -1 if none
-    private static readonly int[] HuffRight;  // right child index, -1 if none
-    private static readonly short[] HuffSym;   // symbol value, -1 if internal node
+    private static readonly int[] HuffLeft; // left child index, -1 if none
+    private static readonly int[] HuffRight; // right child index, -1 if none
+    private static readonly short[] HuffSym; // symbol value, -1 if internal node
 
     static HpackDecoder()
     {
@@ -373,8 +373,11 @@ public static class HpackDecoder
 
     // ── Header field decoders ──────────────────────────────────────────
 
-    private static bool TryDecodeIndexed(ReadOnlySpan<byte> block, ref int offset,
-        List<(string, string)> headers)
+    private static bool TryDecodeIndexed(
+        ReadOnlySpan<byte> block,
+        ref int offset,
+        List<(string, string)> headers
+    )
     {
         int index = DecodeInteger(block, ref offset, 7);
         if (index < 1 || index > StaticTable.EntryCount)
@@ -384,8 +387,12 @@ public static class HpackDecoder
         return true;
     }
 
-    private static bool TryDecodeLiteral(ReadOnlySpan<byte> block, ref int offset,
-        int prefixBits, List<(string, string)> headers)
+    private static bool TryDecodeLiteral(
+        ReadOnlySpan<byte> block,
+        ref int offset,
+        int prefixBits,
+        List<(string, string)> headers
+    )
     {
         int nameIndex = DecodeInteger(block, ref offset, prefixBits);
 
@@ -399,8 +406,12 @@ public static class HpackDecoder
         return true;
     }
 
-    private static bool TryResolveName(ReadOnlySpan<byte> block, ref int offset,
-        int nameIndex, out string? name)
+    private static bool TryResolveName(
+        ReadOnlySpan<byte> block,
+        ref int offset,
+        int nameIndex,
+        out string? name
+    )
     {
         if (nameIndex == 0)
         {
@@ -419,8 +430,11 @@ public static class HpackDecoder
 
     // ── String decoding ────────────────────────────────────────────────
 
-    private static bool TryDecodeString(ReadOnlySpan<byte> block, ref int offset,
-        out string? result)
+    private static bool TryDecodeString(
+        ReadOnlySpan<byte> block,
+        ref int offset,
+        out string? result
+    )
     {
         result = null;
         if (offset >= block.Length)

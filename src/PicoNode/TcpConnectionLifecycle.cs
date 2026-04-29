@@ -28,7 +28,8 @@ internal sealed class TcpConnectionLifecycle
         SemaphoreSlim sendLock,
         CancellationTokenSource cts,
         TcpConnectionContext context,
-        TcpConnectionReceiveLoop receiveLoop)
+        TcpConnectionReceiveLoop receiveLoop
+    )
     {
         _node = node;
         _connection = connection;
@@ -101,11 +102,12 @@ internal sealed class TcpConnectionLifecycle
     internal async Task CloseCoreAsync(
         TcpCloseReason reason,
         Exception? error,
-        ITcpConnectionHandler handler)
+        ITcpConnectionHandler handler
+    )
     {
         try
         {
-            if (!TryBeginClose(reason))
+            if (!TryBeginClose())
             {
                 return;
             }
@@ -164,7 +166,8 @@ internal sealed class TcpConnectionLifecycle
     private async Task InvokeClosedHandlerAsync(
         ITcpConnectionHandler handler,
         TcpCloseReason reason,
-        Exception? error)
+        Exception? error
+    )
     {
         try
         {
@@ -186,22 +189,24 @@ internal sealed class TcpConnectionLifecycle
         _node.OnConnectionClosed(_connection);
     }
 
-    private bool TryBeginClose(TcpCloseReason reason) =>
+    private bool TryBeginClose() =>
         Interlocked.Exchange(ref _closeState, 1) == 0;
 
-    private bool TryBeginDispose() =>
-        Interlocked.Exchange(ref _disposeState, 1) == 0;
+    private bool TryBeginDispose() => Interlocked.Exchange(ref _disposeState, 1) == 0;
 
     private Task CancelConnectionAsync() => _cts.CancelAsync();
 
     private TcpCloseReason MapSocketExceptionReason(
         SocketException exception,
-        TcpCloseReason currentReason)
+        TcpCloseReason currentReason
+    )
     {
-        if (exception.SocketErrorCode
+        if (
+            exception.SocketErrorCode
             is SocketError.ConnectionReset
                 or SocketError.ConnectionAborted
-                or SocketError.OperationAborted)
+                or SocketError.OperationAborted
+        )
         {
             return _cts.IsCancellationRequested
                 ? TcpCloseReason.LocalClose

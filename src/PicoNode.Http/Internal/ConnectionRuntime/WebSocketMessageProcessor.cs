@@ -16,9 +16,7 @@ internal static class WebSocketMessageProcessor
 
         while (remaining.Length > 0)
         {
-            if (
-                !WebSocketFrameCodec.TryReadFrame(remaining, out var frame, out var frameConsumed)
-            )
+            if (!WebSocketFrameCodec.TryReadFrame(remaining, out var frame, out var frameConsumed))
             {
                 return consumed;
             }

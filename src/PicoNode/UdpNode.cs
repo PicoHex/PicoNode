@@ -361,7 +361,9 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 }
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { /* expected during shutdown — datagram queue processing cancelled */ }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        { /* expected during shutdown — datagram queue processing cancelled */
+        }
     }
 
     private int GetQueueIndex(IPEndPoint remoteEndPoint)

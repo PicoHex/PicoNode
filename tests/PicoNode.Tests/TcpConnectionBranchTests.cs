@@ -717,9 +717,10 @@ public sealed class TcpConnectionBranchTests
             "NormalizeCompletionReason",
             BindingFlags.Static | BindingFlags.NonPublic
         )!;
-        var cts = (CancellationTokenSource)typeof(TcpConnection)
-            .GetField("_cts", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(connection)!;
+        var cts = (CancellationTokenSource)
+            typeof(TcpConnection)
+                .GetField("_cts", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(connection)!;
         return (TcpCloseReason)method.Invoke(null, [reason, cts.Token])!;
     }
 

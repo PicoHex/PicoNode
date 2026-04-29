@@ -15,7 +15,8 @@ internal sealed class TcpConnectionReceiveLoop
         Pipe pipe,
         TcpNode node,
         int receiveBufferSize,
-        Action touchCallback)
+        Action touchCallback
+    )
     {
         _socket = socket;
         _stream = stream;
@@ -28,7 +29,8 @@ internal sealed class TcpConnectionReceiveLoop
     internal async Task<TcpCloseReason> ExecuteReceiveLoopAsync(
         ITcpConnectionHandler handler,
         ITcpConnectionContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var processingTask = ProcessPipeAsync(handler, context, cancellationToken);
 
@@ -41,16 +43,17 @@ internal sealed class TcpConnectionReceiveLoop
 
     private static TcpCloseReason NormalizeCompletionReason(
         TcpCloseReason reason,
-        CancellationToken cancellationToken) =>
-        cancellationToken.IsCancellationRequested
-            && reason == TcpCloseReason.RemoteClosed
+        CancellationToken cancellationToken
+    ) =>
+        cancellationToken.IsCancellationRequested && reason == TcpCloseReason.RemoteClosed
             ? TcpCloseReason.LocalClose
             : reason;
 
     private async Task ProcessPipeAsync(
         ITcpConnectionHandler handler,
         ITcpConnectionContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         try
         {
@@ -68,7 +71,8 @@ internal sealed class TcpConnectionReceiveLoop
                         handler,
                         context,
                         buffer,
-                        cancellationToken);
+                        cancellationToken
+                    );
                     _pipe.Reader.AdvanceTo(consumedPosition, buffer.End);
                 }
 
@@ -78,7 +82,9 @@ internal sealed class TcpConnectionReceiveLoop
                 }
             }
         }
-        catch (OperationCanceledException) { /* expected during connection close — pipe read cancelled */ }
+        catch (OperationCanceledException)
+        { /* expected during connection close — pipe read cancelled */
+        }
         finally
         {
             await _pipe.Reader.CompleteAsync();
@@ -88,7 +94,8 @@ internal sealed class TcpConnectionReceiveLoop
     private static async Task InvokeConnectedAsync(
         ITcpConnectionHandler handler,
         ITcpConnectionContext context,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var connectedTask = handler.OnConnectedAsync(context, cancellationToken);
         if (!connectedTask.IsCompletedSuccessfully)
@@ -145,7 +152,8 @@ internal sealed class TcpConnectionReceiveLoop
 
     private async ValueTask<FlushResult> FlushReceivedBytesAsync(
         int bytesRead,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         _pipe.Writer.Advance(bytesRead);
         var flushOperation = _pipe.Writer.FlushAsync(cancellationToken);

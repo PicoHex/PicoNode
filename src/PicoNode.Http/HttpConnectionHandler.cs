@@ -52,12 +52,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             return state.Protocol switch
             {
                 ConnectionProtocol.WebSocket
-                    => ProcessWebSocketFrameAsync(
-                        connection,
-                        buffer,
-                        state,
-                        cancellationToken
-                    ),
+                    => ProcessWebSocketFrameAsync(connection, buffer, state, cancellationToken),
                 ConnectionProtocol.Http2
                     => Http2ConnectionProcessor.ProcessAsync(
                         connection,

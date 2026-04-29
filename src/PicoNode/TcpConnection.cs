@@ -7,8 +7,6 @@ internal sealed class TcpConnection : IAsyncDisposable
     private const int DefaultReceivePipePauseThresholdMultiplier = 4;
 
     private readonly TcpNode _node;
-    private readonly Socket _socket;
-    private readonly Stream? _stream;
     private readonly Pipe _pipe;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
@@ -20,8 +18,6 @@ internal sealed class TcpConnection : IAsyncDisposable
     public TcpConnection(TcpNode node, Socket socket, Stream? stream = null)
     {
         _node = node;
-        _socket = socket;
-        _stream = stream;
         _receiveBufferSize = Math.Max(
             node.Options.ReceiveSocketBufferSize,
             MinimumReceiveBufferSize
@@ -35,7 +31,8 @@ internal sealed class TcpConnection : IAsyncDisposable
             _pipe,
             node,
             _receiveBufferSize,
-            Touch);
+            Touch
+        );
         _lifecycle = new TcpConnectionLifecycle(
             node,
             this,
@@ -45,7 +42,8 @@ internal sealed class TcpConnection : IAsyncDisposable
             _sendLock,
             _cts,
             context,
-            _receiveLoop);
+            _receiveLoop
+        );
         Id = Interlocked.Increment(ref _nextId);
         RemoteEndPoint = (IPEndPoint)socket.RemoteEndPoint!;
         ConnectedAtUtc = DateTimeOffset.UtcNow;
@@ -111,14 +109,20 @@ internal sealed class TcpConnection : IAsyncDisposable
         {
             _node.ReportFault(NodeFaultCode.SendFailed, OperationSend, ex);
             _ = _lifecycle.CloseCoreAsync(
-                TcpCloseReason.SendFault, ex, _node.Options.ConnectionHandler);
+                TcpCloseReason.SendFault,
+                ex,
+                _node.Options.ConnectionHandler
+            );
             throw;
         }
         catch (IOException ex)
         {
             _node.ReportFault(NodeFaultCode.SendFailed, OperationSend, ex);
             _ = _lifecycle.CloseCoreAsync(
-                TcpCloseReason.SendFault, ex, _node.Options.ConnectionHandler);
+                TcpCloseReason.SendFault,
+                ex,
+                _node.Options.ConnectionHandler
+            );
             throw;
         }
         catch (ObjectDisposedException) when (_lifecycle.IsCloseInitiated)
@@ -134,13 +138,15 @@ internal sealed class TcpConnection : IAsyncDisposable
     public void Close()
     {
         _ = _lifecycle.CloseCoreAsync(
-            TcpCloseReason.LocalClose, null, _node.Options.ConnectionHandler);
+            TcpCloseReason.LocalClose,
+            null,
+            _node.Options.ConnectionHandler
+        );
     }
 
     public void Close(TcpCloseReason reason)
     {
-        _ = _lifecycle.CloseCoreAsync(
-            reason, null, _node.Options.ConnectionHandler);
+        _ = _lifecycle.CloseCoreAsync(reason, null, _node.Options.ConnectionHandler);
     }
 
     internal bool IsIdle(TimeSpan idleTimeout)
@@ -172,5 +178,4 @@ internal sealed class TcpConnection : IAsyncDisposable
             useSynchronizationContext: false
         );
     }
-
 }

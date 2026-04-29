@@ -77,7 +77,7 @@ internal static class Http1ConnectionProcessor
         ConnectionRuntimeState state,
         SequencePosition consumed,
         HttpConnectionHandlerOptions options,
-        CancellationToken cancellationToken
+        CancellationToken _
     )
     {
         var now = DateTime.UtcNow;

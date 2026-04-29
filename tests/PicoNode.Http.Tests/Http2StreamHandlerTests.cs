@@ -23,11 +23,17 @@ public sealed class Http2StreamHandlerTests
             return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
         };
 
-        var frame = BuildHeadersFrame(MinimalHpackPayload,
-            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream);
+        var frame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
 
         var shouldClose = await Http2StreamHandler.ProcessHeadersFrame(
-            connection, frame, handler, CancellationToken.None);
+            connection,
+            frame,
+            handler,
+            CancellationToken.None
+        );
 
         await Assert.That(shouldClose).IsFalse();
         await Assert.That(handlerCalled).IsTrue();
@@ -56,17 +62,21 @@ public sealed class Http2StreamHandlerTests
         var bodyText = "Hello, HTTP/2!";
 
         HttpRequestHandler handler = (req, ct) =>
-            ValueTask.FromResult(new HttpResponse
-            {
-                StatusCode = 200,
-                Body = Encoding.ASCII.GetBytes(bodyText),
-            });
+            ValueTask.FromResult(
+                new HttpResponse { StatusCode = 200, Body = Encoding.ASCII.GetBytes(bodyText), }
+            );
 
-        var frame = BuildHeadersFrame(MinimalHpackPayload,
-            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream);
+        var frame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
 
         var shouldClose = await Http2StreamHandler.ProcessHeadersFrame(
-            connection, frame, handler, CancellationToken.None);
+            connection,
+            frame,
+            handler,
+            CancellationToken.None
+        );
 
         await Assert.That(shouldClose).IsFalse();
         await Assert.That(connection.SentFrames.Count).IsEqualTo(2);
@@ -95,17 +105,21 @@ public sealed class Http2StreamHandlerTests
         var connection = new TestTcpConnectionContext();
 
         HttpRequestHandler handler = (req, ct) =>
-            ValueTask.FromResult(new HttpResponse
-            {
-                StatusCode = 204,
-                Body = ReadOnlyMemory<byte>.Empty,
-            });
+            ValueTask.FromResult(
+                new HttpResponse { StatusCode = 204, Body = ReadOnlyMemory<byte>.Empty, }
+            );
 
-        var frame = BuildHeadersFrame(MinimalHpackPayload,
-            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream);
+        var frame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
 
         var shouldClose = await Http2StreamHandler.ProcessHeadersFrame(
-            connection, frame, handler, CancellationToken.None);
+            connection,
+            frame,
+            handler,
+            CancellationToken.None
+        );
 
         await Assert.That(shouldClose).IsFalse();
         await Assert.That(connection.SentFrames.Count).IsEqualTo(1);
@@ -124,24 +138,32 @@ public sealed class Http2StreamHandlerTests
         var connection = new TestTcpConnectionContext();
 
         HttpRequestHandler handler = (req, ct) =>
-            ValueTask.FromResult(new HttpResponse
-            {
-                StatusCode = 200,
-                Headers = new HttpHeaderCollection
+            ValueTask.FromResult(
+                new HttpResponse
                 {
-                    { "Content-Type", "text/plain" },
-                    { "Connection", "keep-alive" },
-                    { "Transfer-Encoding", "chunked" },
-                    { "Keep-Alive", "timeout=5" },
-                    { "X-Custom", "hello" },
-                },
-            });
+                    StatusCode = 200,
+                    Headers = new HttpHeaderCollection
+                    {
+                        { "Content-Type", "text/plain" },
+                        { "Connection", "keep-alive" },
+                        { "Transfer-Encoding", "chunked" },
+                        { "Keep-Alive", "timeout=5" },
+                        { "X-Custom", "hello" },
+                    },
+                }
+            );
 
-        var frame = BuildHeadersFrame(MinimalHpackPayload,
-            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream);
+        var frame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
 
         await Http2StreamHandler.ProcessHeadersFrame(
-            connection, frame, handler, CancellationToken.None);
+            connection,
+            frame,
+            handler,
+            CancellationToken.None
+        );
 
         DecodeHeadersFrame(connection.SentFrames[0], out var headers, out _);
 
@@ -159,13 +181,20 @@ public sealed class Http2StreamHandlerTests
         var connection = new TestTcpConnectionContext();
 
         var hpack = new byte[] { 0x04, 0x04, 0x2F, 0x66, 0x6F, 0x6F };
-        var frame = BuildHeadersFrame(hpack, Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream);
+        var frame = BuildHeadersFrame(
+            hpack,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
 
         HttpRequestHandler handler = (req, ct) =>
             ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
 
         var shouldClose = await Http2StreamHandler.ProcessHeadersFrame(
-            connection, frame, handler, CancellationToken.None);
+            connection,
+            frame,
+            handler,
+            CancellationToken.None
+        );
 
         await Assert.That(shouldClose).IsTrue();
         await Assert.That(connection.IsClosed).IsTrue();
@@ -182,7 +211,11 @@ public sealed class Http2StreamHandlerTests
             ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
 
         var shouldClose = await Http2StreamHandler.ProcessHeadersFrame(
-            connection, frame, handler, CancellationToken.None);
+            connection,
+            frame,
+            handler,
+            CancellationToken.None
+        );
 
         await Assert.That(shouldClose).IsTrue();
         await Assert.That(connection.IsClosed).IsTrue();
@@ -194,14 +227,20 @@ public sealed class Http2StreamHandlerTests
         var connection = new TestTcpConnectionContext();
 
         var invalidHpack = new byte[] { 0xFF, 0xFF, 0xFF };
-        var frame = BuildHeadersFrame(invalidHpack,
-            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream);
+        var frame = BuildHeadersFrame(
+            invalidHpack,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
 
         HttpRequestHandler handler = (req, ct) =>
             ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
 
         var shouldClose = await Http2StreamHandler.ProcessHeadersFrame(
-            connection, frame, handler, CancellationToken.None);
+            connection,
+            frame,
+            handler,
+            CancellationToken.None
+        );
 
         await Assert.That(shouldClose).IsTrue();
         await Assert.That(connection.IsClosed).IsTrue();
@@ -223,7 +262,11 @@ public sealed class Http2StreamHandlerTests
             ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
 
         var shouldClose = await Http2StreamHandler.ProcessHeadersFrame(
-            connection, frame, handler, CancellationToken.None);
+            connection,
+            frame,
+            handler,
+            CancellationToken.None
+        );
 
         await Assert.That(shouldClose).IsTrue();
         await Assert.That(connection.IsClosed).IsTrue();
@@ -237,11 +280,17 @@ public sealed class Http2StreamHandlerTests
         HttpRequestHandler handler = (req, ct) =>
             throw new InvalidOperationException("test failure");
 
-        var frame = BuildHeadersFrame(MinimalHpackPayload,
-            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream);
+        var frame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
 
         var shouldClose = await Http2StreamHandler.ProcessHeadersFrame(
-            connection, frame, handler, CancellationToken.None);
+            connection,
+            frame,
+            handler,
+            CancellationToken.None
+        );
 
         await Assert.That(shouldClose).IsFalse();
 
@@ -300,11 +349,9 @@ public sealed class Http2StreamHandlerTests
             output.AddRange(bytes);
     }
 
-    private static Http2Frame BuildHeadersFrame(
-        byte[] hpackPayload, Http2FrameFlags flags)
+    private static Http2Frame BuildHeadersFrame(byte[] hpackPayload, Http2FrameFlags flags)
     {
-        var encoded = Http2FrameCodec.EncodeFrame(
-            Http2FrameType.Headers, flags, 1, hpackPayload);
+        var encoded = Http2FrameCodec.EncodeFrame(Http2FrameType.Headers, flags, 1, hpackPayload);
 
         var buffer = new ReadOnlySequence<byte>(encoded);
         Http2FrameCodec.TryReadFrame(buffer, out var frame, out _);
@@ -314,7 +361,8 @@ public sealed class Http2StreamHandlerTests
     private static bool DecodeHeadersFrame(
         byte[] frameBytes,
         out List<(string, string)>? headers,
-        out Http2FrameFlags flags)
+        out Http2FrameFlags flags
+    )
     {
         headers = null;
         flags = Http2FrameFlags.None;

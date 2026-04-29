@@ -126,10 +126,19 @@ public sealed class HpackDecoderTests
         // Value string: raw, length 11, then "example.com"
         var block = new byte[]
         {
-            0x41,                                           // 01 000001 → name index 1
-            0x0B,                                           // raw, length 11
-            0x65, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65,     // "example."
-            0x2E, 0x63, 0x6F, 0x6D,                         // "com"
+            0x41, // 01 000001 → name index 1
+            0x0B, // raw, length 11
+            0x65,
+            0x78,
+            0x61,
+            0x6D,
+            0x70,
+            0x6C,
+            0x65, // "example."
+            0x2E,
+            0x63,
+            0x6F,
+            0x6D, // "com"
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -149,11 +158,22 @@ public sealed class HpackDecoderTests
         // Value string: raw, length 5, "hello"
         var block = new byte[]
         {
-            0x40,                                           // 01 000000 → new name
-            0x08,                                           // raw, name length 8
-            0x78, 0x2D, 0x63, 0x75, 0x73, 0x74, 0x6F, 0x6D, // "x-custom"
-            0x05,                                           // raw, value length 5
-            0x68, 0x65, 0x6C, 0x6C, 0x6F,                   // "hello"
+            0x40, // 01 000000 → new name
+            0x08, // raw, name length 8
+            0x78,
+            0x2D,
+            0x63,
+            0x75,
+            0x73,
+            0x74,
+            0x6F,
+            0x6D, // "x-custom"
+            0x05, // raw, value length 5
+            0x68,
+            0x65,
+            0x6C,
+            0x6C,
+            0x6F, // "hello"
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -173,9 +193,15 @@ public sealed class HpackDecoderTests
         // 0x04 = 0000 0100 → 4-bit prefix = 4 → :path
         var block = new byte[]
         {
-            0x04,                                           // 0000 0100 → name index 4
-            0x07,                                           // raw, value length 7
-            0x2F, 0x61, 0x70, 0x69, 0x2F, 0x76, 0x31,       // "/api/v1"
+            0x04, // 0000 0100 → name index 4
+            0x07, // raw, value length 7
+            0x2F,
+            0x61,
+            0x70,
+            0x69,
+            0x2F,
+            0x76,
+            0x31, // "/api/v1"
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -192,11 +218,11 @@ public sealed class HpackDecoderTests
         // Without indexing, new name "n", value "v"
         var block = new byte[]
         {
-            0x00,                                           // 0000 0000 → new name
-            0x01,                                           // raw, name length 1
-            0x6E,                                           // "n"
-            0x01,                                           // raw, value length 1
-            0x76,                                           // "v"
+            0x00, // 0000 0000 → new name
+            0x01, // raw, name length 1
+            0x6E, // "n"
+            0x01, // raw, value length 1
+            0x76, // "v"
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -218,10 +244,18 @@ public sealed class HpackDecoderTests
         // 31 = 15 + 16, continuation: 16 → 0x10 (MSB=0, done)
         var block = new byte[]
         {
-            0x1F,                                           // 0001 1111 → prefix = 15
-            0x10,                                           // continuation: 16, done
-            0x09,                                           // raw, value length 9
-            0x74, 0x65, 0x78, 0x74, 0x2F, 0x68, 0x74, 0x6D, 0x6C, // "text/html"
+            0x1F, // 0001 1111 → prefix = 15
+            0x10, // continuation: 16, done
+            0x09, // raw, value length 9
+            0x74,
+            0x65,
+            0x78,
+            0x74,
+            0x2F,
+            0x68,
+            0x74,
+            0x6D,
+            0x6C, // "text/html"
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -238,11 +272,19 @@ public sealed class HpackDecoderTests
         // Never indexed, new name "auth", value "secret"
         var block = new byte[]
         {
-            0x10,                                           // 0001 0000 → new name
-            0x04,                                           // raw, name length 4
-            0x61, 0x75, 0x74, 0x68,                         // "auth"
-            0x06,                                           // raw, value length 6
-            0x73, 0x65, 0x63, 0x72, 0x65, 0x74,             // "secret"
+            0x10, // 0001 0000 → new name
+            0x04, // raw, name length 4
+            0x61,
+            0x75,
+            0x74,
+            0x68, // "auth"
+            0x06, // raw, value length 6
+            0x73,
+            0x65,
+            0x63,
+            0x72,
+            0x65,
+            0x74, // "secret"
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -261,11 +303,26 @@ public sealed class HpackDecoderTests
         // :method: GET, :scheme: http, :path: /, :authority: www.example.com
         var block = new byte[]
         {
-            0x82, 0x86, 0x84,                               // indexed headers
-            0x41,                                           // literal+indexing, name idx 1 (:authority)
-            0x0F,                                           // raw, value length 15
-            0x77, 0x77, 0x77, 0x2E, 0x65, 0x78, 0x61,       // "www.exa"
-            0x6D, 0x70, 0x6C, 0x65, 0x2E, 0x63, 0x6F, 0x6D, // "mple.com"
+            0x82,
+            0x86,
+            0x84, // indexed headers
+            0x41, // literal+indexing, name idx 1 (:authority)
+            0x0F, // raw, value length 15
+            0x77,
+            0x77,
+            0x77,
+            0x2E,
+            0x65,
+            0x78,
+            0x61, // "www.exa"
+            0x6D,
+            0x70,
+            0x6C,
+            0x65,
+            0x2E,
+            0x63,
+            0x6F,
+            0x6D, // "mple.com"
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -290,11 +347,23 @@ public sealed class HpackDecoderTests
         // Same headers as C.3.1 but :authority value is Huffman-encoded
         var block = new byte[]
         {
-            0x82, 0x86, 0x84,                               // indexed headers
-            0x41,                                           // literal+indexing, name idx 1
-            0x8C,                                           // Huffman, length 12
-            0xF1, 0xE3, 0xC2, 0xE5, 0xF2, 0x3A,             // Huffman data
-            0x6B, 0xA0, 0xAB, 0x90, 0xF4, 0xFF,             // "www.example.com"
+            0x82,
+            0x86,
+            0x84, // indexed headers
+            0x41, // literal+indexing, name idx 1
+            0x8C, // Huffman, length 12
+            0xF1,
+            0xE3,
+            0xC2,
+            0xE5,
+            0xF2,
+            0x3A, // Huffman data
+            0x6B,
+            0xA0,
+            0xAB,
+            0x90,
+            0xF4,
+            0xFF, // "www.example.com"
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -315,11 +384,11 @@ public sealed class HpackDecoderTests
         // Literal without indexing, new name "n", Huffman value "a"
         var block = new byte[]
         {
-            0x00,                                           // no-index, new name
-            0x01,                                           // raw, name length 1
-            0x6E,                                           // "n"
-            0x81,                                           // Huffman, value length 1
-            0x1F,                                           // Huffman-encoded "a" + padding
+            0x00, // no-index, new name
+            0x01, // raw, name length 1
+            0x6E, // "n"
+            0x81, // Huffman, value length 1
+            0x1F, // Huffman-encoded "a" + padding
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -339,11 +408,12 @@ public sealed class HpackDecoderTests
         // Bit stream: 00011 100011 00100 = 00011100 01100100 = 0x1C 0x64
         var block = new byte[]
         {
-            0x00,                                           // no-index, new name
-            0x01,                                           // raw, name length 1
-            0x78,                                           // "x"
-            0x82,                                           // Huffman, value length 2
-            0x1C, 0x64,                                     // Huffman-encoded "abc"
+            0x00, // no-index, new name
+            0x01, // raw, name length 1
+            0x78, // "x"
+            0x82, // Huffman, value length 2
+            0x1C,
+            0x64, // Huffman-encoded "abc"
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -361,11 +431,12 @@ public sealed class HpackDecoderTests
         // 00011000 11111111 = 0x18 0xFF
         var block = new byte[]
         {
-            0x00,                                           // no-index, new name
-            0x01,                                           // raw, name length 1
-            0x68,                                           // "h"
-            0x82,                                           // Huffman, value length 2
-            0x18, 0xFF,                                     // "aa" + EOS padding
+            0x00, // no-index, new name
+            0x01, // raw, name length 1
+            0x68, // "h"
+            0x82, // Huffman, value length 2
+            0x18,
+            0xFF, // "aa" + EOS padding
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -383,11 +454,14 @@ public sealed class HpackDecoderTests
         // 4 bytes of 0xFF = 32 bits → first 30 bits are all 1s = EOS symbol
         var block = new byte[]
         {
-            0x00,                                           // no-index, new name
-            0x01,                                           // raw, name length 1
-            0x65,                                           // "e"
-            0x84,                                           // Huffman, value length 4
-            0xFF, 0xFF, 0xFF, 0xFF,                         // EOS + more
+            0x00, // no-index, new name
+            0x01, // raw, name length 1
+            0x65, // "e"
+            0x84, // Huffman, value length 4
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF, // EOS + more
         };
 
         var success = HpackDecoder.TryDecode(block, out _);
@@ -405,8 +479,8 @@ public sealed class HpackDecoderTests
         // Value: raw, length 0 (empty) — literal headers always get value from wire
         var block = new byte[]
         {
-            0x0A,                                           // 0000 1010 → no-index, name idx 10
-            0x00,                                           // raw, value length 0
+            0x0A, // 0000 1010 → no-index, name idx 10
+            0x00, // raw, value length 0
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -425,9 +499,9 @@ public sealed class HpackDecoderTests
         // Index 16 = accept-encoding: gzip, deflate
         var block = new byte[]
         {
-            0x0F,                                           // 0000 1111 → prefix = 15
-            0x01,                                           // continuation +1 → total = 16
-            0x00,                                           // raw, value length 0
+            0x0F, // 0000 1111 → prefix = 15
+            0x01, // continuation +1 → total = 16
+            0x00, // raw, value length 0
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -444,15 +518,16 @@ public sealed class HpackDecoderTests
         // Value length with 7-bit prefix: 133 >= 127 → prefix = 0x7F, remainder = 6
         // Continuation: 0x06 (MSB=0, done)
         var valueBytes = new byte[133];
-        for (int i = 0; i < 133; i++) valueBytes[i] = (byte)'a';
+        for (int i = 0; i < 133; i++)
+            valueBytes[i] = (byte)'a';
 
         var block = new List<byte>
         {
-            0x00,                                           // no-index, new name
-            0x01,                                           // raw, name length 1
-            0x78,                                           // "x"
-            0x7F,                                           // raw, value length prefix = 127
-            0x06,                                           // continuation: +6 → total = 133
+            0x00, // no-index, new name
+            0x01, // raw, name length 1
+            0x78, // "x"
+            0x7F, // raw, value length prefix = 127
+            0x06, // continuation: +6 → total = 133
         };
         block.AddRange(valueBytes);
 
@@ -473,8 +548,8 @@ public sealed class HpackDecoderTests
         // 0x20 = 001 00000 → 5-bit prefix = 0
         var block = new byte[]
         {
-            0x20,                                           // size update, max size = 0
-            0x82,                                           // indexed header index 2 (:method GET)
+            0x20, // size update, max size = 0
+            0x82, // indexed header index 2 (:method GET)
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -500,10 +575,10 @@ public sealed class HpackDecoderTests
         // So: 0x3F 0xE1 0x1F
         var block = new byte[]
         {
-            0x3F,                                           // 001 11111 → prefix = 31
-            0xE1,                                           // continuation: +97*128^0
-            0x1F,                                           // continuation: +31*128^1, done
-            0x82,                                           // indexed header index 2
+            0x3F, // 001 11111 → prefix = 31
+            0xE1, // continuation: +97*128^0
+            0x1F, // continuation: +31*128^1, done
+            0x82, // indexed header index 2
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);
@@ -532,7 +607,7 @@ public sealed class HpackDecoderTests
         // 0x30 = 0011 0000 → matches 001xxxxx (size update), but let's make one that doesn't match
         // Actually 0x30 is 0011 0000 → bits 7-5 = 001 → size update, 5-bit prefix = 0x10 = 16
         // That's valid. Let's use something that truly doesn't match:
-        // All patterns: 1xxx = indexed, 01xx = literal+idx, 0000 = literal no-idx, 
+        // All patterns: 1xxx = indexed, 01xx = literal+idx, 0000 = literal no-idx,
         // 0001 = never idx, 001x = size update
         // Anything starting with 0x0F? No, 0000 1111 → literal no-index, index 15. Valid.
         // The only invalid prefix would be something not matching any of the above.
@@ -552,9 +627,11 @@ public sealed class HpackDecoderTests
         // Literal with indexing, name index 0 (new name), but block ends mid-name
         var block = new byte[]
         {
-            0x40,                                           // literal+idx, new name
-            0x08,                                           // raw, name length 8
-            0x78, 0x2D, 0x63,                               // only "x-c" (truncated)
+            0x40, // literal+idx, new name
+            0x08, // raw, name length 8
+            0x78,
+            0x2D,
+            0x63, // only "x-c" (truncated)
         };
 
         var success = HpackDecoder.TryDecode(block, out _);
@@ -568,11 +645,13 @@ public sealed class HpackDecoderTests
         // Literal with indexing, new name "x", Huffman value with truncated data
         var block = new byte[]
         {
-            0x40,                                           // literal+idx, new name
-            0x01,                                           // raw, name length 1
-            0x78,                                           // "x"
-            0x85,                                           // Huffman, value length 5
-            0x1C, 0x64, 0xFF,                               // only 3 bytes (need 5)
+            0x40, // literal+idx, new name
+            0x01, // raw, name length 1
+            0x78, // "x"
+            0x85, // Huffman, value length 5
+            0x1C,
+            0x64,
+            0xFF, // only 3 bytes (need 5)
         };
 
         var success = HpackDecoder.TryDecode(block, out _);
@@ -586,10 +665,10 @@ public sealed class HpackDecoderTests
         // Literal without indexing, new name "n", empty raw value
         var block = new byte[]
         {
-            0x00,                                           // no-index, new name
-            0x01,                                           // raw, name length 1
-            0x6E,                                           // "n"
-            0x00,                                           // raw, value length 0
+            0x00, // no-index, new name
+            0x01, // raw, name length 1
+            0x6E, // "n"
+            0x00, // raw, value length 0
         };
 
         var success = HpackDecoder.TryDecode(block, out var headers);

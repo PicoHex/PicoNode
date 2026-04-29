@@ -180,20 +180,20 @@ internal sealed class SendPath(Socket socket, Stream? stream)
 
             if (!MemoryMarshal.TryGetArray(memory, out _))
             {
-                segments = [];
+                segments =  [];
                 return false;
             }
 
             segmentCount++;
             if (segmentCount <= MaxScatterGatherSegments)
                 continue;
-            segments = [];
+            segments =  [];
             return false;
         }
 
         if (segmentCount == 0)
         {
-            segments = [];
+            segments =  [];
             return true;
         }
 
