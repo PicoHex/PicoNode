@@ -26,7 +26,10 @@ internal static class WebSocketConnectionProcessor
                 case WebSocketOpCode.Ping:
                     await connection.SendAsync(
                         new ReadOnlySequence<byte>(
-                            WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Pong, frame.Payload.Span)
+                            WebSocketFrameCodec.EncodeFrame(
+                                WebSocketOpCode.Pong,
+                                frame.Payload.Span
+                            )
                         ),
                         cancellationToken
                     );
@@ -34,7 +37,10 @@ internal static class WebSocketConnectionProcessor
                 case WebSocketOpCode.Close:
                     await connection.SendAsync(
                         new ReadOnlySequence<byte>(
-                            WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Close, frame.Payload.Span)
+                            WebSocketFrameCodec.EncodeFrame(
+                                WebSocketOpCode.Close,
+                                frame.Payload.Span
+                            )
                         ),
                         cancellationToken
                     );

@@ -77,7 +77,12 @@ public sealed class RadixTreeTests
         tree.Insert("/users/me", "GET", 2);
 
         var exactResult = tree.TryMatch("/users/me", "GET", out var exactValue, out _);
-        var paramResult = tree.TryMatch("/users/42", "GET", out var paramValue, out var paramRouteValues);
+        var paramResult = tree.TryMatch(
+            "/users/42",
+            "GET",
+            out var paramValue,
+            out var paramRouteValues
+        );
 
         await Assert.That(exactResult).IsTrue();
         await Assert.That(exactValue).IsEqualTo(2);

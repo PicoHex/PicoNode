@@ -27,11 +27,15 @@ public sealed class HttpContractTests
             .IsEqualTo(typeof(int));
         await Assert
             .That(
-                type.GetProperty(nameof(HttpConnectionHandlerOptions.StreamingResponseBufferSize))?.PropertyType
+                type.GetProperty(
+                    nameof(HttpConnectionHandlerOptions.StreamingResponseBufferSize)
+                )?.PropertyType
             )
             .IsEqualTo(typeof(int));
         await Assert
-            .That(type.GetProperty(nameof(HttpConnectionHandlerOptions.RequestTimeout))?.PropertyType)
+            .That(
+                type.GetProperty(nameof(HttpConnectionHandlerOptions.RequestTimeout))?.PropertyType
+            )
             .IsEqualTo(typeof(TimeSpan));
         await Assert
             .That(properties)

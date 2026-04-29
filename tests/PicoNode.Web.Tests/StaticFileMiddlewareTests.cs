@@ -1,5 +1,3 @@
-using System.IO;
-
 namespace PicoNode.Web.Tests;
 
 public sealed class StaticFileMiddlewareTests
@@ -149,7 +147,10 @@ public sealed class StaticFileMiddlewareTests
     [Test]
     public async Task Prevents_sibling_root_prefix_bypass()
     {
-        var baseDir = Path.Combine(Path.GetTempPath(), "pico_static_root_" + Guid.NewGuid().ToString("N"));
+        var baseDir = Path.Combine(
+            Path.GetTempPath(),
+            "pico_static_root_" + Guid.NewGuid().ToString("N")
+        );
         var siblingDir = baseDir + "2";
         Directory.CreateDirectory(baseDir);
         Directory.CreateDirectory(siblingDir);
@@ -158,7 +159,10 @@ public sealed class StaticFileMiddlewareTests
         try
         {
             var middleware = new StaticFileMiddleware(baseDir);
-            var context = CreateContext("GET", "/../" + Path.GetFileName(siblingDir) + "/secret.txt");
+            var context = CreateContext(
+                "GET",
+                "/../" + Path.GetFileName(siblingDir) + "/secret.txt"
+            );
 
             var response = await middleware.InvokeAsync(
                 context,

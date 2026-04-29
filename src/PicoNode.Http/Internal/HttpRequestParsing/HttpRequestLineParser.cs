@@ -64,17 +64,19 @@ internal static class HttpRequestLineParser
 
     private static string? LookupKnownMethod(ReadOnlySpan<byte> span)
     {
-        if (span.IsEmpty) return null;
+        if (span.IsEmpty)
+            return null;
         return span[0] switch
         {
             (byte)'G' => span.SequenceEqual("GET"u8) ? "GET" : null,
-            (byte)'P' => span.Length switch
-            {
-                3 when span.SequenceEqual("PUT"u8) => "PUT",
-                4 when span.SequenceEqual("POST"u8) => "POST",
-                5 when span.SequenceEqual("PATCH"u8) => "PATCH",
-                _ => null,
-            },
+            (byte)'P'
+                => span.Length switch
+                {
+                    3 when span.SequenceEqual("PUT"u8) => "PUT",
+                    4 when span.SequenceEqual("POST"u8) => "POST",
+                    5 when span.SequenceEqual("PATCH"u8) => "PATCH",
+                    _ => null,
+                },
             (byte)'D' => span.SequenceEqual("DELETE"u8) ? "DELETE" : null,
             (byte)'H' => span.SequenceEqual("HEAD"u8) ? "HEAD" : null,
             (byte)'O' => span.SequenceEqual("OPTIONS"u8) ? "OPTIONS" : null,

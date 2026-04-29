@@ -71,7 +71,11 @@ internal sealed class WebRouter
             {
                 try
                 {
-                    _paramTree.Insert(route.Pattern, method, new CompiledRoute(method, route.Pattern, pattern, route.Handler));
+                    _paramTree.Insert(
+                        route.Pattern,
+                        method,
+                        new CompiledRoute(method, route.Pattern, pattern, route.Handler)
+                    );
                 }
                 catch (InvalidOperationException)
                 {

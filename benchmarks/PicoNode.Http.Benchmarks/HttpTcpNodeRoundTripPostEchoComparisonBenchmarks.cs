@@ -23,15 +23,18 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
         _requestBytes = CreatePostRequestBytes(_expectedBody);
         _responseBuffer = CreateExpectedResponseBytes(_expectedBody);
 
-        _directNode = CreateNode(static (request, _) => ValueTask.FromResult(
-            new HttpResponse
-            {
-                StatusCode = 200,
-                ReasonPhrase = "OK",
-                Headers = [new KeyValuePair<string, string>("Content-Type", "text/plain")],
-                Body = request.Body.ToArray(),
-            }
-        ));
+        _directNode = CreateNode(
+            static (request, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Headers =  [new KeyValuePair<string, string>("Content-Type", "text/plain")],
+                        Body = request.Body.ToArray(),
+                    }
+                )
+        );
 
         _routedNode = CreateNode(
             new HttpRouter(
@@ -99,10 +102,7 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
                 ConnectionHandler = new HttpConnectionHandler(
-                    new HttpConnectionHandlerOptions
-                    {
-                        RequestHandler = requestHandler,
-                    }
+                    new HttpConnectionHandlerOptions { RequestHandler = requestHandler, }
                 ),
                 DrainTimeout = TimeSpan.FromSeconds(2),
             }
@@ -112,7 +112,9 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
     {
         if (node.LocalEndPoint is not IPEndPoint localEndPoint)
         {
-            throw new InvalidOperationException("TcpNode did not expose an IPEndPoint after startup.");
+            throw new InvalidOperationException(
+                "TcpNode did not expose an IPEndPoint after startup."
+            );
         }
 
         var client = new TcpClient();
@@ -120,19 +122,27 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
         return client;
     }
 
-    private static void VerifyRoundTrip(NetworkStream stream, byte[] requestBytes, byte[] expectedBody)
+    private static void VerifyRoundTrip(
+        NetworkStream stream,
+        byte[] requestBytes,
+        byte[] expectedBody
+    )
     {
         stream.Write(requestBytes);
         var response = HttpResponseReader.Read(stream);
 
         if (!response.StatusLine.Equals("HTTP/1.1 200 OK", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Expected 200 OK during setup, but observed '{response.StatusLine}'.");
+            throw new InvalidOperationException(
+                $"Expected 200 OK during setup, but observed '{response.StatusLine}'."
+            );
         }
 
         if (!response.Body.AsSpan().SequenceEqual(expectedBody))
         {
-            throw new InvalidOperationException("Expected response body did not match during setup.");
+            throw new InvalidOperationException(
+                "Expected response body did not match during setup."
+            );
         }
     }
 
@@ -149,9 +159,11 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
 
     private static byte[] CreatePostRequestBytes(byte[] body)
     {
-        var header = Encoding.ASCII.GetBytes(
-            $"POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
-        );
+        var header = Encoding
+            .ASCII
+            .GetBytes(
+                $"POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
+            );
         var request = new byte[header.Length + body.Length];
         Buffer.BlockCopy(header, 0, request, 0, header.Length);
         Buffer.BlockCopy(body, 0, request, header.Length, body.Length);
@@ -160,9 +172,11 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
 
     private static byte[] CreateExpectedResponseBytes(byte[] body)
     {
-        var header = Encoding.ASCII.GetBytes(
-            $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
-        );
+        var header = Encoding
+            .ASCII
+            .GetBytes(
+                $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
+            );
         var response = new byte[header.Length + body.Length];
         Buffer.BlockCopy(header, 0, response, 0, header.Length);
         Buffer.BlockCopy(body, 0, response, header.Length, body.Length);
@@ -177,7 +191,9 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
             var read = stream.Read(buffer, offset, buffer.Length - offset);
             if (read == 0)
             {
-                throw new InvalidOperationException("Connection closed while reading benchmark response bytes.");
+                throw new InvalidOperationException(
+                    "Connection closed while reading benchmark response bytes."
+                );
             }
 
             offset += read;

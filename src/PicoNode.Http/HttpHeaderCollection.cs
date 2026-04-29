@@ -62,5 +62,6 @@ public sealed class HttpHeaderCollection : IReadOnlyList<KeyValuePair<string, st
 
     public IEnumerator<KeyValuePair<string, string>> GetEnumerator() => _entries.GetEnumerator();
 
-    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() =>
+        GetEnumerator();
 }

@@ -20,19 +20,22 @@ public sealed partial class HttpPipelineBenchmarks
         var router = CreateRouter();
 
         _handler = new HttpConnectionHandler(
-            new HttpConnectionHandlerOptions
-            {
-                RequestHandler = router.HandleAsync,
-            }
+            new HttpConnectionHandlerOptions { RequestHandler = router.HandleAsync, }
         );
 
         _context = new RecordingConnectionContext();
-        _getBuffer = new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes("GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n"));
+        _getBuffer = new ReadOnlySequence<byte>(
+            Encoding.ASCII.GetBytes("GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        );
         _postBuffer = new ReadOnlySequence<byte>(CreatePostRequestBytes(BodySize));
         _expectedPostBody = CreateEchoBody(BodySize);
 
         VerifyPipeline(_getBuffer, expectedStatusLine: "HTTP/1.1 200 OK", expectedBody: HelloBody);
-        VerifyPipeline(_postBuffer, expectedStatusLine: "HTTP/1.1 200 OK", expectedBody: _expectedPostBody);
+        VerifyPipeline(
+            _postBuffer,
+            expectedStatusLine: "HTTP/1.1 200 OK",
+            expectedBody: _expectedPostBody
+        );
     }
 
     [IterationSetup]
@@ -41,34 +44,53 @@ public sealed partial class HttpPipelineBenchmarks
     [Benchmark]
     public void ProcessGetThroughRouter()
     {
-        _ = _handler.OnReceivedAsync(_context, _getBuffer, CancellationToken.None).GetAwaiter().GetResult();
+        _ = _handler
+            .OnReceivedAsync(_context, _getBuffer, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
     }
 
     [Benchmark]
     public void ProcessPostEchoThroughRouter()
     {
-        _ = _handler.OnReceivedAsync(_context, _postBuffer, CancellationToken.None).GetAwaiter().GetResult();
+        _ = _handler
+            .OnReceivedAsync(_context, _postBuffer, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
     }
 
-    private void VerifyPipeline(ReadOnlySequence<byte> buffer, string expectedStatusLine, byte[] expectedBody)
+    private void VerifyPipeline(
+        ReadOnlySequence<byte> buffer,
+        string expectedStatusLine,
+        byte[] expectedBody
+    )
     {
         _context.Reset();
         _context.EnableCapture();
-        var consumed = _handler.OnReceivedAsync(_context, buffer, CancellationToken.None).GetAwaiter().GetResult();
+        var consumed = _handler
+            .OnReceivedAsync(_context, buffer, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
 
         if (buffer.Slice(consumed).Length != 0)
         {
-            throw new InvalidOperationException("Expected the request to be fully consumed during setup.");
+            throw new InvalidOperationException(
+                "Expected the request to be fully consumed during setup."
+            );
         }
 
         if (_context.SendCount != 1)
         {
-            throw new InvalidOperationException($"Expected one response write during setup, but observed {_context.SendCount}.");
+            throw new InvalidOperationException(
+                $"Expected one response write during setup, but observed {_context.SendCount}."
+            );
         }
 
         if (_context.CloseCount != 0)
         {
-            throw new InvalidOperationException($"Expected the connection to stay open during setup, but observed {_context.CloseCount} close operations.");
+            throw new InvalidOperationException(
+                $"Expected the connection to stay open during setup, but observed {_context.CloseCount} close operations."
+            );
         }
 
         var response = HttpResponseReader.Parse(_context.CapturedPayload);
@@ -81,7 +103,9 @@ public sealed partial class HttpPipelineBenchmarks
 
         if (!response.Body.AsSpan().SequenceEqual(expectedBody))
         {
-            throw new InvalidOperationException("Expected response body did not match during setup.");
+            throw new InvalidOperationException(
+                "Expected response body did not match during setup."
+            );
         }
     }
 
@@ -116,20 +140,18 @@ public sealed partial class HttpPipelineBenchmarks
                         )
                     ),
                 ],
-                FallbackHandler = static (_, _) => ValueTask.FromResult(
-                    new HttpResponse
-                    {
-                        StatusCode = 404,
-                        ReasonPhrase = "Not Found",
-                    }
-                ),
+                FallbackHandler = static (_, _) =>
+                    ValueTask.FromResult(
+                        new HttpResponse { StatusCode = 404, ReasonPhrase = "Not Found", }
+                    ),
             }
         );
 
     private static byte[] CreatePostRequestBytes(int bodySize)
     {
         var body = bodySize == 0 ? string.Empty : new string('b', bodySize);
-        var request = $"POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: {bodySize}\r\n\r\n{body}";
+        var request =
+            $"POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: {bodySize}\r\n\r\n{body}";
         return Encoding.ASCII.GetBytes(request);
     }
 
@@ -154,7 +176,10 @@ public sealed partial class HttpPipelineBenchmarks
 
         private bool _capturePayload;
 
-        public Task SendAsync(ReadOnlySequence<byte> buffer, CancellationToken cancellationToken = default)
+        public Task SendAsync(
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
         {
             if (_capturePayload)
             {

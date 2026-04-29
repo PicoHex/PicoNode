@@ -64,7 +64,11 @@ internal static class Http2ConnectionProcessor
             case Http2FrameType.Settings:
                 if (frame.StreamId != 0)
                 {
-                    await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, cancellationToken);
+                    await SendGoAwayAndCloseAsync(
+                        connection,
+                        Http2ErrorCode.ProtocolError,
+                        cancellationToken
+                    );
                     return true;
                 }
 
@@ -72,20 +76,32 @@ internal static class Http2ConnectionProcessor
                 {
                     if (frame.Length != 0)
                     {
-                        await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, cancellationToken);
+                        await SendGoAwayAndCloseAsync(
+                            connection,
+                            Http2ErrorCode.ProtocolError,
+                            cancellationToken
+                        );
                         return true;
                     }
 
                     return false;
                 }
 
-                await SendFrameAsync(connection, Http2FrameCodec.EncodeSettingsAck(), cancellationToken);
+                await SendFrameAsync(
+                    connection,
+                    Http2FrameCodec.EncodeSettingsAck(),
+                    cancellationToken
+                );
                 return false;
 
             case Http2FrameType.Ping:
                 if (frame.StreamId != 0 || frame.Length != 8)
                 {
-                    await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, cancellationToken);
+                    await SendGoAwayAndCloseAsync(
+                        connection,
+                        Http2ErrorCode.ProtocolError,
+                        cancellationToken
+                    );
                     return true;
                 }
 
@@ -119,7 +135,11 @@ internal static class Http2ConnectionProcessor
             case Http2FrameType.RstStream:
             case Http2FrameType.WindowUpdate:
             default:
-                await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, cancellationToken);
+                await SendGoAwayAndCloseAsync(
+                    connection,
+                    Http2ErrorCode.ProtocolError,
+                    cancellationToken
+                );
                 return true;
         }
     }
@@ -130,7 +150,11 @@ internal static class Http2ConnectionProcessor
         CancellationToken cancellationToken
     )
     {
-        await SendFrameAsync(connection, Http2FrameCodec.EncodeGoAway(0, errorCode), cancellationToken);
+        await SendFrameAsync(
+            connection,
+            Http2FrameCodec.EncodeGoAway(0, errorCode),
+            cancellationToken
+        );
         connection.Close();
     }
 

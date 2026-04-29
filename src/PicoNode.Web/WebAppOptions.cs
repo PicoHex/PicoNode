@@ -6,5 +6,6 @@ public sealed class WebAppOptions
 
     public int MaxRequestBytes { get; init; } = 8192;
 
-    public int StreamingResponseBufferSize { get; init; } = HttpConnectionHandlerOptions.DefaultStreamingResponseBufferSize;
+    public int StreamingResponseBufferSize { get; init; } =
+        HttpConnectionHandlerOptions.DefaultStreamingResponseBufferSize;
 }

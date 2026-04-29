@@ -11,13 +11,14 @@ public sealed partial class HttpConnectionHandlerBenchmarks
     private HttpConnectionHandler _handler = null!;
     private RecordingConnectionContext _context = null!;
     private ReadOnlySequence<byte> _buffer;
-    private static readonly HttpResponse Response = new()
-    {
-        StatusCode = 200,
-        ReasonPhrase = "OK",
-        Headers = [new KeyValuePair<string, string>("Content-Type", "text/plain")],
-        Body = PongBody,
-    };
+    private static readonly HttpResponse Response =
+        new()
+        {
+            StatusCode = 200,
+            ReasonPhrase = "OK",
+            Headers =  [new KeyValuePair<string, string>("Content-Type", "text/plain")],
+            Body = PongBody,
+        };
 
     [GlobalSetup]
     public void Setup()
@@ -34,22 +35,31 @@ public sealed partial class HttpConnectionHandlerBenchmarks
 
         _context = new RecordingConnectionContext();
 
-        var consumed = _handler.OnReceivedAsync(_context, _buffer, CancellationToken.None).GetAwaiter().GetResult();
+        var consumed = _handler
+            .OnReceivedAsync(_context, _buffer, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
         var remainingLength = _buffer.Slice(consumed).Length;
 
         if (remainingLength != 0)
         {
-            throw new InvalidOperationException($"Expected the request to be fully consumed during setup, but {remainingLength} bytes remained.");
+            throw new InvalidOperationException(
+                $"Expected the request to be fully consumed during setup, but {remainingLength} bytes remained."
+            );
         }
 
         if (_context.SendCount != 1)
         {
-            throw new InvalidOperationException($"Expected one response write during setup, but observed {_context.SendCount}.");
+            throw new InvalidOperationException(
+                $"Expected one response write during setup, but observed {_context.SendCount}."
+            );
         }
 
         if (_context.CloseCount != 0)
         {
-            throw new InvalidOperationException($"Expected the connection to stay open during setup, but observed {_context.CloseCount} close operations.");
+            throw new InvalidOperationException(
+                $"Expected the connection to stay open during setup, but observed {_context.CloseCount} close operations."
+            );
         }
 
         _context.Reset();
@@ -61,13 +71,17 @@ public sealed partial class HttpConnectionHandlerBenchmarks
     [Benchmark]
     public void ProcessRequest()
     {
-        _ = _handler.OnReceivedAsync(_context, _buffer, CancellationToken.None).GetAwaiter().GetResult();
+        _ = _handler
+            .OnReceivedAsync(_context, _buffer, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
     }
 
     private static byte[] CreateRequestBytes(int bodySize)
     {
         var body = bodySize == 0 ? string.Empty : new string('a', bodySize);
-        var request = $"POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Length: {bodySize}\r\n\r\n{body}";
+        var request =
+            $"POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Length: {bodySize}\r\n\r\n{body}";
         return Encoding.ASCII.GetBytes(request);
     }
 
@@ -85,7 +99,10 @@ public sealed partial class HttpConnectionHandlerBenchmarks
 
         public int CloseCount { get; private set; }
 
-        public Task SendAsync(ReadOnlySequence<byte> buffer, CancellationToken cancellationToken = default)
+        public Task SendAsync(
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
         {
             SendCount++;
             return Task.CompletedTask;

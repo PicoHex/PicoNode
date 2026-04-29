@@ -1,5 +1,3 @@
-using PicoNode.Http;
-
 namespace PicoNode.Smoke;
 
 public sealed class SmokeTests

@@ -6,7 +6,10 @@ internal sealed class TestServiceProvider : PicoNode.Abs.IServiceProvider, IAsyn
     private readonly Dictionary<Type, object> _singletonInstances = new();
     private readonly object _lock = new();
 
-    public void RegisterSingleton(Type serviceType, Func<PicoNode.Abs.IServiceScope, object> factory)
+    public void RegisterSingleton(
+        Type serviceType,
+        Func<PicoNode.Abs.IServiceScope, object> factory
+    )
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Singleton, factory);
     }
@@ -16,7 +19,10 @@ internal sealed class TestServiceProvider : PicoNode.Abs.IServiceProvider, IAsyn
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Scoped, factory);
     }
 
-    public void RegisterTransient(Type serviceType, Func<PicoNode.Abs.IServiceScope, object> factory)
+    public void RegisterTransient(
+        Type serviceType,
+        Func<PicoNode.Abs.IServiceScope, object> factory
+    )
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Transient, factory);
     }
@@ -57,7 +63,11 @@ internal sealed class TestServiceProvider : PicoNode.Abs.IServiceProvider, IAsyn
         };
     }
 
-    private object GetOrCreateSingleton(Type serviceType, ServiceRegistration registration, TestServiceScope scope)
+    private object GetOrCreateSingleton(
+        Type serviceType,
+        ServiceRegistration registration,
+        TestServiceScope scope
+    )
     {
         if (_singletonInstances.TryGetValue(serviceType, out var instance))
             return instance;
@@ -118,4 +128,7 @@ internal enum ServiceLifetime
     Transient,
 }
 
-internal sealed record ServiceRegistration(ServiceLifetime Lifetime, Func<PicoNode.Abs.IServiceScope, object> Factory);
+internal sealed record ServiceRegistration(
+    ServiceLifetime Lifetime,
+    Func<PicoNode.Abs.IServiceScope, object> Factory
+);

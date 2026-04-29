@@ -181,7 +181,8 @@ public sealed class TcpNodeBranchTests
         await Assert.That(faults.TryPeek(out var fault)).IsTrue();
         await Assert.That(fault!.Code).IsEqualTo(NodeFaultCode.SessionRejected);
         await Assert.That(fault.Operation).IsEqualTo("tcp.reject.limit");
-        await Assert.That(() => socket.Bind(new IPEndPoint(IPAddress.Loopback, 0)))
+        await Assert
+            .That(() => socket.Bind(new IPEndPoint(IPAddress.Loopback, 0)))
             .Throws<ObjectDisposedException>();
 
         await node.DisposeAsync();
@@ -282,7 +283,6 @@ public sealed class TcpNodeBranchTests
         await Assert.That(node.LocalEndPoint).IsEqualTo(endpoint);
     }
 
-
     [Test]
     public async Task Constructor_applies_ipv6_dual_mode_when_requested()
     {
@@ -300,7 +300,11 @@ public sealed class TcpNodeBranchTests
     public async Task StartAsync_reports_start_failed_when_bind_throws()
     {
         var endpoint = new IPEndPoint(IPAddress.Loopback, 0);
-        using var blocker = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+        using var blocker = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        )
         {
             ExclusiveAddressUse = true,
         };
@@ -329,7 +333,11 @@ public sealed class TcpNodeBranchTests
     {
         var handler = new RecordingTcpHandler();
         await using var node = CreateNode(handler);
-        using var client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
 
         await node.StartAsync();
         await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
@@ -351,7 +359,11 @@ public sealed class TcpNodeBranchTests
     {
         var handler = new RecordingTcpHandler(blockClose: true);
         await using var node = CreateNode(handler);
-        using var client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
 
         await node.StartAsync();
         await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
@@ -428,7 +440,11 @@ public sealed class TcpNodeBranchTests
             endpoint: new IPEndPoint(IPAddress.Loopback, 0),
             idleTimeout: TimeSpan.FromMilliseconds(150)
         );
-        using var client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
 
         await node.StartAsync();
         await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
@@ -449,7 +465,11 @@ public sealed class TcpNodeBranchTests
             idleTimeout: TimeSpan.FromMilliseconds(150),
             idleScanInterval: TimeSpan.FromSeconds(5)
         );
-        using var client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
 
         await node.StartAsync();
         await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
@@ -470,7 +490,11 @@ public sealed class TcpNodeBranchTests
             idleTimeout: TimeSpan.Zero,
             idleScanInterval: TimeSpan.FromMilliseconds(10)
         );
-        using var client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
 
         await node.StartAsync();
         await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
@@ -499,7 +523,8 @@ public sealed class TcpNodeBranchTests
             await Assert.That(faults.TryPeek(out var fault)).IsTrue();
             await Assert.That(fault!.Code).IsEqualTo(NodeFaultCode.SessionRejected);
             await Assert.That(fault.Operation).IsEqualTo("tcp.reject.tracking");
-            await Assert.That(() => pair.Server.Send(new byte[] { 1 }, SocketFlags.None))
+            await Assert
+                .That(() => pair.Server.Send(new byte[] { 1 }, SocketFlags.None))
                 .Throws<ObjectDisposedException>();
 
             await node.DisposeAsync();
@@ -523,14 +548,14 @@ public sealed class TcpNodeBranchTests
     ) =>
         new(
             new TcpNodeOptions
-        {
-            Endpoint = endpoint ?? new IPEndPoint(IPAddress.Loopback, 0),
-            ConnectionHandler = handler,
-            FaultHandler = faultHandler,
-            EnableDualMode = enableDualMode,
-            IdleTimeout = idleTimeout ?? TimeSpan.Zero,
-            IdleScanInterval = idleScanInterval ?? TimeSpan.FromSeconds(1),
-        }
+            {
+                Endpoint = endpoint ?? new IPEndPoint(IPAddress.Loopback, 0),
+                ConnectionHandler = handler,
+                FaultHandler = faultHandler,
+                EnableDualMode = enableDualMode,
+                IdleTimeout = idleTimeout ?? TimeSpan.Zero,
+                IdleScanInterval = idleScanInterval ?? TimeSpan.FromSeconds(1),
+            }
         );
 
     private static void InvokeRejectAcceptedSocket(

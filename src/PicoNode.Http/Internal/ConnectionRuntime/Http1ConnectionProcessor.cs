@@ -15,19 +15,48 @@ internal static class Http1ConnectionProcessor
         CancellationToken cancellationToken
     )
     {
-        var state = GetOrCreateConnectionState(connection.ConnectionId, ConnectionProtocol.Http1, connectionStates);
+        var state = GetOrCreateConnectionState(
+            connection.ConnectionId,
+            ConnectionProtocol.Http1,
+            connectionStates
+        );
         var parseResult = HttpRequestParser.Parse(buffer, options);
 
         return parseResult switch
         {
             { Status: HttpRequestParseStatus.Incomplete, ExpectsContinue: true }
-                => SendContinueIfNeededAsync(connection, parseResult.Consumed, connectionStates, cancellationToken),
+                => SendContinueIfNeededAsync(
+                    connection,
+                    parseResult.Consumed,
+                    connectionStates,
+                    cancellationToken
+                ),
             { Status: HttpRequestParseStatus.Incomplete }
-                => CheckRequestTimeoutAsync(connection, state, parseResult.Consumed, options, cancellationToken),
+                => CheckRequestTimeoutAsync(
+                    connection,
+                    state,
+                    parseResult.Consumed,
+                    options,
+                    cancellationToken
+                ),
             { Status: HttpRequestParseStatus.Success, Request: { } request }
-                => HandleRequestAsync(connection, request, parseResult.Consumed, options, requestHandler, connectionStates, cancellationToken),
+                => HandleRequestAsync(
+                    connection,
+                    request,
+                    parseResult.Consumed,
+                    options,
+                    requestHandler,
+                    connectionStates,
+                    cancellationToken
+                ),
             { Status: HttpRequestParseStatus.Rejected, Error: { } error }
-                => HandleProtocolErrorAsync(connection, parseResult.Consumed, error, options, cancellationToken),
+                => HandleProtocolErrorAsync(
+                    connection,
+                    parseResult.Consumed,
+                    error,
+                    options,
+                    cancellationToken
+                ),
             _ => throw new InvalidOperationException("Unexpected HTTP parse status."),
         };
     }
@@ -36,11 +65,12 @@ internal static class Http1ConnectionProcessor
         long connectionId,
         ConnectionProtocol defaultProtocol,
         ConcurrentDictionary<long, ConnectionRuntimeState> connectionStates
-    ) => connectionStates.GetOrAdd(
-        connectionId,
-        static (_, protocol) => new ConnectionRuntimeState { Protocol = protocol },
-        defaultProtocol
-    );
+    ) =>
+        connectionStates.GetOrAdd(
+            connectionId,
+            static (_, protocol) => new ConnectionRuntimeState { Protocol = protocol },
+            defaultProtocol
+        );
 
     private static ValueTask<SequencePosition> CheckRequestTimeoutAsync(
         ITcpConnectionContext connection,
@@ -57,8 +87,10 @@ internal static class Http1ConnectionProcessor
             return ValueTask.FromResult(consumed);
         }
 
-        if (options.RequestTimeout <= TimeSpan.Zero
-            || now - state.RequestParsingStartedAtUtc < options.RequestTimeout)
+        if (
+            options.RequestTimeout <= TimeSpan.Zero
+            || now - state.RequestParsingStartedAtUtc < options.RequestTimeout
+        )
         {
             return ValueTask.FromResult(consumed);
         }
@@ -74,7 +106,11 @@ internal static class Http1ConnectionProcessor
         CancellationToken cancellationToken
     )
     {
-        var state = GetOrCreateConnectionState(connection.ConnectionId, ConnectionProtocol.Http1, connectionStates);
+        var state = GetOrCreateConnectionState(
+            connection.ConnectionId,
+            ConnectionProtocol.Http1,
+            connectionStates
+        );
         if (!state.ContinueSent)
         {
             state.ContinueSent = true;
@@ -97,7 +133,11 @@ internal static class Http1ConnectionProcessor
         CancellationToken cancellationToken
     )
     {
-        var state = GetOrCreateConnectionState(connection.ConnectionId, ConnectionProtocol.Http1, connectionStates);
+        var state = GetOrCreateConnectionState(
+            connection.ConnectionId,
+            ConnectionProtocol.Http1,
+            connectionStates
+        );
         state.ContinueSent = false;
         state.RequestParsingStartedAtUtc = default;
 
@@ -111,7 +151,13 @@ internal static class Http1ConnectionProcessor
                 if (request.Version == "HTTP/1.0")
                 {
                     var buffered = await BufferStreamResponseAsync(response, cancellationToken);
-                    await SendResponseAsync(connection, buffered, shouldClose, options, cancellationToken);
+                    await SendResponseAsync(
+                        connection,
+                        buffered,
+                        shouldClose,
+                        options,
+                        cancellationToken
+                    );
                 }
                 else
                 {
@@ -126,7 +172,13 @@ internal static class Http1ConnectionProcessor
             }
             else
             {
-                await SendResponseAsync(connection, response, shouldClose, options, cancellationToken);
+                await SendResponseAsync(
+                    connection,
+                    response,
+                    shouldClose,
+                    options,
+                    cancellationToken
+                );
             }
 
             if (WebSocketUpgrade.IsUpgradeResponse(response))
@@ -179,7 +231,13 @@ internal static class Http1ConnectionProcessor
 
         var response = new HttpResponse { StatusCode = statusCode, ReasonPhrase = reasonPhrase };
 
-        await SendResponseAsync(connection, response, closeConnection: true, options, cancellationToken);
+        await SendResponseAsync(
+            connection,
+            response,
+            closeConnection: true,
+            options,
+            cancellationToken
+        );
         return consumed;
     }
 
@@ -231,7 +289,11 @@ internal static class Http1ConnectionProcessor
             var stream = response.BodyStream!;
             await using (stream.ConfigureAwait(false))
             {
-                var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(options.StreamingResponseBufferSize);
+                var buffer = System
+                    .Buffers
+                    .ArrayPool<byte>
+                    .Shared
+                    .Rent(options.StreamingResponseBufferSize);
                 try
                 {
                     while (true)

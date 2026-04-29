@@ -20,15 +20,19 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
         _directHandler = new HttpConnectionHandler(
             new HttpConnectionHandlerOptions
             {
-                RequestHandler = static (request, _) => ValueTask.FromResult(
-                    new HttpResponse
-                    {
-                        StatusCode = 200,
-                        ReasonPhrase = "OK",
-                        Headers = [new KeyValuePair<string, string>("Content-Type", "text/plain")],
-                        Body = request.Body.ToArray(),
-                    }
-                ),
+                RequestHandler = static (request, _) =>
+                    ValueTask.FromResult(
+                        new HttpResponse
+                        {
+                            StatusCode = 200,
+                            ReasonPhrase = "OK",
+                            Headers =
+                            [
+                                new KeyValuePair<string, string>("Content-Type", "text/plain")
+                            ],
+                            Body = request.Body.ToArray(),
+                        }
+                    ),
             }
         );
 
@@ -71,13 +75,19 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
     [Benchmark(Baseline = true)]
     public void DirectHandler()
     {
-        _ = _directHandler.OnReceivedAsync(_context, _buffer, CancellationToken.None).GetAwaiter().GetResult();
+        _ = _directHandler
+            .OnReceivedAsync(_context, _buffer, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
     }
 
     [Benchmark]
     public void RoutedHandler()
     {
-        _ = _routedHandler.OnReceivedAsync(_context, _buffer, CancellationToken.None).GetAwaiter().GetResult();
+        _ = _routedHandler
+            .OnReceivedAsync(_context, _buffer, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
     }
 
     private void VerifyHandler(HttpConnectionHandler handler, byte[] expectedBody)
@@ -85,26 +95,37 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
         _context.Reset();
         _context.EnableCapture();
 
-        var consumed = handler.OnReceivedAsync(_context, _buffer, CancellationToken.None).GetAwaiter().GetResult();
+        var consumed = handler
+            .OnReceivedAsync(_context, _buffer, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
         if (_buffer.Slice(consumed).Length != 0)
         {
-            throw new InvalidOperationException("Expected the request to be fully consumed during setup.");
+            throw new InvalidOperationException(
+                "Expected the request to be fully consumed during setup."
+            );
         }
 
         if (_context.SendCount != 1 || _context.CloseCount != 0)
         {
-            throw new InvalidOperationException("Expected one response write and no connection close during setup.");
+            throw new InvalidOperationException(
+                "Expected one response write and no connection close during setup."
+            );
         }
 
         var response = HttpResponseReader.Parse(_context.CapturedPayload);
         if (!response.StatusLine.Equals("HTTP/1.1 200 OK", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException($"Expected 200 OK during setup, but observed '{response.StatusLine}'.");
+            throw new InvalidOperationException(
+                $"Expected 200 OK during setup, but observed '{response.StatusLine}'."
+            );
         }
 
         if (!response.Body.AsSpan().SequenceEqual(expectedBody))
         {
-            throw new InvalidOperationException("Expected response body did not match during setup.");
+            throw new InvalidOperationException(
+                "Expected response body did not match during setup."
+            );
         }
     }
 
@@ -121,9 +142,11 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
 
     private static byte[] CreatePostRequestBytes(byte[] body)
     {
-        var header = Encoding.ASCII.GetBytes(
-            $"POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
-        );
+        var header = Encoding
+            .ASCII
+            .GetBytes(
+                $"POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
+            );
         var request = new byte[header.Length + body.Length];
         Buffer.BlockCopy(header, 0, request, 0, header.Length);
         Buffer.BlockCopy(body, 0, request, header.Length, body.Length);
@@ -148,7 +171,10 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
 
         private bool _capturePayload;
 
-        public Task SendAsync(ReadOnlySequence<byte> buffer, CancellationToken cancellationToken = default)
+        public Task SendAsync(
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
         {
             if (_capturePayload)
             {

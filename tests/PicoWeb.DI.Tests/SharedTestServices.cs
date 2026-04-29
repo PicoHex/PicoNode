@@ -5,6 +5,7 @@ public sealed class ScopeMarker;
 public sealed class DisposableSpy : IDisposable
 {
     public Action? OnDisposed { get; set; }
+
     public void Dispose() => OnDisposed?.Invoke();
 }
 
@@ -16,7 +17,9 @@ public sealed class ScopedService
 public sealed class SingletonCounter
 {
     private int _value;
+
     public int Increment() => Interlocked.Increment(ref _value);
+
     public int Value => Volatile.Read(ref _value);
 }
 

@@ -31,5 +31,6 @@ internal sealed class EmptyServiceProvider : PicoNode.Abs.IServiceProvider
 internal sealed class EmptyServiceScope : PicoNode.Abs.IServiceScope
 {
     public object? GetService(Type serviceType) => null;
+
     public void Dispose() { }
 }

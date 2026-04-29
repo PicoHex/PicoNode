@@ -8,15 +8,16 @@ public static class ShowcaseApp
 {
     private const string ThemeCookieName = "pico-theme";
     private static readonly string[] SupportedThemes = ["light", "dark"];
-    private static readonly CorsOptions CorsOptions = new()
-    {
-        AllowedOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"],
-        AllowedMethods = ["GET", "POST", "OPTIONS"],
-        AllowedHeaders = ["Content-Type"],
-        ExposedHeaders = ["Content-Encoding"],
-        AllowCredentials = true,
-        MaxAge = 600,
-    };
+    private static readonly CorsOptions CorsOptions =
+        new()
+        {
+            AllowedOrigins =  ["http://localhost:3000", "http://127.0.0.1:3000"],
+            AllowedMethods =  ["GET", "POST", "OPTIONS"],
+            AllowedHeaders =  ["Content-Type"],
+            ExposedHeaders =  ["Content-Encoding"],
+            AllowCredentials = true,
+            MaxAge = 600,
+        };
 
     public static WebApp Create(string? contentRoot = null)
     {
@@ -32,21 +33,28 @@ public static class ShowcaseApp
         var compression = new CompressionMiddleware(minimumBodySize: 256);
         var staticFiles = new StaticFileMiddleware(staticRoot);
 
-        app.Use((context, next, cancellationToken) => HandleCorsAsync(context, next, cancellationToken));
+        app.Use(
+            (context, next, cancellationToken) => HandleCorsAsync(context, next, cancellationToken)
+        );
         app.Use(compression.InvokeAsync);
         app.Use(staticFiles.InvokeAsync);
 
-        app.MapGet("/api/showcase", static (context, _) =>
-        {
-            var theme = GetTheme(context.Request);
-            var json = BuildShowcasePayload(theme);
-            return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
-        });
+        app.MapGet(
+            "/api/showcase",
+            static (context, _) =>
+            {
+                var theme = GetTheme(context.Request);
+                var json = BuildShowcasePayload(theme);
+                return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
+            }
+        );
 
-        app.MapGet("/api/preferences", static (context, _) =>
-        {
-            var theme = GetTheme(context.Request);
-            var json = $$"""
+        app.MapGet(
+            "/api/preferences",
+            static (context, _) =>
+            {
+                var theme = GetTheme(context.Request);
+                var json = $$"""
             {
               "theme":"{{EscapeJson(theme)}}",
               "cookieName":"{{ThemeCookieName}}",
@@ -54,81 +62,95 @@ public static class ShowcaseApp
             }
             """;
 
-            return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
-        });
+                return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
+            }
+        );
 
-        app.MapPost("/api/preferences/{theme}", static (context, _) =>
-        {
-            if (!context.RouteValues.TryGetValue("theme", out var theme) || !IsSupportedTheme(theme))
+        app.MapPost(
+            "/api/preferences/{theme}",
+            static (context, _) =>
             {
-                return ValueTask.FromResult(
-                    WebResults.Json(
-                        400,
-                        """
+                if (
+                    !context.RouteValues.TryGetValue("theme", out var theme)
+                    || !IsSupportedTheme(theme)
+                )
+                {
+                    return ValueTask.FromResult(
+                        WebResults.Json(
+                            400,
+                            """
                         {
                           "error":"unsupported-theme",
                           "supportedThemes":["light","dark"]
                         }
                         """,
-                        "Bad Request"
-                    )
-                );
-            }
+                            "Bad Request"
+                        )
+                    );
+                }
 
-            theme = NormalizeTheme(theme);
+                theme = NormalizeTheme(theme);
 
-            var response = WebResults.Json(
-                200,
-                $$"""
+                var response = WebResults.Json(
+                    200,
+                    $$"""
                 {
                   "theme":"{{EscapeJson(theme)}}",
                   "stored":true
                 }
                 """,
-                "OK"
-            );
+                    "OK"
+                );
 
-            var cookieHeader = new SetCookieBuilder(ThemeCookieName, theme)
-                .Path("/")
-                .MaxAge(60 * 60 * 24 * 30)
-                .SameSite("Lax")
-                .Build();
+                var cookieHeader = new SetCookieBuilder(ThemeCookieName, theme)
+                    .Path("/")
+                    .MaxAge(60 * 60 * 24 * 30)
+                    .SameSite("Lax")
+                    .Build();
 
-            return ValueTask.FromResult(WithHeaders(response, [cookieHeader]));
-        });
+                return ValueTask.FromResult(WithHeaders(response, [cookieHeader]));
+            }
+        );
 
-        app.MapGet("/api/content", static (_, _) =>
-        {
-            var body = BuildCompressionPayload();
-            return ValueTask.FromResult(WebResults.Text(200, body, "OK"));
-        });
-
-        app.MapPost("/api/uploads", static (context, _) =>
-        {
-            var multipart = MultipartFormDataParser.Parse(context.Request);
-            if (multipart is null)
+        app.MapGet(
+            "/api/content",
+            static (_, _) =>
             {
-                return ValueTask.FromResult(
-                    WebResults.Json(
-                        415,
-                        """
+                var body = BuildCompressionPayload();
+                return ValueTask.FromResult(WebResults.Text(200, body, "OK"));
+            }
+        );
+
+        app.MapPost(
+            "/api/uploads",
+            static (context, _) =>
+            {
+                var multipart = MultipartFormDataParser.Parse(context.Request);
+                if (multipart is null)
+                {
+                    return ValueTask.FromResult(
+                        WebResults.Json(
+                            415,
+                            """
                         {
                           "error":"expected-multipart-form-data"
                         }
                         """,
-                        "Unsupported Media Type"
-                    )
-                );
+                            "Unsupported Media Type"
+                        )
+                    );
+                }
+
+                var json = BuildUploadPayload(multipart);
+                return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
             }
+        );
 
-            var json = BuildUploadPayload(multipart);
-            return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
-        });
-
-        app.MapFallback(static (context, _) =>
-            ValueTask.FromResult(
-                WebResults.Text(404, $"No route matched '{context.Path}'.", "Not Found")
-            )
+        app.MapFallback(
+            static (context, _) =>
+                ValueTask.FromResult(
+                    WebResults.Text(404, $"No route matched '{context.Path}'.", "Not Found")
+                )
         );
 
         return app;
@@ -186,7 +208,8 @@ public static class ShowcaseApp
             : "light";
     }
 
-    private static bool IsSupportedTheme(string theme) => SupportedThemes.Contains(theme, StringComparer.OrdinalIgnoreCase);
+    private static bool IsSupportedTheme(string theme) =>
+        SupportedThemes.Contains(theme, StringComparer.OrdinalIgnoreCase);
 
     private static string NormalizeTheme(string theme) => theme.ToLowerInvariant();
 
@@ -196,9 +219,13 @@ public static class ShowcaseApp
         builder.AppendLine("{");
         builder.AppendLine("  \"name\":\"PicoWeb Static Showcase\",");
         builder.AppendLine("  \"theme\":\"" + EscapeJson(theme) + "\",");
-        builder.AppendLine("  \"features\":[\"static-files\",\"compression\",\"cors\",\"cookies\",\"multipart-form-data\"],");
+        builder.AppendLine(
+            "  \"features\":[\"static-files\",\"compression\",\"cors\",\"cookies\",\"multipart-form-data\"],"
+        );
         builder.AppendLine("  \"cors\":{");
-        builder.AppendLine("    \"allowedOrigins\":[\"http://localhost:3000\",\"http://127.0.0.1:3000\"],");
+        builder.AppendLine(
+            "    \"allowedOrigins\":[\"http://localhost:3000\",\"http://127.0.0.1:3000\"],"
+        );
         builder.AppendLine("    \"allowCredentials\":true,");
         builder.AppendLine("    \"exposedHeaders\":[\"Content-Encoding\"]");
         builder.AppendLine("  },");
@@ -216,14 +243,19 @@ public static class ShowcaseApp
     {
         var builder = new StringBuilder(4096);
         builder.AppendLine("PicoWeb compression showcase");
-        builder.AppendLine("This endpoint intentionally returns a larger payload so response compression is easy to observe.");
+        builder.AppendLine(
+            "This endpoint intentionally returns a larger payload so response compression is easy to observe."
+        );
         builder.AppendLine();
 
         for (var index = 1; index <= 24; index++)
         {
-            builder.Append("Block ")
+            builder
+                .Append("Block ")
                 .Append(index.ToString("00"))
-                .Append(": static assets, cookie-backed preferences, multipart parsing, and CORS preflight all run through the same lightweight PicoWeb pipeline.")
+                .Append(
+                    ": static assets, cookie-backed preferences, multipart parsing, and CORS preflight all run through the same lightweight PicoWeb pipeline."
+                )
                 .AppendLine();
         }
 
@@ -241,7 +273,8 @@ public static class ShowcaseApp
         for (var index = 0; index < multipart.Fields.Count; index++)
         {
             var field = multipart.Fields[index];
-            builder.Append("    {\"name\":\"")
+            builder
+                .Append("    {\"name\":\"")
                 .Append(EscapeJson(field.Name))
                 .Append("\",\"value\":\"")
                 .Append(EscapeJson(field.Value))
@@ -261,7 +294,8 @@ public static class ShowcaseApp
         for (var index = 0; index < multipart.Files.Count; index++)
         {
             var file = multipart.Files[index];
-            builder.Append("    {\"name\":\"")
+            builder
+                .Append("    {\"name\":\"")
                 .Append(EscapeJson(file.Name))
                 .Append("\",\"fileName\":\"")
                 .Append(EscapeJson(file.FileName))

@@ -23,13 +23,14 @@ public sealed class TcpNodeTlsAcceptLoopTests
         var pair = await CreateConnectedSocketsAsync();
         try
         {
-            var node = CreateTlsNode(
-                faults.Enqueue,
-                maxConnections: 1
-            );
+            var node = CreateTlsNode(faults.Enqueue, maxConnections: 1);
 
             // Pre-fill the connections dictionary to trigger the limit check
-            var dummySocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            var dummySocket = new Socket(
+                AddressFamily.InterNetwork,
+                SocketType.Stream,
+                ProtocolType.Tcp
+            );
             var dummyConnection = new TcpConnection(node, dummySocket, stream: null);
             GetConnections(node).TryAdd(dummyConnection.Id, dummyConnection);
 
@@ -39,7 +40,8 @@ public sealed class TcpNodeTlsAcceptLoopTests
             await Assert.That(faults.TryPeek(out var fault)).IsTrue();
             await Assert.That(fault!.Code).IsEqualTo(NodeFaultCode.SessionRejected);
             await Assert.That(fault.Operation).IsEqualTo("tcp.reject.limit");
-            await Assert.That(() => pair.Server.Send(new byte[] { 1 }, SocketFlags.None))
+            await Assert
+                .That(() => pair.Server.Send(new byte[] { 1 }, SocketFlags.None))
                 .Throws<ObjectDisposedException>();
 
             await dummyConnection.DisposeAsync();

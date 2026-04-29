@@ -38,7 +38,8 @@ internal sealed class RadixTree<T>
         if (!node.Methods.TryAdd(method, value))
         {
             throw new InvalidOperationException(
-                $"Duplicate route registration for method '{method}' and pattern '{pattern}'.");
+                $"Duplicate route registration for method '{method}' and pattern '{pattern}'."
+            );
         }
     }
 
@@ -46,7 +47,8 @@ internal sealed class RadixTree<T>
         string path,
         string method,
         out T value,
-        out Dictionary<string, string> routeValues)
+        out Dictionary<string, string> routeValues
+    )
     {
         var span = path.AsSpan();
         if (span.Length == 0 || (span.Length == 1 && span[0] == '/'))
@@ -69,8 +71,10 @@ internal sealed class RadixTree<T>
 
             var segment = span[start..i];
 
-            if (node.Children != null &&
-                node.Children.TryGetValue(segment.ToString(), out var child))
+            if (
+                node.Children != null
+                && node.Children.TryGetValue(segment.ToString(), out var child)
+            )
             {
                 node = child;
             }
@@ -110,8 +114,7 @@ internal sealed class RadixTree<T>
 
         foreach (var segment in segments)
         {
-            if (node.Children != null &&
-                node.Children.TryGetValue(segment, out var child))
+            if (node.Children != null && node.Children.TryGetValue(segment, out var child))
             {
                 node = child;
             }
@@ -147,8 +150,10 @@ internal sealed class RadixTree<T>
 
             var segment = span[start..i];
 
-            if (node.Children != null &&
-                node.Children.TryGetValue(segment.ToString(), out var child))
+            if (
+                node.Children != null
+                && node.Children.TryGetValue(segment.ToString(), out var child)
+            )
             {
                 node = child;
             }
@@ -170,7 +175,8 @@ internal sealed class RadixTree<T>
     private bool TryRootMatch(
         string method,
         out T value,
-        out Dictionary<string, string> routeValues)
+        out Dictionary<string, string> routeValues
+    )
     {
         if (_root.Methods != null && _root.Methods.TryGetValue(method, out value!))
         {
@@ -185,14 +191,18 @@ internal sealed class RadixTree<T>
 
     private static Dictionary<string, string> BuildRouteValues(
         List<string>? paramNames,
-        List<string>? paramValues)
+        List<string>? paramValues
+    )
     {
         if (paramNames is null || paramNames.Count == 0)
         {
             return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         }
 
-        var result = new Dictionary<string, string>(paramNames.Count, StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, string>(
+            paramNames.Count,
+            StringComparer.OrdinalIgnoreCase
+        );
         for (var i = 0; i < paramNames.Count; i++)
         {
             result[paramNames[i]] = paramValues![i];

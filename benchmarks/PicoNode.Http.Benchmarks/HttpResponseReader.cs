@@ -50,7 +50,9 @@ internal static class HttpResponseReader
             var read = stream.Read(chunk, 0, chunk.Length);
             if (read == 0)
             {
-                throw new InvalidOperationException("Connection closed while reading HTTP response.");
+                throw new InvalidOperationException(
+                    "Connection closed while reading HTTP response."
+                );
             }
 
             buffer.Write(chunk, 0, read);
@@ -68,7 +70,15 @@ internal static class HttpResponseReader
                 return parsed;
             }
 
-            ReadExact(stream, parsed.Body.AsMemory(responseBytes.Length - (headerLength + 4), expectedLength - responseBytes.Length));
+            ReadExact(
+                stream,
+                parsed
+                    .Body
+                    .AsMemory(
+                        responseBytes.Length - (headerLength + 4),
+                        expectedLength - responseBytes.Length
+                    )
+            );
             return parsed;
         }
     }
@@ -83,7 +93,9 @@ internal static class HttpResponseReader
             var read = await stream.ReadAsync(chunk.AsMemory());
             if (read == 0)
             {
-                throw new InvalidOperationException("Connection closed while reading HTTP response.");
+                throw new InvalidOperationException(
+                    "Connection closed while reading HTTP response."
+                );
             }
 
             buffer.Write(chunk, 0, read);
@@ -102,7 +114,10 @@ internal static class HttpResponseReader
             }
 
             var copiedBodyCount = responseBytes.Length - (headerLength + 4);
-            await ReadExactAsync(stream, parsed.Body.AsMemory(copiedBodyCount, parsed.Body.Length - copiedBodyCount));
+            await ReadExactAsync(
+                stream,
+                parsed.Body.AsMemory(copiedBodyCount, parsed.Body.Length - copiedBodyCount)
+            );
             return parsed;
         }
     }
@@ -133,7 +148,9 @@ internal static class HttpResponseReader
             var read = stream.Read(buffer.Span[offset..]);
             if (read == 0)
             {
-                throw new InvalidOperationException("Connection closed while reading HTTP response body.");
+                throw new InvalidOperationException(
+                    "Connection closed while reading HTTP response body."
+                );
             }
 
             offset += read;
@@ -148,7 +165,9 @@ internal static class HttpResponseReader
             var read = await stream.ReadAsync(buffer[offset..]);
             if (read == 0)
             {
-                throw new InvalidOperationException("Connection closed while reading HTTP response body.");
+                throw new InvalidOperationException(
+                    "Connection closed while reading HTTP response body."
+                );
             }
 
             offset += read;

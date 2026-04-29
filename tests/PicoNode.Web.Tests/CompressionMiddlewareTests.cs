@@ -1,4 +1,3 @@
-using System.IO;
 using System.IO.Compression;
 
 namespace PicoNode.Web.Tests;
@@ -133,9 +132,9 @@ public sealed class CompressionMiddlewareTests
 
         var compressed = await ReadAllBytesAsync(response.BodyStream!);
         var decompressed = Decompress(compressed, "gzip");
-        await Assert.That(Encoding.UTF8.GetString(decompressed)).IsEqualTo(
-            "streamed body that should be compressed"
-        );
+        await Assert
+            .That(Encoding.UTF8.GetString(decompressed))
+            .IsEqualTo("streamed body that should be compressed");
     }
 
     [Test]
@@ -155,7 +154,9 @@ public sealed class CompressionMiddlewareTests
                         StatusCode = 200,
                         ReasonPhrase = "OK",
                         Headers =
-                        [new KeyValuePair<string, string>("Content-Type", "application/octet-stream")],
+                        [
+                            new KeyValuePair<string, string>("Content-Type", "application/octet-stream")
+                        ],
                         BodyStream = new MemoryStream(largeBody),
                     }
                 ),
@@ -189,7 +190,9 @@ public sealed class CompressionMiddlewareTests
                         StatusCode = 200,
                         ReasonPhrase = "OK",
                         Headers =
-                        [new KeyValuePair<string, string>("Content-Type", "application/octet-stream")],
+                        [
+                            new KeyValuePair<string, string>("Content-Type", "application/octet-stream")
+                        ],
                         BodyStream = new MemoryStream(smallBody),
                     }
                 ),
@@ -209,7 +212,9 @@ public sealed class CompressionMiddlewareTests
     {
         var middleware = new CompressionMiddleware(minimumBodySize: 0);
         var context = CreateContext("GET", "/", "gzip");
-        var source = new BlockingReadStream(Encoding.UTF8.GetBytes("streamed body that should not hang"));
+        var source = new BlockingReadStream(
+            Encoding.UTF8.GetBytes("streamed body that should not hang")
+        );
 
         var response = await middleware.InvokeAsync(
             context,
@@ -358,7 +363,9 @@ public sealed class CompressionMiddlewareTests
     {
         var middleware = new CompressionMiddleware(minimumBodySize: 0);
         var context = CreateContext("GET", "/", "gzip");
-        var source = new ControlledReadStream(Encoding.UTF8.GetBytes("streamed body that should not hang after read start"));
+        var source = new ControlledReadStream(
+            Encoding.UTF8.GetBytes("streamed body that should not hang after read start")
+        );
 
         var response = await middleware.InvokeAsync(
             context,
@@ -482,7 +489,10 @@ public sealed class CompressionMiddlewareTests
         public override void Flush() { }
 
         public override int Read(byte[] buffer, int offset, int count) =>
-            ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
 
         public override async ValueTask<int> ReadAsync(
             Memory<byte> buffer,
@@ -493,11 +503,13 @@ public sealed class CompressionMiddlewareTests
             return 0;
         }
 
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
 
         public override void SetLength(long value) => throw new NotSupportedException();
 
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
 
         public override ValueTask DisposeAsync()
         {
@@ -511,9 +523,11 @@ public sealed class CompressionMiddlewareTests
         private readonly byte[] _data = data;
         private int _position;
 
-        public TaskCompletionSource FirstReadStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource FirstReadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public TaskCompletionSource AllowReadToContinue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource AllowReadToContinue { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int DisposeCount { get; private set; }
 
@@ -534,7 +548,10 @@ public sealed class CompressionMiddlewareTests
         public override void Flush() { }
 
         public override int Read(byte[] buffer, int offset, int count) =>
-            ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
 
         public override async ValueTask<int> ReadAsync(
             Memory<byte> buffer,
@@ -562,11 +579,13 @@ public sealed class CompressionMiddlewareTests
             return bytesToRead;
         }
 
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
 
         public override void SetLength(long value) => throw new NotSupportedException();
 
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
 
         public override ValueTask DisposeAsync()
         {

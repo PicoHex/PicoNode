@@ -78,7 +78,8 @@ public sealed class WebApp
                 RequestHandler = httpHandler,
                 ServerHeader = _options?.ServerHeader,
                 MaxRequestBytes = _options?.MaxRequestBytes ?? 8192,
-                StreamingResponseBufferSize = _options?.StreamingResponseBufferSize
+                StreamingResponseBufferSize =
+                    _options?.StreamingResponseBufferSize
                     ?? HttpConnectionHandlerOptions.DefaultStreamingResponseBufferSize,
             }
         );

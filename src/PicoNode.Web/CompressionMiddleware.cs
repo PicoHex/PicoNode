@@ -145,7 +145,12 @@ public sealed class CompressionMiddleware
     {
         if (
             headers.TryGetValue(ContentLengthHeaderName, out var value)
-            && long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out contentLength)
+            && long.TryParse(
+                value,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out contentLength
+            )
             && contentLength >= 0
         )
         {
@@ -200,10 +205,7 @@ public sealed class CompressionMiddleware
         }
 
         headers.Add(ContentEncodingHeaderName, encoding);
-        headers.Add(
-            VaryHeaderName,
-            MergeVaryHeader(varyValue, AcceptEncodingHeaderValue)
-        );
+        headers.Add(VaryHeaderName, MergeVaryHeader(varyValue, AcceptEncodingHeaderValue));
 
         return headers;
     }

@@ -17,11 +17,13 @@ internal sealed class TestWebHost : IAsyncDisposable
     {
         var port = GetAvailablePort();
         var handler = app.Build(container);
-        var node = new TcpNode(new TcpNodeOptions
-        {
-            Endpoint = new IPEndPoint(IPAddress.Loopback, port),
-            ConnectionHandler = handler,
-        });
+        var node = new TcpNode(
+            new TcpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                ConnectionHandler = handler,
+            }
+        );
         await node.StartAsync();
         return new TestWebHost(node, port);
     }

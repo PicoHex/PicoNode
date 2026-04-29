@@ -6,6 +6,7 @@ public sealed class HttpRouterTests
     public async Task HandleAsync_dispatches_exact_method_and_path_match()
     {
         var router = CreateRouter(
+
             [
                 HttpRoute.MapGet(
                     "/hello",
@@ -14,7 +15,10 @@ public sealed class HttpRouterTests
             ]
         );
 
-        var response = await router.HandleAsync(CreateRequest("GET", "/hello"), CancellationToken.None);
+        var response = await router.HandleAsync(
+            CreateRequest("GET", "/hello"),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(200);
     }
@@ -23,6 +27,7 @@ public sealed class HttpRouterTests
     public async Task HandleAsync_matches_path_component_of_request_target()
     {
         var router = CreateRouter(
+
             [
                 HttpRoute.MapGet(
                     "/hello",
@@ -31,7 +36,10 @@ public sealed class HttpRouterTests
             ]
         );
 
-        var response = await router.HandleAsync(CreateRequest("GET", "/hello?name=pico"), CancellationToken.None);
+        var response = await router.HandleAsync(
+            CreateRequest("GET", "/hello?name=pico"),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(200);
     }
@@ -40,6 +48,7 @@ public sealed class HttpRouterTests
     public async Task HandleAsync_treats_trailing_slashes_as_distinct_paths()
     {
         var router = CreateRouter(
+
             [
                 HttpRoute.MapGet(
                     "/hello",
@@ -48,7 +57,10 @@ public sealed class HttpRouterTests
             ]
         );
 
-        var response = await router.HandleAsync(CreateRequest("GET", "/hello/"), CancellationToken.None);
+        var response = await router.HandleAsync(
+            CreateRequest("GET", "/hello/"),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(404);
     }
@@ -58,7 +70,10 @@ public sealed class HttpRouterTests
     {
         var router = CreateRouter([]);
 
-        var response = await router.HandleAsync(CreateRequest("GET", "/missing"), CancellationToken.None);
+        var response = await router.HandleAsync(
+            CreateRequest("GET", "/missing"),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(404);
         await Assert.That(response.ReasonPhrase).IsEqualTo("Not Found");
@@ -70,12 +85,18 @@ public sealed class HttpRouterTests
         var router = new HttpRouter(
             new HttpRouterOptions
             {
-                Routes = [],
-                FallbackHandler = static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 418, ReasonPhrase = "Teapot" }),
+                Routes =  [],
+                FallbackHandler = static (_, _) =>
+                    ValueTask.FromResult(
+                        new HttpResponse { StatusCode = 418, ReasonPhrase = "Teapot" }
+                    ),
             }
         );
 
-        var response = await router.HandleAsync(CreateRequest("GET", "/missing"), CancellationToken.None);
+        var response = await router.HandleAsync(
+            CreateRequest("GET", "/missing"),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(418);
     }
@@ -84,6 +105,7 @@ public sealed class HttpRouterTests
     public async Task HandleAsync_returns_405_when_path_exists_for_other_methods()
     {
         var router = CreateRouter(
+
             [
                 HttpRoute.MapPost(
                     "/echo",
@@ -92,16 +114,22 @@ public sealed class HttpRouterTests
             ]
         );
 
-        var response = await router.HandleAsync(CreateRequest("GET", "/echo"), CancellationToken.None);
+        var response = await router.HandleAsync(
+            CreateRequest("GET", "/echo"),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(405);
-        await Assert.That(response.Headers).Contains(new KeyValuePair<string, string>("Allow", "POST"));
+        await Assert
+            .That(response.Headers)
+            .Contains(new KeyValuePair<string, string>("Allow", "POST"));
     }
 
     [Test]
     public async Task HandleAsync_sorts_and_joins_allow_header_values()
     {
         var router = CreateRouter(
+
             [
                 HttpRoute.MapPost(
                     "/echo",
@@ -115,9 +143,14 @@ public sealed class HttpRouterTests
             ]
         );
 
-        var response = await router.HandleAsync(CreateRequest("GET", "/echo"), CancellationToken.None);
+        var response = await router.HandleAsync(
+            CreateRequest("GET", "/echo"),
+            CancellationToken.None
+        );
 
-        await Assert.That(response.Headers).Contains(new KeyValuePair<string, string>("Allow", "DELETE, POST"));
+        await Assert
+            .That(response.Headers)
+            .Contains(new KeyValuePair<string, string>("Allow", "DELETE, POST"));
     }
 
     [Test]
@@ -145,12 +178,17 @@ public sealed class HttpRouterTests
                 FallbackHandler = (_, _) =>
                 {
                     fallbackHandlerCalled = true;
-                    return ValueTask.FromResult(new HttpResponse { StatusCode = 418, ReasonPhrase = "Teapot" });
+                    return ValueTask.FromResult(
+                        new HttpResponse { StatusCode = 418, ReasonPhrase = "Teapot" }
+                    );
                 },
             }
         );
 
-        var response = await router.HandleAsync(CreateRequest("GET", "/echo"), CancellationToken.None);
+        var response = await router.HandleAsync(
+            CreateRequest("GET", "/echo"),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(405);
         await Assert.That(matchedHandlerCalled).IsFalse();
@@ -162,7 +200,8 @@ public sealed class HttpRouterTests
     {
         var route = HttpRoute.MapGet(
             "/hello",
-            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            static (_, _) =>
+                ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
         );
 
         await Assert.That(route.Method).IsEqualTo("GET");
@@ -174,7 +213,8 @@ public sealed class HttpRouterTests
     {
         var route = HttpRoute.MapPost(
             "/echo",
-            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            static (_, _) =>
+                ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
         );
 
         await Assert.That(route.Method).IsEqualTo("POST");
@@ -186,7 +226,8 @@ public sealed class HttpRouterTests
     {
         var route = HttpRoute.MapPut(
             "/resource",
-            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            static (_, _) =>
+                ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
         );
 
         await Assert.That(route.Method).IsEqualTo("PUT");
@@ -198,7 +239,10 @@ public sealed class HttpRouterTests
     {
         var route = HttpRoute.MapDelete(
             "/resource",
-            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" })
+            static (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" }
+                )
         );
 
         await Assert.That(route.Method).IsEqualTo("DELETE");
@@ -208,89 +252,96 @@ public sealed class HttpRouterTests
     [Test]
     public async Task Ctor_rejects_duplicate_method_and_path_pairs()
     {
-        await Assert.That(
-            () => CreateRouter(
-                [
-                    new HttpRoute
+        await Assert
+            .That(
+                () =>
+                    CreateRouter(
+
+                        [
+                            new HttpRoute
                     {
                         Method = "GET",
                         Path = "/hello",
                         Handler = static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }),
                     },
-                    new HttpRoute
+                            new HttpRoute
                     {
                         Method = "GET",
                         Path = "/hello",
                         Handler = static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" }),
                     },
-                ]
+                        ]
+                    )
             )
-        ).Throws<ArgumentException>();
+            .Throws<ArgumentException>();
     }
 
     [Test]
     public async Task Ctor_rejects_paths_without_leading_slash()
     {
-        await Assert.That(
-            () => CreateRouter(
-                [
-                    new HttpRoute
+        await Assert
+            .That(
+                () =>
+                    CreateRouter(
+
+                        [
+                            new HttpRoute
                     {
                         Method = "GET",
                         Path = "hello",
                         Handler = static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }),
                     },
-                ]
+                        ]
+                    )
             )
-        ).Throws<ArgumentException>();
+            .Throws<ArgumentException>();
     }
 
     [Test]
     public async Task Ctor_rejects_paths_with_query_component()
     {
-        await Assert.That(
-            () => CreateRouter(
-                [
-                    new HttpRoute
+        await Assert
+            .That(
+                () =>
+                    CreateRouter(
+
+                        [
+                            new HttpRoute
                     {
                         Method = "GET",
                         Path = "/hello?name=pico",
                         Handler = static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }),
                     },
-                ]
+                        ]
+                    )
             )
-        ).Throws<ArgumentException>();
+            .Throws<ArgumentException>();
     }
 
     [Test]
     public async Task Ctor_rejects_blank_methods()
     {
-        await Assert.That(
-            () => CreateRouter(
-                [
-                    new HttpRoute
+        await Assert
+            .That(
+                () =>
+                    CreateRouter(
+
+                        [
+                            new HttpRoute
                     {
                         Method = " ",
                         Path = "/hello",
                         Handler = static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }),
                     },
-                ]
+                        ]
+                    )
             )
-        ).Throws<ArgumentException>();
+            .Throws<ArgumentException>();
     }
 
     private static HttpRouter CreateRouter(IReadOnlyList<HttpRoute> routes) =>
-        new(
-            new HttpRouterOptions
-            {
-                Routes = routes,
-            }
-        );
+        new(new HttpRouterOptions { Routes = routes, });
 
     private static HttpRequest CreateRequest(string method, string target) =>
-        new()
-        {
-            Method = method,
-            Target = target,
-        };
+        new() { Method = method, Target = target, };
 }

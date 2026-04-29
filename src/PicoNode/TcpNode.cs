@@ -193,7 +193,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
                 {
                     await _acceptTask.WaitAsync(cancellationToken);
                 }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException) { /* expected during shutdown — accept task cancelled */ }
             }
 
             if (_idleMonitorTask is not null)
@@ -202,7 +202,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
                 {
                     await _idleMonitorTask.WaitAsync(cancellationToken);
                 }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException) { /* expected during shutdown — idle monitor task cancelled */ }
             }
 
             foreach (var connection in _connections.Values)
@@ -422,7 +422,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
                 }
             }
         }
-        catch (OperationCanceledException) when (_cts.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested) { /* expected during shutdown — idle monitor exits via cancellation */ }
     }
 
     private bool TryTrackConnection(TcpConnection connection)

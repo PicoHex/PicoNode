@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace PicoNode.Web.Tests;
 
 public sealed class MultipartFormDataParserTests
@@ -127,7 +125,9 @@ public sealed class MultipartFormDataParserTests
         await Assert.That(result.Files[0].Name).IsEqualTo("doc");
         await Assert.That(result.Files[0].FileName).IsEqualTo("doc.pdf");
         await Assert.That(result.Files[0].ContentType).IsEqualTo("application/pdf");
-        await Assert.That(Encoding.UTF8.GetString(result.Files[0].Content.Span)).IsEqualTo("PDF-DATA");
+        await Assert
+            .That(Encoding.UTF8.GetString(result.Files[0].Content.Span))
+            .IsEqualTo("PDF-DATA");
         await Assert.That(result.Files[0].Content.Span.Overlaps(request.Body.Span)).IsTrue();
     }
 
@@ -149,7 +149,9 @@ public sealed class MultipartFormDataParserTests
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Files.Count).IsEqualTo(1);
-        await Assert.That(Encoding.UTF8.GetString(result.Files[0].Content.Span)).IsEqualTo(fileContent);
+        await Assert
+            .That(Encoding.UTF8.GetString(result.Files[0].Content.Span))
+            .IsEqualTo(fileContent);
         await Assert.That(result.Files[0].Content.Span.Overlaps(request.Body.Span)).IsTrue();
     }
 
@@ -171,7 +173,9 @@ public sealed class MultipartFormDataParserTests
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Files.Count).IsEqualTo(1);
-        await Assert.That(Encoding.UTF8.GetString(result.Files[0].Content.Span)).IsEqualTo(fileContent);
+        await Assert
+            .That(Encoding.UTF8.GetString(result.Files[0].Content.Span))
+            .IsEqualTo(fileContent);
     }
 
     [Test]
@@ -304,10 +308,19 @@ public sealed class MultipartFormDataParserTests
     [Test]
     public async Task Parse_rejects_invalid_boundary_length_option_values()
     {
-        var request = CreateMultipartRequest("boundary", Encoding.ASCII.GetBytes("--boundary--\r\n"));
+        var request = CreateMultipartRequest(
+            "boundary",
+            Encoding.ASCII.GetBytes("--boundary--\r\n")
+        );
 
         await Assert
-            .That(() => MultipartFormDataParser.Parse(request, new MultipartFormDataParserOptions { MaxBoundaryLength = 0 }))
+            .That(
+                () =>
+                    MultipartFormDataParser.Parse(
+                        request,
+                        new MultipartFormDataParserOptions { MaxBoundaryLength = 0 }
+                    )
+            )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
@@ -317,7 +330,8 @@ public sealed class MultipartFormDataParserTests
                         request,
                         new MultipartFormDataParserOptions
                         {
-                            MaxBoundaryLength = MultipartFormDataParserOptions.DefaultMaxBoundaryLength + 1,
+                            MaxBoundaryLength =
+                                MultipartFormDataParserOptions.DefaultMaxBoundaryLength + 1,
                         }
                     )
             )
@@ -327,7 +341,8 @@ public sealed class MultipartFormDataParserTests
     [Test]
     public async Task Parse_honors_configured_boundary_length_limit()
     {
-        var body = "--boundary\r\nContent-Disposition: form-data; name=\"username\"\r\n\r\nalice\r\n--boundary--\r\n";
+        var body =
+            "--boundary\r\nContent-Disposition: form-data; name=\"username\"\r\n\r\nalice\r\n--boundary--\r\n";
         var request = CreateMultipartRequest("boundary", body);
 
         var result = MultipartFormDataParser.Parse(
@@ -342,9 +357,9 @@ public sealed class MultipartFormDataParserTests
     public async Task Skips_text_field_with_invalid_utf8_bytes()
     {
         var boundary = "boundary"u8.ToArray();
-        var headerPrefix = Encoding.ASCII.GetBytes(
-            "--boundary\r\nContent-Disposition: form-data; name=\"username\"\r\n\r\n"
-        );
+        var headerPrefix = Encoding
+            .ASCII
+            .GetBytes("--boundary\r\nContent-Disposition: form-data; name=\"username\"\r\n\r\n");
         var footer = Encoding.ASCII.GetBytes("\r\n--boundary--\r\n");
         var bodyBytes = new byte[headerPrefix.Length + 2 + footer.Length];
 
@@ -353,7 +368,10 @@ public sealed class MultipartFormDataParserTests
         bodyBytes[headerPrefix.Length + 1] = 0x28;
         footer.CopyTo(bodyBytes, headerPrefix.Length + 2);
 
-        var request = CreateMultipartRequest(new string(boundary.Select(static b => (char)b).ToArray()), bodyBytes);
+        var request = CreateMultipartRequest(
+            new string(boundary.Select(static b => (char)b).ToArray()),
+            bodyBytes
+        );
         var result = MultipartFormDataParser.Parse(request);
 
         await Assert.That(result).IsNotNull();
@@ -364,7 +382,9 @@ public sealed class MultipartFormDataParserTests
     [Test]
     public async Task Skips_part_with_invalid_utf8_headers()
     {
-        var headerPrefix = Encoding.ASCII.GetBytes("--boundary\r\nContent-Disposition: form-data; name=\"");
+        var headerPrefix = Encoding
+            .ASCII
+            .GetBytes("--boundary\r\nContent-Disposition: form-data; name=\"");
         var headerSuffix = Encoding.ASCII.GetBytes("\"\r\n\r\nalice\r\n--boundary--\r\n");
         var bodyBytes = new byte[headerPrefix.Length + 1 + headerSuffix.Length];
 

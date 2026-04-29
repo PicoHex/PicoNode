@@ -51,17 +51,19 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         {
             return state.Protocol switch
             {
-                ConnectionProtocol.WebSocket => WebSocketConnectionProcessor.ProcessAsync(
-                    connection,
-                    buffer,
-                    cancellationToken
-                ),
-                ConnectionProtocol.Http2 => Http2ConnectionProcessor.ProcessAsync(
-                    connection,
-                    buffer,
-                    sendInitialSettings: false,
-                    cancellationToken
-                ),
+                ConnectionProtocol.WebSocket
+                    => WebSocketConnectionProcessor.ProcessAsync(
+                        connection,
+                        buffer,
+                        cancellationToken
+                    ),
+                ConnectionProtocol.Http2
+                    => Http2ConnectionProcessor.ProcessAsync(
+                        connection,
+                        buffer,
+                        sendInitialSettings: false,
+                        cancellationToken
+                    ),
                 _ => HandleHttp1Async(connection, buffer, cancellationToken),
             };
         }
@@ -90,14 +92,15 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         ITcpConnectionContext connection,
         ReadOnlySequence<byte> buffer,
         CancellationToken cancellationToken
-    ) => Http1ConnectionProcessor.ProcessAsync(
-        connection,
-        buffer,
-        _options,
-        _requestHandler,
-        _connectionStates,
-        cancellationToken
-    );
+    ) =>
+        Http1ConnectionProcessor.ProcessAsync(
+            connection,
+            buffer,
+            _options,
+            _requestHandler,
+            _connectionStates,
+            cancellationToken
+        );
 
     public Task OnClosedAsync(
         ITcpConnectionContext connection,
@@ -156,10 +159,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             return new ProtocolDecision(DetectedProtocolKind.IncompleteHttp2Preface, buffer);
         }
 
-        return new ProtocolDecision(
-            DetectedProtocolKind.Http2,
-            buffer.Slice(preface.Length)
-        );
+        return new ProtocolDecision(DetectedProtocolKind.Http2, buffer.Slice(preface.Length));
     }
 
     private readonly record struct ProtocolDecision(

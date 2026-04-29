@@ -160,7 +160,7 @@ internal sealed class TcpConnection : IAsyncDisposable
                 }
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException) { /* expected during connection close — pipe read cancelled */ }
         finally
         {
             await _pipe.Reader.CompleteAsync();

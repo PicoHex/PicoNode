@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Net;
 using System.Net.Http.Headers;
 using PicoWeb;
 using PicoWeb.Samples;
@@ -31,7 +30,9 @@ public sealed class PicoWebShowcaseSmokeTests
         var body = await getResponse.Content.ReadAsStringAsync();
 
         await Assert.That(setResponse.StatusCode).IsEqualTo(HttpStatusCode.OK);
-        await Assert.That(setResponse.Headers.TryGetValues("Set-Cookie", out var cookieHeaders)).IsTrue();
+        await Assert
+            .That(setResponse.Headers.TryGetValues("Set-Cookie", out var cookieHeaders))
+            .IsTrue();
         await Assert.That(cookieHeaders!.First()).Contains("pico-theme=dark");
         await Assert.That(body).Contains("\"theme\":\"dark\"");
     }
@@ -66,14 +67,18 @@ public sealed class PicoWebShowcaseSmokeTests
         var response = await host.Client.SendAsync(request);
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NoContent);
-        await Assert.That(response.Headers.TryGetValues("Access-Control-Allow-Origin", out var origins)).IsTrue();
+        await Assert
+            .That(response.Headers.TryGetValues("Access-Control-Allow-Origin", out var origins))
+            .IsTrue();
         await Assert.That(origins!.Single()).IsEqualTo("http://localhost:3000");
     }
 
     [Test]
     public async Task Compresses_large_content_when_requested()
     {
-        await using var host = await StartHostAsync(automaticDecompression: DecompressionMethods.None);
+        await using var host = await StartHostAsync(
+            automaticDecompression: DecompressionMethods.None
+        );
 
         using var request = new HttpRequestMessage(HttpMethod.Get, "/api/content");
         request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("gzip"));
@@ -140,7 +145,9 @@ public sealed class PicoWebShowcaseSmokeTests
 
     private static string GetRepositoryRoot()
     {
-        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        return Path.GetFullPath(
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..")
+        );
     }
 
     private sealed class ShowcaseHost(WebServer server, HttpClient client) : IAsyncDisposable
@@ -165,5 +172,6 @@ internal sealed class EmptyServiceProvider : PicoNode.Abs.IServiceProvider
 internal sealed class EmptyServiceScope : PicoNode.Abs.IServiceScope
 {
     public object? GetService(Type serviceType) => null;
+
     public void Dispose() { }
 }

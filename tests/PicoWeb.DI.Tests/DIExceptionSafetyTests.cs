@@ -6,14 +6,16 @@ public sealed class DIExceptionSafetyTests
     public async Task Scope_disposed_when_handler_throws()
     {
         var app = new WebApp();
-        app.MapGet("/", (_, _) =>
-            throw new InvalidOperationException("boom"));
+        app.MapGet("/", (_, _) => throw new InvalidOperationException("boom"));
 
         await using var container = new TestServiceProvider();
         container.Build();
 
         await using var host = await TestWebHost.StartAsync(app, container);
-        using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{host.Port}") };
+        using var client = new HttpClient
+        {
+            BaseAddress = new Uri($"http://127.0.0.1:{host.Port}")
+        };
 
         var response = await client.GetAsync("/");
 
@@ -24,14 +26,16 @@ public sealed class DIExceptionSafetyTests
     public async Task Request_without_errors_returns_ok()
     {
         var app = new WebApp();
-        app.MapGet("/", (_, _) =>
-            ValueTask.FromResult(WebResults.Text(200, "ok")));
+        app.MapGet("/", (_, _) => ValueTask.FromResult(WebResults.Text(200, "ok")));
 
         await using var container = new TestServiceProvider();
         container.Build();
 
         await using var host = await TestWebHost.StartAsync(app, container);
-        using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{host.Port}") };
+        using var client = new HttpClient
+        {
+            BaseAddress = new Uri($"http://127.0.0.1:{host.Port}")
+        };
 
         var response = await client.GetAsync("/");
 

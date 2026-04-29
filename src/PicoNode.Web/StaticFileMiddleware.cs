@@ -7,7 +7,8 @@ public sealed class StaticFileMiddleware
     private readonly string? _defaultDocument;
 
     public StaticFileMiddleware(string rootPath, string requestPathPrefix = "/")
-        : this(rootPath, new StaticFileMiddlewareOptions { RequestPathPrefix = requestPathPrefix }) { }
+        : this(rootPath, new StaticFileMiddlewareOptions { RequestPathPrefix = requestPathPrefix })
+    { }
 
     public StaticFileMiddleware(string rootPath, StaticFileMiddlewareOptions options)
     {
@@ -69,10 +70,8 @@ public sealed class StaticFileMiddleware
         var fileInfo = new FileInfo(fullPath);
 
         var headers = new HttpHeaderCollection(
-        [
-            new("Content-Type", contentType),
-            new("Content-Length", fileInfo.Length.ToString()),
-        ]);
+            [new("Content-Type", contentType), new("Content-Length", fileInfo.Length.ToString()),]
+        );
 
         var isHead = context.Request.Method.Equals("HEAD", StringComparison.OrdinalIgnoreCase);
 
@@ -133,7 +132,10 @@ public sealed class StaticFileMiddleware
         ArgumentException.ThrowIfNullOrWhiteSpace(requestPathPrefix);
         if (requestPathPrefix[0] != '/')
         {
-            throw new ArgumentException("RequestPathPrefix must start with '/'.", nameof(requestPathPrefix));
+            throw new ArgumentException(
+                "RequestPathPrefix must start with '/'.",
+                nameof(requestPathPrefix)
+            );
         }
     }
 

@@ -77,7 +77,10 @@ public sealed class WebAppBuildTests
         public override void Flush() { }
 
         public override int Read(byte[] buffer, int offset, int count) =>
-            ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
 
         public override ValueTask<int> ReadAsync(
             Memory<byte> destination,
@@ -97,10 +100,12 @@ public sealed class WebAppBuildTests
             return ValueTask.FromResult(bytesToRead);
         }
 
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
 
         public override void SetLength(long value) => throw new NotSupportedException();
 
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
     }
 }

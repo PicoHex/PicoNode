@@ -77,7 +77,14 @@ internal static class HttpRequestParser
                 : HttpRequestParseResult.Rejected(buffer.Start, error.Value);
         }
 
-        if (!HttpRequestLineParser.TryParse(requestLineBytes, out var method, out var target, out var version))
+        if (
+            !HttpRequestLineParser.TryParse(
+                requestLineBytes,
+                out var method,
+                out var target,
+                out var version
+            )
+        )
         {
             return HttpRequestParseResult.Rejected(
                 buffer.Start,
@@ -226,5 +233,4 @@ internal static class HttpRequestParser
                 ExpectsContinue = expectsContinue,
             };
     };
-
 }

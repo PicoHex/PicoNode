@@ -9,8 +9,11 @@ public sealed class WebResultsTests
 
         await Assert.That(response.StatusCode).IsEqualTo(200);
         await Assert.That(response.ReasonPhrase).IsEqualTo("OK");
-        await Assert.That(response.Headers)
-            .Contains(new KeyValuePair<string, string>("Content-Type", "text/plain; charset=utf-8"));
+        await Assert
+            .That(response.Headers)
+            .Contains(
+                new KeyValuePair<string, string>("Content-Type", "text/plain; charset=utf-8")
+            );
         await Assert.That(Encoding.UTF8.GetString(response.Body.Span)).IsEqualTo("hello");
     }
 
@@ -20,7 +23,8 @@ public sealed class WebResultsTests
         var response = WebResults.Json(200, """{"ok":true}""", "OK");
 
         await Assert.That(response.StatusCode).IsEqualTo(200);
-        await Assert.That(response.Headers)
+        await Assert
+            .That(response.Headers)
             .Contains(
                 new KeyValuePair<string, string>("Content-Type", "application/json; charset=utf-8")
             );
@@ -34,10 +38,9 @@ public sealed class WebResultsTests
         var response = WebResults.Bytes(200, body, "application/octet-stream", "OK");
 
         await Assert.That(response.StatusCode).IsEqualTo(200);
-        await Assert.That(response.Headers)
-            .Contains(
-                new KeyValuePair<string, string>("Content-Type", "application/octet-stream")
-            );
+        await Assert
+            .That(response.Headers)
+            .Contains(new KeyValuePair<string, string>("Content-Type", "application/octet-stream"));
         await Assert.That(response.Body.Length).IsEqualTo(3);
     }
 
@@ -57,7 +60,8 @@ public sealed class WebResultsTests
         var response = WebResults.Redirect("/new-location");
 
         await Assert.That(response.StatusCode).IsEqualTo(302);
-        await Assert.That(response.Headers)
+        await Assert
+            .That(response.Headers)
             .Contains(new KeyValuePair<string, string>("Location", "/new-location"));
     }
 

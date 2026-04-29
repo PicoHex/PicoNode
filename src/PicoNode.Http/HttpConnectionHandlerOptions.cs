@@ -13,5 +13,6 @@ public sealed class HttpConnectionHandlerOptions
 
     public int StreamingResponseBufferSize { get; init; } = DefaultStreamingResponseBufferSize;
 
-    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(DefaultRequestTimeoutSeconds);
+    public TimeSpan RequestTimeout { get; init; } =
+        TimeSpan.FromSeconds(DefaultRequestTimeoutSeconds);
 }

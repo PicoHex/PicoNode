@@ -519,7 +519,13 @@ public sealed class HttpConnectionHandlerTests
                         new HttpConnectionHandlerOptions
                         {
                             RequestHandler = static (_, _) =>
-                                ValueTask.FromResult(new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" }),
+                                ValueTask.FromResult(
+                                    new HttpResponse
+                                    {
+                                        StatusCode = 204,
+                                        ReasonPhrase = "No Content"
+                                    }
+                                ),
                             StreamingResponseBufferSize = 0,
                         }
                     )
@@ -745,27 +751,33 @@ public sealed class HttpConnectionHandlerTests
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
             static (_, _) =>
-                ValueTask.FromResult(new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" })
+                ValueTask.FromResult(
+                    new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" }
+                )
         );
 
         var consumed = await handler.OnReceivedAsync(context, buffer, CancellationToken.None);
 
         await Assert.That(buffer.Slice(consumed).Length).IsEqualTo(0);
         await Assert.That(context.SendCount).IsEqualTo(1);
-        await Assert.That(Encoding.ASCII.GetString(context.LastSent)).Contains("HTTP/1.1 204 No Content");
+        await Assert
+            .That(Encoding.ASCII.GetString(context.LastSent))
+            .Contains("HTTP/1.1 204 No Content");
     }
 
     [Test]
     public async Task OnReceivedAsync_switches_connection_to_websocket_mode_after_101()
     {
-        var requestBytes = Encoding.ASCII.GetBytes(
-            "GET /ws HTTP/1.1\r\n"
-                + "Host: localhost\r\n"
-                + "Upgrade: websocket\r\n"
-                + "Connection: Upgrade\r\n"
-                + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-                + "Sec-WebSocket-Version: 13\r\n\r\n"
-        );
+        var requestBytes = Encoding
+            .ASCII
+            .GetBytes(
+                "GET /ws HTTP/1.1\r\n"
+                    + "Host: localhost\r\n"
+                    + "Upgrade: websocket\r\n"
+                    + "Connection: Upgrade\r\n"
+                    + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                    + "Sec-WebSocket-Version: 13\r\n\r\n"
+            );
 
         var buffer = new ReadOnlySequence<byte>(requestBytes);
         var context = new RecordingConnectionContext();
@@ -783,7 +795,9 @@ public sealed class HttpConnectionHandlerTests
         );
 
         await Assert.That(context.SendCount).IsEqualTo(2);
-        await Assert.That(Encoding.ASCII.GetString(context.AllSent[0])).Contains("101 Switching Protocols");
+        await Assert
+            .That(Encoding.ASCII.GetString(context.AllSent[0]))
+            .Contains("101 Switching Protocols");
 
         var success = WebSocketFrameCodec.TryReadFrame(
             new ReadOnlySequence<byte>(context.AllSent[1]),
@@ -798,14 +812,16 @@ public sealed class HttpConnectionHandlerTests
     [Test]
     public async Task OnReceivedAsync_websocket_close_frame_sends_close_and_closes_connection()
     {
-        var requestBytes = Encoding.ASCII.GetBytes(
-            "GET /ws HTTP/1.1\r\n"
-                + "Host: localhost\r\n"
-                + "Upgrade: websocket\r\n"
-                + "Connection: Upgrade\r\n"
-                + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-                + "Sec-WebSocket-Version: 13\r\n\r\n"
-        );
+        var requestBytes = Encoding
+            .ASCII
+            .GetBytes(
+                "GET /ws HTTP/1.1\r\n"
+                    + "Host: localhost\r\n"
+                    + "Upgrade: websocket\r\n"
+                    + "Connection: Upgrade\r\n"
+                    + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                    + "Sec-WebSocket-Version: 13\r\n\r\n"
+            );
 
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
@@ -961,7 +977,6 @@ public sealed class HttpConnectionHandlerTests
         await Assert.That(goAway!.Type).IsEqualTo(Http2FrameType.GoAway);
     }
 
-
     private static HttpConnectionHandler CreateHandler(HttpRequestHandler requestHandler) =>
         new(new HttpConnectionHandlerOptions { RequestHandler = requestHandler });
 
@@ -1003,7 +1018,10 @@ public sealed class HttpConnectionHandlerTests
         public override void Flush() { }
 
         public override int Read(byte[] buffer, int offset, int count) =>
-            ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
 
         public override ValueTask<int> ReadAsync(
             Memory<byte> destination,
@@ -1023,11 +1041,13 @@ public sealed class HttpConnectionHandlerTests
             return ValueTask.FromResult(bytesToRead);
         }
 
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
 
         public override void SetLength(long value) => throw new NotSupportedException();
 
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
     }
 
     private sealed class RecordingConnectionContext : ITcpConnectionContext

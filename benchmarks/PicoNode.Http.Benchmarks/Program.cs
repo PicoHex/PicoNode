@@ -38,9 +38,10 @@ public static class Program
                 "quick" => BenchmarkConfig.Quick,
                 "default" => BenchmarkConfig.Default,
                 "precise" => BenchmarkConfig.Precise,
-                _ => throw new ArgumentException(
-                    "Supported benchmark modes are: quick, default, precise.",
-                    nameof(args)
-                ),
+                _
+                    => throw new ArgumentException(
+                        "Supported benchmark modes are: quick, default, precise.",
+                        nameof(args)
+                    ),
             };
 }

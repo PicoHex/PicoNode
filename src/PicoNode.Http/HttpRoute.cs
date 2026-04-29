@@ -16,11 +16,15 @@ public sealed class HttpRoute
             Handler = handler,
         };
 
-    public static HttpRoute MapGet(string path, HttpRequestHandler handler) => Map("GET", path, handler);
+    public static HttpRoute MapGet(string path, HttpRequestHandler handler) =>
+        Map("GET", path, handler);
 
-    public static HttpRoute MapPost(string path, HttpRequestHandler handler) => Map("POST", path, handler);
+    public static HttpRoute MapPost(string path, HttpRequestHandler handler) =>
+        Map("POST", path, handler);
 
-    public static HttpRoute MapPut(string path, HttpRequestHandler handler) => Map("PUT", path, handler);
+    public static HttpRoute MapPut(string path, HttpRequestHandler handler) =>
+        Map("PUT", path, handler);
 
-    public static HttpRoute MapDelete(string path, HttpRequestHandler handler) => Map("DELETE", path, handler);
+    public static HttpRoute MapDelete(string path, HttpRequestHandler handler) =>
+        Map("DELETE", path, handler);
 }
