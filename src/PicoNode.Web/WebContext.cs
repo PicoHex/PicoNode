@@ -28,7 +28,7 @@ public sealed class WebContext
 
     internal void SetRouteValues(Dictionary<string, string> values) => _routeValues = values;
 
-    public PicoNode.Abs.IServiceScope? Services { get; internal set; }
+    public PicoNode.Web.Abstractions.IServiceScope? Services { get; internal set; }
 
     public static WebContext Create(HttpRequest request)
     {

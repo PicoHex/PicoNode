@@ -6,7 +6,7 @@ public sealed class ServiceProviderContractTests
     public async Task Mock_provider_returns_non_null_scope()
     {
         var provider = new MockServiceProvider();
-        PicoNode.Abs.IServiceScope scope = provider.CreateScope();
+        PicoNode.Web.Abstractions.IServiceScope scope = provider.CreateScope();
 
         await Assert.That(scope).IsNotNull();
     }
@@ -15,7 +15,7 @@ public sealed class ServiceProviderContractTests
     public async Task GetService_by_type_returns_expected_value()
     {
         var provider = new MockServiceProvider();
-        PicoNode.Abs.IServiceScope scope = provider.CreateScope();
+        PicoNode.Web.Abstractions.IServiceScope scope = provider.CreateScope();
 
         object? result = scope.GetService(typeof(string));
 
@@ -28,7 +28,7 @@ public sealed class ServiceProviderContractTests
     public async Task GetService_generic_extension_works()
     {
         var provider = new MockServiceProvider();
-        PicoNode.Abs.IServiceScope scope = provider.CreateScope();
+        PicoNode.Web.Abstractions.IServiceScope scope = provider.CreateScope();
 
         string? result = scope.GetService<string>();
 
@@ -47,12 +47,12 @@ public sealed class ServiceProviderContractTests
     }
 }
 
-file sealed class MockServiceProvider : PicoNode.Abs.IServiceProvider
+file sealed class MockServiceProvider : PicoNode.Web.Abstractions.IServiceProvider
 {
-    public PicoNode.Abs.IServiceScope CreateScope() => new MockServiceScope();
+    public PicoNode.Web.Abstractions.IServiceScope CreateScope() => new MockServiceScope();
 }
 
-file sealed class MockServiceScope : PicoNode.Abs.IServiceScope
+file sealed class MockServiceScope : PicoNode.Web.Abstractions.IServiceScope
 {
     public bool Disposed { get; private set; }
 

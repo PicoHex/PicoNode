@@ -1,4 +1,4 @@
-namespace PicoNode.Abs;
+namespace PicoNode.Web.Abstractions;
 
 public interface IServiceScope : IDisposable
 {

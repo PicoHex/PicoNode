@@ -35,24 +35,16 @@ public sealed class TcpNode : INode, IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.SendSocketBufferSize, 0);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.Backlog, 0);
         if (options.IdleTimeout < TimeSpan.Zero)
-        {
             throw new ArgumentOutOfRangeException(nameof(options.IdleTimeout));
-        }
 
         if (options.IdleScanInterval <= TimeSpan.Zero)
-        {
             throw new ArgumentOutOfRangeException(nameof(options.IdleScanInterval));
-        }
 
         if (options.AcceptFaultBackoff < TimeSpan.Zero)
-        {
             throw new ArgumentOutOfRangeException(nameof(options.AcceptFaultBackoff));
-        }
 
         if (options.DrainTimeout < TimeSpan.Zero)
-        {
             throw new ArgumentOutOfRangeException(nameof(options.DrainTimeout));
-        }
 
         if (options.ReceivePipePauseThresholdBytes is <= 0)
         {
@@ -315,7 +307,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 try
                 {
-                    await NegotiateAndTrackAsync(socket);
+                    await TrackAndRunAsync(socket);
                 }
                 catch (Exception ex)
                 {
@@ -328,27 +320,15 @@ public sealed class TcpNode : INode, IAsyncDisposable
         return TrackAndRunAsync(socket);
     }
 
-    private async Task TrackAndRunAsync(Socket socket)
+    private async Task TrackAndRunAsync(Socket socket, Stream? stream = null)
     {
-        var connection = new TcpConnection(this, socket, stream: null);
-        if (!TryTrackConnection(connection))
+        if (stream is null && Options.SslOptions is not null)
         {
-            ReportFault(NodeFaultCode.SessionRejected, OperationRejectTracking);
-            Interlocked.Increment(ref _totalRejected);
-            await connection.DisposeAsync();
-            return;
-        }
-
-        Interlocked.Increment(ref _totalAccepted);
-        _ = connection.RunAsync(Options.ConnectionHandler);
-    }
-
-    private async Task NegotiateAndTrackAsync(Socket socket)
-    {
-        var stream = await NegotiateTlsAsync(socket);
-        if (stream is null)
-        {
-            return;
+            stream = await NegotiateTlsAsync(socket);
+            if (stream is null)
+            {
+                return;
+            }
         }
 
         var connection = new TcpConnection(this, socket, stream);

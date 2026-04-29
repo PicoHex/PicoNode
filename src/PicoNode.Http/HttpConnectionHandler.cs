@@ -110,17 +110,6 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         _connectionStates.TryRemove(connection.ConnectionId, out _);
         return Task.CompletedTask;
     }
-
-    private ConnectionRuntimeState GetOrCreateConnectionState(
-        long connectionId,
-        ConnectionProtocol defaultProtocol
-    ) =>
-        _connectionStates.GetOrAdd(
-            connectionId,
-            static (_, protocol) => new ConnectionRuntimeState { Protocol = protocol },
-            defaultProtocol
-        );
-
     private void SetConnectionState(long connectionId, ConnectionProtocol protocol)
     {
         _connectionStates.AddOrUpdate(

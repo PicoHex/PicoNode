@@ -3,17 +3,19 @@ namespace PicoNode.Tests;
 public sealed class TcpNodeTlsAcceptLoopTests
 {
     [Test]
-    public async Task NegotiateAndTrackAsync_exists_as_separate_method()
+    public async Task TrackAndRunAsync_accepts_optional_stream_parameter()
     {
         var method = typeof(TcpNode).GetMethod(
-            "NegotiateAndTrackAsync",
+            "TrackAndRunAsync",
             BindingFlags.Instance | BindingFlags.NonPublic
         );
 
         await Assert.That(method).IsNotNull();
         await Assert.That(method!.ReturnType).IsEqualTo(typeof(Task));
-        await Assert.That(method.GetParameters().Length).IsEqualTo(1);
+        await Assert.That(method.GetParameters().Length).IsEqualTo(2);
         await Assert.That(method.GetParameters()[0].ParameterType).IsEqualTo(typeof(Socket));
+        await Assert.That(method.GetParameters()[1].ParameterType).IsEqualTo(typeof(Stream));
+        await Assert.That(method.GetParameters()[1].HasDefaultValue).IsTrue();
     }
 
     [Test]

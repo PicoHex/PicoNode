@@ -56,7 +56,7 @@ public sealed class WebApp
         return this;
     }
 
-    public ITcpConnectionHandler Build(PicoNode.Abs.IServiceProvider? container = null)
+    public ITcpConnectionHandler Build(PicoNode.Web.Abstractions.IServiceProvider? container = null)
     {
         if (container is not null)
         {

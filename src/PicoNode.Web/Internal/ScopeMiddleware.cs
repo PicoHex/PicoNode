@@ -2,7 +2,7 @@ namespace PicoNode.Web.Internal;
 
 internal static class ScopeMiddleware
 {
-    public static WebMiddleware Create(PicoNode.Abs.IServiceProvider provider) =>
+    public static WebMiddleware Create(PicoNode.Web.Abstractions.IServiceProvider provider) =>
         (context, next, ct) =>
         {
             var scope = provider.CreateScope();

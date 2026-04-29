@@ -3,8 +3,35 @@ namespace PicoNode.Http.Internal.ConnectionRuntime;
 internal static class Http1ConnectionProcessor
 {
     private static readonly byte[] ContinueResponse = "HTTP/1.1 100 Continue\r\n\r\n"u8.ToArray();
+
+    // Cached error responses — pre-allocated to avoid per-request allocations.
+    // HttpResponse objects are available for reference; the pre-serialized
+    // ReadOnlySequence<byte> fields are used directly at send-time for the
+    // status codes that always signal closeConnection: true.
+    private static readonly HttpResponse BadRequestResponse =
+        new() { StatusCode = 400, ReasonPhrase = "Bad Request" };
+    private static readonly HttpResponse NotFoundResponse =
+        new() { StatusCode = 404, ReasonPhrase = "Not Found" };
+    private static readonly HttpResponse MethodNotAllowedResponse =
+        new() { StatusCode = 405, ReasonPhrase = "Method Not Allowed" };
+    private static readonly HttpResponse PayloadTooLargeResponse =
+        new() { StatusCode = 413, ReasonPhrase = "Payload Too Large" };
     private static readonly HttpResponse InternalServerErrorResponse =
         new() { StatusCode = 500, ReasonPhrase = "Internal Server Error" };
+    private static readonly HttpResponse NotImplementedResponse =
+        new() { StatusCode = 501, ReasonPhrase = "Not Implemented" };
+
+    // Pre-serialized byte sequences for error responses that always force
+    // connection: close.  Serialized once at type-init to eliminate per-request
+    // HttpResponse allocations and serializer overhead on protocol errors.
+    private static readonly ReadOnlySequence<byte> BadRequestBytes =
+        new(HttpResponseSerializer.Serialize(BadRequestResponse, closeConnection: true).ToArray());
+    private static readonly ReadOnlySequence<byte> PayloadTooLargeBytes =
+        new(HttpResponseSerializer.Serialize(PayloadTooLargeResponse, closeConnection: true).ToArray());
+    private static readonly ReadOnlySequence<byte> InternalServerErrorBytes =
+        new(HttpResponseSerializer.Serialize(InternalServerErrorResponse, closeConnection: true).ToArray());
+    private static readonly ReadOnlySequence<byte> NotImplementedBytes =
+        new(HttpResponseSerializer.Serialize(NotImplementedResponse, closeConnection: true).ToArray());
 
     public static ValueTask<SequencePosition> ProcessAsync(
         ITcpConnectionContext connection,
@@ -195,13 +222,14 @@ internal static class Http1ConnectionProcessor
         }
         catch
         {
-            await SendResponseAsync(
-                connection,
-                InternalServerErrorResponse,
-                closeConnection: true,
-                options,
-                cancellationToken
-            );
+            try
+            {
+                await connection.SendAsync(InternalServerErrorBytes, cancellationToken);
+            }
+            finally
+            {
+                connection.Close();
+            }
 
             return consumed;
         }
@@ -215,30 +243,22 @@ internal static class Http1ConnectionProcessor
         CancellationToken cancellationToken
     )
     {
-        var (statusCode, reasonPhrase) = error switch
+        var payload = error switch
         {
-            HttpRequestParseError.RequestTooLarge => (413, "Payload Too Large"),
-            HttpRequestParseError.UnsupportedFraming => (501, "Not Implemented"),
-            HttpRequestParseError.InvalidRequestLine
-            or HttpRequestParseError.InvalidHeader
-            or HttpRequestParseError.InvalidHostHeader
-            or HttpRequestParseError.MissingHostHeader
-            or HttpRequestParseError.DuplicateContentLength
-            or HttpRequestParseError.InvalidContentLength
-            or HttpRequestParseError.InvalidChunkedBody
-                => (400, "Bad Request"),
-            _ => (400, "Bad Request"),
+            HttpRequestParseError.RequestTooLarge => PayloadTooLargeBytes,
+            HttpRequestParseError.UnsupportedFraming => NotImplementedBytes,
+            _ => BadRequestBytes,
         };
 
-        var response = new HttpResponse { StatusCode = statusCode, ReasonPhrase = reasonPhrase };
+        try
+        {
+            await connection.SendAsync(payload, cancellationToken);
+        }
+        finally
+        {
+            connection.Close();
+        }
 
-        await SendResponseAsync(
-            connection,
-            response,
-            closeConnection: true,
-            options,
-            cancellationToken
-        );
         return consumed;
     }
 

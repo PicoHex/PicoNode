@@ -4,11 +4,20 @@ public sealed class WebServer : IAsyncDisposable
 {
     private readonly WebApp _app;
     private readonly WebServerOptions _options;
-    private readonly PicoNode.Abs.IServiceProvider _container;
+    private readonly PicoNode.Web.Abstractions.IServiceProvider _container;
     private TcpNode? _node;
     private bool _disposed;
 
-    public WebServer(WebApp app, WebServerOptions options, PicoNode.Abs.IServiceProvider container)
+    public WebServer(WebApp app, WebServerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        ArgumentNullException.ThrowIfNull(options);
+        _app = app;
+        _options = options;
+        _container = null!;
+    }
+
+    public WebServer(WebApp app, WebServerOptions options, PicoNode.Web.Abstractions.IServiceProvider container)
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(options);

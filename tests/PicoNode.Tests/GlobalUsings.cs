@@ -9,3 +9,4 @@ global using System.Reflection;
 global using System.Security.Cryptography;
 global using System.Security.Cryptography.X509Certificates;
 global using PicoNode.Abs;
+global using PicoNode.Web.Abstractions;

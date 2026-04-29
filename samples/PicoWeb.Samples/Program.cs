@@ -4,8 +4,7 @@ using PicoWeb.Samples;
 
 await using var server = new WebServer(
     ShowcaseApp.Create(),
-    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, 7004) },
-    new EmptyServiceProvider()
+    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, 7004) }
 );
 
 await server.StartAsync();
@@ -22,15 +21,3 @@ Console.WriteLine("Press Enter to stop...");
 Console.ReadLine();
 
 await server.StopAsync();
-
-internal sealed class EmptyServiceProvider : PicoNode.Abs.IServiceProvider
-{
-    public PicoNode.Abs.IServiceScope CreateScope() => new EmptyServiceScope();
-}
-
-internal sealed class EmptyServiceScope : PicoNode.Abs.IServiceScope
-{
-    public object? GetService(Type serviceType) => null;
-
-    public void Dispose() { }
-}

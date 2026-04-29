@@ -1,6 +1,6 @@
 namespace PicoWeb.DI.Tests;
 
-internal sealed class TestServiceProvider : PicoNode.Abs.IServiceProvider, IAsyncDisposable
+internal sealed class TestServiceProvider : PicoNode.Web.Abstractions.IServiceProvider, IAsyncDisposable
 {
     private readonly Dictionary<Type, ServiceRegistration> _registrations = new();
     private readonly Dictionary<Type, object> _singletonInstances = new();
@@ -8,20 +8,20 @@ internal sealed class TestServiceProvider : PicoNode.Abs.IServiceProvider, IAsyn
 
     public void RegisterSingleton(
         Type serviceType,
-        Func<PicoNode.Abs.IServiceScope, object> factory
+        Func<PicoNode.Web.Abstractions.IServiceScope, object> factory
     )
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Singleton, factory);
     }
 
-    public void RegisterScoped(Type serviceType, Func<PicoNode.Abs.IServiceScope, object> factory)
+    public void RegisterScoped(Type serviceType, Func<PicoNode.Web.Abstractions.IServiceScope, object> factory)
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Scoped, factory);
     }
 
     public void RegisterTransient(
         Type serviceType,
-        Func<PicoNode.Abs.IServiceScope, object> factory
+        Func<PicoNode.Web.Abstractions.IServiceScope, object> factory
     )
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Transient, factory);
@@ -32,7 +32,7 @@ internal sealed class TestServiceProvider : PicoNode.Abs.IServiceProvider, IAsyn
         // no-op for compatibility with SvcContainer API
     }
 
-    public PicoNode.Abs.IServiceScope CreateScope()
+    public PicoNode.Web.Abstractions.IServiceScope CreateScope()
     {
         return new TestServiceScope(this);
     }
@@ -84,7 +84,7 @@ internal sealed class TestServiceProvider : PicoNode.Abs.IServiceProvider, IAsyn
     }
 }
 
-internal sealed class TestServiceScope : PicoNode.Abs.IServiceScope
+internal sealed class TestServiceScope : PicoNode.Web.Abstractions.IServiceScope
 {
     private readonly TestServiceProvider _provider;
     private readonly Dictionary<Type, object> _scopedInstances = new();
@@ -130,5 +130,5 @@ internal enum ServiceLifetime
 
 internal sealed record ServiceRegistration(
     ServiceLifetime Lifetime,
-    Func<PicoNode.Abs.IServiceScope, object> Factory
+    Func<PicoNode.Web.Abstractions.IServiceScope, object> Factory
 );

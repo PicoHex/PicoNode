@@ -148,7 +148,7 @@ internal static class HttpRequestParser
         public bool TryReadLine(
             int maxRequestBytes,
             HttpRequestParseError malformedLineError,
-            out byte[] lineBytes,
+            out ReadOnlySpan<byte> lineBytes,
             out HttpRequestParseError? error
         )
         {
@@ -196,8 +196,7 @@ internal static class HttpRequestParser
                 return true;
             }
 
-            lineBytes = new byte[contentLength];
-            lineWithCr.Slice(0, contentLength).CopyTo(lineBytes);
+            lineBytes = lineWithCr.FirstSpan.Slice(0, contentLength);
             return true;
         }
     }

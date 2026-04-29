@@ -164,12 +164,12 @@ public sealed class PicoWebShowcaseSmokeTests
     }
 }
 
-internal sealed class EmptyServiceProvider : PicoNode.Abs.IServiceProvider
+internal sealed class EmptyServiceProvider : PicoNode.Web.Abstractions.IServiceProvider
 {
-    public PicoNode.Abs.IServiceScope CreateScope() => new EmptyServiceScope();
+    public PicoNode.Web.Abstractions.IServiceScope CreateScope() => new EmptyServiceScope();
 }
 
-internal sealed class EmptyServiceScope : PicoNode.Abs.IServiceScope
+internal sealed class EmptyServiceScope : PicoNode.Web.Abstractions.IServiceScope
 {
     public object? GetService(Type serviceType) => null;
 

@@ -66,7 +66,6 @@ public sealed class UdpNode : INode, IAsyncDisposable
                     SingleWriter = true,
                 }
             );
-            _workers[i] = Task.CompletedTask;
         }
 
         _state = NodeState.Created;
