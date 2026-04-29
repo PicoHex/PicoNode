@@ -1,12 +1,14 @@
 namespace PicoNode.Web;
 
+using PicoNode.Web.Internal;
+
 internal sealed class WebRouter
 {
     private static readonly HttpResponse NotFoundResponse =
         new() { StatusCode = 404, ReasonPhrase = "Not Found", };
 
     private readonly Dictionary<string, Dictionary<string, WebRequestHandler>> _exactRoutes;
-    private readonly List<CompiledRoute> _paramRoutes;
+    private readonly RadixTree<CompiledRoute> _paramTree;
     private readonly WebRequestHandler? _fallbackHandler;
 
     internal WebRouter(IReadOnlyList<WebRoute> routes, WebRequestHandler? fallbackHandler = null)
@@ -17,7 +19,7 @@ internal sealed class WebRouter
         _exactRoutes = new Dictionary<string, Dictionary<string, WebRequestHandler>>(
             StringComparer.Ordinal
         );
-        _paramRoutes =  [];
+        _paramTree = new RadixTree<CompiledRoute>();
 
         foreach (var route in routes)
         {
@@ -67,18 +69,17 @@ internal sealed class WebRouter
             }
             else
             {
-                foreach (var existing in _paramRoutes)
+                try
                 {
-                    if (existing.Method == method && existing.PatternString == route.Pattern)
-                    {
-                        throw new ArgumentException(
-                            $"Duplicate route registration for method '{method}' and pattern '{route.Pattern}'.",
-                            nameof(routes)
-                        );
-                    }
+                    _paramTree.Insert(route.Pattern, method, new CompiledRoute(method, route.Pattern, pattern, route.Handler));
                 }
-
-                _paramRoutes.Add(new CompiledRoute(method, route.Pattern, pattern, route.Handler));
+                catch (InvalidOperationException)
+                {
+                    throw new ArgumentException(
+                        $"Duplicate route registration for method '{method}' and pattern '{route.Pattern}'.",
+                        nameof(routes)
+                    );
+                }
             }
         }
     }
@@ -102,28 +103,32 @@ internal sealed class WebRouter
             allowedMethods =  [.. exactMethods.Keys];
         }
 
-        foreach (var route in _paramRoutes)
+        if (_paramTree.TryMatch(path, method, out var compiledRoute, out var routeValues))
         {
-            var values = route.Pattern.Match(path);
-            if (values is null)
+            if (routeValues.Count > 0)
             {
-                continue;
+                context.SetRouteValues(routeValues);
             }
 
-            if (route.Method == method)
+            return compiledRoute.Handler(context, cancellationToken);
+        }
+
+        var paramMethods = _paramTree.TryGetMethodsForPath(path);
+        if (paramMethods is not null)
+        {
+            if (allowedMethods is null)
             {
-                if (values.Count > 0)
+                allowedMethods = new List<string>(paramMethods);
+            }
+            else
+            {
+                foreach (var m in paramMethods)
                 {
-                    context.SetRouteValues(values);
+                    if (!allowedMethods.Contains(m))
+                    {
+                        allowedMethods.Add(m);
+                    }
                 }
-
-                return route.Handler(context, cancellationToken);
-            }
-
-            allowedMethods ??=  [];
-            if (!allowedMethods.Contains(route.Method))
-            {
-                allowedMethods.Add(route.Method);
             }
         }
 

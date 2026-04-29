@@ -5,15 +5,15 @@ public sealed class DIScopeLifecycleTests
     [Test]
     public async Task Scope_created_per_request()
     {
-        var capturedScope = new TaskCompletionSource<ISvcScope?>();
+        var capturedScope = new TaskCompletionSource<PicoNode.Abs.IServiceScope?>();
         var app = new WebApp();
         app.MapGet("/", (ctx, _) =>
         {
-            capturedScope.TrySetResult(ctx.Services);
+            capturedScope.TrySetResult(ctx.Services!);
             return ValueTask.FromResult(WebResults.Text(200, "ok"));
         });
 
-        await using var container = new SvcContainer(autoConfigureFromGenerator: false);
+        await using var container = new TestServiceProvider();
         container.RegisterScoped(typeof(ScopeMarker), _ => new ScopeMarker());
         container.Build();
 
@@ -35,7 +35,7 @@ public sealed class DIScopeLifecycleTests
             return ValueTask.FromResult(WebResults.Text(200, "ok"));
         });
 
-        await using var container = new SvcContainer(autoConfigureFromGenerator: false);
+        await using var container = new TestServiceProvider();
         container.RegisterScoped(typeof(ScopedService), _ => new ScopedService());
         container.Build();
 

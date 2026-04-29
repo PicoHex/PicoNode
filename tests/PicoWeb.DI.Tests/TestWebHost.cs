@@ -13,7 +13,7 @@ internal sealed class TestWebHost : IAsyncDisposable
 
     public int Port => _port;
 
-    public static async Task<TestWebHost> StartAsync(WebApp app, ISvcContainer container)
+    public static async Task<TestWebHost> StartAsync(WebApp app, TestServiceProvider container)
     {
         var port = GetAvailablePort();
         var handler = app.Build(container);

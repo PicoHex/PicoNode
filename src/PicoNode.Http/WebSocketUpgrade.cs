@@ -47,29 +47,10 @@ public static class WebSocketUpgrade
         if (response.StatusCode != 101)
             return false;
 
-        var hasUpgrade = false;
-        var hasConnection = false;
-
-        foreach (var header in response.Headers)
-        {
-            if (
-                header.Key.Equals("Upgrade", StringComparison.OrdinalIgnoreCase)
-                && header.Value.Contains("websocket", StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                hasUpgrade = true;
-            }
-
-            if (
-                header.Key.Equals("Connection", StringComparison.OrdinalIgnoreCase)
-                && header.Value.Contains("Upgrade", StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                hasConnection = true;
-            }
-        }
-
-        return hasUpgrade && hasConnection;
+        return response.Headers.TryGetValue("Upgrade", out var upgrade)
+            && upgrade.Contains("websocket", StringComparison.OrdinalIgnoreCase)
+            && response.Headers.TryGetValue("Connection", out var connection)
+            && connection.Contains("Upgrade", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static string ComputeAcceptKey(string key)

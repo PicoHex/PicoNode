@@ -9,7 +9,7 @@ public sealed class DIExceptionSafetyTests
         app.MapGet("/", (_, _) =>
             throw new InvalidOperationException("boom"));
 
-        await using var container = new SvcContainer(autoConfigureFromGenerator: false);
+        await using var container = new TestServiceProvider();
         container.Build();
 
         await using var host = await TestWebHost.StartAsync(app, container);
@@ -27,7 +27,7 @@ public sealed class DIExceptionSafetyTests
         app.MapGet("/", (_, _) =>
             ValueTask.FromResult(WebResults.Text(200, "ok")));
 
-        await using var container = new SvcContainer(autoConfigureFromGenerator: false);
+        await using var container = new TestServiceProvider();
         container.Build();
 
         await using var host = await TestWebHost.StartAsync(app, container);

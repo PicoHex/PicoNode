@@ -17,12 +17,12 @@ public static class CorsHandler
         )
             return new HttpResponse { StatusCode = 403 };
 
-        var headers = new List<KeyValuePair<string, string>>
-        {
+        var headers = new HttpHeaderCollection(
+        [
             new("Access-Control-Allow-Origin", origin),
             new("Access-Control-Allow-Methods", string.Join(", ", options.AllowedMethods)),
             new("Access-Control-Allow-Headers", string.Join(", ", options.AllowedHeaders)),
-        };
+        ]);
 
         if (options.AllowCredentials)
             headers.Add(

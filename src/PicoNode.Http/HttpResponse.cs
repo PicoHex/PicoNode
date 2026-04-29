@@ -8,7 +8,7 @@ public sealed class HttpResponse
 
     public string Version { get; init; } = "HTTP/1.1";
 
-    public IReadOnlyList<KeyValuePair<string, string>> Headers { get; init; } = [];
+    public HttpHeaderCollection Headers { get; init; } = new();
 
     public ReadOnlyMemory<byte> Body { get; init; } = ReadOnlyMemory<byte>.Empty;
 

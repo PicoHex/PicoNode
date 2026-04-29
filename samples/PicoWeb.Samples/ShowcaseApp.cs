@@ -161,9 +161,11 @@ public static class ShowcaseApp
         IReadOnlyList<KeyValuePair<string, string>> extraHeaders
     )
     {
-        var headers = new List<KeyValuePair<string, string>>(response.Headers.Count + extraHeaders.Count);
-        headers.AddRange(response.Headers);
-        headers.AddRange(extraHeaders);
+        var headers = new HttpHeaderCollection();
+        foreach (var h in response.Headers)
+            headers.Add(h);
+        foreach (var h in extraHeaders)
+            headers.Add(h);
 
         return new HttpResponse
         {

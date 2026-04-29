@@ -14,7 +14,7 @@ public sealed class DILifetimeTests
             return ValueTask.FromResult(WebResults.Text(200, svc.Id));
         });
 
-        await using var container = new SvcContainer(autoConfigureFromGenerator: false);
+        await using var container = new TestServiceProvider();
         container.RegisterSingleton(typeof(RequestIdService), _ => new RequestIdService());
         container.Build();
 
@@ -40,7 +40,7 @@ public sealed class DILifetimeTests
             return ValueTask.FromResult(WebResults.Text(200, "ok"));
         });
 
-        await using var container = new SvcContainer(autoConfigureFromGenerator: false);
+        await using var container = new TestServiceProvider();
         container.RegisterScoped(typeof(RequestIdService), _ => new RequestIdService());
         container.Build();
 

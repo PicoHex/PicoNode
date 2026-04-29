@@ -3,9 +3,9 @@ namespace PicoWeb.DI.Tests;
 public sealed class DIScopeTests
 {
     [Test]
-    public async Task SvcContainer_creates_and_disposes_scope()
+    public async Task ServiceProvider_creates_and_disposes_scope()
     {
-        await using var container = new SvcContainer(autoConfigureFromGenerator: false);
+        await using var container = new TestServiceProvider();
         using var scope = container.CreateScope();
 
         await Assert.That(scope).IsNotNull();

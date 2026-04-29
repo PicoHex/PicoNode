@@ -56,31 +56,21 @@ public sealed class WebApp
         return this;
     }
 
-    public ITcpConnectionHandler Build(ISvcContainer? container = null)
+    public ITcpConnectionHandler Build(PicoNode.Abs.IServiceProvider? container = null)
     {
+        if (container is not null)
+        {
+            _middlewares.Insert(0, ScopeMiddleware.Create(container));
+        }
+
         var router = new WebRouter(_routes, _fallbackHandler);
         var pipeline = BuildPipeline(router);
 
-        HttpRequestHandler httpHandler = container is null
-            ? (request, ct) =>
-            {
-                var context = WebContext.Create(request);
-                return pipeline(context, ct);
-            }
-            : async (request, ct) =>
-            {
-                var context = WebContext.Create(request);
-                var scope = container.CreateScope();
-                context.Services = scope;
-                try
-                {
-                    return await pipeline(context, ct);
-                }
-                finally
-                {
-                    scope.Dispose();
-                }
-            };
+        HttpRequestHandler httpHandler = (request, ct) =>
+        {
+            var context = WebContext.Create(request);
+            return pipeline(context, ct);
+        };
 
         return new HttpConnectionHandler(
             new HttpConnectionHandlerOptions

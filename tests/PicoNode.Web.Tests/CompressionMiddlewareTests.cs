@@ -139,9 +139,11 @@ public sealed class CompressionMiddlewareTests
     }
 
     [Test]
-    public async Task Does_not_compress_body_stream_without_content_length()
+    public async Task Streaming_response_without_content_length_gets_compressed_when_body_is_large()
     {
-        var middleware = new CompressionMiddleware(minimumBodySize: 0);
+        var largeBody = new byte[10_000];
+        Random.Shared.NextBytes(largeBody);
+        var middleware = new CompressionMiddleware(minimumBodySize: 860);
         var context = CreateContext("GET", "/", "gzip");
 
         var response = await middleware.InvokeAsync(
@@ -153,15 +155,53 @@ public sealed class CompressionMiddlewareTests
                         StatusCode = 200,
                         ReasonPhrase = "OK",
                         Headers =
-                        [new KeyValuePair<string, string>("Content-Type", "text/plain")],
-                        BodyStream = new MemoryStream(Encoding.UTF8.GetBytes("stream")),
+                        [new KeyValuePair<string, string>("Content-Type", "application/octet-stream")],
+                        BodyStream = new MemoryStream(largeBody),
+                    }
+                ),
+            CancellationToken.None
+        );
+
+        await Assert.That(GetHeader(response, "Content-Encoding")).IsEqualTo("gzip");
+        await Assert.That(GetHeader(response, "Content-Length")).IsNull();
+        await Assert.That(response.Body.IsEmpty).IsTrue();
+        await Assert.That(response.BodyStream).IsNotNull();
+
+        var compressed = await ReadAllBytesAsync(response.BodyStream!);
+        var decompressed = Decompress(compressed, "gzip");
+        await Assert.That(decompressed.AsSpan().SequenceEqual(largeBody)).IsTrue();
+    }
+
+    [Test]
+    public async Task Streaming_response_without_content_length_skips_compression_when_body_is_small()
+    {
+        var smallBody = new byte[100];
+        Random.Shared.NextBytes(smallBody);
+        var middleware = new CompressionMiddleware(minimumBodySize: 860);
+        var context = CreateContext("GET", "/", "gzip");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Headers =
+                        [new KeyValuePair<string, string>("Content-Type", "application/octet-stream")],
+                        BodyStream = new MemoryStream(smallBody),
                     }
                 ),
             CancellationToken.None
         );
 
         await Assert.That(GetHeader(response, "Content-Encoding")).IsNull();
+        await Assert.That(GetHeader(response, "Content-Length")).IsNull();
         await Assert.That(response.BodyStream).IsNotNull();
+
+        var body = await ReadAllBytesAsync(response.BodyStream!);
+        await Assert.That(body.Span.SequenceEqual(smallBody)).IsTrue();
     }
 
     [Test]

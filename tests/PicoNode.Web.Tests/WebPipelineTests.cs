@@ -77,10 +77,8 @@ public sealed class WebPipelineTests
         WebMiddleware addHeader = async (ctx, next, ct) =>
         {
             var response = await next(ctx, ct);
-            var headers = new List<KeyValuePair<string, string>>(response.Headers)
-            {
-                new("X-Custom", "value"),
-            };
+            var headers = new HttpHeaderCollection(response.Headers);
+            headers.Add("X-Custom", "value");
             return new HttpResponse
             {
                 StatusCode = response.StatusCode,

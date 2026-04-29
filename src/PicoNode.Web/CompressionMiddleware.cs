@@ -44,7 +44,10 @@ public sealed class CompressionMiddleware
         {
             if (!TryGetContentLength(response.Headers, out var contentLength))
             {
-                return response;
+                if (!TryGetStreamLength(response.BodyStream, out contentLength))
+                {
+                    contentLength = long.MaxValue;
+                }
             }
 
             if (contentLength < _minimumBodySize)
@@ -135,51 +138,44 @@ public sealed class CompressionMiddleware
         return bestEncoding;
     }
 
-    private static bool HasHeader(IReadOnlyList<KeyValuePair<string, string>> headers, string name)
-    {
-        foreach (var header in headers)
-        {
-            if (header.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
+    private static bool HasHeader(HttpHeaderCollection headers, string name) =>
+        headers.TryGetValue(name, out _);
 
-        return false;
-    }
-
-    private static bool TryGetContentLength(
-        IReadOnlyList<KeyValuePair<string, string>> headers,
-        out long contentLength
-    )
+    private static bool TryGetContentLength(HttpHeaderCollection headers, out long contentLength)
     {
-        foreach (var header in headers)
+        if (
+            headers.TryGetValue(ContentLengthHeaderName, out var value)
+            && long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out contentLength)
+            && contentLength >= 0
+        )
         {
-            if (
-                header.Key.Equals(ContentLengthHeaderName, StringComparison.OrdinalIgnoreCase)
-                && long.TryParse(
-                    header.Value,
-                    NumberStyles.None,
-                    CultureInfo.InvariantCulture,
-                    out contentLength
-                )
-                && contentLength >= 0
-            )
-            {
-                return true;
-            }
+            return true;
         }
 
         contentLength = 0;
         return false;
     }
 
-    private static IReadOnlyList<KeyValuePair<string, string>> CreateCompressedHeaders(
-        IReadOnlyList<KeyValuePair<string, string>> sourceHeaders,
+    private static bool TryGetStreamLength(Stream stream, out long length)
+    {
+        try
+        {
+            length = stream.Length;
+            return length >= 0;
+        }
+        catch (NotSupportedException)
+        {
+            length = 0;
+            return false;
+        }
+    }
+
+    private static HttpHeaderCollection CreateCompressedHeaders(
+        HttpHeaderCollection sourceHeaders,
         string encoding
     )
     {
-        var headers = new List<KeyValuePair<string, string>>(sourceHeaders.Count + 2);
+        var headers = new HttpHeaderCollection();
         string? varyValue = null;
 
         foreach (var header in sourceHeaders)
@@ -203,12 +199,10 @@ public sealed class CompressionMiddleware
             headers.Add(header);
         }
 
-        headers.Add(new KeyValuePair<string, string>(ContentEncodingHeaderName, encoding));
+        headers.Add(ContentEncodingHeaderName, encoding);
         headers.Add(
-            new KeyValuePair<string, string>(
-                VaryHeaderName,
-                MergeVaryHeader(varyValue, AcceptEncodingHeaderValue)
-            )
+            VaryHeaderName,
+            MergeVaryHeader(varyValue, AcceptEncodingHeaderValue)
         );
 
         return headers;

@@ -293,7 +293,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
         }
     }
 
-    private async Task ProcessAcceptedSocketAsync(Socket socket)
+    private Task ProcessAcceptedSocketAsync(Socket socket)
     {
         socket.NoDelay = Options.NoDelay;
         socket.LingerState = Options.LingerState;
@@ -302,17 +302,39 @@ public sealed class TcpNode : INode, IAsyncDisposable
         {
             Interlocked.Increment(ref _totalRejected);
             RejectAcceptedSocket(socket, NodeFaultCode.SessionRejected, OperationRejectLimit);
+            return Task.CompletedTask;
+        }
+
+        if (Options.SslOptions is not null)
+        {
+            _ = Task.Run(() => NegotiateAndTrackAsync(socket));
+            return Task.CompletedTask;
+        }
+
+        return TrackAndRunAsync(socket);
+    }
+
+    private async Task TrackAndRunAsync(Socket socket)
+    {
+        var connection = new TcpConnection(this, socket, stream: null);
+        if (!TryTrackConnection(connection))
+        {
+            ReportFault(NodeFaultCode.SessionRejected, OperationRejectTracking);
+            Interlocked.Increment(ref _totalRejected);
+            await connection.DisposeAsync();
             return;
         }
 
-        Stream? stream = null;
-        if (Options.SslOptions is not null)
+        Interlocked.Increment(ref _totalAccepted);
+        _ = connection.RunAsync(Options.ConnectionHandler);
+    }
+
+    private async Task NegotiateAndTrackAsync(Socket socket)
+    {
+        var stream = await NegotiateTlsAsync(socket);
+        if (stream is null)
         {
-            stream = await NegotiateTlsAsync(socket);
-            if (stream is null)
-            {
-                return;
-            }
+            return;
         }
 
         var connection = new TcpConnection(this, socket, stream);

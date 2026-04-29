@@ -31,12 +31,16 @@ public sealed class HttpContractTests
             )
             .IsEqualTo(typeof(int));
         await Assert
+            .That(type.GetProperty(nameof(HttpConnectionHandlerOptions.RequestTimeout))?.PropertyType)
+            .IsEqualTo(typeof(TimeSpan));
+        await Assert
             .That(properties)
             .IsEquivalentTo(
 
                 [
                     nameof(HttpConnectionHandlerOptions.MaxRequestBytes),
                     nameof(HttpConnectionHandlerOptions.RequestHandler),
+                    nameof(HttpConnectionHandlerOptions.RequestTimeout),
                     nameof(HttpConnectionHandlerOptions.ServerHeader),
                     nameof(HttpConnectionHandlerOptions.StreamingResponseBufferSize),
                 ]
@@ -135,7 +139,7 @@ public sealed class HttpContractTests
             .IsEqualTo(typeof(string));
         await Assert
             .That(type.GetProperty(nameof(HttpResponse.Headers))?.PropertyType)
-            .IsEqualTo(typeof(IReadOnlyList<KeyValuePair<string, string>>));
+            .IsEqualTo(typeof(HttpHeaderCollection));
         await Assert
             .That(type.GetProperty(nameof(HttpResponse.Body))?.PropertyType)
             .IsEqualTo(typeof(ReadOnlyMemory<byte>));

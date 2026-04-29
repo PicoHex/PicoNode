@@ -94,12 +94,10 @@ public sealed class PicoWebShowcaseSmokeTests
     {
         var port = GetAvailablePort();
         var sampleRoot = Path.Combine(GetRepositoryRoot(), "samples", "PicoWeb.Samples");
-        var container = new SvcContainer();
-        container.Build();
         var server = new WebServer(
             ShowcaseApp.Create(sampleRoot),
             new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) },
-            container
+            new EmptyServiceProvider()
         );
 
         await server.StartAsync();
@@ -157,4 +155,15 @@ public sealed class PicoWebShowcaseSmokeTests
             await Server.DisposeAsync();
         }
     }
+}
+
+internal sealed class EmptyServiceProvider : PicoNode.Abs.IServiceProvider
+{
+    public PicoNode.Abs.IServiceScope CreateScope() => new EmptyServiceScope();
+}
+
+internal sealed class EmptyServiceScope : PicoNode.Abs.IServiceScope
+{
+    public object? GetService(Type serviceType) => null;
+    public void Dispose() { }
 }

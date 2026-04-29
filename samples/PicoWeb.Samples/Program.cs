@@ -1,15 +1,11 @@
 using System.Net;
-using PicoDI;
 using PicoWeb;
 using PicoWeb.Samples;
-
-var container = new SvcContainer();
-container.Build();
 
 await using var server = new WebServer(
     ShowcaseApp.Create(),
     new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, 7004) },
-    container
+    new EmptyServiceProvider()
 );
 
 await server.StartAsync();
@@ -26,3 +22,14 @@ Console.WriteLine("Press Enter to stop...");
 Console.ReadLine();
 
 await server.StopAsync();
+
+internal sealed class EmptyServiceProvider : PicoNode.Abs.IServiceProvider
+{
+    public PicoNode.Abs.IServiceScope CreateScope() => new EmptyServiceScope();
+}
+
+internal sealed class EmptyServiceScope : PicoNode.Abs.IServiceScope
+{
+    public object? GetService(Type serviceType) => null;
+    public void Dispose() { }
+}

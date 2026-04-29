@@ -1,6 +1,6 @@
 # PicoNode
 
-A lightweight, high-performance networking stack for .NET — from raw TCP/UDP sockets to a fully featured HTTP web framework, with zero external runtime dependencies.
+A lightweight, high-performance networking stack for .NET — from raw TCP/UDP sockets to a fully featured HTTP web framework, with minimal external runtime dependencies.
 
 ## Overview
 
@@ -26,7 +26,7 @@ PicoWeb              Ready-to-run web server                  (net10.0)
 - **Web framework** — fluent `WebApp` builder, middleware pipeline, parameterized route patterns (`/users/{id}`), response helpers for text/JSON/redirect
 - **Built-in middleware** — response compression (Brotli, Gzip, Deflate), static file serving, CORS, cookie parsing, multipart form data
 - **AOT & trimming ready** — all net10.0 libraries are publish-AOT and trimming compatible
-- **Zero runtime dependencies** — only `System.IO.Pipelines` and `System.Buffers` (via the netstandard2.0 abstractions layer)
+- **Minimal external dependencies** — `PicoNode.Abs` has zero external dependencies (netstandard2.0). `PicoNode`, `PicoNode.Http`, `PicoNode.Web`, and `PicoWeb` depend only on the BCL and their sibling projects, with `System.IO.Pipelines` and `System.Buffers` (via the netstandard2.0 abstractions layer). No external NuGet packages required.
 
 ## Quick Start
 
