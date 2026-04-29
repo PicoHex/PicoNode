@@ -10,11 +10,11 @@ public static class CorsHandler
         if (!request.Headers.TryGetValue("Origin", out var origin))
             return null;
 
-        if (
-            !IsOriginAllowed(origin, options)
-            || request.Headers.TryGetValue("Access-Control-Request-Method", out var requestMethod)
-                && !IsMethodAllowed(requestMethod, options)
-        )
+        if (!IsOriginAllowed(origin, options))
+            return new HttpResponse { StatusCode = 403 };
+
+        if (request.Headers.TryGetValue("Access-Control-Request-Method", out var requestMethod)
+            && !IsMethodAllowed(requestMethod, options))
             return new HttpResponse { StatusCode = 403 };
 
         var headers = new HttpHeaderCollection(

@@ -352,15 +352,28 @@ internal static class Http1ConnectionProcessor
     )
     {
         await using var stream = response.BodyStream!;
-        using var ms = new MemoryStream();
-        await stream.CopyToAsync(ms, cancellationToken);
+        var bodyWriter = new ArrayBufferWriter<byte>();
+        var buffer = ArrayPool<byte>.Shared.Rent(4096);
+        try
+        {
+            int bytesRead;
+            while ((bytesRead = await stream.ReadAsync(
+                buffer.AsMemory(0, 4096), cancellationToken)) > 0)
+            {
+                bodyWriter.Write(buffer.AsSpan(0, bytesRead));
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
         return new HttpResponse
         {
             StatusCode = response.StatusCode,
             ReasonPhrase = response.ReasonPhrase,
             Version = response.Version,
             Headers = response.Headers,
-            Body = ms.ToArray(),
+            Body = bodyWriter.WrittenMemory,
         };
     }
 
@@ -369,35 +382,16 @@ internal static class Http1ConnectionProcessor
         var isHttp10 = request.Version == HttpVersion.Http10;
 
         if (!request.Headers.TryGetValue("Connection", out var connectionValue))
-        {
             return isHttp10;
-        }
 
-        ReadOnlySpan<char> remaining = connectionValue;
-        while (remaining.Length > 0)
+        foreach (var range in connectionValue.AsSpan().Split(','))
         {
-            var commaIndex = remaining.IndexOf(',');
-            var token = commaIndex >= 0 ? remaining[..commaIndex] : remaining;
-            var trimmed = token.Trim();
-
-            if (trimmed.Equals("close", StringComparison.OrdinalIgnoreCase))
-            {
+            var token = connectionValue.AsSpan()[range].Trim();
+            if (token.Equals("close", StringComparison.OrdinalIgnoreCase))
                 return true;
-            }
-
-            if (isHttp10 && trimmed.Equals("keep-alive", StringComparison.OrdinalIgnoreCase))
-            {
+            if (isHttp10 && token.Equals("keep-alive", StringComparison.OrdinalIgnoreCase))
                 return false;
-            }
-
-            if (commaIndex < 0)
-            {
-                break;
-            }
-
-            remaining = remaining[(commaIndex + 1)..];
         }
-
         return isHttp10;
     }
 }
