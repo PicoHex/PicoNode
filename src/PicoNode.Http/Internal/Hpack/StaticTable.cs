@@ -1,6 +1,6 @@
 namespace PicoNode.Http.Internal.Hpack;
 
-public static class StaticTable
+internal static class StaticTable
 {
     public const int EntryCount = 61;
 

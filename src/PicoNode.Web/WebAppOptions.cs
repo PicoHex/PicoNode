@@ -8,4 +8,9 @@ public sealed class WebAppOptions
 
     public int StreamingResponseBufferSize { get; init; } =
         HttpConnectionHandlerOptions.DefaultStreamingResponseBufferSize;
+
+    public TimeSpan RequestTimeout { get; init; } =
+        TimeSpan.FromSeconds(HttpConnectionHandlerOptions.DefaultRequestTimeoutSeconds);
+
+    public WebSocketMessageHandler? WebSocketMessageHandler { get; init; }
 }

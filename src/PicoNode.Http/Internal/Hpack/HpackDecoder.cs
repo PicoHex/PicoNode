@@ -2,7 +2,7 @@ namespace PicoNode.Http.Internal.Hpack;
 
 using System.Text;
 
-public static class HpackDecoder
+internal static class HpackDecoder
 {
     // ── Huffman code table per RFC 7541 Appendix B ──────────────────────
     // 257 entries: symbols 0-255 (byte values) + 256 (EOS)
