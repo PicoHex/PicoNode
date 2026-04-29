@@ -64,5 +64,3 @@ file sealed class EchoUdpHandler : IUdpDatagramHandler
         CancellationToken cancellationToken
     ) => context.SendAsync(datagram, cancellationToken);
 }
-
-

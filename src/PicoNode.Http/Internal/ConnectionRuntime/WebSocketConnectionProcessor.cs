@@ -27,9 +27,7 @@ internal static class WebSocketConnectionProcessor
             {
                 case WebSocketOpCode.Ping:
                 {
-                    var size = WebSocketFrameCodec.MeasureFrameSize(
-                        frame.Payload.Length
-                    );
+                    var size = WebSocketFrameCodec.MeasureFrameSize(frame.Payload.Length);
                     var rented = ArrayPool<byte>.Shared.Rent(size);
                     try
                     {
@@ -52,9 +50,7 @@ internal static class WebSocketConnectionProcessor
                 }
                 case WebSocketOpCode.Close:
                 {
-                    var size = WebSocketFrameCodec.MeasureFrameSize(
-                        frame.Payload.Length
-                    );
+                    var size = WebSocketFrameCodec.MeasureFrameSize(frame.Payload.Length);
                     var rented = ArrayPool<byte>.Shared.Rent(size);
                     try
                     {

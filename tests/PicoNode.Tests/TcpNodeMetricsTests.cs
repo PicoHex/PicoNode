@@ -231,5 +231,3 @@ public sealed class TcpNodeMetricsTests
         }
     }
 }
-
-

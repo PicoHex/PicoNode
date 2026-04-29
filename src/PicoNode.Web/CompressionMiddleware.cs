@@ -36,8 +36,10 @@ public sealed class CompressionMiddleware
 
         if (response.BodyStream is not null)
         {
-            if (!TryGetContentLength(response.Headers, out var contentLength)
-                && !TryGetStreamLength(response.BodyStream, out contentLength))
+            if (
+                !TryGetContentLength(response.Headers, out var contentLength)
+                && !TryGetStreamLength(response.BodyStream, out contentLength)
+            )
             {
                 contentLength = long.MaxValue;
             }

@@ -1125,5 +1125,3 @@ public sealed class TcpConnectionBranchTests
 
     private sealed record ClosedTcpConnection(TcpCloseReason Reason, Exception? Error);
 }
-
-

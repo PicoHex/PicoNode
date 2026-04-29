@@ -255,4 +255,3 @@ public sealed class HttpContractTests
             .IsEqualTo(typeof(ValueTask));
     }
 }
-

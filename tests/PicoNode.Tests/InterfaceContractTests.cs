@@ -89,4 +89,3 @@ public sealed class InterfaceContractTests
             .IsEqualTo(typeof(ValueTask));
     }
 }
-

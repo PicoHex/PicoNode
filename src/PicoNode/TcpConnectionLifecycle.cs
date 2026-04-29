@@ -189,8 +189,7 @@ internal sealed class TcpConnectionLifecycle
         _onClosed?.Invoke();
     }
 
-    private bool TryBeginClose() =>
-        Interlocked.Exchange(ref _closeState, 1) == 0;
+    private bool TryBeginClose() => Interlocked.Exchange(ref _closeState, 1) == 0;
 
     private bool TryBeginDispose() => Interlocked.Exchange(ref _disposeState, 1) == 0;
 

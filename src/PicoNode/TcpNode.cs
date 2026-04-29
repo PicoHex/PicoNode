@@ -38,7 +38,10 @@ public sealed class TcpNode : INode, IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.IdleScanInterval, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfLessThan(options.AcceptFaultBackoff, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfLessThan(options.DrainTimeout, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.ReceivePipePauseThresholdBytes ?? int.MaxValue, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
+            options.ReceivePipePauseThresholdBytes ?? int.MaxValue,
+            0
+        );
 
         _listener = new Socket(options.Endpoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp)
         {

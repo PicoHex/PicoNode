@@ -1,6 +1,8 @@
 namespace PicoWeb.DI.Tests;
 
-internal sealed class TestServiceProvider : PicoNode.Web.Abstractions.IServiceProvider, IAsyncDisposable
+internal sealed class TestServiceProvider
+    : PicoNode.Web.Abstractions.IServiceProvider,
+        IAsyncDisposable
 {
     private readonly Dictionary<Type, ServiceRegistration> _registrations = new();
     private readonly Dictionary<Type, object> _singletonInstances = new();
@@ -14,7 +16,10 @@ internal sealed class TestServiceProvider : PicoNode.Web.Abstractions.IServicePr
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Singleton, factory);
     }
 
-    public void RegisterScoped(Type serviceType, Func<PicoNode.Web.Abstractions.IServiceScope, object> factory)
+    public void RegisterScoped(
+        Type serviceType,
+        Func<PicoNode.Web.Abstractions.IServiceScope, object> factory
+    )
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Scoped, factory);
     }

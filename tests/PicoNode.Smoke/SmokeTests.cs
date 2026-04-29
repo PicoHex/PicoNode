@@ -1353,5 +1353,3 @@ file sealed class ThrowOnceThenEchoUdpHandler : IUdpDatagramHandler
         return context.SendAsync(datagram, cancellationToken);
     }
 }
-
-

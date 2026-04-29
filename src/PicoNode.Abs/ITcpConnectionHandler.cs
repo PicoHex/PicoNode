@@ -25,4 +25,3 @@ public interface ITcpConnectionHandler
         CancellationToken cancellationToken
     );
 }
-

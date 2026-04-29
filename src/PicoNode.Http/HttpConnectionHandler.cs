@@ -110,6 +110,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         _connectionStates.TryRemove(connection.ConnectionId, out _);
         return ValueTask.CompletedTask;
     }
+
     private void SetConnectionState(long connectionId, ConnectionProtocol protocol)
     {
         _connectionStates.AddOrUpdate(
@@ -189,6 +190,3 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         Http2,
     }
 }
-
-
-

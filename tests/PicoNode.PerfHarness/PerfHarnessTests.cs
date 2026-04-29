@@ -447,5 +447,3 @@ file sealed class UdpEchoHandler : IUdpDatagramHandler
 }
 
 readonly record struct PerfMetrics(double OpsPerSecond, double MiBPerSecond);
-
-

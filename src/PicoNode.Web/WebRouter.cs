@@ -10,7 +10,8 @@ internal sealed class WebRouter
     private readonly Dictionary<string, Dictionary<string, WebRequestHandler>> _exactRoutes;
     private readonly RadixTree<CompiledRoute> _paramTree;
     private readonly WebRequestHandler? _fallbackHandler;
-    private readonly Dictionary<string, string> _exactAllowHeaderCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _exactAllowHeaderCache =
+        new(StringComparer.Ordinal);
 
     internal WebRouter(IReadOnlyList<WebRoute> routes, WebRequestHandler? fallbackHandler = null)
     {

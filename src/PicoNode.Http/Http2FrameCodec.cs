@@ -124,10 +124,7 @@ public static class Http2FrameCodec
 
     /// <summary>Writes a complete SETTINGS frame (header + variable payload).
     /// Returns total bytes written.</summary>
-    public static int WriteSettings(
-        Span<byte> destination,
-        ReadOnlySpan<Http2Setting> settings
-    )
+    public static int WriteSettings(Span<byte> destination, ReadOnlySpan<Http2Setting> settings)
     {
         var payloadLength = settings.Length * 6;
         WriteFrameHeader(
@@ -157,13 +154,7 @@ public static class Http2FrameCodec
     /// <summary>Writes a SETTINGS ACK frame into destination (9 bytes).</summary>
     public static int WriteSettingsAck(Span<byte> destination)
     {
-        WriteFrameHeader(
-            destination,
-            0,
-            Http2FrameType.Settings,
-            Http2FrameFlags.Ack,
-            0
-        );
+        WriteFrameHeader(destination, 0, Http2FrameType.Settings, Http2FrameFlags.Ack, 0);
         return FrameHeaderSize;
     }
 
@@ -195,13 +186,7 @@ public static class Http2FrameCodec
         Http2ErrorCode errorCode
     )
     {
-        WriteFrameHeader(
-            destination,
-            8,
-            Http2FrameType.GoAway,
-            Http2FrameFlags.None,
-            0
-        );
+        WriteFrameHeader(destination, 8, Http2FrameType.GoAway, Http2FrameFlags.None, 0);
         var pos = FrameHeaderSize;
         destination[pos] = (byte)((lastStreamId >> 24) & 0x7F);
         destination[pos + 1] = (byte)((lastStreamId >> 16) & 0xFF);

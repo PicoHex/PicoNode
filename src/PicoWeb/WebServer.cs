@@ -17,7 +17,11 @@ public sealed class WebServer : IAsyncDisposable
         _container = null!;
     }
 
-    public WebServer(WebApp app, WebServerOptions options, PicoNode.Web.Abstractions.IServiceProvider container)
+    public WebServer(
+        WebApp app,
+        WebServerOptions options,
+        PicoNode.Web.Abstractions.IServiceProvider container
+    )
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(options);

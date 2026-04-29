@@ -4,38 +4,29 @@ internal static class Http1ConnectionProcessor
 {
     private static readonly byte[] ContinueResponse = "HTTP/1.1 100 Continue\r\n\r\n"u8.ToArray();
 
-    // Cached error responses — pre-allocated to avoid per-request allocations.
-    // HttpResponse objects are available for reference; the pre-serialized
-    // ReadOnlySequence<byte> fields are used directly at send-time for the
-    // status codes that always signal closeConnection: true.
-    private static readonly HttpResponse BadRequestResponse =
-        new() { StatusCode = 400, ReasonPhrase = "Bad Request" };
-    private static readonly HttpResponse NotFoundResponse =
-        new() { StatusCode = 404, ReasonPhrase = "Not Found" };
-    private static readonly HttpResponse MethodNotAllowedResponse =
-        new() { StatusCode = 405, ReasonPhrase = "Method Not Allowed" };
-    private static readonly HttpResponse PayloadTooLargeResponse =
-        new() { StatusCode = 413, ReasonPhrase = "Payload Too Large" };
-    private static readonly HttpResponse InternalServerErrorResponse =
-        new() { StatusCode = 500, ReasonPhrase = "Internal Server Error" };
-    private static readonly HttpResponse NotImplementedResponse =
-        new() { StatusCode = 501, ReasonPhrase = "Not Implemented" };
-
     // Pre-serialized byte sequences for error responses that always force
     // connection: close.  Serialized once at type-init to eliminate per-request
     // HttpResponse allocations and serializer overhead on protocol errors.
-    private static readonly ReadOnlySequence<byte> BadRequestBytes = BuildErrorBytes(400, "Bad Request");
-    private static readonly ReadOnlySequence<byte> PayloadTooLargeBytes = BuildErrorBytes(413, "Payload Too Large");
-    private static readonly ReadOnlySequence<byte> InternalServerErrorBytes = BuildErrorBytes(500, "Internal Server Error");
-    private static readonly ReadOnlySequence<byte> NotImplementedBytes = BuildErrorBytes(501, "Not Implemented");
+    private static readonly ReadOnlySequence<byte> BadRequestBytes = BuildErrorBytes(
+        400,
+        "Bad Request"
+    );
+    private static readonly ReadOnlySequence<byte> PayloadTooLargeBytes = BuildErrorBytes(
+        413,
+        "Payload Too Large"
+    );
+    private static readonly ReadOnlySequence<byte> InternalServerErrorBytes = BuildErrorBytes(
+        500,
+        "Internal Server Error"
+    );
+    private static readonly ReadOnlySequence<byte> NotImplementedBytes = BuildErrorBytes(
+        501,
+        "Not Implemented"
+    );
 
     private static ReadOnlySequence<byte> BuildErrorBytes(int statusCode, string reasonPhrase)
     {
-        var response = new HttpResponse
-        {
-            StatusCode = statusCode,
-            ReasonPhrase = reasonPhrase,
-        };
+        var response = new HttpResponse { StatusCode = statusCode, ReasonPhrase = reasonPhrase, };
         return new ReadOnlySequence<byte>(
             HttpResponseSerializer.Serialize(response, closeConnection: true).ToArray()
         );
@@ -89,7 +80,6 @@ internal static class Http1ConnectionProcessor
                     connection,
                     parseResult.Consumed,
                     error,
-                    options,
                     cancellationToken
                 ),
             _ => throw new InvalidOperationException("Unexpected HTTP parse status."),
@@ -247,7 +237,6 @@ internal static class Http1ConnectionProcessor
         ITcpConnectionContext connection,
         SequencePosition consumed,
         HttpRequestParseError error,
-        HttpConnectionHandlerOptions options,
         CancellationToken cancellationToken
     )
     {

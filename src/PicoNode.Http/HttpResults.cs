@@ -27,9 +27,5 @@ public static class HttpResults
         };
 
     public static HttpResponse Status(int statusCode, string reasonPhrase) =>
-        new()
-        {
-            StatusCode = statusCode,
-            ReasonPhrase = reasonPhrase,
-        };
+        new() { StatusCode = statusCode, ReasonPhrase = reasonPhrase, };
 }
