@@ -7,17 +7,28 @@ public sealed class WebContext
 
     private IReadOnlyDictionary<string, string>? _query;
     private IReadOnlyDictionary<string, string> _routeValues = EmptyDictionary;
+    private string? _pathString;
 
-    internal WebContext(HttpRequest request, string path, string queryString)
+    internal WebContext(HttpRequest request, ReadOnlyMemory<char> path, string queryString)
     {
         Request = request;
-        Path = path;
+        PathMemory = path;
         QueryString = queryString;
     }
 
     public HttpRequest Request { get; }
 
-    public string Path { get; }
+    /// <summary>
+    /// Request path as a string. Computed lazily from the stored memory;
+    /// routing hot paths should prefer <see cref="PathMemory"/>.<c>Span</c>
+    /// to avoid the allocation.
+    /// </summary>
+    public string Path => _pathString ??= PathMemory.ToString();
+
+    /// <summary>
+    /// Request path as <see cref="ReadOnlyMemory{T}"/> without allocation.
+    /// </summary>
+    internal ReadOnlyMemory<char> PathMemory { get; }
 
     public string QueryString { get; }
 
@@ -32,11 +43,22 @@ public sealed class WebContext
 
     public static WebContext Create(HttpRequest request)
     {
-        var target = request.Target.AsSpan();
+        var target = request.Target;
         var queryIndex = target.IndexOf('?');
 
-        var path = queryIndex >= 0 ? target[..queryIndex].ToString() : request.Target;
-        var queryString = queryIndex >= 0 ? target[(queryIndex + 1)..].ToString() : string.Empty;
+        ReadOnlyMemory<char> path;
+        string queryString;
+
+        if (queryIndex >= 0)
+        {
+            path = target.AsMemory(0, queryIndex);
+            queryString = target[(queryIndex + 1)..];
+        }
+        else
+        {
+            path = target.AsMemory();
+            queryString = string.Empty;
+        }
 
         return new WebContext(request, path, queryString);
     }

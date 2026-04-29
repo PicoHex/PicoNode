@@ -46,13 +46,12 @@ public static class WebSocketFrameCodec
             }
         }
 
-        byte[] maskKey = [];
+        Span<byte> maskKey = stackalloc byte[4];
         if (masked)
         {
             if (reader.Remaining < 4)
                 return false;
 
-            maskKey = new byte[4];
             reader.TryRead(out maskKey[0]);
             reader.TryRead(out maskKey[1]);
             reader.TryRead(out maskKey[2]);
@@ -71,7 +70,7 @@ public static class WebSocketFrameCodec
         {
             for (long i = 0; i < payload.Length; i++)
             {
-                payload[i] ^= maskKey[i % 4];
+                payload[i] ^= maskKey[(int)(i % 4)];
             }
         }
 

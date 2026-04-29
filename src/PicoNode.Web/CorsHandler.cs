@@ -76,21 +76,15 @@ public static class CorsHandler
 
     private static bool IsOriginAllowed(string origin, CorsOptions options)
     {
-        if (options.AllowedOrigins.Count == 0)
+        var origins = options.AllowedOriginsSet;
+        if (origins.Count == 0)
             return false;
 
-        return options
-            .AllowedOrigins
-            .Any(
-                allowed =>
-                    allowed == "*" || allowed.Equals(origin, StringComparison.OrdinalIgnoreCase)
-            );
+        return origins.Contains("*") || origins.Contains(origin);
     }
 
     private static bool IsMethodAllowed(string method, CorsOptions options)
     {
-        return options
-            .AllowedMethods
-            .Any(allowed => allowed.Equals(method, StringComparison.OrdinalIgnoreCase));
+        return options.AllowedMethodsSet.Contains(method);
     }
 }

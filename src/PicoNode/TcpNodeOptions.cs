@@ -18,6 +18,7 @@ public sealed class TcpNodeOptions
     public TimeSpan AcceptFaultBackoff { get; init; } = TimeSpan.FromMilliseconds(50);
     public TimeSpan DrainTimeout { get; init; } = TimeSpan.FromSeconds(5);
     public int? ReceivePipePauseThresholdBytes { get; init; }
+    public int ReceivePipePauseThresholdMultiplier { get; init; } = 4;
     public bool EnableDualMode { get; init; }
     public SslServerAuthenticationOptions? SslOptions { get; init; }
 }

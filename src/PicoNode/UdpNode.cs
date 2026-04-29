@@ -148,7 +148,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
             {
                 var queue = _queues[i];
                 _workers[i] = Task.Run(
-                    () => ProcessQueueAsync(queue, CancellationToken.None),
+                    () => ProcessQueueAsync(queue, _receiveCts.Token),
                     CancellationToken.None
                 );
             }
@@ -324,43 +324,49 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
     private async Task ProcessQueueAsync(
         Channel<UdpDatagramLease> queue,
-        CancellationToken cancellationToken
+        CancellationToken handlerCancellationToken
     )
     {
         try
         {
-            await foreach (var lease in queue.Reader.ReadAllAsync(cancellationToken))
+            var reader = queue.Reader;
+            // Channel completion (TryComplete) controls loop exit so remaining
+            // datagrams are drained even during shutdown.
+            while (await reader.WaitToReadAsync(CancellationToken.None).ConfigureAwait(false))
             {
-                using (lease)
+                while (reader.TryRead(out var lease))
                 {
-                    try
+                    using (lease)
                     {
-                        var context = new UdpDatagramContext(this, lease.RemoteEndPoint);
-                        var handleTask = Options
-                            .DatagramHandler
-                            .OnDatagramAsync(context, lease.Datagram, cancellationToken);
-                        if (!handleTask.IsCompletedSuccessfully)
+                        try
                         {
-                            await handleTask;
+                            var context = new UdpDatagramContext(this, lease.RemoteEndPoint);
+                            var handleTask = Options
+                                .DatagramHandler
+                                .OnDatagramAsync(context, lease.Datagram, handlerCancellationToken);
+                            if (!handleTask.IsCompletedSuccessfully)
+                            {
+                                await handleTask;
+                            }
                         }
-                    }
-                    catch (OperationCanceledException)
-                        when (cancellationToken.IsCancellationRequested)
-                    {
-                        break;
-                    }
-                    catch (Exception ex)
-                    {
-                        ReportFault(
-                            NodeFaultCode.DatagramHandlerFailed,
-                            OperationDatagramHandler,
-                            ex
-                        );
+                        catch (OperationCanceledException)
+                            when (handlerCancellationToken.IsCancellationRequested)
+                        {
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            ReportFault(
+                                NodeFaultCode.DatagramHandlerFailed,
+                                OperationDatagramHandler,
+                                ex
+                            );
+                        }
                     }
                 }
             }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (handlerCancellationToken.IsCancellationRequested)
         { /* expected during shutdown — datagram queue processing cancelled */
         }
     }

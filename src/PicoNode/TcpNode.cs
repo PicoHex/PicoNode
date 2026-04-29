@@ -295,6 +295,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
         if (Options.SslOptions is not null)
         {
+            // Offload TLS handshake to avoid blocking the accept loop thread.
             _ = Task.Run(async () =>
             {
                 try

@@ -44,6 +44,20 @@ internal sealed class TcpConnectionLifecycle
 
     internal bool IsCloseInitiated => Volatile.Read(ref _closeState) != 0;
 
+    /// <summary>
+    /// Fire-and-forget close. Safe to call from any thread; TryBeginClose
+    /// ensures only one close executes. Used by TcpConnection on external
+    /// triggers (send faults, explicit Close calls).
+    /// </summary>
+    internal void ScheduleClose(
+        TcpCloseReason reason,
+        Exception? error,
+        ITcpConnectionHandler handler
+    )
+    {
+        _ = CloseCoreAsync(reason, error, handler);
+    }
+
     public async Task RunAsync(ITcpConnectionHandler handler)
     {
         Exception? error = null;

@@ -9,7 +9,7 @@ internal static class HttpHeaderParser
     )
     {
         var headerFields = new List<KeyValuePair<string, string>>(capacity: 16);
-        var headers = new Dictionary<string, string>(
+        var combinedHeaders = new Dictionary<string, List<string>>(
             capacity: 16,
             StringComparer.OrdinalIgnoreCase
         );
@@ -99,10 +99,26 @@ internal static class HttpHeaderParser
 
             headerFields.Add(new KeyValuePair<string, string>(name, value));
 
-            if (!headers.TryAdd(name, value))
+            if (!combinedHeaders.TryGetValue(name, out var values))
             {
-                headers[name] = headers[name] + ", " + value;
+                values = new List<string>(capacity: 1);
+                combinedHeaders[name] = values;
             }
+            values.Add(value);
+        }
+
+        // Flatten combined multi-value headers into single-value dictionary.
+        // Single-value headers pass through without allocation; repeated headers
+        // are joined once instead of O(n²) string concatenation.
+        var headers = new Dictionary<string, string>(
+            combinedHeaders.Count,
+            StringComparer.OrdinalIgnoreCase
+        );
+        foreach (var (headerName, headerValues) in combinedHeaders)
+        {
+            headers[headerName] = headerValues.Count == 1
+                ? headerValues[0]
+                : string.Join(", ", headerValues);
         }
 
         if (!hasHost && version == HttpVersion.Http11)

@@ -5,6 +5,9 @@ public sealed class CorsOptions
     private string? _allowedMethodsHeader;
     private string? _allowedHeadersHeader;
     private string? _exposedHeadersHeader;
+    private HashSet<string>? _allowedOriginsSet;
+    private HashSet<string>? _allowedMethodsSet;
+    private HashSet<string>? _allowedHeadersSet;
 
     public IReadOnlyList<string> AllowedOrigins { get; init; } = [];
 
@@ -27,4 +30,13 @@ public sealed class CorsOptions
 
     internal string ExposedHeadersHeader =>
         _exposedHeadersHeader ??= string.Join(", ", ExposedHeaders);
+
+    internal HashSet<string> AllowedOriginsSet =>
+        _allowedOriginsSet ??= new HashSet<string>(AllowedOrigins, StringComparer.OrdinalIgnoreCase);
+
+    internal HashSet<string> AllowedMethodsSet =>
+        _allowedMethodsSet ??= new HashSet<string>(AllowedMethods, StringComparer.OrdinalIgnoreCase);
+
+    internal HashSet<string> AllowedHeadersSet =>
+        _allowedHeadersSet ??= new HashSet<string>(AllowedHeaders, StringComparer.OrdinalIgnoreCase);
 }

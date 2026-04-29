@@ -71,26 +71,35 @@ internal sealed class RadixTree<T>
 
             var segment = span[start..i];
 
-            if (
-                node.Children != null
-                && node.Children.TryGetValue(segment.ToString(), out var child)
-            )
+            var childrenMatched = false;
+            if (node.Children != null)
             {
-                node = child;
+                var lookup = node.Children.GetAlternateLookup<ReadOnlySpan<char>>();
+                if (lookup.TryGetValue(segment, out var child))
+                {
+                    node = child;
+                    childrenMatched = true;
+                }
             }
-            else if (node.ParamChild != null)
+
+            if (!childrenMatched)
             {
-                paramNames ??= new List<string>();
-                paramValues ??= new List<string>();
-                paramNames.Add(node.ParamName!);
-                paramValues.Add(Uri.UnescapeDataString(segment.ToString()));
-                node = node.ParamChild;
-            }
-            else
-            {
-                value = default!;
-                routeValues = null!;
-                return false;
+                if (node.ParamChild != null)
+                {
+                    paramNames ??= new List<string>(capacity: 4);
+                    paramValues ??= new List<string>(capacity: 4);
+                    paramNames.Add(node.ParamName!);
+                    // Uri.UnescapeDataString requires string; unavoidable allocation until
+                    // a Span<char>-based decoder is available
+                    paramValues.Add(Uri.UnescapeDataString(segment.ToString()));
+                    node = node.ParamChild;
+                }
+                else
+                {
+                    value = default!;
+                    routeValues = null!;
+                    return false;
+                }
             }
 
             start = i + 1;
@@ -150,20 +159,27 @@ internal sealed class RadixTree<T>
 
             var segment = span[start..i];
 
-            if (
-                node.Children != null
-                && node.Children.TryGetValue(segment.ToString(), out var child)
-            )
+            var childrenMatched = false;
+            if (node.Children != null)
             {
-                node = child;
+                var lookup = node.Children.GetAlternateLookup<ReadOnlySpan<char>>();
+                if (lookup.TryGetValue(segment, out var child))
+                {
+                    node = child;
+                    childrenMatched = true;
+                }
             }
-            else if (node.ParamChild != null)
+
+            if (!childrenMatched)
             {
-                node = node.ParamChild;
-            }
-            else
-            {
-                return null;
+                if (node.ParamChild != null)
+                {
+                    node = node.ParamChild;
+                }
+                else
+                {
+                    return null;
+                }
             }
 
             start = i + 1;

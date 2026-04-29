@@ -582,9 +582,11 @@ public sealed class SmokeTests
         try
         {
             stopTask = node.StopAsync();
+            // Handler is now cancellable via _receiveCts.Token — StopAsync
+            // should complete promptly rather than blocking until Release().
             await Assert
-                .That(await CompletesWithinAsync(stopTask, TimeSpan.FromMilliseconds(200)))
-                .IsFalse();
+                .That(await CompletesWithinAsync(stopTask, TimeSpan.FromSeconds(2)))
+                .IsTrue();
         }
         finally
         {
@@ -689,16 +691,15 @@ public sealed class SmokeTests
         await client.SendAsync(new byte[] { 0x33 }, 1, new IPEndPoint(IPAddress.Loopback, port));
         await handler.Started.WaitAsync(TimeSpan.FromSeconds(5));
 
-        using var stopCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-        await Assert
-            .That(async () => await node.StopAsync(stopCts.Token))
-            .Throws<OperationCanceledException>();
-        await Assert.That(node.State).IsEqualTo(NodeState.Stopping);
-
-        handler.Release();
-        await node.StopAsync();
-        await handler.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+        // Handler is now cancellable via _receiveCts.Token — StopAsync
+        // completes promptly even with a short timeout.
+        using var stopCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        await node.StopAsync(stopCts.Token);
         await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+
+        // Release is a no-op (handler was already cancelled) but safe to call.
+        handler.Release();
+        await handler.Completed.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
     [Test]

@@ -4,7 +4,6 @@ internal sealed class TcpConnection : IAsyncDisposable
 {
     private const string OperationSend = "tcp.send";
     private const int MinimumReceiveBufferSize = 512;
-    private const int DefaultReceivePipePauseThresholdMultiplier = 4;
 
     private readonly TcpNode _node;
     private readonly Pipe _pipe;
@@ -108,7 +107,7 @@ internal sealed class TcpConnection : IAsyncDisposable
         catch (SocketException ex)
         {
             _node.ReportFault(NodeFaultCode.SendFailed, OperationSend, ex);
-            _ = _lifecycle.CloseCoreAsync(
+            _lifecycle.ScheduleClose(
                 TcpCloseReason.SendFault,
                 ex,
                 _node.Options.ConnectionHandler
@@ -118,7 +117,7 @@ internal sealed class TcpConnection : IAsyncDisposable
         catch (IOException ex)
         {
             _node.ReportFault(NodeFaultCode.SendFailed, OperationSend, ex);
-            _ = _lifecycle.CloseCoreAsync(
+            _lifecycle.ScheduleClose(
                 TcpCloseReason.SendFault,
                 ex,
                 _node.Options.ConnectionHandler
@@ -137,7 +136,7 @@ internal sealed class TcpConnection : IAsyncDisposable
 
     public void Close()
     {
-        _ = _lifecycle.CloseCoreAsync(
+        _lifecycle.ScheduleClose(
             TcpCloseReason.LocalClose,
             null,
             _node.Options.ConnectionHandler
@@ -146,7 +145,7 @@ internal sealed class TcpConnection : IAsyncDisposable
 
     public void Close(TcpCloseReason reason)
     {
-        _ = _lifecycle.CloseCoreAsync(reason, null, _node.Options.ConnectionHandler);
+        _lifecycle.ScheduleClose(reason, null, _node.Options.ConnectionHandler);
     }
 
     internal bool IsIdle(TimeSpan idleTimeout)
@@ -170,7 +169,7 @@ internal sealed class TcpConnection : IAsyncDisposable
     {
         var pauseThreshold =
             options.ReceivePipePauseThresholdBytes
-            ?? checked(receiveBufferSize * DefaultReceivePipePauseThresholdMultiplier);
+            ?? checked(receiveBufferSize * options.ReceivePipePauseThresholdMultiplier);
         return new PipeOptions(
             pauseWriterThreshold: pauseThreshold,
             resumeWriterThreshold: pauseThreshold / 2,

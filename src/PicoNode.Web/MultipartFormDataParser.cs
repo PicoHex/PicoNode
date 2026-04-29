@@ -168,14 +168,39 @@ public static class MultipartFormDataParser
 
     private static string? GetPartHeaderValue(string headers, string headerName)
     {
-        return (
-            from line in headers.Split("\r\n")
-            let colonIdx = line.IndexOf(':')
-            where colonIdx > 0
-            let key = line[..colonIdx].Trim()
-            where key.Equals(headerName, StringComparison.OrdinalIgnoreCase)
-            select line[(colonIdx + 1)..].Trim()
-        ).FirstOrDefault();
+        var remaining = headers.AsSpan();
+
+        while (remaining.Length > 0)
+        {
+            var lineEnd = remaining.IndexOf('\n');
+            ReadOnlySpan<char> line;
+
+            if (lineEnd >= 0)
+            {
+                var end = lineEnd > 0 && remaining[lineEnd - 1] == '\r'
+                    ? lineEnd - 1
+                    : lineEnd;
+                line = remaining[..end];
+                remaining = remaining[(lineEnd + 1)..];
+            }
+            else
+            {
+                line = remaining;
+                remaining = [];
+            }
+
+            var colonIdx = line.IndexOf(':');
+            if (colonIdx <= 0)
+                continue;
+
+            var key = line[..colonIdx].Trim();
+            if (!key.Equals(headerName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            return line[(colonIdx + 1)..].Trim().ToString();
+        }
+
+        return null;
     }
 
     private static string? GetHeaderValue(

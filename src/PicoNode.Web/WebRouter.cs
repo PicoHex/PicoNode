@@ -89,14 +89,14 @@ internal sealed class WebRouter
         CancellationToken cancellationToken
     )
     {
-        var path = context.Path;
+        var pathSpan = context.PathMemory.Span;
         var method = context.Request.Method;
         List<string>? allowedMethods = null;
 
-        // Try exact match
+        // Try exact match — Span-based for zero-allocation hot path
         if (
             _exactRouteTable.TryMatch(
-                path,
+                pathSpan,
                 method,
                 out var handler,
                 out var allowHeader
@@ -105,6 +105,9 @@ internal sealed class WebRouter
         {
             return handler(context, cancellationToken);
         }
+
+        // Cold paths (405 / param tree): lazy string allocation is acceptable
+        var path = context.Path;
 
         // Exact path exists but method did not match — collect methods for potential 405
         if (allowHeader is not null)
@@ -144,9 +147,10 @@ internal sealed class WebRouter
             }
             else
             {
+                var existing = new HashSet<string>(allowedMethods, StringComparer.Ordinal);
                 foreach (var m in paramMethods)
                 {
-                    if (!allowedMethods.Contains(m))
+                    if (existing.Add(m))
                     {
                         allowedMethods.Add(m);
                     }
