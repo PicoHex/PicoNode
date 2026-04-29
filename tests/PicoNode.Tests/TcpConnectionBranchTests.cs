@@ -667,27 +667,44 @@ public sealed class TcpConnectionBranchTests
         return new TcpConnection(node, serverSocket);
     }
 
+    private static object GetLifecycle(TcpConnection connection)
+    {
+        var field = typeof(TcpConnection).GetField(
+            "_lifecycle",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        return field.GetValue(connection)!;
+    }
+
+    private static object GetReceiveLoop(TcpConnection connection)
+    {
+        var field = typeof(TcpConnection).GetField(
+            "_receiveLoop",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        return field.GetValue(connection)!;
+    }
+
     private static TcpCloseReason InvokeMapSocketExceptionReason(
         TcpConnection connection,
         SocketException exception,
         TcpCloseReason currentReason
     )
     {
-        var method = typeof(TcpConnection).GetMethod(
+        var lifecycle = GetLifecycle(connection);
+        var method = typeof(TcpConnectionLifecycle).GetMethod(
             "MapSocketExceptionReason",
             BindingFlags.Instance | BindingFlags.NonPublic
         )!;
-
-        return (TcpCloseReason)method.Invoke(connection, [exception, currentReason])!;
+        return (TcpCloseReason)method.Invoke(lifecycle, [exception, currentReason])!;
     }
 
     private static bool InvokeShouldReportReceiveFault(TcpCloseReason reason)
     {
-        var method = typeof(TcpConnection).GetMethod(
+        var method = typeof(TcpConnectionLifecycle).GetMethod(
             "ShouldReportReceiveFault",
             BindingFlags.Static | BindingFlags.NonPublic
         )!;
-
         return (bool)method.Invoke(null, [reason])!;
     }
 
@@ -696,22 +713,24 @@ public sealed class TcpConnectionBranchTests
         TcpCloseReason reason
     )
     {
-        var method = typeof(TcpConnection).GetMethod(
+        var method = typeof(TcpConnectionReceiveLoop).GetMethod(
             "NormalizeCompletionReason",
-            BindingFlags.Instance | BindingFlags.NonPublic
+            BindingFlags.Static | BindingFlags.NonPublic
         )!;
-
-        return (TcpCloseReason)method.Invoke(connection, [reason])!;
+        var cts = (CancellationTokenSource)typeof(TcpConnection)
+            .GetField("_cts", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(connection)!;
+        return (TcpCloseReason)method.Invoke(null, [reason, cts.Token])!;
     }
 
     private static void InvokeShutdownSocketSafely(TcpConnection connection)
     {
-        var method = typeof(TcpConnection).GetMethod(
+        var lifecycle = GetLifecycle(connection);
+        var method = typeof(TcpConnectionLifecycle).GetMethod(
             "ShutdownSocketSafely",
             BindingFlags.Instance | BindingFlags.NonPublic
         )!;
-
-        method.Invoke(connection, []);
+        method.Invoke(lifecycle, []);
     }
 
     private static Task InvokeConnectedAsync(
@@ -721,12 +740,11 @@ public sealed class TcpConnectionBranchTests
         CancellationToken cancellationToken
     )
     {
-        var method = typeof(TcpConnection).GetMethod(
+        var method = typeof(TcpConnectionReceiveLoop).GetMethod(
             "InvokeConnectedAsync",
-            BindingFlags.Instance | BindingFlags.NonPublic
+            BindingFlags.Static | BindingFlags.NonPublic
         )!;
-
-        return (Task)method.Invoke(connection, [handler, context, cancellationToken])!;
+        return (Task)method.Invoke(null, [handler, context, cancellationToken])!;
     }
 
     private static Task InvokeClosedHandlerAsync(
@@ -736,22 +754,22 @@ public sealed class TcpConnectionBranchTests
         Exception? error
     )
     {
-        var method = typeof(TcpConnection).GetMethod(
+        var lifecycle = GetLifecycle(connection);
+        var method = typeof(TcpConnectionLifecycle).GetMethod(
             "InvokeClosedHandlerAsync",
             BindingFlags.Instance | BindingFlags.NonPublic
         )!;
-
-        return (Task)method.Invoke(connection, [handler, reason, error])!;
+        return (Task)method.Invoke(lifecycle, [handler, reason, error])!;
     }
 
     private static ITcpConnectionContext GetConnectionContext(TcpConnection connection)
     {
-        var field = typeof(TcpConnection).GetField(
+        var lifecycle = GetLifecycle(connection);
+        var field = typeof(TcpConnectionLifecycle).GetField(
             "_context",
             BindingFlags.Instance | BindingFlags.NonPublic
         )!;
-
-        return (ITcpConnectionContext)field.GetValue(connection)!;
+        return (ITcpConnectionContext)field.GetValue(lifecycle)!;
     }
 
     private static int InvokeAdvanceSentSegments(
@@ -760,12 +778,10 @@ public sealed class TcpConnectionBranchTests
         int bytesSent
     )
     {
-        var sendPathType = typeof(TcpConnection).GetNestedType("SendPath", BindingFlags.NonPublic)!;
-        var method = sendPathType.GetMethod(
+        var method = typeof(SendPath).GetMethod(
             "AdvanceSentSegments",
             BindingFlags.Static | BindingFlags.NonPublic
         )!;
-
         return (int)method.Invoke(null, [segments, startIndex, bytesSent])!;
     }
 
@@ -774,8 +790,7 @@ public sealed class TcpConnectionBranchTests
         out ArraySegment<byte>[] segments
     )
     {
-        var sendPathType = typeof(TcpConnection).GetNestedType("SendPath", BindingFlags.NonPublic)!;
-        var method = sendPathType.GetMethod(
+        var method = typeof(SendPath).GetMethod(
             "TryBuildBufferList",
             BindingFlags.Static | BindingFlags.NonPublic
         )!;
@@ -790,12 +805,12 @@ public sealed class TcpConnectionBranchTests
         CancellationToken cancellationToken
     )
     {
-        var method = typeof(TcpConnection).GetMethod(
+        var receiveLoop = GetReceiveLoop(connection);
+        var method = typeof(TcpConnectionReceiveLoop).GetMethod(
             "PumpSocketToPipeAsync",
             BindingFlags.Instance | BindingFlags.NonPublic
         )!;
-
-        return await (Task<TcpCloseReason>)method.Invoke(connection, [cancellationToken])!;
+        return await (Task<TcpCloseReason>)method.Invoke(receiveLoop, [cancellationToken])!;
     }
 
     private static Pipe GetPipe(TcpConnection connection)
@@ -809,12 +824,12 @@ public sealed class TcpConnectionBranchTests
 
     private static async Task InvokeCancelConnectionAsync(TcpConnection connection)
     {
-        var method = typeof(TcpConnection).GetMethod(
+        var lifecycle = GetLifecycle(connection);
+        var method = typeof(TcpConnectionLifecycle).GetMethod(
             "CancelConnectionAsync",
             BindingFlags.Instance | BindingFlags.NonPublic
         )!;
-
-        await (Task)method.Invoke(connection, [])!;
+        await (Task)method.Invoke(lifecycle, [])!;
     }
 
     private static async Task<(Socket Client, Socket Server)> CreateConnectedSocketsAsync()

@@ -47,6 +47,7 @@ public sealed class HttpContractTests
                     nameof(HttpConnectionHandlerOptions.RequestTimeout),
                     nameof(HttpConnectionHandlerOptions.ServerHeader),
                     nameof(HttpConnectionHandlerOptions.StreamingResponseBufferSize),
+                    nameof(HttpConnectionHandlerOptions.WebSocketMessageHandler),
                 ]
             );
     }

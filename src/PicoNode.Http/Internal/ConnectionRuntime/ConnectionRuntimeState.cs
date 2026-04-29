@@ -7,4 +7,8 @@ internal sealed class ConnectionRuntimeState
     public bool ContinueSent { get; set; }
 
     public DateTime RequestParsingStartedAtUtc { get; set; }
+
+    public bool WebSocketHandshakeComplete { get; set; }
+
+    public WebSocketMessageProcessorState? WebSocketMessageState { get; set; }
 }

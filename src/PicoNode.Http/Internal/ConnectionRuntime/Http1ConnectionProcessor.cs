@@ -184,6 +184,7 @@ internal static class Http1ConnectionProcessor
             if (WebSocketUpgrade.IsUpgradeResponse(response))
             {
                 state.Protocol = ConnectionProtocol.WebSocket;
+                state.WebSocketHandshakeComplete = true;
             }
 
             return consumed;

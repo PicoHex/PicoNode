@@ -52,9 +52,10 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             return state.Protocol switch
             {
                 ConnectionProtocol.WebSocket
-                    => WebSocketConnectionProcessor.ProcessAsync(
+                    => ProcessWebSocketFrameAsync(
                         connection,
                         buffer,
+                        state,
                         cancellationToken
                     ),
                 ConnectionProtocol.Http2
@@ -62,6 +63,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
                         connection,
                         buffer,
                         sendInitialSettings: false,
+                        _requestHandler,
                         cancellationToken
                     ),
                 _ => HandleHttp1Async(connection, buffer, cancellationToken),
@@ -79,6 +81,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
                     connection,
                     protocolDecision.Buffer,
                     sendInitialSettings: true,
+                    _requestHandler,
                     cancellationToken
                 );
             case DetectedProtocolKind.Http1:
@@ -135,6 +138,34 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             },
             protocol
         );
+    }
+
+    private async ValueTask<SequencePosition> ProcessWebSocketFrameAsync(
+        ITcpConnectionContext connection,
+        ReadOnlySequence<byte> buffer,
+        ConnectionRuntimeState state,
+        CancellationToken cancellationToken
+    )
+    {
+        if (state.WebSocketHandshakeComplete)
+        {
+            state.WebSocketMessageState ??= new WebSocketMessageProcessorState();
+            return await WebSocketMessageProcessor.ProcessAsync(
+                connection,
+                buffer,
+                _options.WebSocketMessageHandler,
+                cancellationToken,
+                state.WebSocketMessageState
+            );
+        }
+
+        var consumed = await WebSocketConnectionProcessor.ProcessAsync(
+            connection,
+            buffer,
+            cancellationToken
+        );
+        state.WebSocketHandshakeComplete = true;
+        return consumed;
     }
 
     private static ProtocolDecision DetectProtocol(ReadOnlySequence<byte> buffer)

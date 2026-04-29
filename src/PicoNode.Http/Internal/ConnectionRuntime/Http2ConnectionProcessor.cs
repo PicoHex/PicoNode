@@ -6,6 +6,7 @@ internal static class Http2ConnectionProcessor
         ITcpConnectionContext connection,
         ReadOnlySequence<byte> buffer,
         bool sendInitialSettings,
+        HttpRequestHandler requestHandler,
         CancellationToken cancellationToken
     )
     {
@@ -44,7 +45,7 @@ internal static class Http2ConnectionProcessor
             consumed = remaining.GetPosition(frameConsumed);
             remaining = remaining.Slice(frameConsumed);
 
-            if (await HandleFrameAsync(connection, frame!, cancellationToken))
+            if (await HandleFrameAsync(connection, frame!, requestHandler, cancellationToken))
             {
                 return consumed;
             }
@@ -56,6 +57,7 @@ internal static class Http2ConnectionProcessor
     private static async ValueTask<bool> HandleFrameAsync(
         ITcpConnectionContext connection,
         Http2Frame frame,
+        HttpRequestHandler requestHandler,
         CancellationToken cancellationToken
     )
     {
@@ -117,8 +119,17 @@ internal static class Http2ConnectionProcessor
                 return false;
 
             case Http2FrameType.Headers:
+                return await Http2StreamHandler.ProcessHeadersFrame(
+                    connection,
+                    frame,
+                    requestHandler,
+                    cancellationToken
+                );
+
             case Http2FrameType.Data:
             case Http2FrameType.Priority:
+                return false;
+
             case Http2FrameType.PushPromise:
             case Http2FrameType.Continuation:
                 await SendGoAwayAndCloseAsync(
