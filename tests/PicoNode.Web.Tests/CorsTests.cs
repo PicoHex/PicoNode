@@ -15,6 +15,7 @@ public sealed class CorsTests
         {
             Method = method,
             Target = "/api/data",
+            Path = "/api/data",
             Version = HttpVersion.Http11,
             HeaderFields = headers.ToList(),
             Headers = dict,

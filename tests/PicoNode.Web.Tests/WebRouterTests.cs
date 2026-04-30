@@ -374,8 +374,11 @@ public sealed class WebRouterTests
         WebRequestHandler fallback
     ) => new(routes, fallback);
 
-    private static WebContext CreateContext(string method, string target) =>
-        WebContext.Create(new HttpRequest { Method = method, Target = target });
+    private static WebContext CreateContext(string method, string target)
+    {
+        var q = target.IndexOf('?');
+        return WebContext.Create(new HttpRequest { Method = method, Target = target, Path = q >= 0 ? target[..q] : target, QueryString = q >= 0 ? target[(q + 1)..] : string.Empty });
+    }
 
     [Test]
     public async Task HandleAsync_invokes_fallback_for_unknown_path()

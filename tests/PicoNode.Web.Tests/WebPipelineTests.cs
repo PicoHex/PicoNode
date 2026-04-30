@@ -145,6 +145,9 @@ public sealed class WebPipelineTests
         return terminal;
     }
 
-    private static WebContext CreateContext(string method, string target) =>
-        WebContext.Create(new HttpRequest { Method = method, Target = target });
+    private static WebContext CreateContext(string method, string target)
+    {
+        var q = target.IndexOf('?');
+        return WebContext.Create(new HttpRequest { Method = method, Target = target, Path = q >= 0 ? target[..q] : target, QueryString = q >= 0 ? target[(q + 1)..] : string.Empty });
+    }
 }

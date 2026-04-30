@@ -87,6 +87,15 @@ public sealed class WebContextTests
         await Assert.That(context.Query["hello key"]).IsEqualTo("value");
     }
 
-    private static HttpRequest CreateRequest(string method, string target) =>
-        new() { Method = method, Target = target, };
+    private static HttpRequest CreateRequest(string method, string target)
+    {
+        var q = target.IndexOf('?');
+        return new()
+        {
+            Method = method,
+            Target = target,
+            Path = q >= 0 ? target[..q] : target,
+            QueryString = q >= 0 ? target[(q + 1)..] : string.Empty,
+        };
+    }
 }

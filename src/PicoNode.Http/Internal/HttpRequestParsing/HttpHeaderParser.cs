@@ -9,10 +9,14 @@ internal static class HttpHeaderParser
     )
     {
         var headerFields = new List<KeyValuePair<string, string>>(capacity: 16);
-        var combinedHeaders = new Dictionary<string, List<string>>(
+        // Single-value dictionary for the common case (no repeated headers).
+        // A separate multiValues dictionary is allocated only when a duplicate
+        // header is detected, avoiding per-header List<string> allocations.
+        var headers = new Dictionary<string, string>(
             capacity: 16,
             StringComparer.OrdinalIgnoreCase
         );
+        Dictionary<string, List<string>>? multiValues = null;
         var contentLength = 0L;
         var hasContentLength = false;
         var hasHost = false;
@@ -99,26 +103,31 @@ internal static class HttpHeaderParser
 
             headerFields.Add(new KeyValuePair<string, string>(name, value));
 
-            if (!combinedHeaders.TryGetValue(name, out var values))
+            // Fast path: first occurrence → store as single string value (no allocation beyond the dict entry).
+            if (!headers.TryAdd(name, value))
             {
-                values = new List<string>(capacity: 1);
-                combinedHeaders[name] = values;
+                // Duplicate header — promote to multi-value list.
+                multiValues ??= new Dictionary<string, List<string>>(
+                    StringComparer.OrdinalIgnoreCase
+                );
+
+                if (!multiValues.TryGetValue(name, out var values))
+                {
+                    values = new List<string>(capacity: 2) { headers[name] };
+                    multiValues[name] = values;
+                }
+                values.Add(value);
             }
-            values.Add(value);
         }
 
-        // Flatten combined multi-value headers into single-value dictionary.
-        // Single-value headers pass through without allocation; repeated headers
-        // are joined once instead of O(n²) string concatenation.
-        var headers = new Dictionary<string, string>(
-            combinedHeaders.Count,
-            StringComparer.OrdinalIgnoreCase
-        );
-        foreach (var (headerName, headerValues) in combinedHeaders)
+        // Flatten multi-value headers back into the single-value dictionary.
+        // Single-value headers pass through with zero allocation.
+        if (multiValues is not null)
         {
-            headers[headerName] = headerValues.Count == 1
-                ? headerValues[0]
-                : string.Join(", ", headerValues);
+            foreach (var (headerName, values) in multiValues)
+            {
+                headers[headerName] = string.Join(", ", values);
+            }
         }
 
         if (!hasHost && version == HttpVersion.Http11)

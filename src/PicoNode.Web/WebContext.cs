@@ -43,23 +43,6 @@ public sealed class WebContext
 
     public static WebContext Create(HttpRequest request)
     {
-        var target = request.Target;
-        var queryIndex = target.IndexOf('?');
-
-        ReadOnlyMemory<char> path;
-        string queryString;
-
-        if (queryIndex >= 0)
-        {
-            path = target.AsMemory(0, queryIndex);
-            queryString = target[(queryIndex + 1)..];
-        }
-        else
-        {
-            path = target.AsMemory();
-            queryString = string.Empty;
-        }
-
-        return new WebContext(request, path, queryString);
+        return new WebContext(request, request.Path.AsMemory(), request.QueryString);
     }
 }
