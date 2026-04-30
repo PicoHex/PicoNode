@@ -393,7 +393,7 @@ public sealed class CompressionMiddlewareTests
         await source.FirstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
 
         var disposeTask = response.BodyStream.DisposeAsync().AsTask();
-        source.AllowReadToContinue.TrySetCanceled();
+        source.AllowReadToContinue.TrySetResult();
         await disposeTask.WaitAsync(TimeSpan.FromSeconds(3));
         await Assert.That(readTask.IsCompleted).IsTrue();
         await Assert.That(source.DisposeCount).IsEqualTo(1);

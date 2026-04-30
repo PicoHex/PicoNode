@@ -76,7 +76,7 @@ public sealed class InterfaceContractTests
             .IsEqualTo(typeof(IPEndPoint));
         await Assert
             .That(type.GetMethod(nameof(IUdpDatagramContext.SendAsync))?.ReturnType)
-            .IsEqualTo(typeof(ValueTask));
+            .IsEqualTo(typeof(Task));
     }
 
     [Test]
@@ -86,6 +86,6 @@ public sealed class InterfaceContractTests
 
         await Assert
             .That(type.GetMethod(nameof(IUdpDatagramHandler.OnDatagramAsync))?.ReturnType)
-            .IsEqualTo(typeof(ValueTask));
+            .IsEqualTo(typeof(Task));
     }
 }

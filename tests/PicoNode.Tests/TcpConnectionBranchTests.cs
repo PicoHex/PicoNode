@@ -509,9 +509,10 @@ public sealed class TcpConnectionBranchTests
         try
         {
             var connection = CreateConnection(pair.Server);
+            var cts = GetCtsToken(connection);
             await InvokeCancelConnectionAsync(connection);
 
-            var reason = await InvokePumpSocketToPipeAsync(connection, CancellationToken.None);
+            var reason = await InvokePumpSocketToPipeAsync(connection, cts);
 
             await Assert.That(reason).IsEqualTo(TcpCloseReason.RemoteClosed);
             await connection.DisposeAsync();
@@ -831,6 +832,17 @@ public sealed class TcpConnectionBranchTests
             BindingFlags.Instance | BindingFlags.NonPublic
         )!;
         await (Task)method.Invoke(lifecycle, [])!;
+    }
+
+    private static CancellationToken GetCtsToken(TcpConnection connection)
+    {
+        var lifecycle = GetLifecycle(connection);
+        var field = typeof(TcpConnectionLifecycle).GetField(
+            "_cts",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        var cts = (CancellationTokenSource)field.GetValue(lifecycle)!;
+        return cts.Token;
     }
 
     private static async Task<(Socket Client, Socket Server)> CreateConnectedSocketsAsync()
