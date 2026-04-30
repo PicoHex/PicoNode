@@ -48,8 +48,10 @@ public static class WebSocketUpgrade
             return false;
 
         return response.Headers.TryGetValue("Upgrade", out var upgrade)
+            && upgrade is not null
             && upgrade.Contains("websocket", StringComparison.OrdinalIgnoreCase)
             && response.Headers.TryGetValue(HttpHeaderNames.Connection, out var connection)
+            && connection is not null
             && connection.Contains("Upgrade", StringComparison.OrdinalIgnoreCase);
     }
 

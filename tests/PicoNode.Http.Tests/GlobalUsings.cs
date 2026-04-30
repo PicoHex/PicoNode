@@ -1,4 +1,9 @@
 global using System.Buffers;
 global using System.Collections.Generic;
+global using System.Net;
 global using System.Reflection;
+global using System.Text;
 global using PicoNode.Abs;
+global using PicoNode.Http.Internal;
+global using PicoNode.Http.Internal.ConnectionRuntime;
+global using PicoNode.Http.Internal.Hpack;

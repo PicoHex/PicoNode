@@ -1,10 +1,5 @@
 namespace PicoNode.Http.Tests;
 
-using System.Net;
-using System.Text;
-using PicoNode.Http.Internal.ConnectionRuntime;
-using PicoNode.Http.Internal.Hpack;
-
 public sealed class Http2StreamHandlerTests
 {
     private static readonly byte[] MinimalHpackPayload = BuildMinimalHpack("GET", "/foo");

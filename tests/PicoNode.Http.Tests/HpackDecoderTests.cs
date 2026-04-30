@@ -1,7 +1,5 @@
 namespace PicoNode.Http.Tests;
 
-using PicoNode.Http.Internal.Hpack;
-
 public sealed class HpackDecoderTests
 {
     // ── Indexed header field tests ──────────────────────────────────────

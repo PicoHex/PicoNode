@@ -1,7 +1,5 @@
 namespace PicoNode.Http;
 
-using PicoNode.Http.Internal.ConnectionRuntime;
-
 public sealed class HttpConnectionHandler : ITcpConnectionHandler
 {
     private readonly HttpConnectionHandlerOptions _options;

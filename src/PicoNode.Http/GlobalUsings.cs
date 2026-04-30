@@ -1,7 +1,11 @@
 global using System.Buffers;
-global using System.Collections.Concurrent;
+global using System.Diagnostics.CodeAnalysis;
 global using System.Globalization;
 global using System.Runtime.CompilerServices;
 global using System.Security.Cryptography;
 global using System.Text;
 global using PicoNode.Abs;
+global using PicoNode.Http.Internal;
+global using PicoNode.Http.Internal.ConnectionRuntime;
+global using PicoNode.Http.Internal.Hpack;
+global using PicoNode.Http.Internal.HttpRequestParsing;

@@ -1,7 +1,5 @@
 namespace PicoNode.Http.Internal.ConnectionRuntime;
 
-using System.Buffers;
-
 internal static class WebSocketConnectionProcessor
 {
     public static async ValueTask<SequencePosition> ProcessAsync(

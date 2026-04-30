@@ -1,7 +1,5 @@
 namespace PicoNode.Http.Internal;
 
-using PicoNode.Http.Internal.HttpRequestParsing;
-
 internal enum HttpRequestParseStatus
 {
     Incomplete,

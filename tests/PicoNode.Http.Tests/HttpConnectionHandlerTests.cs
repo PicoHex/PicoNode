@@ -1,6 +1,3 @@
-using System.Net;
-using System.Text;
-
 namespace PicoNode.Http.Tests;
 
 public sealed class HttpConnectionHandlerTests

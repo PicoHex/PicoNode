@@ -1,8 +1,5 @@
 namespace PicoNode.Http.Internal.ConnectionRuntime;
 
-using System.Buffers;
-using PicoNode.Http.Internal.Hpack;
-
 internal static class Http2StreamHandler
 {
     private const int SingleStreamId = 1;

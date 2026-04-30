@@ -1,5 +1,3 @@
-using PicoNode.Http.Internal;
-
 namespace PicoNode.Http;
 
 public sealed class HttpRouter

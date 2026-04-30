@@ -1,5 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-
 namespace PicoNode.Http.Internal;
 
 /// <summary>

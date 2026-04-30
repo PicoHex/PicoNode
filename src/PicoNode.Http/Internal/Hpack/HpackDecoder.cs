@@ -1,7 +1,5 @@
 namespace PicoNode.Http.Internal.Hpack;
 
-using System.Text;
-
 internal static class HpackDecoder
 {
     // ── Huffman code table per RFC 7541 Appendix B ──────────────────────

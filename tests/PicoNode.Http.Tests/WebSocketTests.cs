@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace PicoNode.Http.Tests;
 
 public sealed class WebSocketTests
