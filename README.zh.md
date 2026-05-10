@@ -470,7 +470,7 @@ dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmark
 
 - **.NET 10.0+**（PicoNode、PicoNode.Http、PicoNode.Web、PicoWeb）
 - **.NET Standard 2.0**（PicoNode.Abs — 最大兼容性）
-- PicoHex 生态（可选）：PicoDI 2026.6.0+、PicoLog 2026.2.3+、PicoCfg 2026.3.1+
+- PicoHex 生态（可选）：PicoDI、PicoLog、PicoCfg
 
 ## 许可证
 

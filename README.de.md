@@ -470,7 +470,7 @@ Die Benchmarks decken HTTP-Parsing, Router-Dispatch (Treffer/Fehler/405), die ge
 
 - **.NET 10.0+** (PicoNode, PicoNode.Http, PicoNode.Web, PicoWeb)
 - **.NET Standard 2.0** (PicoNode.Abs — maximale Kompatibilität)
-- PicoHex-Ökosystem (optional): PicoDI 2026.6.0+, PicoLog 2026.2.3+, PicoCfg 2026.3.1+
+- PicoHex-Ökosystem (optional): PicoDI, PicoLog, PicoCfg
 
 ## Lizenz
 

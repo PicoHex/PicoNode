@@ -470,7 +470,7 @@ Les benchmarks couvrent l'analyse HTTP, la distribution du routeur (succès/éch
 
 - **.NET 10.0+** (PicoNode, PicoNode.Http, PicoNode.Web, PicoWeb)
 - **.NET Standard 2.0** (PicoNode.Abs — compatibilité maximale)
-- Écosystème PicoHex (optionnel) : PicoDI 2026.6.0+, PicoLog 2026.2.3+, PicoCfg 2026.3.1+
+- Écosystème PicoHex (optionnel) : PicoDI, PicoLog, PicoCfg
 
 ## Licence
 
