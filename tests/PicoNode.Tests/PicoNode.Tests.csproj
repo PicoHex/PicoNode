@@ -11,10 +11,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="PicoCfg" Version="0.0.0-dev" />
+    <PackageReference Include="PicoCfg.Gen" Version="2026.3.1" />
     <PackageReference Include="TUnit" Version="1.40.10" />
     <ProjectReference Include="..\..\src\PicoNode.Abs\PicoNode.Abs.csproj" />
     <ProjectReference Include="..\..\src\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />
+    <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
   </ItemGroup>
 
 </Project>

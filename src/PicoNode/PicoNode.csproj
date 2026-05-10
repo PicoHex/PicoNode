@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -10,6 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="PicoCfg.Abs" Version="2026.3.1" />
+    <PackageReference Include="PicoCfg.Gen" Version="2026.3.1" />
+    <PackageReference Include="PicoLog.Abs" Version="2026.2.3" />
     <ProjectReference Include="..\PicoNode.Abs\PicoNode.Abs.csproj" />
   </ItemGroup>
 

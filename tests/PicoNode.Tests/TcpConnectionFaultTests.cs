@@ -8,22 +8,12 @@ public sealed class TcpConnectionFaultTests
         var pair = await CreateConnectedSocketsAsync();
         try
         {
-            var faults = new ConcurrentQueue<NodeFault>();
-            var faultReported = new TaskCompletionSource<NodeFault>(
+            var logger = new SpyLogger();
+            var faultReported = new TaskCompletionSource<LogCall>(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
 
-            var connection = CreateConnection(
-                pair.Server,
-                fault =>
-                {
-                    faults.Enqueue(fault);
-                    if (fault.Operation == "tcp.close.core")
-                    {
-                        faultReported.TrySetResult(fault);
-                    }
-                }
-            );
+            var connection = CreateConnection(pair.Server, logger);
 
             var disposedCts = new CancellationTokenSource();
             disposedCts.Dispose();
@@ -40,12 +30,13 @@ public sealed class TcpConnectionFaultTests
 
             connection.Close();
 
-            var fault = await faultReported.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            await Task.Delay(500);
 
-            await Assert.That(faults.Count).IsEqualTo(1);
-            await Assert.That(fault.Code).IsEqualTo(NodeFaultCode.HandlerFailed);
-            await Assert.That(fault.Operation).IsEqualTo("tcp.close.core");
-            await Assert.That(fault.Exception).IsTypeOf<ObjectDisposedException>();
+            await Assert.That(logger.Calls.Count).IsEqualTo(1);
+            await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+            await Assert.That(call!.Level).IsEqualTo(LogLevel.Error);
+            await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.HandlerFailed);
+            await Assert.That(call.Exception).IsTypeOf<ObjectDisposedException>();
             await connection.DisposeAsync();
         }
         finally
@@ -57,7 +48,7 @@ public sealed class TcpConnectionFaultTests
 
     private static TcpConnection CreateConnection(
         Socket serverSocket,
-        Action<NodeFault>? faultHandler = null
+        ILogger? logger = null
     )
     {
         var node = new TcpNode(
@@ -65,7 +56,7 @@ public sealed class TcpConnectionFaultTests
             {
                 Endpoint = (IPEndPoint)serverSocket.LocalEndPoint!,
                 ConnectionHandler = new NoOpTcpHandler(),
-                FaultHandler = faultHandler,
+                Logger = logger,
             }
         );
 

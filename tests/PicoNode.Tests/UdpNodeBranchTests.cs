@@ -136,12 +136,8 @@ public sealed class UdpNodeBranchTests
     [Test]
     public async Task ReportFault_swallows_fault_handler_exceptions()
     {
-        var calls = 0;
-        var node = CreateNode(_ =>
-        {
-            calls++;
-            throw new InvalidOperationException("fault handler failed");
-        });
+        var logger = new SpyLogger { ThrowOnLog = true };
+        var node = CreateNode(logger);
 
         InvokeReportFault(
             node,
@@ -150,14 +146,14 @@ public sealed class UdpNodeBranchTests
             new SocketException((int)SocketError.NetworkDown)
         );
 
-        await Assert.That(calls).IsEqualTo(1);
+        await Assert.That(logger.Calls.Count).IsEqualTo(1);
         await node.DisposeAsync();
     }
 
     [Test]
     public async Task StartAsync_cannot_be_called_twice()
     {
-        await using var node = CreateNode(_ => { });
+        await using var node = CreateNode(null);
 
         await node.StartAsync();
 
@@ -167,7 +163,7 @@ public sealed class UdpNodeBranchTests
     [Test]
     public async Task DisposeAsync_is_idempotent_and_sets_disposed_state()
     {
-        var node = CreateNode(_ => { });
+        var node = CreateNode(null);
 
         await node.StartAsync();
         await node.DisposeAsync();
@@ -188,33 +184,33 @@ public sealed class UdpNodeBranchTests
         );
         blocker.Bind(endpoint);
 
-        var faults = new ConcurrentQueue<NodeFault>();
+        var logger = new SpyLogger();
         await using var node = new UdpNode(
             new UdpNodeOptions
             {
                 Endpoint = (IPEndPoint)blocker.LocalEndPoint!,
                 DatagramHandler = new NoOpUdpHandler(),
-                FaultHandler = faults.Enqueue,
+                Logger = logger,
             }
         );
 
         var exception = await Assert.That(() => node.StartAsync()).Throws<SocketException>();
 
         await Assert.That(exception).IsNotNull();
-        await Assert.That(faults.Count).IsEqualTo(1);
-        await Assert.That(faults.TryPeek(out var fault)).IsTrue();
-        await Assert.That(fault!.Code).IsEqualTo(NodeFaultCode.StartFailed);
-        await Assert.That(fault.Operation).IsEqualTo("udp.start");
+        await Assert.That(logger.Calls.Count).IsEqualTo(1);
+        await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+        await Assert.That(call!.Level).IsEqualTo(LogLevel.Error);
+        await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.StartFailed);
         await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
     }
 
-    private static UdpNode CreateNode(Action<NodeFault> faultHandler) =>
+    private static UdpNode CreateNode(ILogger? logger) =>
         new(
             new UdpNodeOptions
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
                 DatagramHandler = new NoOpUdpHandler(),
-                FaultHandler = faultHandler,
+                Logger = logger,
             }
         );
 

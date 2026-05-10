@@ -17,4 +17,6 @@ public sealed class HttpConnectionHandlerOptions
         TimeSpan.FromSeconds(DefaultRequestTimeoutSeconds);
 
     public WebSocketMessageHandler? WebSocketMessageHandler { get; init; }
+
+    public ILogger? Logger { get; init; }
 }

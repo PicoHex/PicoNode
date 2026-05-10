@@ -10,14 +10,15 @@ public static class MultipartFormDataParser
     private static ReadOnlySpan<byte> DoubleCrLf => "\r\n\r\n"u8;
     private static ReadOnlySpan<byte> DashDash => "--"u8;
 
-    public static MultipartFormData? Parse(HttpRequest request)
+    public static MultipartFormData? Parse(HttpRequest request, ILogger? logger = null)
     {
-        return Parse(request, new MultipartFormDataParserOptions());
+        return Parse(request, new MultipartFormDataParserOptions(), logger);
     }
 
     public static MultipartFormData? Parse(
         HttpRequest request,
-        MultipartFormDataParserOptions options
+        MultipartFormDataParserOptions options,
+        ILogger? logger = null
     )
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -35,7 +36,7 @@ public static class MultipartFormDataParser
             return null;
 
         var boundary = ExtractBoundary(contentType, options.MaxBoundaryLength);
-        return boundary is null ? null : ParseBody(request.Body, Encoding.UTF8.GetBytes(boundary));
+        return boundary is null ? null : ParseBody(request.Body, Encoding.UTF8.GetBytes(boundary), logger);
     }
 
     internal static string? ExtractBoundary(
@@ -52,7 +53,7 @@ public static class MultipartFormDataParser
         return IsValidBoundary(boundary, maxBoundaryLength) ? boundary : null;
     }
 
-    private static MultipartFormData ParseBody(ReadOnlyMemory<byte> body, byte[] boundary)
+    private static MultipartFormData ParseBody(ReadOnlyMemory<byte> body, byte[] boundary, ILogger? logger = null)
     {
         var bodySpan = body.Span;
         var fields = new List<MultipartFormField>();
@@ -101,7 +102,7 @@ public static class MultipartFormDataParser
             var content = body[pos..contentEnd];
             pos = nextDelimiter + delimiter.Length;
 
-            ParsePart(headerBytes, content, fields, files);
+            ParsePart(headerBytes, content, fields, files, logger);
         }
 
         return new MultipartFormData(fields, files);
@@ -111,10 +112,11 @@ public static class MultipartFormDataParser
         ReadOnlySpan<byte> headerBytes,
         ReadOnlyMemory<byte> content,
         List<MultipartFormField> fields,
-        List<MultipartFormFile> files
+        List<MultipartFormFile> files,
+        ILogger? logger = null
     )
     {
-        var headers = DecodeUtf8(headerBytes);
+        var headers = DecodeUtf8(headerBytes, logger);
         if (headers is null)
             return;
 
@@ -137,7 +139,7 @@ public static class MultipartFormDataParser
         }
         else
         {
-            var fieldValue = DecodeUtf8(content.Span);
+            var fieldValue = DecodeUtf8(content.Span, logger);
             if (fieldValue is null)
                 return;
 
@@ -268,14 +270,15 @@ public static class MultipartFormDataParser
         return remaining.StartsWith(DashDash);
     }
 
-    private static string? DecodeUtf8(ReadOnlySpan<byte> value)
+    private static string? DecodeUtf8(ReadOnlySpan<byte> value, ILogger? logger = null)
     {
         try
         {
             return StrictUtf8.GetString(value);
         }
-        catch (DecoderFallbackException)
+        catch (DecoderFallbackException ex)
         {
+            logger?.Log(LogLevel.Debug, new EventId(0), "Decoder fallback in multipart parsing", ex);
             return null;
         }
     }

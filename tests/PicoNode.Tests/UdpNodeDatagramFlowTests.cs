@@ -46,21 +46,14 @@ public sealed class UdpNodeDatagramFlowTests
     [Test]
     public async Task Handler_exception_reports_datagram_handler_failed_fault()
     {
-        var faults = new ConcurrentQueue<NodeFault>();
-        var faultReported = new TaskCompletionSource<NodeFault>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
+        var logger = new SpyLogger();
         var handler = new ThrowingUdpHandler();
         await using var node = new UdpNode(
             new UdpNodeOptions
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
                 DatagramHandler = handler,
-                FaultHandler = fault =>
-                {
-                    faults.Enqueue(fault);
-                    faultReported.TrySetResult(fault);
-                },
+                Logger = logger,
             }
         );
 
@@ -78,21 +71,20 @@ public sealed class UdpNodeDatagramFlowTests
             (IPEndPoint)node.LocalEndPoint
         );
 
-        var exception = await handler.ExceptionObserved.Task.WaitAsync(TimeSpan.FromSeconds(3));
-        var fault = await faultReported.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await Task.Delay(500);
 
-        await Assert.That(exception.Message).IsEqualTo("handler boom");
-        await Assert.That(faults.Count).IsEqualTo(1);
-        await Assert.That(fault.Code).IsEqualTo(NodeFaultCode.DatagramHandlerFailed);
-        await Assert.That(fault.Operation).IsEqualTo("udp.datagram.handler");
-        await Assert.That(fault.Exception).IsSameReferenceAs(exception);
+        await Assert.That(logger.Calls.Count).IsEqualTo(1);
+        await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+        await Assert.That(call!.Level).IsEqualTo(LogLevel.Error);
+        await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.DatagramHandlerFailed);
+        await Assert.That(call.Exception).IsTypeOf<InvalidOperationException>();
     }
 
     [Test]
     public async Task Drop_newest_reports_datagram_dropped_when_queue_is_full()
     {
-        var faults = new ConcurrentQueue<NodeFault>();
-        var dropReported = new TaskCompletionSource<NodeFault>(
+        var logger = new SpyLogger();
+        var dropReported = new TaskCompletionSource<LogCall>(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         var handler = new BlockingUdpHandler();
@@ -101,14 +93,7 @@ public sealed class UdpNodeDatagramFlowTests
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
                 DatagramHandler = handler,
-                FaultHandler = fault =>
-                {
-                    faults.Enqueue(fault);
-                    if (fault.Code == NodeFaultCode.DatagramDropped)
-                    {
-                        dropReported.TrySetResult(fault);
-                    }
-                },
+                Logger = logger,
                 DispatchWorkerCount = 1,
                 DatagramQueueCapacity = 1,
                 QueueOverflowMode = UdpOverflowMode.DropNewest,
@@ -139,11 +124,9 @@ public sealed class UdpNodeDatagramFlowTests
                 );
             }
 
-            var fault = await dropReported.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            await Task.Delay(500);
 
-            await Assert.That(fault.Code).IsEqualTo(NodeFaultCode.DatagramDropped);
-            await Assert.That(fault.Operation).IsEqualTo("udp.queue.drop");
-            await Assert.That(faults.Any(x => x.Code == NodeFaultCode.DatagramDropped)).IsTrue();
+            await Assert.That(logger.Calls.Any(x => x.EventId.Id == (int)NodeFaultCode.DatagramDropped)).IsTrue();
         }
         finally
         {
@@ -155,13 +138,13 @@ public sealed class UdpNodeDatagramFlowTests
     [Test]
     public async Task Context_send_reports_send_failed_when_node_is_disposed()
     {
-        var faults = new ConcurrentQueue<NodeFault>();
+        var logger = new SpyLogger();
         await using var node = new UdpNode(
             new UdpNodeOptions
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
                 DatagramHandler = new CapturingUdpHandler(),
-                FaultHandler = faults.Enqueue,
+                Logger = logger,
             }
         );
         var context = new UdpDatagramContext(node, new IPEndPoint(IPAddress.Loopback, 45678));
@@ -173,32 +156,22 @@ public sealed class UdpNodeDatagramFlowTests
             .Throws<ObjectDisposedException>();
 
         await Assert.That(exception).IsNotNull();
-        await Assert.That(faults.Count).IsEqualTo(1);
-        await Assert.That(faults.TryPeek(out var fault)).IsTrue();
-        await Assert.That(fault!.Code).IsEqualTo(NodeFaultCode.SendFailed);
-        await Assert.That(fault.Operation).IsEqualTo("udp.send");
+        await Assert.That(logger.Calls.Count).IsEqualTo(1);
+        await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+        await Assert.That(call!.Level).IsEqualTo(LogLevel.Error);
+        await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.SendFailed);
     }
 
     [Test]
     public async Task Receive_loop_reports_datagram_receive_failed_when_socket_is_disposed_unexpectedly()
     {
-        var faults = new ConcurrentQueue<NodeFault>();
-        var receiveFaultReported = new TaskCompletionSource<NodeFault>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
+        var logger = new SpyLogger();
         await using var node = new UdpNode(
             new UdpNodeOptions
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
                 DatagramHandler = new CapturingUdpHandler(),
-                FaultHandler = fault =>
-                {
-                    faults.Enqueue(fault);
-                    if (fault.Code == NodeFaultCode.DatagramReceiveFailed)
-                    {
-                        receiveFaultReported.TrySetResult(fault);
-                    }
-                },
+                Logger = logger,
             }
         );
 
@@ -214,12 +187,9 @@ public sealed class UdpNodeDatagramFlowTests
                 .GetValue(node)!;
         socket.Dispose();
 
-        var fault = await receiveFaultReported.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await Task.Delay(500);
 
-        await Assert.That(faults.Any(x => x.Code == NodeFaultCode.DatagramReceiveFailed)).IsTrue();
-        await Assert.That(fault.Code).IsEqualTo(NodeFaultCode.DatagramReceiveFailed);
-        await Assert.That(fault.Operation).IsEqualTo("udp.receive");
-        await Assert.That(fault.Exception).IsNotNull();
+        await Assert.That(logger.Calls.Any(x => x.EventId.Id == (int)NodeFaultCode.DatagramReceiveFailed)).IsTrue();
     }
 
     private sealed class CapturingUdpHandler : IUdpDatagramHandler

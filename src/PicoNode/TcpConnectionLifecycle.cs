@@ -127,7 +127,7 @@ internal sealed class TcpConnectionLifecycle
             }
 
             await CancelConnectionAsync();
-            ShutdownSocketSafely();
+            ShutdownSocketSafely(_node.Options.Logger);
             await InvokeClosedHandlerAsync(handler, reason, error);
             await FinalizeCloseAsync();
         }
@@ -165,15 +165,15 @@ internal sealed class TcpConnectionLifecycle
         _socket.Dispose();
     }
 
-    private void ShutdownSocketSafely()
+    private void ShutdownSocketSafely(ILogger? logger)
     {
         try
         {
             _socket.Shutdown(SocketShutdown.Both);
         }
-        catch
+        catch (Exception ex)
         {
-            // Socket may already be disconnected or disposed; safe to ignore.
+            logger?.Log(LogLevel.Debug, new EventId(0), "Socket shutdown during graceful close failed", ex);
         }
     }
 

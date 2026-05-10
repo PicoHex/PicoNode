@@ -200,8 +200,15 @@ internal static class Http1ConnectionProcessor
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
+            options.Logger?.Log(
+                LogLevel.Error,
+                new EventId(0),
+                "Unhandled exception processing HTTP/1.1 request",
+                ex
+            );
+
             try
             {
                 await connection.SendAsync(InternalServerErrorBytes, cancellationToken);

@@ -21,13 +21,12 @@ public sealed class TcpNodeTlsAcceptLoopTests
     [Test]
     public async Task MaxConnections_check_rejects_before_tls_when_ssl_configured()
     {
-        var faults = new ConcurrentQueue<NodeFault>();
+        var logger = new SpyLogger();
         var pair = await CreateConnectedSocketsAsync();
         try
         {
-            var node = CreateTlsNode(faults.Enqueue, maxConnections: 1);
+            var node = CreateTlsNode(logger, maxConnections: 1);
 
-            // Pre-fill the connections dictionary to trigger the limit check
             var dummySocket = new Socket(
                 AddressFamily.InterNetwork,
                 SocketType.Stream,
@@ -38,10 +37,10 @@ public sealed class TcpNodeTlsAcceptLoopTests
 
             await InvokeProcessAcceptedSocketAsync(node, pair.Server);
 
-            await Assert.That(faults.Count).IsEqualTo(1);
-            await Assert.That(faults.TryPeek(out var fault)).IsTrue();
-            await Assert.That(fault!.Code).IsEqualTo(NodeFaultCode.SessionRejected);
-            await Assert.That(fault.Operation).IsEqualTo("tcp.reject.limit");
+            await Assert.That(logger.Calls.Count).IsEqualTo(1);
+            await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+            await Assert.That(call!.Level).IsEqualTo(LogLevel.Warning);
+            await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.SessionRejected);
             await Assert
                 .That(() => pair.Server.Send(new byte[] { 1 }, SocketFlags.None))
                 .Throws<ObjectDisposedException>();
@@ -59,9 +58,6 @@ public sealed class TcpNodeTlsAcceptLoopTests
     [Test]
     public async Task ProcessAcceptedSocketAsync_tls_path_returns_immediately_without_awaiting_handshake()
     {
-        // Verify the structural change: when SslOptions is set,
-        // ProcessAcceptedSocketAsync should return a completed task
-        // (fire-and-forget), not an in-progress task that represents the TLS handshake.
         var pair = await CreateConnectedSocketsAsync();
         try
         {
@@ -75,8 +71,6 @@ public sealed class TcpNodeTlsAcceptLoopTests
 
             var task = (Task)method.Invoke(node, [pair.Server])!;
 
-            // The task should complete quickly since TLS is fire-and-forget.
-            // It should not be awaiting the TLS handshake.
             var completed = await CompletesWithinAsync(task, TimeSpan.FromMilliseconds(500));
             await Assert.That(completed).IsTrue();
 
@@ -91,17 +85,17 @@ public sealed class TcpNodeTlsAcceptLoopTests
     [Test]
     public async Task Non_tls_path_still_tracks_and_increments_accepted()
     {
-        var faults = new ConcurrentQueue<NodeFault>();
+        var logger = new SpyLogger();
         var pair = await CreateConnectedSocketsAsync();
         try
         {
-            var node = CreateNode(faults.Enqueue);
+            var node = CreateNode(logger);
 
             var connectionsBefore = GetConnections(node).Count;
             await InvokeProcessAcceptedSocketAsync(node, pair.Server);
 
             await Assert.That(GetConnections(node).Count).IsEqualTo(connectionsBefore + 1);
-            await Assert.That(faults.Count).IsEqualTo(0);
+            await Assert.That(logger.Calls.Count).IsEqualTo(0);
 
             await node.DisposeAsync();
         }
@@ -112,7 +106,7 @@ public sealed class TcpNodeTlsAcceptLoopTests
     }
 
     private static TcpNode CreateTlsNode(
-        Action<NodeFault>? faultHandler = null,
+        ILogger? logger = null,
         int maxConnections = 10,
         X509Certificate2? cert = null
     )
@@ -123,7 +117,7 @@ public sealed class TcpNodeTlsAcceptLoopTests
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
                 ConnectionHandler = new NoOpTcpHandler(),
-                FaultHandler = faultHandler,
+                Logger = logger,
                 MaxConnections = maxConnections,
                 SslOptions = new SslServerAuthenticationOptions
                 {
@@ -133,13 +127,13 @@ public sealed class TcpNodeTlsAcceptLoopTests
         );
     }
 
-    private static TcpNode CreateNode(Action<NodeFault> faultHandler) =>
+    private static TcpNode CreateNode(ILogger? logger) =>
         new(
             new TcpNodeOptions
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
                 ConnectionHandler = new NoOpTcpHandler(),
-                FaultHandler = faultHandler,
+                Logger = logger,
             }
         );
 

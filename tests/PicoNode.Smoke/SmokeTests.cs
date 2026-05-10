@@ -603,14 +603,14 @@ public sealed class SmokeTests
     public async Task Udp_handler_fault_reports_fault_and_subsequent_datagram_still_processes()
     {
         var port = GetAvailablePort(SocketType.Dgram, ProtocolType.Udp);
-        var faults = new ConcurrentQueue<NodeFaultCode>();
+        var logger = new SmokeTestLogger();
 
         await using var node = new UdpNode(
             new UdpNodeOptions
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, port),
                 DatagramHandler = new ThrowOnceThenEchoUdpHandler(),
-                FaultHandler = fault => faults.Enqueue(fault.Code),
+                Logger = logger,
             }
         );
 
@@ -625,7 +625,7 @@ public sealed class SmokeTests
         await client.SendAsync(new byte[] { 0x20, 0x21 }, 2, remote);
         var echoed = await client.ReceiveAsync().WaitAsync(TimeSpan.FromSeconds(5));
 
-        await Assert.That(faults.Contains(NodeFaultCode.DatagramHandlerFailed)).IsTrue();
+        await Assert.That(logger.FaultCodes.Contains(NodeFaultCode.DatagramHandlerFailed)).IsTrue();
         await AssertPayloadEqualAsync(echoed.Buffer, new byte[] { 0x20, 0x21 });
     }
 
@@ -634,7 +634,7 @@ public sealed class SmokeTests
     {
         var port = GetAvailablePort(SocketType.Dgram, ProtocolType.Udp);
         var handler = new BlockingUdpHandler();
-        var faults = new ConcurrentQueue<NodeFaultCode>();
+        var logger = new SmokeTestLogger();
 
         await using var node = new UdpNode(
             new UdpNodeOptions
@@ -644,7 +644,7 @@ public sealed class SmokeTests
                 DispatchWorkerCount = 1,
                 DatagramQueueCapacity = 1,
                 QueueOverflowMode = UdpOverflowMode.DropNewest,
-                FaultHandler = fault => faults.Enqueue(fault.Code),
+                Logger = logger,
             }
         );
 
@@ -662,13 +662,13 @@ public sealed class SmokeTests
         }
 
         await EventuallyAsync(
-            () => Task.FromResult(faults.Contains(NodeFaultCode.DatagramDropped)),
+            () => Task.FromResult(logger.FaultCodes.Contains(NodeFaultCode.DatagramDropped)),
             TimeSpan.FromSeconds(5)
         );
 
         handler.Release();
         await handler.Completed.WaitAsync(TimeSpan.FromSeconds(5));
-        await Assert.That(faults.Contains(NodeFaultCode.DatagramDropped)).IsTrue();
+        await Assert.That(logger.FaultCodes.Contains(NodeFaultCode.DatagramDropped)).IsTrue();
     }
 
     [Test]
@@ -825,7 +825,7 @@ public sealed class SmokeTests
     {
         var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
         using var cert = CreateSelfSignedCertificate();
-        var faults = new ConcurrentBag<NodeFault>();
+        var logger = new SmokeTestLogger();
 
         await using var node = new TcpNode(
             new TcpNodeOptions
@@ -833,7 +833,7 @@ public sealed class SmokeTests
                 Endpoint = new IPEndPoint(IPAddress.Loopback, port),
                 ConnectionHandler = new TcpEchoHandler(),
                 DrainTimeout = TimeSpan.FromSeconds(2),
-                FaultHandler = faults.Add,
+                Logger = logger,
                 SslOptions = new SslServerAuthenticationOptions { ServerCertificate = cert, },
             }
         );
@@ -848,11 +848,11 @@ public sealed class SmokeTests
         client.Close();
 
         await EventuallyAsync(
-            () => Task.FromResult(faults.Any(f => f.Code == NodeFaultCode.TlsFailed)),
+            () => Task.FromResult(logger.FaultCodes.Contains(NodeFaultCode.TlsFailed)),
             TimeSpan.FromSeconds(5)
         );
 
-        await Assert.That(faults.Any(f => f.Code == NodeFaultCode.TlsFailed)).IsTrue();
+        await Assert.That(logger.FaultCodes.Contains(NodeFaultCode.TlsFailed)).IsTrue();
         await Assert.That(node.State).IsEqualTo(NodeState.Running);
     }
 
@@ -1334,6 +1334,30 @@ file sealed class BlockingUdpHandler : IUdpDatagramHandler
     }
 
     public void Release() => _release.TrySetResult();
+}
+
+file sealed class SmokeTestLogger : ILogger
+{
+    public ConcurrentBag<NodeFaultCode> FaultCodes { get; } = new();
+
+    public IDisposable BeginScope<TState>(TState state) => throw new NotSupportedException();
+
+    public void Log(LogLevel logLevel, string message, Exception? exception) { }
+    public void Log(LogLevel logLevel, string message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception) { }
+    public Task LogAsync(LogLevel logLevel, string message, Exception? exception = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task LogAsync(LogLevel logLevel, string message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public void Log(LogLevel logLevel, FormattableString message, Exception? exception = null) { }
+    public void Log(LogLevel logLevel, FormattableString message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null) { }
+    public Task LogAsync(LogLevel logLevel, FormattableString message, Exception? exception = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public Task LogAsync(LogLevel logLevel, FormattableString message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public void Log(LogLevel logLevel, EventId eventId, string message, Exception? exception) => FaultCodes.Add((NodeFaultCode)eventId.Id);
+    public void Log(LogLevel logLevel, EventId eventId, string message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception) => FaultCodes.Add((NodeFaultCode)eventId.Id);
+    public Task LogAsync(LogLevel logLevel, EventId eventId, string message, Exception? exception = null, CancellationToken cancellationToken = default) { FaultCodes.Add((NodeFaultCode)eventId.Id); return Task.CompletedTask; }
+    public Task LogAsync(LogLevel logLevel, EventId eventId, string message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null, CancellationToken cancellationToken = default) { FaultCodes.Add((NodeFaultCode)eventId.Id); return Task.CompletedTask; }
+    public void Log(LogLevel logLevel, EventId eventId, FormattableString message, Exception? exception = null) => FaultCodes.Add((NodeFaultCode)eventId.Id);
+    public void Log(LogLevel logLevel, EventId eventId, FormattableString message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null) => FaultCodes.Add((NodeFaultCode)eventId.Id);
+    public Task LogAsync(LogLevel logLevel, EventId eventId, FormattableString message, Exception? exception = null, CancellationToken cancellationToken = default) { FaultCodes.Add((NodeFaultCode)eventId.Id); return Task.CompletedTask; }
+    public Task LogAsync(LogLevel logLevel, EventId eventId, FormattableString message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null, CancellationToken cancellationToken = default) { FaultCodes.Add((NodeFaultCode)eventId.Id); return Task.CompletedTask; }
 }
 
 file sealed class ThrowOnceThenEchoUdpHandler : IUdpDatagramHandler

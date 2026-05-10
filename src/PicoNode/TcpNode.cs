@@ -13,10 +13,12 @@ public sealed class TcpNode : INode, IAsyncDisposable
     private readonly Socket _listener;
     private readonly SocketIoEventArgsPool _eventArgsPool;
     private readonly CancellationTokenSource _cts = new();
+    private readonly CancellationTokenSource _configCts = new();
     private readonly ConcurrentDictionary<long, TcpConnection> _connections = new();
     private readonly Lock _stateLock = new();
     private Task? _acceptTask;
     private Task? _idleMonitorTask;
+    private Task? _configReloadTask;
     private TaskCompletionSource<bool>? _drained;
     private volatile NodeState _state;
     private int _disposed;
@@ -112,6 +114,12 @@ public sealed class TcpNode : INode, IAsyncDisposable
             _acceptTask = AcceptLoopAsync();
             _idleMonitorTask = MonitorIdleConnectionsAsync();
             _state = NodeState.Running;
+
+            if (Options.Config is not null)
+            {
+                _configReloadTask = ConfigReloadLoopAsync(Options.Config, Options);
+            }
+
             return Task.CompletedTask;
         }
         catch (Exception ex)
@@ -360,8 +368,9 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 socket.Shutdown(SocketShutdown.Both);
             }
-            catch
-            { /* socket may already be disconnected — safe to ignore */
+            catch (Exception socketEx)
+            {
+                Options.Logger?.Log(LogLevel.Debug, new EventId(0), "Socket shutdown during TLS teardown failed", socketEx);
             }
             socket.Dispose();
             return null;
@@ -375,8 +384,9 @@ public sealed class TcpNode : INode, IAsyncDisposable
         {
             socket.Shutdown(SocketShutdown.Both);
         }
-        catch
-        { /* socket may already be disconnected — safe to ignore */
+        catch (Exception ex)
+        {
+            Options.Logger?.Log(LogLevel.Debug, new EventId(0), "Socket shutdown during reject cleanup failed", ex);
         }
 
         socket.Dispose();
@@ -440,7 +450,64 @@ public sealed class TcpNode : INode, IAsyncDisposable
     }
 
     internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null) =>
-        NodeHelper.ReportFault(Options.FaultHandler, code, operation, exception);
+        NodeHelper.ReportFault(Options.Logger, code, operation, exception);
+
+    private async Task ConfigReloadLoopAsync(ICfgRoot config, TcpNodeOptions options)
+    {
+        try
+        {
+            while (!_configCts.IsCancellationRequested)
+            {
+                await config.WaitForChangeAsync(_configCts.Token);
+
+                if (_configCts.IsCancellationRequested)
+                    break;
+
+                var reloaded = await config.ReloadAsync(_configCts.Token);
+                if (reloaded)
+                {
+                    ApplyConfigReload(config, options);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (_configCts.IsCancellationRequested)
+        { /* expected during shutdown */
+        }
+        catch
+        { /* config reload is best-effort */
+        }
+    }
+
+    private static void ApplyConfigReload(ICfg config, TcpNodeOptions options)
+    {
+        if (config.TryGetValue("MaxConnections", out var v) && int.TryParse(v, out var val))
+            options.MaxConnections = val;
+        if (config.TryGetValue("ReceiveSocketBufferSize", out v) && int.TryParse(v, out val))
+            options.ReceiveSocketBufferSize = val;
+        if (config.TryGetValue("SendSocketBufferSize", out v) && int.TryParse(v, out val))
+            options.SendSocketBufferSize = val;
+        if (config.TryGetValue("EnableAddressReuse", out v) && bool.TryParse(v, out var b))
+            options.EnableAddressReuse = b;
+        if (config.TryGetValue("EnableKeepAlive", out v) && bool.TryParse(v, out b))
+            options.EnableKeepAlive = b;
+        if (config.TryGetValue("NoDelay", out v) && bool.TryParse(v, out b))
+            options.NoDelay = b;
+        if (config.TryGetValue("Backlog", out v) && int.TryParse(v, out val))
+            options.Backlog = val;
+        if (config.TryGetValue("IdleTimeout", out v) && TimeSpan.TryParse(v, out var ts))
+            options.IdleTimeout = ts;
+        if (config.TryGetValue("IdleScanInterval", out v) && TimeSpan.TryParse(v, out ts))
+            options.IdleScanInterval = ts;
+        if (config.TryGetValue("AcceptFaultBackoff", out v) && TimeSpan.TryParse(v, out ts))
+            options.AcceptFaultBackoff = ts;
+        if (config.TryGetValue("DrainTimeout", out v) && TimeSpan.TryParse(v, out ts))
+            options.DrainTimeout = ts;
+        if (config.TryGetValue("ReceivePipePauseThresholdBytes", out v))
+            options.ReceivePipePauseThresholdBytes = int.TryParse(v, out val) ? val : null;
+        if (config.TryGetValue("ReceivePipePauseThresholdMultiplier", out v) && int.TryParse(v, out val))
+            options.ReceivePipePauseThresholdMultiplier = val;
+        // Endpoint, EnableDualMode, ConnectionHandler, LingerState, Logger, SslOptions are code-only
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -460,11 +527,25 @@ public sealed class TcpNode : INode, IAsyncDisposable
         }
         finally
         {
+            _configCts.Cancel();
             _cts.Dispose();
             _listener.Dispose();
             _eventArgsPool.Dispose();
             _state = NodeState.Disposed;
         }
+
+        if (_configReloadTask is not null)
+        {
+            try
+            {
+                await _configReloadTask;
+            }
+            catch
+            { /* best-effort */
+            }
+        }
+
+        _configCts.Dispose();
 
         if (stopException is not null)
         {

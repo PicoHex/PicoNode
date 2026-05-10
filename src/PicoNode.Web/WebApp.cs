@@ -60,7 +60,7 @@ public sealed class WebApp
     }
 
     /// <summary>Builds the middleware pipeline and returns an <c>ITcpConnectionHandler</c> (backed by <c>HttpConnectionHandler</c>) ready for use with TcpNode.</summary>
-    public ITcpConnectionHandler Build(PicoNode.Web.Abstractions.IServiceProvider? container = null)
+    public ITcpConnectionHandler Build(ISvcContainer? container = null)
     {
         _middlewares =  [.._middlewares];
         if (container is not null)
@@ -82,6 +82,7 @@ public sealed class WebApp
             {
                 RequestHandler = httpHandler,
                 ServerHeader = _options?.ServerHeader,
+                Logger = _options?.Logger,
                 MaxRequestBytes = _options?.MaxRequestBytes ?? 8192,
                 StreamingResponseBufferSize =
                     _options?.StreamingResponseBufferSize

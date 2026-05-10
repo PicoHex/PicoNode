@@ -167,8 +167,8 @@ public sealed class TcpNodeBranchTests
     [Test]
     public async Task RejectAcceptedSocket_reports_fault_and_disposes_socket()
     {
-        var faults = new ConcurrentQueue<NodeFault>();
-        var node = CreateNode(faults.Enqueue);
+        var logger = new SpyLogger();
+        var node = CreateNode(logger);
         using var socket = new Socket(
             AddressFamily.InterNetwork,
             SocketType.Stream,
@@ -177,10 +177,10 @@ public sealed class TcpNodeBranchTests
 
         InvokeRejectAcceptedSocket(node, socket, NodeFaultCode.SessionRejected, "tcp.reject.limit");
 
-        await Assert.That(faults.Count).IsEqualTo(1);
-        await Assert.That(faults.TryPeek(out var fault)).IsTrue();
-        await Assert.That(fault!.Code).IsEqualTo(NodeFaultCode.SessionRejected);
-        await Assert.That(fault.Operation).IsEqualTo("tcp.reject.limit");
+        await Assert.That(logger.Calls.Count).IsEqualTo(2);
+        await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+        await Assert.That(call!.Level).IsEqualTo(LogLevel.Warning);
+        await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.SessionRejected);
         await Assert
             .That(() => socket.Bind(new IPEndPoint(IPAddress.Loopback, 0)))
             .Throws<ObjectDisposedException>();
@@ -191,8 +191,8 @@ public sealed class TcpNodeBranchTests
     [Test]
     public async Task RejectAcceptedSocket_swallows_shutdown_failures_and_still_disposes_socket()
     {
-        var faults = new ConcurrentQueue<NodeFault>();
-        await using var node = CreateNode(faults.Enqueue);
+        var logger = new SpyLogger();
+        await using var node = CreateNode(logger);
         using var socket = new Socket(
             AddressFamily.InterNetwork,
             SocketType.Stream,
@@ -203,10 +203,10 @@ public sealed class TcpNodeBranchTests
 
         InvokeRejectAcceptedSocket(node, socket, NodeFaultCode.SessionRejected, "tcp.reject.limit");
 
-        await Assert.That(faults.Count).IsEqualTo(1);
-        await Assert.That(faults.TryPeek(out var fault)).IsTrue();
-        await Assert.That(fault!.Code).IsEqualTo(NodeFaultCode.SessionRejected);
-        await Assert.That(fault.Operation).IsEqualTo("tcp.reject.limit");
+        await Assert.That(logger.Calls.Count).IsEqualTo(2);
+        await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+        await Assert.That(call!.Level).IsEqualTo(LogLevel.Warning);
+        await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.SessionRejected);
     }
 
     [Test]
@@ -233,12 +233,8 @@ public sealed class TcpNodeBranchTests
     [Test]
     public async Task ReportFault_swallows_fault_handler_exceptions()
     {
-        var calls = 0;
-        var node = CreateNode(_ =>
-        {
-            calls++;
-            throw new InvalidOperationException("fault handler failed");
-        });
+        var logger = new SpyLogger { ThrowOnLog = true };
+        var node = CreateNode(logger);
 
         InvokeReportFault(
             node,
@@ -247,14 +243,14 @@ public sealed class TcpNodeBranchTests
             new SocketException((int)SocketError.NetworkDown)
         );
 
-        await Assert.That(calls).IsEqualTo(1);
+        await Assert.That(logger.Calls.Count).IsEqualTo(1);
         await node.DisposeAsync();
     }
 
     [Test]
     public async Task StartAsync_cannot_be_called_twice()
     {
-        await using var node = CreateNode(_ => { });
+        await using var node = CreateNode(null);
 
         await node.StartAsync();
 
@@ -264,7 +260,7 @@ public sealed class TcpNodeBranchTests
     [Test]
     public async Task DisposeAsync_is_idempotent_and_sets_disposed_state()
     {
-        var node = CreateNode(_ => { });
+        var node = CreateNode(null);
 
         await node.StartAsync();
         await node.DisposeAsync();
@@ -311,20 +307,20 @@ public sealed class TcpNodeBranchTests
         blocker.Bind(endpoint);
         blocker.Listen(1);
 
-        var faults = new ConcurrentQueue<NodeFault>();
+        var logger = new SpyLogger();
         await using var node = CreateNode(
             new NoOpTcpHandler(),
-            faults.Enqueue,
+            logger,
             (IPEndPoint)blocker.LocalEndPoint!
         );
 
         var exception = await Assert.That(() => node.StartAsync()).Throws<SocketException>();
 
         await Assert.That(exception).IsNotNull();
-        await Assert.That(faults.Count).IsEqualTo(1);
-        await Assert.That(faults.TryPeek(out var fault)).IsTrue();
-        await Assert.That(fault!.Code).IsEqualTo(NodeFaultCode.StartFailed);
-        await Assert.That(fault.Operation).IsEqualTo("tcp.start");
+        await Assert.That(logger.Calls.Count).IsEqualTo(1);
+        await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+        await Assert.That(call!.Level).IsEqualTo(LogLevel.Error);
+        await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.StartFailed);
         await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
     }
 
@@ -388,7 +384,7 @@ public sealed class TcpNodeBranchTests
         var pair = await CreateConnectedSocketsAsync();
         try
         {
-            var node = CreateNode(_ => { });
+            var node = CreateNode(null);
             typeof(TcpNode)
                 .GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .SetValue(node, NodeState.Stopping);
@@ -413,7 +409,7 @@ public sealed class TcpNodeBranchTests
         var pair = await CreateConnectedSocketsAsync();
         try
         {
-            await using var node = CreateNode(_ => { });
+            await using var node = CreateNode(null);
             var connection = new TcpConnection(node, pair.Server);
 
             var tracked = GetConnections(node).TryAdd(connection.Id, connection);
@@ -508,21 +504,21 @@ public sealed class TcpNodeBranchTests
     [Test]
     public async Task ProcessAcceptedSocketAsync_reports_tracking_rejection_when_node_is_stopping()
     {
-        var faults = new ConcurrentQueue<NodeFault>();
+        var logger = new SpyLogger();
         var pair = await CreateConnectedSocketsAsync();
         try
         {
-            var node = CreateNode(faults.Enqueue);
+            var node = CreateNode(logger);
             typeof(TcpNode)
                 .GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .SetValue(node, NodeState.Stopping);
 
             await InvokeProcessAcceptedSocketAsync(node, pair.Server);
 
-            await Assert.That(faults.Count).IsEqualTo(1);
-            await Assert.That(faults.TryPeek(out var fault)).IsTrue();
-            await Assert.That(fault!.Code).IsEqualTo(NodeFaultCode.SessionRejected);
-            await Assert.That(fault.Operation).IsEqualTo("tcp.reject.tracking");
+            await Assert.That(logger.Calls.Count).IsEqualTo(1);
+            await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+            await Assert.That(call!.Level).IsEqualTo(LogLevel.Warning);
+            await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.SessionRejected);
             await Assert
                 .That(() => pair.Server.Send(new byte[] { 1 }, SocketFlags.None))
                 .Throws<ObjectDisposedException>();
@@ -535,12 +531,12 @@ public sealed class TcpNodeBranchTests
         }
     }
 
-    private static TcpNode CreateNode(Action<NodeFault> faultHandler) =>
-        CreateNode(new NoOpTcpHandler(), faultHandler);
+    private static TcpNode CreateNode(ILogger? logger) =>
+        CreateNode(new NoOpTcpHandler(), logger);
 
     private static TcpNode CreateNode(
         ITcpConnectionHandler handler,
-        Action<NodeFault>? faultHandler = null,
+        ILogger? logger = null,
         IPEndPoint? endpoint = null,
         bool enableDualMode = false,
         TimeSpan? idleTimeout = null,
@@ -551,7 +547,7 @@ public sealed class TcpNodeBranchTests
             {
                 Endpoint = endpoint ?? new IPEndPoint(IPAddress.Loopback, 0),
                 ConnectionHandler = handler,
-                FaultHandler = faultHandler,
+                Logger = logger,
                 EnableDualMode = enableDualMode,
                 IdleTimeout = idleTimeout ?? TimeSpan.Zero,
                 IdleScanInterval = idleScanInterval ?? TimeSpan.FromSeconds(1),

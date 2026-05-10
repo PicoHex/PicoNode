@@ -8,17 +8,19 @@ internal sealed class CompressedReadStream : Stream
     private readonly Stream _source;
     private readonly string _encoding;
     private readonly CompressionLevel _level;
+    private readonly ILogger? _logger;
     private readonly Pipe _pipe = new();
     private readonly CancellationTokenSource _disposeCts = new();
     private Task? _producerTask;
     private bool _disposed;
 
-    public CompressedReadStream(Stream source, string encoding, CompressionLevel level)
+    public CompressedReadStream(Stream source, string encoding, CompressionLevel level, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(source);
         _source = source;
         _encoding = encoding;
         _level = level;
+        _logger = logger;
     }
 
     public override bool CanRead => !_disposed;
@@ -122,8 +124,9 @@ internal sealed class CompressedReadStream : Stream
             {
                 await _producerTask.ConfigureAwait(false);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger?.Log(LogLevel.Debug, new EventId(0), "Producer task faulted during compression stream dispose", ex);
                 // Surface producer failures during reads; disposal should stay best-effort.
             }
         }

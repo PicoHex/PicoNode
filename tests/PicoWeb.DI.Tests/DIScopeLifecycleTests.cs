@@ -5,7 +5,7 @@ public sealed class DIScopeLifecycleTests
     [Test]
     public async Task Scope_created_per_request()
     {
-        var capturedScope = new TaskCompletionSource<PicoNode.Web.Abstractions.IServiceScope?>();
+        var capturedScope = new TaskCompletionSource<ISvcScope?>();
         var app = new WebApp();
         app.MapGet(
             "/",

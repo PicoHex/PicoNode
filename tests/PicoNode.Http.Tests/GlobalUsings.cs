@@ -3,6 +3,7 @@ global using System.Collections.Generic;
 global using System.Net;
 global using System.Reflection;
 global using System.Text;
+global using PicoLog.Abs;
 global using PicoNode.Abs;
 global using PicoNode.Http.Internal;
 global using PicoNode.Http.Internal.ConnectionRuntime;

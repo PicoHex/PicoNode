@@ -6,15 +6,18 @@ public sealed class CompressionMiddleware
 
     private readonly CompressionLevel _level;
     private readonly int _minimumBodySize;
+    private readonly ILogger? _logger;
 
     public CompressionMiddleware(
         CompressionLevel level = CompressionLevel.Fastest,
-        int minimumBodySize = DefaultMinimumBodySize
+        int minimumBodySize = DefaultMinimumBodySize,
+        ILogger? logger = null
     )
     {
         ArgumentOutOfRangeException.ThrowIfNegative(minimumBodySize);
         _level = level;
         _minimumBodySize = minimumBodySize;
+        _logger = logger;
     }
 
     public async ValueTask<HttpResponse> InvokeAsync(
@@ -159,7 +162,7 @@ public sealed class CompressionMiddleware
         return false;
     }
 
-    private static bool TryGetStreamLength(Stream stream, out long length)
+    private bool TryGetStreamLength(Stream stream, out long length)
     {
         try
         {
@@ -168,6 +171,7 @@ public sealed class CompressionMiddleware
         }
         catch (NotSupportedException)
         {
+            _logger?.Log(LogLevel.Warning, new EventId(0), "Compression not supported", null);
             length = 0;
             return false;
         }

@@ -44,23 +44,13 @@ public sealed class TcpConnectionBranchTests
         var pair = await CreateConnectedSocketsAsync();
         try
         {
-            var faults = new ConcurrentQueue<NodeFault>();
-            var faultReported = new TaskCompletionSource<NodeFault>(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
+            var logger = new SpyLogger();
             var handlerException = new InvalidOperationException("handler boom");
             var handler = new RecordingTcpHandler(handlerException);
             var connection = CreateConnection(
                 pair.Server,
                 handler,
-                fault =>
-                {
-                    faults.Enqueue(fault);
-                    if (fault.Code == NodeFaultCode.HandlerFailed)
-                    {
-                        faultReported.TrySetResult(fault);
-                    }
-                }
+                logger
             );
             var runTask = connection.RunAsync(handler);
 
@@ -68,15 +58,16 @@ public sealed class TcpConnectionBranchTests
             await pair.Client.SendAsync(new byte[] { 42 }, SocketFlags.None);
             pair.Client.Shutdown(SocketShutdown.Send);
 
-            var fault = await faultReported.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            await Task.Delay(500);
             var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(3));
 
             await runTask.WaitAsync(TimeSpan.FromSeconds(3));
 
-            await Assert.That(faults.Count).IsEqualTo(1);
-            await Assert.That(fault.Code).IsEqualTo(NodeFaultCode.HandlerFailed);
-            await Assert.That(fault.Operation).IsEqualTo("tcp.handler");
-            await Assert.That(fault.Exception).IsSameReferenceAs(handlerException);
+            await Assert.That(logger.Calls.Count).IsEqualTo(1);
+            await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+            await Assert.That(call!.Level).IsEqualTo(LogLevel.Error);
+            await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.HandlerFailed);
+            await Assert.That(call.Exception).IsSameReferenceAs(handlerException);
             await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.HandlerFault);
             await Assert.That(closed.Error).IsSameReferenceAs(handlerException);
         }
@@ -143,22 +134,12 @@ public sealed class TcpConnectionBranchTests
         var pair = await CreateConnectedSocketsAsync();
         try
         {
-            var faults = new ConcurrentQueue<NodeFault>();
-            var faultReported = new TaskCompletionSource<NodeFault>(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
+            var logger = new SpyLogger();
             var handler = new RecordingTcpHandler();
             var connection = CreateConnection(
                 pair.Server,
                 handler,
-                fault =>
-                {
-                    faults.Enqueue(fault);
-                    if (fault.Code == NodeFaultCode.ReceiveFailed)
-                    {
-                        faultReported.TrySetResult(fault);
-                    }
-                }
+                logger
             );
             var exception = new SocketException((int)SocketError.NetworkDown);
             var runTask = connection.RunAsync(new SocketExceptionTcpHandler(exception, handler));
@@ -167,14 +148,15 @@ public sealed class TcpConnectionBranchTests
             await pair.Client.SendAsync(new byte[] { 9 }, SocketFlags.None);
             pair.Client.Shutdown(SocketShutdown.Send);
 
-            var fault = await faultReported.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            await Task.Delay(500);
             var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(3));
             await runTask.WaitAsync(TimeSpan.FromSeconds(3));
 
-            await Assert.That(faults.Count).IsEqualTo(1);
-            await Assert.That(fault.Code).IsEqualTo(NodeFaultCode.ReceiveFailed);
-            await Assert.That(fault.Operation).IsEqualTo("tcp.receive");
-            await Assert.That(fault.Exception).IsSameReferenceAs(exception);
+            await Assert.That(logger.Calls.Count).IsEqualTo(1);
+            await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+            await Assert.That(call!.Level).IsEqualTo(LogLevel.Error);
+            await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.ReceiveFailed);
+            await Assert.That(call.Exception).IsSameReferenceAs(exception);
             await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.ReceiveFault);
             await Assert.That(closed.Error).IsSameReferenceAs(exception);
         }
@@ -297,23 +279,13 @@ public sealed class TcpConnectionBranchTests
         var pair = await CreateConnectedSocketsAsync();
         try
         {
-            var faults = new ConcurrentQueue<NodeFault>();
-            var faultReported = new TaskCompletionSource<NodeFault>(
-                TaskCreationOptions.RunContinuationsAsynchronously
-            );
+            var logger = new SpyLogger();
             var exception = new InvalidOperationException("close handler boom");
             var handler = new AsyncThrowingClosedTcpHandler(exception);
             var connection = CreateConnection(
                 pair.Server,
                 handler,
-                fault =>
-                {
-                    faults.Enqueue(fault);
-                    if (fault.Operation == "tcp.close.handler")
-                    {
-                        faultReported.TrySetResult(fault);
-                    }
-                }
+                logger
             );
 
             var task = InvokeClosedHandlerAsync(
@@ -327,13 +299,13 @@ public sealed class TcpConnectionBranchTests
 
             handler.Release();
 
-            var fault = await faultReported.Task.WaitAsync(TimeSpan.FromSeconds(3));
             await task.WaitAsync(TimeSpan.FromSeconds(3));
 
-            await Assert.That(faults.Count).IsEqualTo(1);
-            await Assert.That(fault.Code).IsEqualTo(NodeFaultCode.HandlerFailed);
-            await Assert.That(fault.Operation).IsEqualTo("tcp.close.handler");
-            await Assert.That(fault.Exception).IsSameReferenceAs(exception);
+            await Assert.That(logger.Calls.Count).IsEqualTo(1);
+            await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+            await Assert.That(call!.Level).IsEqualTo(LogLevel.Error);
+            await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.HandlerFailed);
+            await Assert.That(call.Exception).IsSameReferenceAs(exception);
             await connection.DisposeAsync();
         }
         finally
@@ -653,7 +625,7 @@ public sealed class TcpConnectionBranchTests
     private static TcpConnection CreateConnection(
         Socket serverSocket,
         ITcpConnectionHandler? handler = null,
-        Action<NodeFault>? faultHandler = null
+        ILogger? logger = null
     )
     {
         var node = new TcpNode(
@@ -661,7 +633,7 @@ public sealed class TcpConnectionBranchTests
             {
                 Endpoint = (IPEndPoint)serverSocket.LocalEndPoint!,
                 ConnectionHandler = handler ?? new NoOpTcpHandler(),
-                FaultHandler = faultHandler,
+                Logger = logger,
             }
         );
 
@@ -732,7 +704,7 @@ public sealed class TcpConnectionBranchTests
             "ShutdownSocketSafely",
             BindingFlags.Instance | BindingFlags.NonPublic
         )!;
-        method.Invoke(lifecycle, []);
+        method.Invoke(lifecycle, [null]);
     }
 
     private static Task InvokeConnectedAsync(

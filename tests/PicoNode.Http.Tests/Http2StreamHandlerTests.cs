@@ -27,6 +27,7 @@ public sealed class Http2StreamHandlerTests
             connection,
             frame,
             handler,
+            null,
             CancellationToken.None
         );
 
@@ -70,6 +71,7 @@ public sealed class Http2StreamHandlerTests
             connection,
             frame,
             handler,
+            null,
             CancellationToken.None
         );
 
@@ -113,6 +115,7 @@ public sealed class Http2StreamHandlerTests
             connection,
             frame,
             handler,
+            null,
             CancellationToken.None
         );
 
@@ -157,6 +160,7 @@ public sealed class Http2StreamHandlerTests
             connection,
             frame,
             handler,
+            null,
             CancellationToken.None
         );
 
@@ -188,6 +192,7 @@ public sealed class Http2StreamHandlerTests
             connection,
             frame,
             handler,
+            null,
             CancellationToken.None
         );
 
@@ -209,6 +214,7 @@ public sealed class Http2StreamHandlerTests
             connection,
             frame,
             handler,
+            null,
             CancellationToken.None
         );
 
@@ -234,6 +240,7 @@ public sealed class Http2StreamHandlerTests
             connection,
             frame,
             handler,
+            null,
             CancellationToken.None
         );
 
@@ -260,6 +267,7 @@ public sealed class Http2StreamHandlerTests
             connection,
             frame,
             handler,
+            null,
             CancellationToken.None
         );
 
@@ -284,6 +292,7 @@ public sealed class Http2StreamHandlerTests
             connection,
             frame,
             handler,
+            null,
             CancellationToken.None
         );
 

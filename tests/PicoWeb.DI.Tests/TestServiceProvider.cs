@@ -1,8 +1,6 @@
 namespace PicoWeb.DI.Tests;
 
-internal sealed class TestServiceProvider
-    : PicoNode.Web.Abstractions.IServiceProvider,
-        IAsyncDisposable
+internal sealed class TestServiceProvider : ISvcContainer
 {
     private readonly Dictionary<Type, ServiceRegistration> _registrations = new();
     private readonly Dictionary<Type, object> _singletonInstances = new();
@@ -10,7 +8,7 @@ internal sealed class TestServiceProvider
 
     public void RegisterSingleton(
         Type serviceType,
-        Func<PicoNode.Web.Abstractions.IServiceScope, object> factory
+        Func<ISvcScope, object> factory
     )
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Singleton, factory);
@@ -18,7 +16,7 @@ internal sealed class TestServiceProvider
 
     public void RegisterScoped(
         Type serviceType,
-        Func<PicoNode.Web.Abstractions.IServiceScope, object> factory
+        Func<ISvcScope, object> factory
     )
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Scoped, factory);
@@ -26,10 +24,24 @@ internal sealed class TestServiceProvider
 
     public void RegisterTransient(
         Type serviceType,
-        Func<PicoNode.Web.Abstractions.IServiceScope, object> factory
+        Func<ISvcScope, object> factory
     )
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Transient, factory);
+    }
+
+    public ISvcContainer Register(SvcDescriptor descriptor)
+    {
+        var factory = descriptor.Factory ?? (_ => Activator.CreateInstance(descriptor.ImplementationType)!);
+        var lifetime = descriptor.Lifetime switch
+        {
+            SvcLifetime.Singleton => ServiceLifetime.Singleton,
+            SvcLifetime.Scoped => ServiceLifetime.Scoped,
+            SvcLifetime.Transient => ServiceLifetime.Transient,
+            _ => ServiceLifetime.Transient,
+        };
+        _registrations[descriptor.ServiceType] = new ServiceRegistration(lifetime, factory);
+        return this;
     }
 
     public void Build()
@@ -37,12 +49,12 @@ internal sealed class TestServiceProvider
         // no-op for compatibility with SvcContainer API
     }
 
-    public PicoNode.Web.Abstractions.IServiceScope CreateScope()
+    public ISvcScope CreateScope()
     {
         return new TestServiceScope(this);
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         foreach (var instance in _singletonInstances.Values)
         {
@@ -51,7 +63,7 @@ internal sealed class TestServiceProvider
         }
         _singletonInstances.Clear();
         _registrations.Clear();
-        return ValueTask.CompletedTask;
+        await ValueTask.CompletedTask;
     }
 
     internal object? Resolve(Type serviceType, TestServiceScope scope)
@@ -89,7 +101,7 @@ internal sealed class TestServiceProvider
     }
 }
 
-internal sealed class TestServiceScope : PicoNode.Web.Abstractions.IServiceScope
+internal sealed class TestServiceScope : ISvcScope
 {
     private readonly TestServiceProvider _provider;
     private readonly Dictionary<Type, object> _scopedInstances = new();
@@ -100,9 +112,20 @@ internal sealed class TestServiceScope : PicoNode.Web.Abstractions.IServiceScope
         _provider = provider;
     }
 
-    public object? GetService(Type serviceType)
+    public object GetService(Type serviceType)
     {
-        return _provider.Resolve(serviceType, this);
+        return _provider.Resolve(serviceType, this)!;
+    }
+
+    public IReadOnlyList<object> GetServices(Type serviceType)
+    {
+        var result = GetService(serviceType);
+        return result is not null ? new[] { result } : Array.Empty<object>();
+    }
+
+    public ISvcScope CreateScope()
+    {
+        return _provider.CreateScope();
     }
 
     internal object? GetOrCreateScoped(Type serviceType, ServiceRegistration registration)
@@ -124,6 +147,12 @@ internal sealed class TestServiceScope : PicoNode.Web.Abstractions.IServiceScope
         _disposables.Clear();
         _scopedInstances.Clear();
     }
+
+    public async ValueTask DisposeAsync()
+    {
+        Dispose();
+        await ValueTask.CompletedTask;
+    }
 }
 
 internal enum ServiceLifetime
@@ -135,5 +164,5 @@ internal enum ServiceLifetime
 
 internal sealed record ServiceRegistration(
     ServiceLifetime Lifetime,
-    Func<PicoNode.Web.Abstractions.IServiceScope, object> Factory
+    Func<ISvcScope, object> Factory
 );

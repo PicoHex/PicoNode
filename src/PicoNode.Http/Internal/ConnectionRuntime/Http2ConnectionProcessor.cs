@@ -7,6 +7,7 @@ internal static class Http2ConnectionProcessor
         ReadOnlySequence<byte> buffer,
         bool sendInitialSettings,
         HttpRequestHandler requestHandler,
+        ILogger? logger,
         CancellationToken cancellationToken
     )
     {
@@ -56,7 +57,7 @@ internal static class Http2ConnectionProcessor
             consumed = remaining.GetPosition(frameConsumed);
             remaining = remaining.Slice(frameConsumed);
 
-            if (await HandleFrameAsync(connection, frame!, requestHandler, cancellationToken))
+            if (await HandleFrameAsync(connection, frame!, requestHandler, logger, cancellationToken))
             {
                 return consumed;
             }
@@ -69,6 +70,7 @@ internal static class Http2ConnectionProcessor
         ITcpConnectionContext connection,
         Http2Frame frame,
         HttpRequestHandler requestHandler,
+        ILogger? logger,
         CancellationToken cancellationToken
     )
     {
@@ -136,6 +138,7 @@ internal static class Http2ConnectionProcessor
                     connection,
                     frame,
                     requestHandler,
+                    logger,
                     cancellationToken
                 );
 

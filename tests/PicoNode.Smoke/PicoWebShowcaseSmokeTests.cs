@@ -164,14 +164,22 @@ public sealed class PicoWebShowcaseSmokeTests
     }
 }
 
-internal sealed class EmptyServiceProvider : PicoNode.Web.Abstractions.IServiceProvider
+internal sealed class EmptyServiceProvider : ISvcContainer
 {
-    public PicoNode.Web.Abstractions.IServiceScope CreateScope() => new EmptyServiceScope();
+    public ISvcContainer Register(SvcDescriptor descriptor) => this;
+
+    public ISvcScope CreateScope() => new EmptyServiceScope();
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
-internal sealed class EmptyServiceScope : PicoNode.Web.Abstractions.IServiceScope
+internal sealed class EmptyServiceScope : ISvcScope
 {
-    public object? GetService(Type serviceType) => null;
+    public object GetService(Type serviceType) => null!;
 
-    public void Dispose() { }
+    public IReadOnlyList<object> GetServices(Type serviceType) => Array.Empty<object>();
+
+    public ISvcScope CreateScope() => new EmptyServiceScope();
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

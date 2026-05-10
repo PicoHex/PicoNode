@@ -6,7 +6,7 @@ public sealed class ServiceProviderContractTests
     public async Task Mock_provider_returns_non_null_scope()
     {
         var provider = new MockServiceProvider();
-        PicoNode.Web.Abstractions.IServiceScope scope = provider.CreateScope();
+        ISvcScope scope = provider.CreateScope();
 
         await Assert.That(scope).IsNotNull();
     }
@@ -15,7 +15,7 @@ public sealed class ServiceProviderContractTests
     public async Task GetService_by_type_returns_expected_value()
     {
         var provider = new MockServiceProvider();
-        PicoNode.Web.Abstractions.IServiceScope scope = provider.CreateScope();
+        ISvcScope scope = provider.CreateScope();
 
         object? result = scope.GetService(typeof(string));
 
@@ -28,7 +28,7 @@ public sealed class ServiceProviderContractTests
     public async Task GetService_generic_extension_works()
     {
         var provider = new MockServiceProvider();
-        PicoNode.Web.Abstractions.IServiceScope scope = provider.CreateScope();
+        ISvcScope scope = provider.CreateScope();
 
         string? result = scope.GetService<string>();
 
@@ -37,34 +37,47 @@ public sealed class ServiceProviderContractTests
     }
 
     [Test]
-    public async Task Scope_Dispose_is_callable()
+    public async Task Scope_DisposeAsync_is_callable()
     {
         var scope = (MockServiceScope)new MockServiceProvider().CreateScope();
 
-        scope.Dispose();
+        await scope.DisposeAsync();
 
         await Assert.That(scope.Disposed).IsTrue();
     }
 }
 
-file sealed class MockServiceProvider : PicoNode.Web.Abstractions.IServiceProvider
+file sealed class MockServiceProvider : ISvcContainer
 {
-    public PicoNode.Web.Abstractions.IServiceScope CreateScope() => new MockServiceScope();
+    public ISvcContainer Register(SvcDescriptor descriptor) => this;
+
+    public ISvcScope CreateScope() => new MockServiceScope();
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
-file sealed class MockServiceScope : PicoNode.Web.Abstractions.IServiceScope
+file sealed class MockServiceScope : ISvcScope
 {
     public bool Disposed { get; private set; }
 
-    public object? GetService(Type serviceType)
+    public object GetService(Type serviceType)
     {
         if (serviceType == typeof(string))
             return "hello";
-        return null;
+        return null!;
     }
 
-    public void Dispose()
+    public IReadOnlyList<object> GetServices(Type serviceType)
+    {
+        var result = GetService(serviceType);
+        return result is not null ? new[] { result } : Array.Empty<object>();
+    }
+
+    public ISvcScope CreateScope() => new MockServiceScope();
+
+    public ValueTask DisposeAsync()
     {
         Disposed = true;
+        return ValueTask.CompletedTask;
     }
 }

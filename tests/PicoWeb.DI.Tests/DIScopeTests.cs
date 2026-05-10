@@ -6,10 +6,10 @@ public sealed class DIScopeTests
     public async Task ServiceProvider_creates_and_disposes_scope()
     {
         await using var container = new TestServiceProvider();
-        using var scope = container.CreateScope();
+        await using var scope = container.CreateScope();
 
         await Assert.That(scope).IsNotNull();
 
-        scope.Dispose();
+        await scope.DisposeAsync();
     }
 }

@@ -13,10 +13,12 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
     private readonly Socket _socket;
     private readonly CancellationTokenSource _receiveCts = new();
+    private readonly CancellationTokenSource _configCts = new();
     private readonly Channel<UdpDatagramLease>[] _queues;
     private readonly Task[] _workers;
     private readonly Lock _stateLock = new();
     private Task? _receiveTask;
+    private Task? _configReloadTask;
     private volatile NodeState _state;
     private int _disposed;
     private long _totalDatagramsReceived;
@@ -158,6 +160,12 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 CancellationToken.None
             );
             _state = NodeState.Running;
+
+            if (Options.Config is not null)
+            {
+                _configReloadTask = ConfigReloadLoopAsync(Options.Config, Options);
+            }
+
             return Task.CompletedTask;
         }
         catch (Exception ex)
@@ -379,7 +387,54 @@ public sealed class UdpNode : INode, IAsyncDisposable
     }
 
     internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null) =>
-        NodeHelper.ReportFault(Options.FaultHandler, code, operation, exception);
+        NodeHelper.ReportFault(Options.Logger, code, operation, exception);
+
+    private async Task ConfigReloadLoopAsync(ICfgRoot config, UdpNodeOptions options)
+    {
+        try
+        {
+            while (!_configCts.IsCancellationRequested)
+            {
+                await config.WaitForChangeAsync(_configCts.Token);
+
+                if (_configCts.IsCancellationRequested)
+                    break;
+
+                var reloaded = await config.ReloadAsync(_configCts.Token);
+                if (reloaded)
+                {
+                    ApplyConfigReload(config, options);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (_configCts.IsCancellationRequested)
+        { /* expected during shutdown */
+        }
+        catch
+        { /* config reload is best-effort */
+        }
+    }
+
+    private static void ApplyConfigReload(ICfg config, UdpNodeOptions options)
+    {
+        if (config.TryGetValue("ReceiveSocketBufferSize", out var v) && int.TryParse(v, out var val))
+            options.ReceiveSocketBufferSize = val;
+        if (config.TryGetValue("SendSocketBufferSize", out v) && int.TryParse(v, out val))
+            options.SendSocketBufferSize = val;
+        if (config.TryGetValue("ReceiveDatagramBufferSize", out v) && int.TryParse(v, out val))
+            options.ReceiveDatagramBufferSize = val;
+        if (config.TryGetValue("EnableBroadcast", out v) && bool.TryParse(v, out var b))
+            options.EnableBroadcast = b;
+        if (config.TryGetValue("QueueOverflowMode", out v) && Enum.TryParse<UdpOverflowMode>(v, out var mode))
+            options.QueueOverflowMode = mode;
+        if (config.TryGetValue("ReceiveFaultBackoff", out v) && TimeSpan.TryParse(v, out var ts))
+            options.ReceiveFaultBackoff = ts;
+        if (config.TryGetValue("MulticastTtl", out v) && int.TryParse(v, out val))
+            options.MulticastTtl = val;
+        if (config.TryGetValue("MulticastLoopback", out v) && bool.TryParse(v, out b))
+            options.MulticastLoopback = b;
+        // Endpoint, DatagramHandler, Logger, DispatchWorkerCount, DatagramQueueCapacity, MulticastGroup are code-only
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -399,10 +454,24 @@ public sealed class UdpNode : INode, IAsyncDisposable
         }
         finally
         {
+            _configCts.Cancel();
             _receiveCts.Dispose();
             _socket.Dispose();
             _state = NodeState.Disposed;
         }
+
+        if (_configReloadTask is not null)
+        {
+            try
+            {
+                await _configReloadTask;
+            }
+            catch
+            { /* best-effort */
+            }
+        }
+
+        _configCts.Dispose();
 
         if (stopException is not null)
         {

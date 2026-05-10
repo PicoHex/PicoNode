@@ -8,6 +8,7 @@ internal static class Http2StreamHandler
         ITcpConnectionContext connection,
         Http2Frame frame,
         HttpRequestHandler requestHandler,
+        ILogger? logger,
         CancellationToken ct
     )
     {
@@ -91,8 +92,15 @@ internal static class Http2StreamHandler
         {
             throw;
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.Log(
+                LogLevel.Error,
+                new EventId(0),
+                "Unhandled exception processing HTTP/2 stream",
+                ex
+            );
+
             response = new HttpResponse
             {
                 StatusCode = 500,

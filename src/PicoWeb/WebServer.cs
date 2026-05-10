@@ -4,7 +4,7 @@ public sealed class WebServer : IAsyncDisposable
 {
     private readonly WebApp _app;
     private readonly WebServerOptions _options;
-    private readonly PicoNode.Web.Abstractions.IServiceProvider _container;
+    private readonly ISvcContainer? _container;
     private TcpNode? _node;
     private bool _disposed;
 
@@ -14,13 +14,13 @@ public sealed class WebServer : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(options);
         _app = app;
         _options = options;
-        _container = null!;
+        _container = null;
     }
 
     public WebServer(
         WebApp app,
         WebServerOptions options,
-        PicoNode.Web.Abstractions.IServiceProvider container
+        ISvcContainer container
     )
     {
         ArgumentNullException.ThrowIfNull(app);
@@ -49,7 +49,7 @@ public sealed class WebServer : IAsyncDisposable
             {
                 Endpoint = _options.Endpoint,
                 ConnectionHandler = handler,
-                FaultHandler = _options.FaultHandler,
+                Logger = _options.Logger,
             }
         );
 
@@ -80,6 +80,11 @@ public sealed class WebServer : IAsyncDisposable
         {
             await _node.DisposeAsync();
             _node = null;
+        }
+
+        if (_container is not null)
+        {
+            await _container.DisposeAsync();
         }
     }
 }

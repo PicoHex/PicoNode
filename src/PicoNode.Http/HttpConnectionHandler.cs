@@ -4,6 +4,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
 {
     private readonly HttpConnectionHandlerOptions _options;
     private readonly HttpRequestHandler _requestHandler;
+    private readonly ILogger? _logger;
 
     public HttpConnectionHandler(HttpConnectionHandlerOptions options)
     {
@@ -28,6 +29,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         }
 
         _options = options;
+        _logger = options.Logger;
         _requestHandler =
             options.RequestHandler
             ?? throw new ArgumentException("A request handler is required.", nameof(options));
@@ -57,6 +59,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
                         buffer,
                         sendInitialSettings: false,
                         _requestHandler,
+                        _options.Logger,
                         cancellationToken
                     ),
                 _ => HandleHttp1Async(connection, buffer, cancellationToken),
@@ -75,6 +78,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
                     protocolDecision.Buffer,
                     sendInitialSettings: true,
                     _requestHandler,
+                    _options.Logger,
                     cancellationToken
                 );
             case DetectedProtocolKind.Http1:

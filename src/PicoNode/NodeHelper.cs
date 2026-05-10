@@ -3,20 +3,21 @@ namespace PicoNode;
 internal static class NodeHelper
 {
     internal static void ReportFault(
-        Action<NodeFault>? faultHandler,
+        ILogger? logger,
         NodeFaultCode code,
         string operation,
         Exception? exception = null
     )
     {
-        if (faultHandler is null)
+        if (logger is null)
         {
             return;
         }
 
         try
         {
-            faultHandler.Invoke(new NodeFault(code, operation, exception));
+            var level = NodeFaultLogLevelMapper.GetLevel(code);
+            logger.Log(level, new EventId((int)code), $"Operation {operation} failed: {code}", exception);
         }
         catch
         {
