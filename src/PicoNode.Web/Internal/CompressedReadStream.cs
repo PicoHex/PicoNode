@@ -1,8 +1,5 @@
 namespace PicoNode.Web.Internal;
 
-using System.Buffers;
-using System.IO.Pipelines;
-
 internal sealed class CompressedReadStream : Stream
 {
     private readonly Stream _source;

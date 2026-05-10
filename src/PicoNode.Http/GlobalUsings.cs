@@ -4,8 +4,6 @@ global using System.Globalization;
 global using System.Runtime.CompilerServices;
 global using System.Security.Cryptography;
 global using System.Text;
-global using PicoCfg;
-global using PicoCfg.Abs;
 global using PicoLog.Abs;
 global using PicoNode.Abs;
 global using PicoNode.Http.Internal;

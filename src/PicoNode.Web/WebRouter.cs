@@ -1,6 +1,3 @@
-using PicoNode.Http.Internal;
-using PicoNode.Web.Internal;
-
 namespace PicoNode.Web;
 
 internal sealed class WebRouter

@@ -8,7 +8,6 @@ global using System.Runtime.CompilerServices;
 global using System.Runtime.InteropServices;
 global using System.Threading.Channels;
 global using System.Threading.Tasks.Sources;
-global using PicoCfg;
 global using PicoCfg.Abs;
 global using PicoLog.Abs;
 global using PicoNode.Abs;

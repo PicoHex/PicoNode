@@ -1,5 +1,3 @@
-using PicoLog.Abs;
-
 namespace PicoNode;
 
 public static class NodeFaultLogLevelMapper

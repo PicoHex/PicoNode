@@ -1,11 +1,14 @@
+global using System.Buffers;
 global using System.Globalization;
 global using System.IO.Compression;
+global using System.IO.Pipelines;
 global using System.Runtime.CompilerServices;
 global using System.Text;
 global using PicoCfg;
 global using PicoCfg.Abs;
+global using PicoDI.Abs;
 global using PicoLog.Abs;
 global using PicoNode.Abs;
-global using PicoDI.Abs;
 global using PicoNode.Http;
+global using PicoNode.Http.Internal;
 global using PicoNode.Web.Internal;
