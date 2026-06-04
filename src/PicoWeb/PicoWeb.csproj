@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -10,10 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoCfg.Abs" Version="2026.3.2" />
-    <PackageReference Include="PicoCfg.Gen" Version="2026.3.2" />
+    <PackageReference Include="PicoCfg.Abs" Version="2026.6.0" />
     <ProjectReference Include="..\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\PicoNode.Web\PicoNode.Web.csproj" />
   </ItemGroup>
-
 </Project>
