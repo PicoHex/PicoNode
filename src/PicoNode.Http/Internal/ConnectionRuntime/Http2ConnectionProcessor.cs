@@ -111,7 +111,10 @@ internal static class Http2ConnectionProcessor
                     return false;
                 }
 
-                // SettingsAck: small fixed-size frame, allocation is trivial
+                // Parse and apply settings, then send ACK
+                var settings = Http2FrameCodec.ParseSettings(frame.Payload.Span);
+                GetRuntimeState(connection).ApplySettings(settings);
+
                 await connection.SendAsync(
                     new ReadOnlySequence<byte>(Http2FrameCodec.EncodeSettingsAck()),
                     cancellationToken
@@ -198,6 +201,12 @@ internal static class Http2ConnectionProcessor
                 return true;
 
             case Http2FrameType.RstStream:
+                return await Http2StreamHandler.ProcessRstStreamFrame(
+                    connection,
+                    frame,
+                    cancellationToken
+                );
+
             case Http2FrameType.WindowUpdate:
             default:
                 await SendGoAwayAndCloseAsync(

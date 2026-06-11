@@ -564,6 +564,8 @@ public sealed class WebSocketMessageProcessorTests
 
         public object? UserState { get; set; }
 
+        public string? NegotiatedProtocol => null;
+
         public byte[] LastSent { get; private set; } = [];
 
         public int SendCount { get; private set; }

@@ -1037,6 +1037,8 @@ public sealed class HttpConnectionHandlerTests
 
         public object? UserState { get; set; }
 
+        public string? NegotiatedProtocol => null;
+
         public byte[] LastSent { get; private set; } = [];
 
         public List<byte[]> AllSent { get; } = [];

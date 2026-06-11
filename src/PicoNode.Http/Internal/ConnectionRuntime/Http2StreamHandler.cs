@@ -10,7 +10,19 @@ internal static class Http2StreamHandler
         CancellationToken ct
     )
     {
-        // Get or create stream state, which handles CONTINUATION buffering.
+        // Check stream concurrency limit before creating stream state.
+        var runtimeStateForLimit = connection.UserState as ConnectionRuntimeState;
+        if (runtimeStateForLimit is not null && frame.StreamId != 0)
+        {
+            var streamCount = runtimeStateForLimit.Http2Streams?.Count ?? 0;
+            if (streamCount >= runtimeStateForLimit.RemoteMaxConcurrentStreams)
+            {
+                await SendGoAwayAndCloseAsync(
+                    connection, Http2ErrorCode.RefusedStream, ct);
+                return true;
+            }
+        }
+
         var state = GetStreamState(connection, frame.StreamId);
 
         // CONTINUATION buffering: if END_HEADERS is not set, buffer and return.
@@ -46,7 +58,8 @@ internal static class Http2StreamHandler
             clearState.PendingContinuationStreamId = null;
 
         // Decode HPACK header block from the complete (possibly reassembled) data.
-        if (!HpackDecoder.TryDecode(payloadData.Value.AsSpan(), out var headerFields))
+        var dynamicTable = runtimeStateForLimit?.HpackTable;
+        if (!HpackDecoder.TryDecode(payloadData.Value.AsSpan(), out var headerFields, dynamicTable))
         {
             await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.CompressionError, ct);
             return true;
@@ -374,6 +387,23 @@ internal static class Http2StreamHandler
         state.DecodedPath = path;
         state.DecodedHeaderFields = regularHeaders;
         state.DecodedHeadersDict = headerDict;
+    }
+
+    public static ValueTask<bool> ProcessRstStreamFrame(
+        ITcpConnectionContext connection,
+        Http2Frame frame,
+        CancellationToken ct
+    )
+    {
+        // Remove the stream from tracking if it exists.
+        var runtimeState = connection.UserState as ConnectionRuntimeState;
+        if (runtimeState?.Http2Streams is not null)
+        {
+            runtimeState.Http2Streams.Remove(frame.StreamId);
+        }
+
+        // Never close the connection — RST_STREAM is per-stream.
+        return ValueTask.FromResult(false);
     }
 
     public static async ValueTask<bool> ProcessDataFrame(

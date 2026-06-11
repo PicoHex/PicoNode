@@ -47,6 +47,8 @@ public sealed class WebAppBuildTests
 
         public object? UserState { get; set; }
 
+        public string? NegotiatedProtocol => null;
+
         public Task SendAsync(
             ReadOnlySequence<byte> buffer,
             CancellationToken cancellationToken = default

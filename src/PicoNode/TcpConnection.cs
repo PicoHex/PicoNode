@@ -14,8 +14,18 @@ internal sealed class TcpConnection : IAsyncDisposable
     private readonly TcpConnectionReceiveLoop _receiveLoop;
     private readonly int _receiveBufferSize;
 
+    /// <summary>ALPN-negotiated protocol from TLS handshake, if any.</summary>
+    internal string? NegotiatedProtocol { get; }
+
     public TcpConnection(TcpNode node, Socket socket, Stream? stream = null)
     {
+        // Capture ALPN-negotiated protocol from TLS
+        if (stream is System.Net.Security.SslStream sslStream)
+        {
+            NegotiatedProtocol = sslStream.NegotiatedApplicationProtocol.ToString();
+        }
+
+        _node = node;
         _node = node;
         _receiveBufferSize = Math.Max(
             node.Options.ReceiveSocketBufferSize,

@@ -410,6 +410,7 @@ public sealed class Http2StreamHandlerTests
         public DateTimeOffset ConnectedAtUtc => DateTimeOffset.MinValue;
         public DateTimeOffset LastActivityUtc => DateTimeOffset.MinValue;
         public object? UserState { get; set; }
+        public string? NegotiatedProtocol => null;
         public List<byte[]> SentFrames { get; } = new();
         public bool IsClosed { get; private set; }
 
@@ -532,6 +533,31 @@ public sealed class Http2StreamHandlerTests
         await Assert.That(Encoding.UTF8.GetString(receivedBody.ToArray())).IsEqualTo("Hello World");
     }
 
+    [Test]
+    public async Task RstStream_removes_stream_and_keeps_connection_open()
+    {
+        var connection = new TestTcpConnectionContext();
+
+        // First, establish a stream via HEADERS
+        var headersFrame = BuildHeadersFrame(MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream);
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection, headersFrame,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null, CancellationToken.None);
+
+        // The stream should exist and response should have been sent
+        await Assert.That(connection.SentFrames.Count).IsEqualTo(1);
+
+        // Send RST_STREAM for an unused stream ID — should be no-op
+        var rstFrame = BuildRstStreamFrame(3);
+        var shouldClose = await Http2StreamHandler.ProcessRstStreamFrame(
+            connection, rstFrame, CancellationToken.None);
+
+        await Assert.That(shouldClose).IsFalse();
+        await Assert.That(connection.IsClosed).IsFalse();
+    }
+
     private static Http2Frame BuildDataFrame(int streamId, byte[] data, bool endStream)
     {
         var flags = Http2FrameFlags.None;
@@ -545,6 +571,20 @@ public sealed class Http2StreamHandlerTests
             StreamId = streamId,
             Length = data.Length,
             Payload = data,
+        };
+    }
+
+    private static Http2Frame BuildRstStreamFrame(int streamId)
+    {
+        // RST_STREAM payload is 4 bytes: error code
+        var payload = new byte[4]; // NO_ERROR = 0
+        return new Http2Frame
+        {
+            Type = Http2FrameType.RstStream,
+            Flags = Http2FrameFlags.None,
+            StreamId = streamId,
+            Length = 4,
+            Payload = payload,
         };
     }
 }
