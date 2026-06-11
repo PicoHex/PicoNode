@@ -105,11 +105,12 @@ internal static class Http2StreamHandler
             }
         }
 
-        // Validate required pseudo-headers before any deferral
+        // Validate required pseudo-headers — stream-level error, not connection-level
         if (method is null || path is null)
         {
-            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct);
-            return true;
+            await SendRstStreamAsync(connection, frame.StreamId,
+                Http2ErrorCode.ProtocolError, ct);
+            return false;
         }
 
         // WebSocket over HTTP/2 (RFC 8441): extended CONNECT with :protocol=websocket
@@ -825,7 +826,13 @@ internal static class Http2StreamHandler
         CancellationToken ct
     )
     {
-        var frame = Http2FrameCodec.EncodeGoAway(0, errorCode);
+        // Use the highest processed stream ID for graceful shutdown signalling.
+        var lastStreamId = 0;
+        var state = connection.UserState as ConnectionRuntimeState;
+        if (state is not null)
+            lastStreamId = state.HighestProcessedStreamId;
+
+        var frame = Http2FrameCodec.EncodeGoAway(lastStreamId, errorCode);
         await connection.SendAsync(new ReadOnlySequence<byte>(frame), ct);
         connection.Close();
     }

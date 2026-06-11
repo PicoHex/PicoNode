@@ -241,7 +241,12 @@ internal static class Http2ConnectionProcessor
         CancellationToken cancellationToken
     )
     {
-        var frame = Http2FrameCodec.EncodeGoAway(0, errorCode);
+        var lastStreamId = 0;
+        var state = connection.UserState as ConnectionRuntimeState;
+        if (state is not null)
+            lastStreamId = state.HighestProcessedStreamId;
+
+        var frame = Http2FrameCodec.EncodeGoAway(lastStreamId, errorCode);
         await connection.SendAsync(new ReadOnlySequence<byte>(frame), cancellationToken);
         connection.Close();
     }

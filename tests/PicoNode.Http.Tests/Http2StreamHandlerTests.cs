@@ -175,7 +175,7 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
-    public async Task MissingMethodPseudoHeader_SendsGoAwayAndCloses()
+    public async Task MissingMethodPseudoHeader_SendsRstStream()
     {
         var connection = new TestTcpConnectionContext();
 
@@ -196,8 +196,9 @@ public sealed class Http2StreamHandlerTests
             CancellationToken.None
         );
 
-        await Assert.That(shouldClose).IsTrue();
-        await Assert.That(connection.IsClosed).IsTrue();
+        // Missing pseudo-headers is a stream-level error — connection stays open.
+        await Assert.That(shouldClose).IsFalse();
+        await Assert.That(connection.IsClosed).IsFalse();
     }
 
     [Test]

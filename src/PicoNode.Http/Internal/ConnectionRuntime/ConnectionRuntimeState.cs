@@ -54,6 +54,9 @@ internal sealed class ConnectionRuntimeState
     /// <summary>Set when a HEADERS frame arrives without END_HEADERS (expecting CONTINUATION).</summary>
     public int? PendingContinuationStreamId { get; set; }
 
+    /// <summary>Highest stream ID processed by this connection (for GoAway last-stream-id).</summary>
+    public int HighestProcessedStreamId { get; set; }
+
     public Http2StreamState GetOrCreateStream(int streamId)
     {
         Http2Streams ??= new Dictionary<int, Http2StreamState>();
@@ -70,6 +73,10 @@ internal sealed class ConnectionRuntimeState
             };
             Http2Streams[streamId] = state;
         }
+
+        if (streamId > HighestProcessedStreamId)
+            HighestProcessedStreamId = streamId;
+
         return state;
     }
 

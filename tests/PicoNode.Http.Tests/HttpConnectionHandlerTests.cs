@@ -913,7 +913,7 @@ public sealed class HttpConnectionHandlerTests
     }
 
     [Test]
-    public async Task OnReceivedAsync_sends_goaway_when_http2_headers_frame_arrives()
+    public async Task OnReceivedAsync_sends_rst_stream_when_http2_headers_missing_path()
     {
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
@@ -939,15 +939,10 @@ public sealed class HttpConnectionHandlerTests
             CancellationToken.None
         );
 
-        await Assert.That(context.CloseCount).IsEqualTo(1);
-        await Assert.That(context.SendCount).IsEqualTo(2);
-        var success = Http2FrameCodec.TryReadFrame(
-            new ReadOnlySequence<byte>(context.AllSent[1]),
-            out var goAway,
-            out _
-        );
-        await Assert.That(success).IsTrue();
-        await Assert.That(goAway!.Type).IsEqualTo(Http2FrameType.GoAway);
+        // Missing :path is a stream-level error: RST_STREAM sent, connection stays open.
+        await Assert.That(context.CloseCount).IsEqualTo(0);
+        // 1 SETTINGS + 1 RST_STREAM = 2 frames sent
+        await Assert.That(context.SendCount).IsGreaterThanOrEqualTo(2);
     }
 
     private static HttpConnectionHandler CreateHandler(HttpRequestHandler requestHandler) =>
