@@ -556,12 +556,33 @@ internal static class Http2StreamHandler
             // Connection-level window update
             state.ConnectionSendWindow += increment;
 
-            // Resume any pending stream data
-            if (state.Http2Streams is not null)
+            // Distribute window across pending streams fairly (round-robin)
+            if (state.Http2Streams is not null && state.Http2Streams.Count > 0)
             {
-                foreach (var kvp in state.Http2Streams)
+                // Collect streams with pending data, sorted for consistent ordering
+                var pending = state.Http2Streams
+                    .Where(k => k.Value.PendingDataFrame is not null && !k.Value.ResponseSent)
+                    .Select(k => k.Key)
+                    .OrderBy(id => id)
+                    .ToList();
+
+                if (pending.Count > 0)
                 {
-                    await FlushPendingDataAsync(connection, kvp.Value, state, ct);
+                    // Start from the last served stream for fairness
+                    var startIdx = pending.IndexOf(state.LastServedStreamId);
+                    if (startIdx < 0) startIdx = 0;
+
+                    for (int i = 0; i < pending.Count; i++)
+                    {
+                        var idx = (startIdx + i) % pending.Count;
+                        var sid = pending[idx];
+                        if (state.Http2Streams.TryGetValue(sid, out var stream))
+                        {
+                            await FlushPendingDataAsync(connection, stream, state, ct);
+                        }
+                    }
+
+                    state.LastServedStreamId = pending[(startIdx + pending.Count - 1) % pending.Count];
                 }
             }
         }

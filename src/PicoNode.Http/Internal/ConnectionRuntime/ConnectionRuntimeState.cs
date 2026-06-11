@@ -69,6 +69,9 @@ internal sealed class ConnectionRuntimeState
     /// <summary>GoAway frame has been received — stop accepting new streams.</summary>
     public bool GoAwayReceived { get; set; }
 
+    /// <summary>For fair round-robin scheduling across streams.</summary>
+    public int LastServedStreamId { get; set; }
+
     /// <summary>Removes streams that have been idle beyond the timeout.</summary>
     public void RemoveIdleStreams()
     {
