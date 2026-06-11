@@ -41,4 +41,18 @@ internal sealed class WebSocketMessageProcessorState
         inflate.CopyTo(output);
         return output.ToArray();
     }
+
+    /// <summary>Compresses outgoing message payload using deflate. Caller should set RSV1 bit on the frame.</summary>
+    public byte[] CompressOutgoing(ReadOnlySpan<byte> data)
+    {
+        if (!CompressionNegotiated || data.Length == 0)
+            return data.ToArray();
+
+        using var output = new MemoryStream();
+        using (var deflate = new DeflateStream(output, CompressionLevel.Fastest, leaveOpen: true))
+        {
+            deflate.Write(data);
+        }
+        return output.ToArray();
+    }
 }
