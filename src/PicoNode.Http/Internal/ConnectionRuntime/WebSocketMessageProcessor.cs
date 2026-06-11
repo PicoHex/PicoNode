@@ -27,22 +27,23 @@ internal static class WebSocketMessageProcessor
             // RFC 6455 §5.1: client-to-server frames must be masked
             if (!frame!.Masked)
             {
-                // Close the connection with protocol error
-                var size = WebSocketFrameCodec.MeasureFrameSize(0);
-                var rented = ArrayPool<byte>.Shared.Rent(size);
-                try
-                {
-                    WebSocketFrameCodec.WriteFrame(rented, WebSocketOpCode.Close, []);
-                    await connection.SendAsync(
-                        new ReadOnlySequence<byte>(rented.AsMemory(0, size)),
-                        cancellationToken);
-                }
-                finally
-                {
-                    ArrayPool<byte>.Shared.Return(rented);
-                }
-                connection.Close();
+                await CloseWithProtocolError(connection, cancellationToken);
                 return consumed;
+            }
+
+            // RFC 6455 §5.5: control frames must have FIN=1 and payload ≤ 125
+            if (frame.OpCode is WebSocketOpCode.Ping or WebSocketOpCode.Pong or WebSocketOpCode.Close)
+            {
+                if (!frame.Fin)
+                {
+                    await CloseWithProtocolError(connection, cancellationToken);
+                    return consumed;
+                }
+                if (frame.Payload.Length > 125)
+                {
+                    await CloseWithProtocolError(connection, cancellationToken);
+                    return consumed;
+                }
             }
 
             switch (frame.OpCode)
@@ -156,5 +157,24 @@ internal static class WebSocketMessageProcessor
         }
 
         return consumed;
+    }
+
+    private static async ValueTask CloseWithProtocolError(
+        ITcpConnectionContext connection,
+        CancellationToken ct)
+    {
+        var size = WebSocketFrameCodec.MeasureFrameSize(0);
+        var rented = ArrayPool<byte>.Shared.Rent(size);
+        try
+        {
+            WebSocketFrameCodec.WriteFrame(rented, WebSocketOpCode.Close, []);
+            await connection.SendAsync(
+                new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+        connection.Close();
     }
 }
