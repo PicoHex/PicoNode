@@ -70,40 +70,29 @@ internal static class Http2StreamHandler
         // Check for WebSocket over HTTP/2 (RFC 8441 extended CONNECT)
         string? protocol = null;
 
-        // Extract pseudo-headers and regular headers (needed for validation before deferral).
+        // Extract pseudo-headers and regular headers with RFC 7540 §8.1.2 validations.
         string? method = null;
         string? path = null;
         string? scheme = null;
         string? authority = null;
         var regularHeaders = new List<KeyValuePair<string, string>>();
         var headerDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (name, value) in headerFields)
+        // Validate pseudo-headers and extract values
+        var validation = ValidateHeadersPublic(headerFields);
+        if (!validation.IsValid)
         {
-            switch (name)
-            {
-                case ":method":
-                    method = value;
-                    break;
-                case ":path":
-                    path = value;
-                    break;
-                case ":scheme":
-                    scheme = value;
-                    break;
-                case ":authority":
-                    authority = value;
-                    break;
-                case ":protocol":
-                    protocol = value;
-                    break;
-                default:
-                    regularHeaders.Add(new(name, value));
-                    if (!headerDict.ContainsKey(name))
-                        headerDict[name] = value;
-                    break;
-            }
+            await SendRstStreamAsync(connection, frame.StreamId,
+                Http2ErrorCode.ProtocolError, ct);
+            return false;
         }
+
+        method = validation.Method;
+        path = validation.Path;
+        scheme = validation.Scheme;
+        authority = validation.Authority;
+        protocol = validation.Protocol;
+        regularHeaders = validation.RegularHeaders;
+        headerDict = validation.HeaderDict;
 
         // Validate required pseudo-headers — stream-level error, not connection-level
         if (method is null || path is null)
@@ -445,6 +434,78 @@ internal static class Http2StreamHandler
         // would require bridging WebSocketFrameCodec with HTTP/2 DATA frames.
         state.ResponseSent = true;
         return false;
+    }
+
+    internal static HeaderValidationResult ValidateHeadersPublic(
+        List<(string Name, string Value)> headerFields)
+    {
+        string? method = null, path = null, scheme = null;
+        string? authority = null, protocol = null;
+        var regularHeaders = new List<KeyValuePair<string, string>>();
+        var headerDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        bool pseudoEnded = false;
+        bool hasMethod = false, hasPath = false, hasScheme = false, hasAuthority = false;
+
+        foreach (var (name, value) in headerFields)
+        {
+            if (!name.StartsWith(':'))
+            {
+                pseudoEnded = true;
+            }
+            else
+            {
+                if (pseudoEnded)
+                    return HeaderValidationResult.Invalid();
+
+                switch (name)
+                {
+                    case ":method":
+                        if (hasMethod) return HeaderValidationResult.Invalid();
+                        method = value; hasMethod = true; break;
+                    case ":path":
+                        if (hasPath) return HeaderValidationResult.Invalid();
+                        path = value; hasPath = true; break;
+                    case ":scheme":
+                        if (hasScheme) return HeaderValidationResult.Invalid();
+                        scheme = value; hasScheme = true; break;
+                    case ":authority":
+                        if (hasAuthority) return HeaderValidationResult.Invalid();
+                        authority = value; hasAuthority = true; break;
+                    case ":protocol":
+                        protocol = value; break;
+                }
+                continue;
+            }
+
+            var lower = name.ToLowerInvariant();
+            if (lower is "connection" or "keep-alive" or "proxy-connection"
+                or "transfer-encoding" or "upgrade")
+                return HeaderValidationResult.Invalid();
+
+            if (lower == "te" && !value.Equals("trailers", StringComparison.OrdinalIgnoreCase))
+                return HeaderValidationResult.Invalid();
+
+            regularHeaders.Add(new(name, value));
+            if (!headerDict.ContainsKey(name))
+                headerDict[name] = value;
+        }
+
+        return new HeaderValidationResult(true, method, path, scheme,
+            authority, protocol, regularHeaders, headerDict);
+    }
+
+    internal sealed record HeaderValidationResult(
+        bool IsValid,
+        string? Method, string? Path, string? Scheme,
+        string? Authority, string? Protocol,
+        List<KeyValuePair<string, string>>? RegularHeaders,
+        Dictionary<string, string>? HeaderDict
+    )
+    {
+        internal static readonly HeaderValidationResult InvalidResult = new(
+            false, null, null, null, null, null, null, null);
+
+        internal static HeaderValidationResult Invalid() => InvalidResult;
     }
 
     private static void StoreDecodedHeaders(
