@@ -116,6 +116,12 @@ internal static class WebSocketMessageProcessor
                         : frame.Payload.ToArray();
                     currentState.PayloadBuffer.Write(payload1);
 
+                    if (currentState.PayloadBuffer.WrittenCount > currentState.MaxMessageSize)
+                    {
+                        await CloseWithProtocolError(connection, cancellationToken);
+                        return consumed;
+                    }
+
                     if (frame.Fin && handler is not null)
                     {
                         var messageBytes = currentState.PayloadBuffer.WrittenMemory.ToArray();
@@ -152,6 +158,12 @@ internal static class WebSocketMessageProcessor
                         ? currentState.Decompress(frame.Payload.Span)
                         : frame.Payload.ToArray();
                     currentState.PayloadBuffer.Write(payload2);
+
+                    if (currentState.PayloadBuffer.WrittenCount > currentState.MaxMessageSize)
+                    {
+                        await CloseWithProtocolError(connection, cancellationToken);
+                        return consumed;
+                    }
 
                     if (frame.Fin && handler is not null)
                     {

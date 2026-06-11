@@ -4,9 +4,13 @@ namespace PicoNode.Http.Internal.ConnectionRuntime;
 
 internal sealed class WebSocketMessageProcessorState
 {
+    public const int DefaultMaxMessageSize = 256 * 1024; // 256 KB
+
     public WebSocketOpCode? MessageOpCode { get; set; }
 
     public ArrayBufferWriter<byte> PayloadBuffer { get; } = new();
+
+    public int MaxMessageSize { get; set; } = DefaultMaxMessageSize;
 
     /// <summary>Whether permessage-deflate compression was negotiated.</summary>
     public bool CompressionNegotiated { get; set; }
