@@ -24,7 +24,28 @@ internal static class WebSocketMessageProcessor
             consumed = remaining.GetPosition(frameConsumed);
             remaining = remaining.Slice(frameConsumed);
 
-            switch (frame!.OpCode)
+            // RFC 6455 §5.1: client-to-server frames must be masked
+            if (!frame!.Masked)
+            {
+                // Close the connection with protocol error
+                var size = WebSocketFrameCodec.MeasureFrameSize(0);
+                var rented = ArrayPool<byte>.Shared.Rent(size);
+                try
+                {
+                    WebSocketFrameCodec.WriteFrame(rented, WebSocketOpCode.Close, []);
+                    await connection.SendAsync(
+                        new ReadOnlySequence<byte>(rented.AsMemory(0, size)),
+                        cancellationToken);
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(rented);
+                }
+                connection.Close();
+                return consumed;
+            }
+
+            switch (frame.OpCode)
             {
                 case WebSocketOpCode.Ping:
                 {

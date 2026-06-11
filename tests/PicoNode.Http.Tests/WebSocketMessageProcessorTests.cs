@@ -73,7 +73,7 @@ public sealed class WebSocketMessageProcessorTests
     public async Task Ping_frame_sends_pong_automatically()
     {
         var pingPayload = "are-you-there"u8.ToArray();
-        var encoded = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Ping, pingPayload);
+        var encoded = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Ping, pingPayload, mask: true);
         var context = new RecordingConnectionContext();
         WebSocketMessage? capturedMessage = null;
 
@@ -108,7 +108,7 @@ public sealed class WebSocketMessageProcessorTests
     [Test]
     public async Task Close_frame_sends_close_response_and_closes_connection()
     {
-        var encoded = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Close, []);
+        var encoded = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Close, [], mask: true);
         var context = new RecordingConnectionContext();
         WebSocketMessage? capturedMessage = null;
 
@@ -234,7 +234,7 @@ public sealed class WebSocketMessageProcessorTests
     [Test]
     public async Task Null_handler_still_processes_control_frames()
     {
-        var ping = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Ping, "test"u8);
+        var ping = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Ping, "test"u8, mask: true);
         var context = new RecordingConnectionContext();
 
         var consumed = await WebSocketMessageProcessor.ProcessAsync(
@@ -427,7 +427,7 @@ public sealed class WebSocketMessageProcessorTests
         var textPayload = "Data"u8.ToArray();
         var continuationPayload = "More"u8.ToArray();
         var textFrame = CreateFrame(WebSocketOpCode.Text, textPayload, fin: false, mask: true);
-        var pingFrame = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Ping, "ping"u8);
+        var pingFrame = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Ping, "ping"u8, mask: true);
         var continuationFrame = CreateFrame(
             WebSocketOpCode.Continuation,
             continuationPayload,
@@ -470,7 +470,7 @@ public sealed class WebSocketMessageProcessorTests
     {
         var textPayload = "Incomplete"u8.ToArray();
         var textFrame = CreateFrame(WebSocketOpCode.Text, textPayload, fin: false, mask: true);
-        var closeFrame = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Close, "bye"u8);
+        var closeFrame = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Close, "bye"u8, mask: true);
 
         var combined = new byte[textFrame.Length + closeFrame.Length];
         textFrame.CopyTo(combined, 0);

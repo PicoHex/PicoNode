@@ -79,6 +79,7 @@ public static class WebSocketFrameCodec
         {
             Fin = fin,
             Rsv1 = rsv1,
+            Masked = masked,
             OpCode = opCode,
             Payload = payload,
         };

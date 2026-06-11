@@ -762,7 +762,7 @@ public sealed class HttpConnectionHandlerTests
 
         await handler.OnReceivedAsync(context, buffer, CancellationToken.None);
 
-        var ping = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Ping, "ping"u8);
+        var ping = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Ping, "ping"u8, mask: true);
         await handler.OnReceivedAsync(
             context,
             new ReadOnlySequence<byte>(ping),
@@ -807,7 +807,7 @@ public sealed class HttpConnectionHandlerTests
             CancellationToken.None
         );
 
-        var close = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Close, []);
+        var close = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Close, [], mask: true);
         await handler.OnReceivedAsync(
             context,
             new ReadOnlySequence<byte>(close),
