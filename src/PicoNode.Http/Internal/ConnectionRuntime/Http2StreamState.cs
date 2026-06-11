@@ -8,8 +8,19 @@ internal sealed class Http2StreamState
     public int StreamId { get; }
     public bool EndHeadersReceived { get; set; }
     public bool EndStreamReceived { get; set; }
+    public bool EndStreamFromHeaders { get; set; }  // EndStream flag from the HEADERS frame
     public ArrayBufferWriter<byte>? HeaderBlockBuffer { get; set; }
     public bool ResponseSent { get; set; }
+
+    // DATA frame buffering for request body assembly
+    public ArrayBufferWriter<byte> DataBuffer { get; } = new();
+
+    // Decoded request headers (set when HEADERS arrive without EndStream)
+    public string? DecodedMethod { get; set; }
+    public string? DecodedPath { get; set; }
+    public List<KeyValuePair<string, string>>? DecodedHeaderFields { get; set; }
+    public Dictionary<string, string>? DecodedHeadersDict { get; set; }
+    public bool HandlerInvoked { get; set; }
 
     public Http2StreamState(int streamId)
     {

@@ -31,8 +31,9 @@ internal static class Http2StreamHandler
         if (payloadData is null)
         {
             // Headers not yet complete (waiting for CONTINUATION).
-            // Track the stream ID so Http2ConnectionProcessor can validate
-            // that CONTINUATION frames arrive on the correct stream.
+            // Save the EndStream flag from the HEADERS frame for later use.
+            state.EndStreamFromHeaders = frame.HasFlag(Http2FrameFlags.EndStream);
+
             var runtimeState = connection.UserState as ConnectionRuntimeState;
             if (runtimeState is not null)
                 runtimeState.PendingContinuationStreamId = frame.StreamId;
@@ -51,7 +52,7 @@ internal static class Http2StreamHandler
             return true;
         }
 
-        // Extract pseudo-headers and regular headers
+        // Extract pseudo-headers and regular headers (needed for validation before deferral).
         string? method = null;
         string? path = null;
         string? scheme = null;
@@ -83,11 +84,21 @@ internal static class Http2StreamHandler
             }
         }
 
-        // Validate required pseudo-headers
+        // Validate required pseudo-headers before any deferral
         if (method is null || path is null)
         {
             await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct);
             return true;
+        }
+
+        // If END_STREAM is not set, defer handler invocation and wait for DATA frames.
+        // Use EndStreamFromHeaders for the CONTINUATION path (flag is on HEADERS, not CONTINUATION).
+        var endStream = frame.HasFlag(Http2FrameFlags.EndStream) || state.EndStreamFromHeaders;
+        if (!endStream)
+        {
+            StoreDecodedHeaders(state, method, path, regularHeaders, headerDict);
+            state.EndStreamReceived = false;
+            return false;
         }
 
         // Construct HttpRequest
@@ -349,6 +360,202 @@ internal static class Http2StreamHandler
         }
 
         return state.GetOrCreateStream(streamId);
+    }
+
+    private static void StoreDecodedHeaders(
+        Http2StreamState state,
+        string method,
+        string path,
+        List<KeyValuePair<string, string>> regularHeaders,
+        Dictionary<string, string> headerDict
+    )
+    {
+        state.DecodedMethod = method;
+        state.DecodedPath = path;
+        state.DecodedHeaderFields = regularHeaders;
+        state.DecodedHeadersDict = headerDict;
+    }
+
+    public static async ValueTask<bool> ProcessDataFrame(
+        ITcpConnectionContext connection,
+        Http2Frame frame,
+        HttpRequestHandler requestHandler,
+        ILogger? logger,
+        CancellationToken ct
+    )
+    {
+        // Validate stream exists
+        var runtimeState = connection.UserState as ConnectionRuntimeState;
+        if (runtimeState?.Http2Streams?.TryGetValue(frame.StreamId, out var state) != true
+            || state is null)
+        {
+            return false;
+        }
+
+        // Buffer the data
+        if (frame.Payload.Length > 0)
+        {
+            state.DataBuffer.Write(frame.Payload.Span);
+        }
+
+        // If END_STREAM, complete the request and invoke the handler
+        if (frame.HasFlag(Http2FrameFlags.EndStream))
+        {
+            state.EndStreamReceived = true;
+            return await CompleteDeferredRequest(
+                connection, state, requestHandler, logger, ct);
+        }
+
+        return false;
+    }
+
+    private static async ValueTask<bool> CompleteDeferredRequest(
+        ITcpConnectionContext connection,
+        Http2StreamState state,
+        HttpRequestHandler requestHandler,
+        ILogger? logger,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            // Build request from stored headers and buffered data
+            var bodyBytes = state.DataBuffer.WrittenMemory;
+            var bodyStream = bodyBytes.Length > 0
+                ? new ReadOnlySequenceStream(
+                    new ReadOnlySequence<byte>(bodyBytes))
+                : Stream.Null;
+
+            var request = new HttpRequest
+            {
+                Method = state.DecodedMethod ?? "GET",
+                Target = state.DecodedPath ?? "/",
+                Path = state.DecodedPath ?? "/",
+                Version = PicoNode.Http.HttpVersion.Http11,
+                HeaderFields = state.DecodedHeaderFields ?? [],
+                Headers = state.DecodedHeadersDict
+                    ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+                BodyStream = bodyStream,
+            };
+
+            // Invoke handler
+            var response = await requestHandler(request, ct);
+            state.HandlerInvoked = true;
+
+            // Send response
+            await SendResponseAsync(
+                connection, state, response, state.StreamId, logger, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger?.Log(LogLevel.Error, new EventId(0),
+                "Unhandled exception processing HTTP/2 deferred stream", ex);
+
+            var errorResponse = new HttpResponse
+            {
+                StatusCode = 500,
+                ReasonPhrase = "Internal Server Error",
+            };
+            await SendResponseAsync(
+                connection, state, errorResponse, state.StreamId, logger, ct);
+        }
+
+        return false;
+    }
+
+    private static async ValueTask SendResponseAsync(
+        ITcpConnectionContext connection,
+        Http2StreamState? state,
+        HttpResponse response,
+        int streamId,
+        ILogger? logger,
+        CancellationToken ct
+    )
+    {
+        var responseHeaders = new List<(string, string)>
+        {
+            (":status", response.StatusCode.ToString()),
+        };
+
+        foreach (var header in response.Headers)
+        {
+            var keyLower = header.Key.ToLowerInvariant();
+            if (keyLower is "connection" or "transfer-encoding"
+                or "keep-alive" or "proxy-connection" or "upgrade")
+                continue;
+            responseHeaders.Add((header.Key, header.Value));
+        }
+
+        var hpackSize = MeasureResponseHeadersSize(responseHeaders);
+        var headersFlags = Http2FrameFlags.EndHeaders;
+
+        if (response.Body.Length == 0 && response.BodyStream is null)
+        {
+            headersFlags |= Http2FrameFlags.EndStream;
+            var frameRented = ArrayPool<byte>.Shared.Rent(
+                Http2FrameCodec.FrameHeaderSize + hpackSize);
+            try
+            {
+                Http2FrameCodec.WriteFrameHeader(frameRented, hpackSize,
+                    Http2FrameType.Headers, headersFlags, streamId);
+                WriteResponseHeaders(
+                    frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
+                    responseHeaders);
+                await connection.SendAsync(new ReadOnlySequence<byte>(
+                    frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + hpackSize)), ct);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(frameRented);
+            }
+            return;
+        }
+
+        // Has body: HEADERS (no EndStream) + DATA (with EndStream)
+        {
+            var frameRented = ArrayPool<byte>.Shared.Rent(
+                Http2FrameCodec.FrameHeaderSize + hpackSize);
+            try
+            {
+                Http2FrameCodec.WriteFrameHeader(frameRented, hpackSize,
+                    Http2FrameType.Headers, headersFlags, streamId);
+                WriteResponseHeaders(
+                    frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
+                    responseHeaders);
+                await connection.SendAsync(new ReadOnlySequence<byte>(
+                    frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + hpackSize)), ct);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(frameRented);
+            }
+        }
+
+        // Send DATA frame with body
+        if (response.Body.Length > 0)
+        {
+            var bodySize = response.Body.Length;
+            var frameRented = ArrayPool<byte>.Shared.Rent(
+                Http2FrameCodec.FrameHeaderSize + bodySize);
+            try
+            {
+                Http2FrameCodec.WriteFrame(frameRented, Http2FrameType.Data,
+                    Http2FrameFlags.EndStream, streamId, response.Body.Span);
+                await connection.SendAsync(new ReadOnlySequence<byte>(
+                    frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + bodySize)), ct);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(frameRented);
+            }
+        }
+
+        if (state is not null)
+            state.ResponseSent = true;
     }
 
     private static async ValueTask SendGoAwayAndCloseAsync(

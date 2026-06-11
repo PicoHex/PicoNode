@@ -152,6 +152,14 @@ internal static class Http2ConnectionProcessor
                 );
 
             case Http2FrameType.Data:
+                return await Http2StreamHandler.ProcessDataFrame(
+                    connection,
+                    frame,
+                    requestHandler,
+                    logger,
+                    cancellationToken
+                );
+
             case Http2FrameType.Priority:
                 return false;
 

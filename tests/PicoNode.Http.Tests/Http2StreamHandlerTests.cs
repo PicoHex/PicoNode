@@ -495,4 +495,56 @@ public sealed class Http2StreamHandlerTests
             Payload = payload,
         };
     }
+
+    [Test]
+    public async Task HeadersWithoutEndStream_ThenDataWithEndStream_HandlerReceivesBody()
+    {
+        var connection = new TestTcpConnectionContext();
+        var hpackData = BuildMinimalHpack("POST", "/upload");
+        var receivedBody = new MemoryStream();
+
+        HttpRequestHandler handler = async (req, ct) =>
+        {
+            await req.BodyStream.CopyToAsync(receivedBody, ct);
+            return new HttpResponse { StatusCode = 200 };
+        };
+
+        // Send HEADERS without EndStream
+        var headersFrame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.None, 1, hpackData);
+        var shouldClose1 = await Http2StreamHandler.ProcessHeadersFrame(
+            connection, headersFrame, handler, null, CancellationToken.None);
+
+        await Assert.That(shouldClose1).IsFalse();
+        await Assert.That(receivedBody.Length).IsEqualTo(0);
+
+        // Send DATA frames (non-final)
+        var dataFrame1 = BuildDataFrame(1, "Hello "u8.ToArray(), endStream: false);
+        await Http2StreamHandler.ProcessDataFrame(
+            connection, dataFrame1, handler, null, CancellationToken.None);
+
+        await Assert.That(receivedBody.Length).IsEqualTo(0);
+
+        // Send final DATA with EndStream
+        var dataFrame2 = BuildDataFrame(1, "World"u8.ToArray(), endStream: true);
+        await Http2StreamHandler.ProcessDataFrame(
+            connection, dataFrame2, handler, null, CancellationToken.None);
+
+        await Assert.That(Encoding.UTF8.GetString(receivedBody.ToArray())).IsEqualTo("Hello World");
+    }
+
+    private static Http2Frame BuildDataFrame(int streamId, byte[] data, bool endStream)
+    {
+        var flags = Http2FrameFlags.None;
+        if (endStream)
+            flags |= Http2FrameFlags.EndStream;
+
+        return new Http2Frame
+        {
+            Type = Http2FrameType.Data,
+            Flags = flags,
+            StreamId = streamId,
+            Length = data.Length,
+            Payload = data,
+        };
+    }
 }
