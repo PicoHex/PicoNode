@@ -60,12 +60,40 @@ internal sealed class ConnectionRuntimeState
     /// <summary>Whether any frame has been received after the connection preface.</summary>
     public bool ReceivedPostPrefaceFrame { get; set; }
 
+    /// <summary>Maximum idle time for a stream before it's eligible for cleanup.</summary>
+    public TimeSpan StreamIdleTimeout { get; set; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>Removes streams that have been idle beyond the timeout.</summary>
+    public void RemoveIdleStreams()
+    {
+        if (Http2Streams is null || Http2Streams.Count == 0)
+            return;
+
+        var now = DateTime.UtcNow;
+        List<int>? toRemove = null;
+        foreach (var kvp in Http2Streams)
+        {
+            if (now - kvp.Value.LastActivityUtc >= StreamIdleTimeout)
+            {
+                toRemove ??= new List<int>();
+                toRemove.Add(kvp.Key);
+            }
+        }
+
+        if (toRemove is not null)
+        {
+            foreach (var id in toRemove)
+                Http2Streams.Remove(id);
+        }
+    }
+
     public Http2StreamState GetOrCreateStream(int streamId)
     {
         Http2Streams ??= new Dictionary<int, Http2StreamState>();
 
-        // Clean up completed streams before creating new ones
+        // Clean up completed and idle streams before creating new ones
         CleanupClosedStreams();
+        RemoveIdleStreams();
 
         // Existing stream found — return it regardless of ID rules.
         if (Http2Streams is not null && Http2Streams.TryGetValue(streamId, out var existing))

@@ -38,6 +38,9 @@ internal sealed class Http2StreamState
     // Buffered response data when send window is exhausted
     public byte[]? PendingDataFrame { get; set; }
 
+    // Timeout tracking
+    public DateTime LastActivityUtc { get; set; } = DateTime.UtcNow;
+
     /// <summary>
     /// Combines buffered CONTINUATION data with the current frame payload.
     /// Returns null when headers are still incomplete (expecting CONTINUATION).

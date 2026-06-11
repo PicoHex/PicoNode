@@ -34,6 +34,9 @@ internal static class Http2StreamHandler
             return false;
         }
 
+        // Update activity timestamp for timeout tracking
+        state.LastActivityUtc = DateTime.UtcNow;
+
         // CONTINUATION buffering: if END_HEADERS is not set, buffer and return.
         ArraySegment<byte>? payloadData;
         try
@@ -659,6 +662,9 @@ internal static class Http2StreamHandler
         {
             return false;
         }
+
+        // Update activity timestamp for timeout tracking
+        state.LastActivityUtc = DateTime.UtcNow;
 
         // Buffer the data
         if (frame.Payload.Length > 0)
