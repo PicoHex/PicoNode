@@ -534,6 +534,48 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
+    public async Task Response_body_larger_than_max_frame_size_is_chunked()
+    {
+        var connection = new TestTcpConnectionContext();
+        var bodySize = 20000; // > 16384 default max frame size
+        var body = new byte[bodySize];
+        Array.Fill<byte>(body, 0x58); // 'X'
+
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse { StatusCode = 200, Body = body });
+
+        var headersFrame = BuildHeadersFrame(MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream);
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection, headersFrame, handler, null, CancellationToken.None);
+
+        var frames = connection.SentFrames;
+        await Assert.That(frames.Count).IsGreaterThanOrEqualTo(2);
+
+        // First frame should be HEADERS
+        await Assert.That(TryReadFrame(frames[0], out var headersFrameOut)).IsTrue();
+        await Assert.That(headersFrameOut!.Type).IsEqualTo(Http2FrameType.Headers);
+
+        // Count decodeable frames
+        var dataFrames = 0;
+        var totalDataBytes = 0;
+        for (var i = 1; i < frames.Count; i++)
+        {
+            if (!TryReadFrame(frames[i], out var dataFrame) || dataFrame is null)
+                continue;
+            if (dataFrame.Type == Http2FrameType.Data)
+            {
+                dataFrames++;
+                totalDataBytes += dataFrame.Payload.Length;
+            }
+        }
+
+        await Assert.That(dataFrames).IsGreaterThanOrEqualTo(2);
+        await Assert.That(totalDataBytes).IsEqualTo(bodySize);
+    }
+
+    [Test]
     public async Task RstStream_removes_stream_and_keeps_connection_open()
     {
         var connection = new TestTcpConnectionContext();
