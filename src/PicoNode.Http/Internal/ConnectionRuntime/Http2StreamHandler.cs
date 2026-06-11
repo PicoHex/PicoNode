@@ -509,8 +509,12 @@ internal static class Http2StreamHandler
             Http2FrameCodec.FrameHeaderSize + toSend);
         try
         {
+            // Only set EndStream when ALL buffered data has been sent.
+            var dataFlags = toSend == data.Length
+                ? Http2FrameFlags.EndStream
+                : Http2FrameFlags.None;
             Http2FrameCodec.WriteFrame(frameRented, Http2FrameType.Data,
-                Http2FrameFlags.EndStream, stream.StreamId,
+                dataFlags, stream.StreamId,
                 data.AsSpan(0, toSend));
             await connection.SendAsync(new ReadOnlySequence<byte>(
                 frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + toSend)), ct);

@@ -63,7 +63,11 @@ internal sealed class ConnectionRuntimeState
 
         if (!Http2Streams.TryGetValue(streamId, out var state))
         {
-            state = new Http2StreamState(streamId);
+            state = new Http2StreamState(streamId)
+            {
+                // Initialize stream send window from the peer's SETTINGS
+                SendWindow = RemoteInitialWindowSize,
+            };
             Http2Streams[streamId] = state;
         }
         return state;
