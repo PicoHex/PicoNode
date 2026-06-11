@@ -22,6 +22,13 @@ internal sealed class Http2StreamState
     public Dictionary<string, string>? DecodedHeadersDict { get; set; }
     public bool HandlerInvoked { get; set; }
 
+    // Flow control windows
+    public int SendWindow { get; set; } = 65535;
+    public int ReceiveWindow { get; set; } = 65535;
+
+    // Buffered response data when send window is exhausted
+    public byte[]? PendingDataFrame { get; set; }
+
     public Http2StreamState(int streamId)
     {
         StreamId = streamId;

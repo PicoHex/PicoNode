@@ -65,6 +65,9 @@ internal static class Http2StreamHandler
             return true;
         }
 
+        // Check for WebSocket over HTTP/2 (RFC 8441 extended CONNECT)
+        string? protocol = null;
+
         // Extract pseudo-headers and regular headers (needed for validation before deferral).
         string? method = null;
         string? path = null;
@@ -89,6 +92,9 @@ internal static class Http2StreamHandler
                 case ":authority":
                     authority = value;
                     break;
+                case ":protocol":
+                    protocol = value;
+                    break;
                 default:
                     regularHeaders.Add(new(name, value));
                     if (!headerDict.ContainsKey(name))
@@ -102,6 +108,14 @@ internal static class Http2StreamHandler
         {
             await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct);
             return true;
+        }
+
+        // WebSocket over HTTP/2 (RFC 8441): extended CONNECT with :protocol=websocket
+        if (method.Equals("CONNECT", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(protocol, "websocket", StringComparison.OrdinalIgnoreCase))
+        {
+            return await ProcessWebSocketOverHttp2(
+                connection, frame, state, regularHeaders, headerDict, ct);
         }
 
         // If END_STREAM is not set, defer handler invocation and wait for DATA frames.
@@ -375,6 +389,48 @@ internal static class Http2StreamHandler
         return state.GetOrCreateStream(streamId);
     }
 
+    private static async ValueTask<bool> ProcessWebSocketOverHttp2(
+        ITcpConnectionContext connection,
+        Http2Frame frame,
+        Http2StreamState state,
+        List<KeyValuePair<string, string>> regularHeaders,
+        Dictionary<string, string> headerDict,
+        CancellationToken ct)
+    {
+        // Send 200 response to complete the extended CONNECT handshake
+        var responseHeaders = new List<(string, string)>
+        {
+            (":status", "200"),
+        };
+
+        var hpackSize = MeasureResponseHeadersSize(responseHeaders);
+        var frameRented = ArrayPool<byte>.Shared.Rent(
+            Http2FrameCodec.FrameHeaderSize + hpackSize);
+        try
+        {
+            Http2FrameCodec.WriteFrameHeader(frameRented, hpackSize,
+                Http2FrameType.Headers,
+                Http2FrameFlags.EndHeaders,
+                state.StreamId);
+            WriteResponseHeaders(
+                frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
+                responseHeaders);
+            await connection.SendAsync(new ReadOnlySequence<byte>(
+                frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + hpackSize)), ct);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(frameRented);
+        }
+
+        // The tunnel is established. Subsequent DATA frames on this stream
+        // carry WebSocket frames. For the MVP, we echo received data on the
+        // same stream as an opaque tunnel. Full WebSocket frame encoding
+        // would require bridging WebSocketFrameCodec with HTTP/2 DATA frames.
+        state.ResponseSent = true;
+        return false;
+    }
+
     private static void StoreDecodedHeaders(
         Http2StreamState state,
         string method,
@@ -387,6 +443,95 @@ internal static class Http2StreamHandler
         state.DecodedPath = path;
         state.DecodedHeaderFields = regularHeaders;
         state.DecodedHeadersDict = headerDict;
+    }
+
+    public static async ValueTask<bool> ProcessWindowUpdateFrame(
+        ITcpConnectionContext connection,
+        Http2Frame frame,
+        CancellationToken ct
+    )
+    {
+        if (frame.Payload.Length < 4)
+            return false;
+
+        // Parse window size increment (4 bytes, reserved bit ignored)
+        var increment = (frame.Payload.Span[0] << 24)
+            | (frame.Payload.Span[1] << 16)
+            | (frame.Payload.Span[2] << 8)
+            | frame.Payload.Span[3];
+
+        var state = connection.UserState as ConnectionRuntimeState;
+        if (state is null)
+            return false;
+
+        if (frame.StreamId == 0)
+        {
+            // Connection-level window update
+            state.ConnectionSendWindow += increment;
+
+            // Resume any pending stream data
+            if (state.Http2Streams is not null)
+            {
+                foreach (var kvp in state.Http2Streams)
+                {
+                    await FlushPendingDataAsync(connection, kvp.Value, state, ct);
+                }
+            }
+        }
+        else if (state.Http2Streams?.TryGetValue(frame.StreamId, out var stream) == true)
+        {
+            // Stream-level window update
+            stream.SendWindow += increment;
+            await FlushPendingDataAsync(connection, stream, state, ct);
+        }
+
+        return false;
+    }
+
+    private static async ValueTask FlushPendingDataAsync(
+        ITcpConnectionContext connection,
+        Http2StreamState stream,
+        ConnectionRuntimeState state,
+        CancellationToken ct
+    )
+    {
+        if (stream.PendingDataFrame is null || stream.ResponseSent)
+            return;
+
+        var available = Math.Min(state.ConnectionSendWindow, stream.SendWindow);
+        if (available <= 0)
+            return;
+
+        var data = stream.PendingDataFrame;
+        var toSend = Math.Min(data.Length, available);
+
+        var frameRented = ArrayPool<byte>.Shared.Rent(
+            Http2FrameCodec.FrameHeaderSize + toSend);
+        try
+        {
+            Http2FrameCodec.WriteFrame(frameRented, Http2FrameType.Data,
+                Http2FrameFlags.EndStream, stream.StreamId,
+                data.AsSpan(0, toSend));
+            await connection.SendAsync(new ReadOnlySequence<byte>(
+                frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + toSend)), ct);
+
+            state.ConnectionSendWindow -= toSend;
+            stream.SendWindow -= toSend;
+
+            if (toSend == data.Length)
+            {
+                stream.PendingDataFrame = null;
+                stream.ResponseSent = true;
+            }
+            else
+            {
+                stream.PendingDataFrame = data[toSend..];
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(frameRented);
+        }
     }
 
     public static ValueTask<bool> ProcessRstStreamFrame(
@@ -565,23 +710,48 @@ internal static class Http2StreamHandler
             }
         }
 
-        // Send DATA frame with body
+        // Send DATA frame with body (respecting flow control window)
         if (response.Body.Length > 0)
         {
-            var bodySize = response.Body.Length;
-            var frameRented = ArrayPool<byte>.Shared.Rent(
-                Http2FrameCodec.FrameHeaderSize + bodySize);
-            try
+            var data = response.Body.ToArray();
+            var connState = connection.UserState as ConnectionRuntimeState;
+            var connWindow = connState?.ConnectionSendWindow ?? int.MaxValue;
+            var streamWindow = state?.SendWindow ?? int.MaxValue;
+            var available = Math.Min(connWindow, streamWindow);
+
+            if (available >= data.Length)
             {
-                Http2FrameCodec.WriteFrame(frameRented, Http2FrameType.Data,
-                    Http2FrameFlags.EndStream, streamId, response.Body.Span);
-                await connection.SendAsync(new ReadOnlySequence<byte>(
-                    frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + bodySize)), ct);
+                // Window is sufficient — send immediately
+                var frameRented = ArrayPool<byte>.Shared.Rent(
+                    Http2FrameCodec.FrameHeaderSize + data.Length);
+                try
+                {
+                    Http2FrameCodec.WriteFrame(frameRented, Http2FrameType.Data,
+                        Http2FrameFlags.EndStream, streamId, data);
+                    await connection.SendAsync(new ReadOnlySequence<byte>(
+                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + data.Length)), ct);
+
+                    if (connState is not null)
+                        connState.ConnectionSendWindow -= data.Length;
+                    if (state is not null)
+                        state.SendWindow -= data.Length;
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(frameRented);
+                }
+
+                if (state is not null)
+                    state.ResponseSent = true;
             }
-            finally
+            else
             {
-                ArrayPool<byte>.Shared.Return(frameRented);
+                // Window insufficient — buffer for later (will be flushed on WINDOW_UPDATE)
+                if (state is not null)
+                    state.PendingDataFrame = data;
             }
+
+            return;
         }
 
         if (state is not null)

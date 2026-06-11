@@ -208,6 +208,12 @@ internal static class Http2ConnectionProcessor
                 );
 
             case Http2FrameType.WindowUpdate:
+                return await Http2StreamHandler.ProcessWindowUpdateFrame(
+                    connection,
+                    frame,
+                    cancellationToken
+                );
+
             default:
                 await SendGoAwayAndCloseAsync(
                     connection,

@@ -24,6 +24,9 @@ internal sealed class ConnectionRuntimeState
     public int RemoteMaxFrameSize { get; set; } = 16384;
     public int RemoteHeaderTableSize { get; set; } = 4096;
 
+    // Connection-level flow control (how much we can send to the peer)
+    public int ConnectionSendWindow { get; set; } = 65535;
+
     public void ApplySettings(IReadOnlyList<Http2Setting> settings)
     {
         foreach (var setting in settings)
@@ -35,6 +38,7 @@ internal sealed class ConnectionRuntimeState
                     break;
                 case Http2SettingId.InitialWindowSize:
                     RemoteInitialWindowSize = (int)setting.Value;
+                    ConnectionSendWindow = RemoteInitialWindowSize;
                     break;
                 case Http2SettingId.MaxFrameSize:
                     RemoteMaxFrameSize = (int)setting.Value;
