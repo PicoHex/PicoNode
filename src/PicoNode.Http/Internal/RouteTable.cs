@@ -163,10 +163,13 @@ public sealed class RouteTable<THandler>
         {
             StatusCode = 405,
             ReasonPhrase = "Method Not Allowed",
-            Headers =  [new KeyValuePair<string, string>("Allow", allowHeader),],
+            Headers = [new KeyValuePair<string, string>("Allow", allowHeader)],
         };
 
     /// <summary>Singleton 404 Not Found response.</summary>
-    public static readonly HttpResponse NotFoundResponse =
-        new() { StatusCode = 404, ReasonPhrase = "Not Found", };
+    public static readonly HttpResponse NotFoundResponse = new()
+    {
+        StatusCode = 404,
+        ReasonPhrase = "Not Found",
+    };
 }

@@ -47,11 +47,7 @@ public sealed class TcpConnectionBranchTests
             var logger = new SpyLogger();
             var handlerException = new InvalidOperationException("handler boom");
             var handler = new RecordingTcpHandler(handlerException);
-            var connection = CreateConnection(
-                pair.Server,
-                handler,
-                logger
-            );
+            var connection = CreateConnection(pair.Server, handler, logger);
             var runTask = connection.RunAsync(handler);
 
             await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
@@ -136,11 +132,7 @@ public sealed class TcpConnectionBranchTests
         {
             var logger = new SpyLogger();
             var handler = new RecordingTcpHandler();
-            var connection = CreateConnection(
-                pair.Server,
-                handler,
-                logger
-            );
+            var connection = CreateConnection(pair.Server, handler, logger);
             var exception = new SocketException((int)SocketError.NetworkDown);
             var runTask = connection.RunAsync(new SocketExceptionTcpHandler(exception, handler));
 
@@ -282,11 +274,7 @@ public sealed class TcpConnectionBranchTests
             var logger = new SpyLogger();
             var exception = new InvalidOperationException("close handler boom");
             var handler = new AsyncThrowingClosedTcpHandler(exception);
-            var connection = CreateConnection(
-                pair.Server,
-                handler,
-                logger
-            );
+            var connection = CreateConnection(pair.Server, handler, logger);
 
             var task = InvokeClosedHandlerAsync(
                 connection,
@@ -919,8 +907,9 @@ public sealed class TcpConnectionBranchTests
 
     private sealed class AsyncConnectedTcpHandler : ITcpConnectionHandler
     {
-        private readonly TaskCompletionSource<bool> _release =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
         public Task OnConnectedAsync(
             ITcpConnectionContext connection,
@@ -1003,8 +992,9 @@ public sealed class TcpConnectionBranchTests
     private sealed class AsyncThrowingClosedTcpHandler(Exception exception) : ITcpConnectionHandler
     {
         private readonly Exception _exception = exception;
-        private readonly TaskCompletionSource<bool> _release =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource<bool> _release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
         public Task OnConnectedAsync(
             ITcpConnectionContext connection,

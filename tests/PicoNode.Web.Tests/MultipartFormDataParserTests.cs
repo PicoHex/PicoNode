@@ -206,7 +206,7 @@ public sealed class MultipartFormDataParserTests
             Method = "POST",
             Target = "/submit",
             Version = HttpVersion.Http11,
-            HeaderFields =  [new("Content-Type", "application/json"), new("Host", "localhost"),],
+            HeaderFields = [new("Content-Type", "application/json"), new("Host", "localhost")],
             Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["Content-Type"] = "application/json",
@@ -228,7 +228,7 @@ public sealed class MultipartFormDataParserTests
             Method = "POST",
             Target = "/submit",
             Version = HttpVersion.Http11,
-            HeaderFields =  [],
+            HeaderFields = [],
             Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             Body = ReadOnlyMemory<byte>.Empty,
         };
@@ -314,26 +314,24 @@ public sealed class MultipartFormDataParserTests
         );
 
         await Assert
-            .That(
-                () =>
-                    MultipartFormDataParser.Parse(
-                        request,
-                        new MultipartFormDataParserOptions { MaxBoundaryLength = 0 }
-                    )
+            .That(() =>
+                MultipartFormDataParser.Parse(
+                    request,
+                    new MultipartFormDataParserOptions { MaxBoundaryLength = 0 }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(
-                () =>
-                    MultipartFormDataParser.Parse(
-                        request,
-                        new MultipartFormDataParserOptions
-                        {
-                            MaxBoundaryLength =
-                                MultipartFormDataParserOptions.DefaultMaxBoundaryLength + 1,
-                        }
-                    )
+            .That(() =>
+                MultipartFormDataParser.Parse(
+                    request,
+                    new MultipartFormDataParserOptions
+                    {
+                        MaxBoundaryLength =
+                            MultipartFormDataParserOptions.DefaultMaxBoundaryLength + 1,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
     }
@@ -357,9 +355,9 @@ public sealed class MultipartFormDataParserTests
     public async Task Skips_text_field_with_invalid_utf8_bytes()
     {
         var boundary = "boundary"u8.ToArray();
-        var headerPrefix = Encoding
-            .ASCII
-            .GetBytes("--boundary\r\nContent-Disposition: form-data; name=\"username\"\r\n\r\n");
+        var headerPrefix = Encoding.ASCII.GetBytes(
+            "--boundary\r\nContent-Disposition: form-data; name=\"username\"\r\n\r\n"
+        );
         var footer = Encoding.ASCII.GetBytes("\r\n--boundary--\r\n");
         var bodyBytes = new byte[headerPrefix.Length + 2 + footer.Length];
 
@@ -382,9 +380,9 @@ public sealed class MultipartFormDataParserTests
     [Test]
     public async Task Skips_part_with_invalid_utf8_headers()
     {
-        var headerPrefix = Encoding
-            .ASCII
-            .GetBytes("--boundary\r\nContent-Disposition: form-data; name=\"");
+        var headerPrefix = Encoding.ASCII.GetBytes(
+            "--boundary\r\nContent-Disposition: form-data; name=\""
+        );
         var headerSuffix = Encoding.ASCII.GetBytes("\"\r\n\r\nalice\r\n--boundary--\r\n");
         var bodyBytes = new byte[headerPrefix.Length + 1 + headerSuffix.Length];
 

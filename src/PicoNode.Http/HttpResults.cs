@@ -9,7 +9,10 @@ public static class HttpResults
             ReasonPhrase = reasonPhrase,
             Headers =
             [
-                new KeyValuePair<string, string>(HttpHeaderNames.ContentType, "text/plain; charset=utf-8"),
+                new KeyValuePair<string, string>(
+                    HttpHeaderNames.ContentType,
+                    "text/plain; charset=utf-8"
+                ),
             ],
             Body = Encoding.UTF8.GetBytes(body),
         };
@@ -21,11 +24,14 @@ public static class HttpResults
             ReasonPhrase = reasonPhrase,
             Headers =
             [
-                new KeyValuePair<string, string>(HttpHeaderNames.ContentType, "application/json; charset=utf-8"),
+                new KeyValuePair<string, string>(
+                    HttpHeaderNames.ContentType,
+                    "application/json; charset=utf-8"
+                ),
             ],
             Body = Encoding.UTF8.GetBytes(json),
         };
 
     public static HttpResponse Status(int statusCode, string reasonPhrase) =>
-        new() { StatusCode = statusCode, ReasonPhrase = reasonPhrase, };
+        new() { StatusCode = statusCode, ReasonPhrase = reasonPhrase };
 }

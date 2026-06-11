@@ -11,14 +11,13 @@ public sealed partial class HttpConnectionHandlerBenchmarks
     private HttpConnectionHandler _handler = null!;
     private RecordingConnectionContext _context = null!;
     private ReadOnlySequence<byte> _buffer;
-    private static readonly HttpResponse Response =
-        new()
-        {
-            StatusCode = 200,
-            ReasonPhrase = "OK",
-            Headers =  [new KeyValuePair<string, string>("Content-Type", "text/plain")],
-            Body = PongBody,
-        };
+    private static readonly HttpResponse Response = new()
+    {
+        StatusCode = 200,
+        ReasonPhrase = "OK",
+        Headers = [new KeyValuePair<string, string>("Content-Type", "text/plain")],
+        Body = PongBody,
+    };
 
     [GlobalSetup]
     public void Setup()

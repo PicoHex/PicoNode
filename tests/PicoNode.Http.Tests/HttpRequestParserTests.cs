@@ -6,17 +6,15 @@ public sealed class HttpRequestParserTests
     public async Task Parse_successfully_materializes_one_request_and_exact_consumed_position()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /submit HTTP/1.1\r\nHost: Example.com\r\nContent-Length: 5\r\n\r\nhe"
-                ),
+            Encoding.ASCII.GetBytes(
+                "POST /submit HTTP/1.1\r\nHost: Example.com\r\nContent-Length: 5\r\n\r\nhe"
+            ),
             Encoding.ASCII.GetBytes("lloNEXT")
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -39,16 +37,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_preserves_repeated_request_headers_and_combines_lookup_values()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "GET / HTTP/1.1\r\nHost: example.com\r\nAccept: text/plain\r\naccept: text/html\r\nConnection: keep-alive\r\nConnection: close\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "GET / HTTP/1.1\r\nHost: example.com\r\nAccept: text/plain\r\naccept: text/html\r\nConnection: keep-alive\r\nConnection: close\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -74,16 +70,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_incomplete_body_consumes_nothing()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhe"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhe"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Incomplete);
@@ -98,16 +92,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_rejects_unsupported_transfer_encoding()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /submit HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: gzip\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /submit HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: gzip\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -118,16 +110,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_chunked_single_chunk()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -140,16 +130,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_chunked_multiple_chunks()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -162,16 +150,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_chunked_empty_body()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -183,16 +169,14 @@ public sealed class HttpRequestParserTests
     {
         var chunk = new string('A', 16);
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    $"POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n10\r\n{chunk}\r\n0\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                $"POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n10\r\n{chunk}\r\n0\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -203,16 +187,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_chunked_with_chunk_extension()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n5;ext=val\r\nhello\r\n0\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n5;ext=val\r\nhello\r\n0\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -223,16 +205,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_chunked_incomplete_returns_incomplete()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Incomplete);
@@ -242,16 +222,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_rejects_chunked_with_content_length()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\n5\r\nhello\r\n0\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\n5\r\nhello\r\n0\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -261,16 +239,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_rejects_chunk_size_that_overflows_to_zero()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n100000000\r\n0\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n100000000\r\n0\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -281,16 +257,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_rejects_chunk_size_that_overflows_to_small_positive_value()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n100000001\r\nA\r\n0\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /data HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n100000001\r\nA\r\n0\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -301,16 +275,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_rejects_duplicate_content_length()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /submit HTTP/1.1\r\nContent-Length: 5\r\ncontent-length: 5\r\n\r\nhello"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /submit HTTP/1.1\r\nContent-Length: 5\r\ncontent-length: 5\r\n\r\nhello"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -327,7 +299,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -344,7 +316,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -360,7 +332,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -376,7 +348,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -387,14 +359,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_accepts_request_targets_with_valid_query_strings_and_percent_encoding()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes("GET /hello%20world?name=pico HTTP/1.1\r\nHost: example.com\r\n\r\n")
+            Encoding.ASCII.GetBytes(
+                "GET /hello%20world?name=pico HTTP/1.1\r\nHost: example.com\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -411,7 +383,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -432,7 +404,7 @@ public sealed class HttpRequestParserTests
         var buffer = CreateSequence(bytes);
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -469,7 +441,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -485,7 +457,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -496,14 +468,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_rejects_header_names_with_non_token_characters()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes("GET / HTTP/1.1\r\nHost: example.com\r\nBad/Header: value\r\n\r\n")
+            Encoding.ASCII.GetBytes(
+                "GET / HTTP/1.1\r\nHost: example.com\r\nBad/Header: value\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -525,7 +497,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -536,14 +508,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_rejects_duplicate_host_headers()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes("GET / HTTP/1.1\r\nHost: example.com\r\nHost: example.org\r\n\r\n")
+            Encoding.ASCII.GetBytes(
+                "GET / HTTP/1.1\r\nHost: example.com\r\nHost: example.org\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -557,7 +529,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -573,7 +545,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -589,7 +561,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -604,7 +576,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -619,7 +591,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -634,7 +606,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -650,7 +622,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -666,7 +638,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -680,7 +652,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -696,7 +668,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -712,7 +684,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -728,7 +700,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -740,16 +712,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_accepts_http10_requests_with_host_header()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /data HTTP/1.0\r\nHost: example.com\r\nContent-Length: 3\r\n\r\nabc"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /data HTTP/1.0\r\nHost: example.com\r\nContent-Length: 3\r\n\r\nabc"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -767,7 +737,7 @@ public sealed class HttpRequestParserTests
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
@@ -779,16 +749,14 @@ public sealed class HttpRequestParserTests
     {
         // Headers complete, body not yet arrived
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: 1000\r\nExpect: 100-continue\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: 1000\r\nExpect: 100-continue\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Incomplete);
@@ -799,16 +767,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_does_not_set_expects_continue_when_body_complete()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\nExpect: 100-continue\r\n\r\nhello"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\nExpect: 100-continue\r\n\r\nhello"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
@@ -819,16 +785,14 @@ public sealed class HttpRequestParserTests
     public async Task Parse_does_not_set_expects_continue_for_http10()
     {
         var buffer = CreateSequence(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /upload HTTP/1.0\r\nContent-Length: 1000\r\nExpect: 100-continue\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /upload HTTP/1.0\r\nContent-Length: 1000\r\nExpect: 100-continue\r\n\r\n"
+            )
         );
 
         var result = HttpRequestParser.Parse(
             buffer,
-            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default, }
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
         );
 
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Incomplete);
@@ -862,10 +826,7 @@ public sealed class HttpRequestParserTests
 
         public BufferSegment Append(ReadOnlyMemory<byte> memory)
         {
-            var segment = new BufferSegment(memory)
-            {
-                RunningIndex = RunningIndex + Memory.Length,
-            };
+            var segment = new BufferSegment(memory) { RunningIndex = RunningIndex + Memory.Length };
 
             Next = segment;
             return segment;

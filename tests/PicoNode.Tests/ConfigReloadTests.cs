@@ -9,12 +9,8 @@ public sealed class ConfigReloadTests
     {
         var initialEndpoint = new IPEndPoint(IPAddress.Loopback, 0);
 
-        await using var root = await Cfg
-            .CreateBuilder()
-            .Add(new Dictionary<string, string>
-            {
-                ["MaxConnections"] = "100",
-            })
+        await using var root = await Cfg.CreateBuilder()
+            .Add(new Dictionary<string, string> { ["MaxConnections"] = "100" })
             .BuildAsync();
 
         var options = new TcpNodeOptions
@@ -40,12 +36,8 @@ public sealed class ConfigReloadTests
     {
         var initialEndpoint = new IPEndPoint(IPAddress.Loopback, 0);
 
-        await using var root = await Cfg
-            .CreateBuilder()
-            .Add(new Dictionary<string, string>
-            {
-                ["ReceiveSocketBufferSize"] = "4194304",
-            })
+        await using var root = await Cfg.CreateBuilder()
+            .Add(new Dictionary<string, string> { ["ReceiveSocketBufferSize"] = "4194304" })
             .BuildAsync();
 
         var options = new UdpNodeOptions
@@ -74,7 +66,9 @@ public sealed class ConfigReloadTests
 
     private static void ApplyUdpReload(ICfg config, UdpNodeOptions options)
     {
-        if (config.TryGetValue("ReceiveSocketBufferSize", out var v) && int.TryParse(v, out var val))
+        if (
+            config.TryGetValue("ReceiveSocketBufferSize", out var v) && int.TryParse(v, out var val)
+        )
             options.ReceiveSocketBufferSize = val;
     }
 }

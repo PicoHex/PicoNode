@@ -2,8 +2,9 @@ namespace PicoNode.Web.Internal;
 
 internal static class QueryStringParser
 {
-    private static readonly Dictionary<string, string> Empty =
-        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string> Empty = new(
+        StringComparer.OrdinalIgnoreCase
+    );
 
     internal static IReadOnlyDictionary<string, string> Parse(string queryString)
     {

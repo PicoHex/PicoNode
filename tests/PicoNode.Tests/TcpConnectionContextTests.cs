@@ -116,7 +116,7 @@ public sealed class TcpConnectionContextTests
     }
 
     private static TcpNode CreateNode(IPEndPoint endpoint) =>
-        new(new TcpNodeOptions { Endpoint = endpoint, ConnectionHandler = new NoOpTcpHandler(), });
+        new(new TcpNodeOptions { Endpoint = endpoint, ConnectionHandler = new NoOpTcpHandler() });
 
     private static async Task<(Socket Client, Socket Server)> CreateConnectedSocketsAsync()
     {

@@ -173,7 +173,12 @@ internal sealed class TcpConnectionLifecycle
         }
         catch (Exception ex)
         {
-            logger?.Log(LogLevel.Debug, new EventId(0), "Socket shutdown during graceful close failed", ex);
+            logger?.Log(
+                LogLevel.Debug,
+                new EventId(0),
+                "Socket shutdown during graceful close failed",
+                ex
+            );
         }
     }
 

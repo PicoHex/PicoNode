@@ -2,8 +2,10 @@ namespace PicoNode.Web;
 
 public static class MultipartFormDataParser
 {
-    private static readonly UTF8Encoding StrictUtf8 =
-        new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+    private static readonly UTF8Encoding StrictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true
+    );
     private static ReadOnlySpan<byte> CrLf => "\r\n"u8;
     private static ReadOnlySpan<byte> DoubleCrLf => "\r\n\r\n"u8;
     private static ReadOnlySpan<byte> DashDash => "--"u8;
@@ -34,7 +36,9 @@ public static class MultipartFormDataParser
             return null;
 
         var boundary = ExtractBoundary(contentType, options.MaxBoundaryLength);
-        return boundary is null ? null : ParseBody(request.Body, Encoding.UTF8.GetBytes(boundary), logger);
+        return boundary is null
+            ? null
+            : ParseBody(request.Body, Encoding.UTF8.GetBytes(boundary), logger);
     }
 
     internal static string? ExtractBoundary(
@@ -51,7 +55,11 @@ public static class MultipartFormDataParser
         return IsValidBoundary(boundary, maxBoundaryLength) ? boundary : null;
     }
 
-    private static MultipartFormData ParseBody(ReadOnlyMemory<byte> body, byte[] boundary, ILogger? logger = null)
+    private static MultipartFormData ParseBody(
+        ReadOnlyMemory<byte> body,
+        byte[] boundary,
+        ILogger? logger = null
+    )
     {
         var bodySpan = body.Span;
         var fields = new List<MultipartFormField>();
@@ -186,7 +194,7 @@ public static class MultipartFormDataParser
             else
             {
                 line = remaining;
-                remaining =  [];
+                remaining = [];
             }
 
             var colonIdx = line.IndexOf(':');
@@ -276,7 +284,12 @@ public static class MultipartFormDataParser
         }
         catch (DecoderFallbackException ex)
         {
-            logger?.Log(LogLevel.Debug, new EventId(0), "Decoder fallback in multipart parsing", ex);
+            logger?.Log(
+                LogLevel.Debug,
+                new EventId(0),
+                "Decoder fallback in multipart parsing",
+                ex
+            );
             return null;
         }
     }

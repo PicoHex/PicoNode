@@ -6,33 +6,25 @@ internal sealed class TestServiceProvider : ISvcContainer
     private readonly Dictionary<Type, object> _singletonInstances = new();
     private readonly object _lock = new();
 
-    public void RegisterSingleton(
-        Type serviceType,
-        Func<ISvcScope, object> factory
-    )
+    public void RegisterSingleton(Type serviceType, Func<ISvcScope, object> factory)
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Singleton, factory);
     }
 
-    public void RegisterScoped(
-        Type serviceType,
-        Func<ISvcScope, object> factory
-    )
+    public void RegisterScoped(Type serviceType, Func<ISvcScope, object> factory)
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Scoped, factory);
     }
 
-    public void RegisterTransient(
-        Type serviceType,
-        Func<ISvcScope, object> factory
-    )
+    public void RegisterTransient(Type serviceType, Func<ISvcScope, object> factory)
     {
         _registrations[serviceType] = new ServiceRegistration(ServiceLifetime.Transient, factory);
     }
 
     public ISvcContainer Register(SvcDescriptor descriptor)
     {
-        var factory = descriptor.Factory ?? (_ => Activator.CreateInstance(descriptor.ImplementationType)!);
+        var factory =
+            descriptor.Factory ?? (_ => Activator.CreateInstance(descriptor.ImplementationType)!);
         var lifetime = descriptor.Lifetime switch
         {
             SvcLifetime.Singleton => ServiceLifetime.Singleton,

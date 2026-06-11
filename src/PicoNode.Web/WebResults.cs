@@ -9,7 +9,10 @@ public static class WebResults
             ReasonPhrase = reasonPhrase,
             Headers =
             [
-                new KeyValuePair<string, string>(HttpHeaderNames.ContentType, "text/plain; charset=utf-8"),
+                new KeyValuePair<string, string>(
+                    HttpHeaderNames.ContentType,
+                    "text/plain; charset=utf-8"
+                ),
             ],
             Body = Encoding.UTF8.GetBytes(body),
         };
@@ -21,7 +24,10 @@ public static class WebResults
             ReasonPhrase = reasonPhrase,
             Headers =
             [
-                new KeyValuePair<string, string>(HttpHeaderNames.ContentType, "application/json; charset=utf-8"),
+                new KeyValuePair<string, string>(
+                    HttpHeaderNames.ContentType,
+                    "application/json; charset=utf-8"
+                ),
             ],
             Body = Encoding.UTF8.GetBytes(json),
         };
@@ -36,21 +42,18 @@ public static class WebResults
         {
             StatusCode = statusCode,
             ReasonPhrase = reasonPhrase,
-            Headers =
-            [
-                new KeyValuePair<string, string>(HttpHeaderNames.ContentType, contentType),
-            ],
+            Headers = [new KeyValuePair<string, string>(HttpHeaderNames.ContentType, contentType)],
             Body = body,
         };
 
     public static HttpResponse Empty(int statusCode, string reasonPhrase = "") =>
-        new() { StatusCode = statusCode, ReasonPhrase = reasonPhrase, };
+        new() { StatusCode = statusCode, ReasonPhrase = reasonPhrase };
 
     public static HttpResponse Redirect(string location, bool permanent = false) =>
         new()
         {
             StatusCode = permanent ? 301 : 302,
             ReasonPhrase = permanent ? "Moved Permanently" : "Found",
-            Headers =  [new KeyValuePair<string, string>(HttpHeaderNames.Location, location),],
+            Headers = [new KeyValuePair<string, string>(HttpHeaderNames.Location, location)],
         };
 }

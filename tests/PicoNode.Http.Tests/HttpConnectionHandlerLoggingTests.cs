@@ -22,9 +22,7 @@ public sealed class HttpConnectionHandlerLoggingTests
         var options = new HttpConnectionHandlerOptions
         {
             RequestHandler = static (_, _) =>
-                ValueTask.FromResult(
-                    new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
-                ),
+                ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }),
         };
 
         await Assert.That(options.Logger).IsNull();

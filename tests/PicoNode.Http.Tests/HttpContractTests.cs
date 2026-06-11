@@ -39,18 +39,15 @@ public sealed class HttpContractTests
             .IsEqualTo(typeof(TimeSpan));
         await Assert
             .That(properties)
-            .IsEquivalentTo(
-
-                [
-                    nameof(HttpConnectionHandlerOptions.MaxRequestBytes),
-                    nameof(HttpConnectionHandlerOptions.RequestHandler),
-                    nameof(HttpConnectionHandlerOptions.RequestTimeout),
-                    nameof(HttpConnectionHandlerOptions.ServerHeader),
-                    nameof(HttpConnectionHandlerOptions.StreamingResponseBufferSize),
-                    nameof(HttpConnectionHandlerOptions.WebSocketMessageHandler),
-                    nameof(HttpConnectionHandlerOptions.Logger),
-                ]
-            );
+            .IsEquivalentTo([
+                nameof(HttpConnectionHandlerOptions.MaxRequestBytes),
+                nameof(HttpConnectionHandlerOptions.RequestHandler),
+                nameof(HttpConnectionHandlerOptions.RequestTimeout),
+                nameof(HttpConnectionHandlerOptions.ServerHeader),
+                nameof(HttpConnectionHandlerOptions.StreamingResponseBufferSize),
+                nameof(HttpConnectionHandlerOptions.WebSocketMessageHandler),
+                nameof(HttpConnectionHandlerOptions.Logger),
+            ]);
     }
 
     [Test]
@@ -79,19 +76,16 @@ public sealed class HttpContractTests
         await Assert.That(type.IsSealed).IsTrue();
         await Assert
             .That(properties.Select(x => x.Name).ToArray())
-            .IsEquivalentTo(
-
-                [
-                    nameof(HttpRequest.Body),
-                    nameof(HttpRequest.HeaderFields),
-                    nameof(HttpRequest.Headers),
-                    nameof(HttpRequest.Method),
-                    nameof(HttpRequest.Path),
-                    nameof(HttpRequest.QueryString),
-                    nameof(HttpRequest.Target),
-                    nameof(HttpRequest.Version),
-                ]
-            );
+            .IsEquivalentTo([
+                nameof(HttpRequest.Body),
+                nameof(HttpRequest.HeaderFields),
+                nameof(HttpRequest.Headers),
+                nameof(HttpRequest.Method),
+                nameof(HttpRequest.Path),
+                nameof(HttpRequest.QueryString),
+                nameof(HttpRequest.Target),
+                nameof(HttpRequest.Version),
+            ]);
 
         await Assert.That(type.GetMethod(nameof(HttpRequest.CreateBodyStream))).IsNotNull();
         await Assert
@@ -125,17 +119,14 @@ public sealed class HttpContractTests
         await Assert.That(type.IsSealed).IsTrue();
         await Assert
             .That(properties.Select(x => x.Name).ToArray())
-            .IsEquivalentTo(
-
-                [
-                    nameof(HttpResponse.Body),
-                    nameof(HttpResponse.BodyStream),
-                    nameof(HttpResponse.Headers),
-                    nameof(HttpResponse.ReasonPhrase),
-                    nameof(HttpResponse.StatusCode),
-                    nameof(HttpResponse.Version),
-                ]
-            );
+            .IsEquivalentTo([
+                nameof(HttpResponse.Body),
+                nameof(HttpResponse.BodyStream),
+                nameof(HttpResponse.Headers),
+                nameof(HttpResponse.ReasonPhrase),
+                nameof(HttpResponse.StatusCode),
+                nameof(HttpResponse.Version),
+            ]);
         await Assert
             .That(type.GetProperty(nameof(HttpResponse.StatusCode))?.PropertyType)
             .IsEqualTo(typeof(int));
@@ -164,9 +155,11 @@ public sealed class HttpContractTests
         await Assert.That(type.IsSealed).IsTrue();
         await Assert
             .That(properties.Select(x => x.Name).ToArray())
-            .IsEquivalentTo(
-                [nameof(HttpRoute.Handler), nameof(HttpRoute.Method), nameof(HttpRoute.Path),]
-            );
+            .IsEquivalentTo([
+                nameof(HttpRoute.Handler),
+                nameof(HttpRoute.Method),
+                nameof(HttpRoute.Path),
+            ]);
         await Assert
             .That(type.GetProperty(nameof(HttpRoute.Method))?.PropertyType)
             .IsEqualTo(typeof(string));
@@ -189,9 +182,10 @@ public sealed class HttpContractTests
         await Assert.That(type.IsSealed).IsTrue();
         await Assert
             .That(properties.Select(x => x.Name).ToArray())
-            .IsEquivalentTo(
-                [nameof(HttpRouterOptions.FallbackHandler), nameof(HttpRouterOptions.Routes),]
-            );
+            .IsEquivalentTo([
+                nameof(HttpRouterOptions.FallbackHandler),
+                nameof(HttpRouterOptions.Routes),
+            ]);
         await Assert
             .That(type.GetProperty(nameof(HttpRouterOptions.Routes))?.PropertyType)
             .IsEqualTo(typeof(IReadOnlyList<HttpRoute>));
@@ -239,14 +233,11 @@ public sealed class HttpContractTests
         await Assert.That(type.GetConstructor([typeof(HttpConnectionHandlerOptions)])).IsNotNull();
         await Assert
             .That(methods.Select(x => x.Name).ToArray())
-            .IsEquivalentTo(
-
-                [
-                    nameof(HttpConnectionHandler.OnClosedAsync),
-                    nameof(HttpConnectionHandler.OnConnectedAsync),
-                    nameof(HttpConnectionHandler.OnReceivedAsync),
-                ]
-            );
+            .IsEquivalentTo([
+                nameof(HttpConnectionHandler.OnClosedAsync),
+                nameof(HttpConnectionHandler.OnConnectedAsync),
+                nameof(HttpConnectionHandler.OnReceivedAsync),
+            ]);
         await Assert
             .That(type.GetMethod(nameof(HttpConnectionHandler.OnConnectedAsync))?.ReturnType)
             .IsEqualTo(typeof(Task));

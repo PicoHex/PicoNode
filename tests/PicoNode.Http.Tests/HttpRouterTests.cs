@@ -5,15 +5,13 @@ public sealed class HttpRouterTests
     [Test]
     public async Task HandleAsync_dispatches_exact_method_and_path_match()
     {
-        var router = CreateRouter(
-
-            [
-                HttpRoute.MapGet(
-                    "/hello",
-                    static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
-                ),
-            ]
-        );
+        var router = CreateRouter([
+            HttpRoute.MapGet(
+                "/hello",
+                static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            ),
+        ]);
 
         var response = await router.HandleAsync(
             CreateRequest("GET", "/hello"),
@@ -26,15 +24,13 @@ public sealed class HttpRouterTests
     [Test]
     public async Task HandleAsync_matches_path_component_of_request_target()
     {
-        var router = CreateRouter(
-
-            [
-                HttpRoute.MapGet(
-                    "/hello",
-                    static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
-                ),
-            ]
-        );
+        var router = CreateRouter([
+            HttpRoute.MapGet(
+                "/hello",
+                static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            ),
+        ]);
 
         var response = await router.HandleAsync(
             CreateRequest("GET", "/hello?name=pico"),
@@ -47,15 +43,13 @@ public sealed class HttpRouterTests
     [Test]
     public async Task HandleAsync_treats_trailing_slashes_as_distinct_paths()
     {
-        var router = CreateRouter(
-
-            [
-                HttpRoute.MapGet(
-                    "/hello",
-                    static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
-                ),
-            ]
-        );
+        var router = CreateRouter([
+            HttpRoute.MapGet(
+                "/hello",
+                static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            ),
+        ]);
 
         var response = await router.HandleAsync(
             CreateRequest("GET", "/hello/"),
@@ -85,7 +79,7 @@ public sealed class HttpRouterTests
         var router = new HttpRouter(
             new HttpRouterOptions
             {
-                Routes =  [],
+                Routes = [],
                 FallbackHandler = static (_, _) =>
                     ValueTask.FromResult(
                         new HttpResponse { StatusCode = 418, ReasonPhrase = "Teapot" }
@@ -104,15 +98,13 @@ public sealed class HttpRouterTests
     [Test]
     public async Task HandleAsync_returns_405_when_path_exists_for_other_methods()
     {
-        var router = CreateRouter(
-
-            [
-                HttpRoute.MapPost(
-                    "/echo",
-                    static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
-                ),
-            ]
-        );
+        var router = CreateRouter([
+            HttpRoute.MapPost(
+                "/echo",
+                static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            ),
+        ]);
 
         var response = await router.HandleAsync(
             CreateRequest("GET", "/echo"),
@@ -128,20 +120,21 @@ public sealed class HttpRouterTests
     [Test]
     public async Task HandleAsync_sorts_and_joins_allow_header_values()
     {
-        var router = CreateRouter(
-
-            [
-                HttpRoute.MapPost(
-                    "/echo",
-                    static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
-                ),
-                HttpRoute.Map(
-                    "DELETE",
-                    "/echo",
-                    static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" })
-                ),
-            ]
-        );
+        var router = CreateRouter([
+            HttpRoute.MapPost(
+                "/echo",
+                static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            ),
+            HttpRoute.Map(
+                "DELETE",
+                "/echo",
+                static (_, _) =>
+                    ValueTask.FromResult(
+                        new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" }
+                    )
+            ),
+        ]);
 
         var response = await router.HandleAsync(
             CreateRequest("GET", "/echo"),
@@ -171,7 +164,9 @@ public sealed class HttpRouterTests
                         Handler = (_, _) =>
                         {
                             matchedHandlerCalled = true;
-                            return ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" });
+                            return ValueTask.FromResult(
+                                new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
+                            );
                         },
                     },
                 ],
@@ -253,25 +248,27 @@ public sealed class HttpRouterTests
     public async Task Ctor_rejects_duplicate_method_and_path_pairs()
     {
         await Assert
-            .That(
-                () =>
-                    CreateRouter(
-
-                        [
-                            new HttpRoute
+            .That(() =>
+                CreateRouter([
+                    new HttpRoute
                     {
                         Method = "GET",
                         Path = "/hello",
-                        Handler = static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }),
+                        Handler = static (_, _) =>
+                            ValueTask.FromResult(
+                                new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
+                            ),
                     },
-                            new HttpRoute
+                    new HttpRoute
                     {
                         Method = "GET",
                         Path = "/hello",
-                        Handler = static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" }),
+                        Handler = static (_, _) =>
+                            ValueTask.FromResult(
+                                new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" }
+                            ),
                     },
-                        ]
-                    )
+                ])
             )
             .Throws<ArgumentException>();
     }
@@ -280,19 +277,18 @@ public sealed class HttpRouterTests
     public async Task Ctor_rejects_paths_without_leading_slash()
     {
         await Assert
-            .That(
-                () =>
-                    CreateRouter(
-
-                        [
-                            new HttpRoute
+            .That(() =>
+                CreateRouter([
+                    new HttpRoute
                     {
                         Method = "GET",
                         Path = "hello",
-                        Handler = static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }),
+                        Handler = static (_, _) =>
+                            ValueTask.FromResult(
+                                new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
+                            ),
                     },
-                        ]
-                    )
+                ])
             )
             .Throws<ArgumentException>();
     }
@@ -301,19 +297,18 @@ public sealed class HttpRouterTests
     public async Task Ctor_rejects_paths_with_query_component()
     {
         await Assert
-            .That(
-                () =>
-                    CreateRouter(
-
-                        [
-                            new HttpRoute
+            .That(() =>
+                CreateRouter([
+                    new HttpRoute
                     {
                         Method = "GET",
                         Path = "/hello?name=pico",
-                        Handler = static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }),
+                        Handler = static (_, _) =>
+                            ValueTask.FromResult(
+                                new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
+                            ),
                     },
-                        ]
-                    )
+                ])
             )
             .Throws<ArgumentException>();
     }
@@ -322,25 +317,24 @@ public sealed class HttpRouterTests
     public async Task Ctor_rejects_blank_methods()
     {
         await Assert
-            .That(
-                () =>
-                    CreateRouter(
-
-                        [
-                            new HttpRoute
+            .That(() =>
+                CreateRouter([
+                    new HttpRoute
                     {
                         Method = " ",
                         Path = "/hello",
-                        Handler = static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }),
+                        Handler = static (_, _) =>
+                            ValueTask.FromResult(
+                                new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
+                            ),
                     },
-                        ]
-                    )
+                ])
             )
             .Throws<ArgumentException>();
     }
 
     private static HttpRouter CreateRouter(IReadOnlyList<HttpRoute> routes) =>
-        new(new HttpRouterOptions { Routes = routes, });
+        new(new HttpRouterOptions { Routes = routes });
 
     private static HttpRequest CreateRequest(string method, string target)
     {

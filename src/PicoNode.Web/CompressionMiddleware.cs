@@ -195,9 +195,10 @@ public sealed class CompressionMiddleware
             }
 
             if (
-                header
-                    .Key
-                    .Equals(HttpHeaderNames.ContentEncoding, StringComparison.OrdinalIgnoreCase)
+                header.Key.Equals(
+                    HttpHeaderNames.ContentEncoding,
+                    StringComparison.OrdinalIgnoreCase
+                )
             )
             {
                 continue;

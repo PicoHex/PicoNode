@@ -17,11 +17,7 @@ public sealed class WebServer : IAsyncDisposable
         _container = null;
     }
 
-    public WebServer(
-        WebApp app,
-        WebServerOptions options,
-        ISvcContainer container
-    )
+    public WebServer(WebApp app, WebServerOptions options, ISvcContainer container)
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentNullException.ThrowIfNull(options);

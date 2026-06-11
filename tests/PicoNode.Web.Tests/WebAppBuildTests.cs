@@ -9,7 +9,7 @@ public sealed class WebAppBuildTests
     public async Task Build_propagates_streaming_response_buffer_size_behaviorally()
     {
         var stream = new ChunkRecordingStream(Encoding.ASCII.GetBytes("abcdef"));
-        var app = new WebApp(new WebAppOptions { StreamingResponseBufferSize = 3, });
+        var app = new WebApp(new WebAppOptions { StreamingResponseBufferSize = 3 });
         app.MapGet(
             "/",
             (_, _) =>

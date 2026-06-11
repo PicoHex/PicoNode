@@ -72,12 +72,10 @@ internal static class HttpResponseReader
 
             ReadExact(
                 stream,
-                parsed
-                    .Body
-                    .AsMemory(
-                        responseBytes.Length - (headerLength + 4),
-                        expectedLength - responseBytes.Length
-                    )
+                parsed.Body.AsMemory(
+                    responseBytes.Length - (headerLength + 4),
+                    expectedLength - responseBytes.Length
+                )
             );
             return parsed;
         }

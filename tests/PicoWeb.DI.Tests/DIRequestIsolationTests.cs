@@ -24,7 +24,7 @@ public sealed class DIRequestIsolationTests
         await using var host = await TestWebHost.StartAsync(app, container);
         using var client = new HttpClient
         {
-            BaseAddress = new Uri($"http://127.0.0.1:{host.Port}")
+            BaseAddress = new Uri($"http://127.0.0.1:{host.Port}"),
         };
 
         await client.GetAsync("/");
@@ -55,7 +55,7 @@ public sealed class DIRequestIsolationTests
         await using var host = await TestWebHost.StartAsync(app, container);
         using var client = new HttpClient
         {
-            BaseAddress = new Uri($"http://127.0.0.1:{host.Port}")
+            BaseAddress = new Uri($"http://127.0.0.1:{host.Port}"),
         };
 
         await client.GetAsync("/");

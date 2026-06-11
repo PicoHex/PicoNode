@@ -4,8 +4,8 @@ namespace PicoNode.Tests;
 
 public sealed class PackageReferenceTests
 {
-    private static string SlnRoot => Path.Combine(
-        AppContext.BaseDirectory, "..", "..", "..", "..", "..");
+    private static string SlnRoot =>
+        Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..");
 
     private static XDocument LoadCsproj(string relativePath)
     {

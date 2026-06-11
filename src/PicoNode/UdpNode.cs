@@ -349,9 +349,11 @@ public sealed class UdpNode : INode, IAsyncDisposable
                         try
                         {
                             var context = new UdpDatagramContext(this, lease.RemoteEndPoint);
-                            var handleTask = Options
-                                .DatagramHandler
-                                .OnDatagramAsync(context, lease.Datagram, handlerCancellationToken);
+                            var handleTask = Options.DatagramHandler.OnDatagramAsync(
+                                context,
+                                lease.Datagram,
+                                handlerCancellationToken
+                            );
                             if (!handleTask.IsCompletedSuccessfully)
                             {
                                 await handleTask;
@@ -417,7 +419,9 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
     private static void ApplyConfigReload(ICfg config, UdpNodeOptions options)
     {
-        if (config.TryGetValue("ReceiveSocketBufferSize", out var v) && int.TryParse(v, out var val))
+        if (
+            config.TryGetValue("ReceiveSocketBufferSize", out var v) && int.TryParse(v, out var val)
+        )
             options.ReceiveSocketBufferSize = val;
         if (config.TryGetValue("SendSocketBufferSize", out v) && int.TryParse(v, out val))
             options.SendSocketBufferSize = val;
@@ -425,7 +429,10 @@ public sealed class UdpNode : INode, IAsyncDisposable
             options.ReceiveDatagramBufferSize = val;
         if (config.TryGetValue("EnableBroadcast", out v) && bool.TryParse(v, out var b))
             options.EnableBroadcast = b;
-        if (config.TryGetValue("QueueOverflowMode", out v) && Enum.TryParse<UdpOverflowMode>(v, out var mode))
+        if (
+            config.TryGetValue("QueueOverflowMode", out v)
+            && Enum.TryParse<UdpOverflowMode>(v, out var mode)
+        )
             options.QueueOverflowMode = mode;
         if (config.TryGetValue("ReceiveFaultBackoff", out v) && TimeSpan.TryParse(v, out var ts))
             options.ReceiveFaultBackoff = ts;

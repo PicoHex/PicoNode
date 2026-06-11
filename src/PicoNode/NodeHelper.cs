@@ -17,7 +17,12 @@ internal static class NodeHelper
         try
         {
             var level = NodeFaultLogLevelMapper.GetLevel(code);
-            logger.Log(level, new EventId((int)code), $"Operation {operation} failed: {code}", exception);
+            logger.Log(
+                level,
+                new EventId((int)code),
+                $"Operation {operation} failed: {code}",
+                exception
+            );
         }
         catch
         {

@@ -97,7 +97,7 @@ internal sealed class WebRouter
             var exactMethods = _exactRouteTable.GetMethodsForPath(path);
             if (exactMethods is not null)
             {
-                allowedMethods =  [.. exactMethods];
+                allowedMethods = [.. exactMethods];
             }
         }
 

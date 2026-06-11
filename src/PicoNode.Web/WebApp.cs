@@ -35,7 +35,7 @@ public sealed class WebApp
             {
                 Method = method,
                 Pattern = pattern,
-                Handler = handler
+                Handler = handler,
             }
         );
         return this;
@@ -62,7 +62,7 @@ public sealed class WebApp
     /// <summary>Builds the middleware pipeline and returns an <c>ITcpConnectionHandler</c> (backed by <c>HttpConnectionHandler</c>) ready for use with TcpNode.</summary>
     public ITcpConnectionHandler Build(ISvcContainer? container = null)
     {
-        _middlewares =  [.._middlewares];
+        _middlewares = [.. _middlewares];
         if (container is not null)
         {
             _middlewares.Insert(0, ScopeMiddleware.Create(container));

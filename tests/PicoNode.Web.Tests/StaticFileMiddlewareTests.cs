@@ -352,20 +352,19 @@ public sealed class StaticFileMiddlewareTests
     [Test]
     public void Constructor_rejects_missing_directory()
     {
-        Assert.Throws<DirectoryNotFoundException>(
-            () => new StaticFileMiddleware(Path.Combine(_tempDir, "nonexistent"))
+        Assert.Throws<DirectoryNotFoundException>(() =>
+            new StaticFileMiddleware(Path.Combine(_tempDir, "nonexistent"))
         );
     }
 
     [Test]
     public void Constructor_rejects_invalid_default_document()
     {
-        Assert.Throws<ArgumentException>(
-            () =>
-                new StaticFileMiddleware(
-                    _tempDir,
-                    new StaticFileMiddlewareOptions { DefaultDocument = "docs/home.html" }
-                )
+        Assert.Throws<ArgumentException>(() =>
+            new StaticFileMiddleware(
+                _tempDir,
+                new StaticFileMiddlewareOptions { DefaultDocument = "docs/home.html" }
+            )
         );
     }
 
@@ -378,7 +377,7 @@ public sealed class StaticFileMiddlewareTests
                 Method = method,
                 Target = target,
                 Path = q >= 0 ? target[..q] : target,
-                QueryString = q >= 0 ? target[(q + 1)..] : string.Empty
+                QueryString = q >= 0 ? target[(q + 1)..] : string.Empty,
             }
         );
     }

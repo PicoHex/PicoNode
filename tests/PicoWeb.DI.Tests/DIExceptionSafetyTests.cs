@@ -14,7 +14,7 @@ public sealed class DIExceptionSafetyTests
         await using var host = await TestWebHost.StartAsync(app, container);
         using var client = new HttpClient
         {
-            BaseAddress = new Uri($"http://127.0.0.1:{host.Port}")
+            BaseAddress = new Uri($"http://127.0.0.1:{host.Port}"),
         };
 
         var response = await client.GetAsync("/");
@@ -34,7 +34,7 @@ public sealed class DIExceptionSafetyTests
         await using var host = await TestWebHost.StartAsync(app, container);
         using var client = new HttpClient
         {
-            BaseAddress = new Uri($"http://127.0.0.1:{host.Port}")
+            BaseAddress = new Uri($"http://127.0.0.1:{host.Port}"),
         };
 
         var response = await client.GetAsync("/");

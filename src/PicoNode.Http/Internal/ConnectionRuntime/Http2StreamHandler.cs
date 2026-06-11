@@ -111,7 +111,7 @@ internal static class Http2StreamHandler
         // Build response pseudo-headers and headers
         var responseHeaders = new List<(string, string)>
         {
-            (":status", response.StatusCode.ToString())
+            (":status", response.StatusCode.ToString()),
         };
 
         // Map response headers — skip connection-specific fields
@@ -140,9 +140,9 @@ internal static class Http2StreamHandler
         if (response.Body.Length == 0)
         {
             headersFlags |= Http2FrameFlags.EndStream;
-            var frameRented = ArrayPool<byte>
-                .Shared
-                .Rent(Http2FrameCodec.FrameHeaderSize + hpackSize);
+            var frameRented = ArrayPool<byte>.Shared.Rent(
+                Http2FrameCodec.FrameHeaderSize + hpackSize
+            );
             try
             {
                 Http2FrameCodec.WriteFrameHeader(
@@ -173,9 +173,9 @@ internal static class Http2StreamHandler
 
         // Has body: send HEADERS frame first (no END_STREAM), then DATA frame
         {
-            var frameRented = ArrayPool<byte>
-                .Shared
-                .Rent(Http2FrameCodec.FrameHeaderSize + hpackSize);
+            var frameRented = ArrayPool<byte>.Shared.Rent(
+                Http2FrameCodec.FrameHeaderSize + hpackSize
+            );
             try
             {
                 Http2FrameCodec.WriteFrameHeader(
@@ -205,9 +205,9 @@ internal static class Http2StreamHandler
         // Send DATA frame with body
         {
             var bodySize = response.Body.Length;
-            var frameRented = ArrayPool<byte>
-                .Shared
-                .Rent(Http2FrameCodec.FrameHeaderSize + bodySize);
+            var frameRented = ArrayPool<byte>.Shared.Rent(
+                Http2FrameCodec.FrameHeaderSize + bodySize
+            );
             try
             {
                 Http2FrameCodec.WriteFrame(

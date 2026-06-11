@@ -14,21 +14,18 @@ public static class CorsHandler
             return new HttpResponse { StatusCode = 403 };
 
         if (
-            request
-                .Headers
-                .TryGetValue(HttpHeaderNames.AccessControlRequestMethod, out var requestMethod)
-            && !IsMethodAllowed(requestMethod, options)
+            request.Headers.TryGetValue(
+                HttpHeaderNames.AccessControlRequestMethod,
+                out var requestMethod
+            ) && !IsMethodAllowed(requestMethod, options)
         )
             return new HttpResponse { StatusCode = 403 };
 
-        var headers = new HttpHeaderCollection(
-
-            [
-                new(HttpHeaderNames.AccessControlAllowOrigin, origin),
-                new(HttpHeaderNames.AccessControlAllowMethods, options.AllowedMethodsHeader),
-                new(HttpHeaderNames.AccessControlAllowHeaders, options.AllowedHeadersHeader),
-            ]
-        );
+        var headers = new HttpHeaderCollection([
+            new(HttpHeaderNames.AccessControlAllowOrigin, origin),
+            new(HttpHeaderNames.AccessControlAllowMethods, options.AllowedMethodsHeader),
+            new(HttpHeaderNames.AccessControlAllowHeaders, options.AllowedHeadersHeader),
+        ]);
 
         if (options.AllowCredentials)
             headers.Add(
@@ -46,7 +43,7 @@ public static class CorsHandler
                 )
             );
 
-        return new HttpResponse { StatusCode = 204, Headers = headers, };
+        return new HttpResponse { StatusCode = 204, Headers = headers };
     }
 
     public static IReadOnlyList<KeyValuePair<string, string>> GetResponseHeaders(

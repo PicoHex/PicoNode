@@ -144,12 +144,11 @@ public sealed class SocketIoEventArgsTests
         using var eventArgs = new SocketIoEventArgs();
 
         var exception = await Assert
-            .That(
-                async () =>
-                    await InvokeExecuteAsync(
-                        eventArgs,
-                        _ => throw new SocketException((int)SocketError.NotConnected)
-                    )
+            .That(async () =>
+                await InvokeExecuteAsync(
+                    eventArgs,
+                    _ => throw new SocketException((int)SocketError.NotConnected)
+                )
             )
             .Throws<TargetInvocationException>();
         await Assert.That(exception).IsNotNull();

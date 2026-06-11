@@ -9,22 +9,19 @@ public sealed class EnumContractTests
 
         await Assert
             .That(names)
-            .IsEquivalentTo(
-
-                [
-                    nameof(NodeFaultCode.StartFailed),
-                    nameof(NodeFaultCode.StopFailed),
-                    nameof(NodeFaultCode.AcceptFailed),
-                    nameof(NodeFaultCode.SessionRejected),
-                    nameof(NodeFaultCode.ReceiveFailed),
-                    nameof(NodeFaultCode.SendFailed),
-                    nameof(NodeFaultCode.HandlerFailed),
-                    nameof(NodeFaultCode.DatagramReceiveFailed),
-                    nameof(NodeFaultCode.DatagramDropped),
-                    nameof(NodeFaultCode.DatagramHandlerFailed),
-                    nameof(NodeFaultCode.TlsFailed),
-                ]
-            );
+            .IsEquivalentTo([
+                nameof(NodeFaultCode.StartFailed),
+                nameof(NodeFaultCode.StopFailed),
+                nameof(NodeFaultCode.AcceptFailed),
+                nameof(NodeFaultCode.SessionRejected),
+                nameof(NodeFaultCode.ReceiveFailed),
+                nameof(NodeFaultCode.SendFailed),
+                nameof(NodeFaultCode.HandlerFailed),
+                nameof(NodeFaultCode.DatagramReceiveFailed),
+                nameof(NodeFaultCode.DatagramDropped),
+                nameof(NodeFaultCode.DatagramHandlerFailed),
+                nameof(NodeFaultCode.TlsFailed),
+            ]);
     }
 
     [Test]
@@ -34,17 +31,14 @@ public sealed class EnumContractTests
 
         await Assert
             .That(values)
-            .IsEquivalentTo(
-
-                [
-                    NodeState.Created,
-                    NodeState.Starting,
-                    NodeState.Running,
-                    NodeState.Stopping,
-                    NodeState.Stopped,
-                    NodeState.Disposed,
-                ]
-            );
+            .IsEquivalentTo([
+                NodeState.Created,
+                NodeState.Starting,
+                NodeState.Running,
+                NodeState.Stopping,
+                NodeState.Stopped,
+                NodeState.Disposed,
+            ]);
     }
 
     [Test]
@@ -54,19 +48,16 @@ public sealed class EnumContractTests
 
         await Assert
             .That(values)
-            .IsEquivalentTo(
-
-                [
-                    TcpCloseReason.LocalClose,
-                    TcpCloseReason.RemoteClosed,
-                    TcpCloseReason.IdleTimeout,
-                    TcpCloseReason.HandlerFault,
-                    TcpCloseReason.ReceiveFault,
-                    TcpCloseReason.SendFault,
-                    TcpCloseReason.NodeStopping,
-                    TcpCloseReason.Rejected,
-                ]
-            );
+            .IsEquivalentTo([
+                TcpCloseReason.LocalClose,
+                TcpCloseReason.RemoteClosed,
+                TcpCloseReason.IdleTimeout,
+                TcpCloseReason.HandlerFault,
+                TcpCloseReason.ReceiveFault,
+                TcpCloseReason.SendFault,
+                TcpCloseReason.NodeStopping,
+                TcpCloseReason.Rejected,
+            ]);
     }
 
     [Test]
@@ -76,6 +67,6 @@ public sealed class EnumContractTests
 
         await Assert
             .That(values)
-            .IsEquivalentTo([UdpOverflowMode.DropNewest, UdpOverflowMode.Wait,]);
+            .IsEquivalentTo([UdpOverflowMode.DropNewest, UdpOverflowMode.Wait]);
     }
 }

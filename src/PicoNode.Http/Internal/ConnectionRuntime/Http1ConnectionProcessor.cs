@@ -26,7 +26,7 @@ internal static class Http1ConnectionProcessor
 
     private static ReadOnlySequence<byte> BuildErrorBytes(int statusCode, string reasonPhrase)
     {
-        var response = new HttpResponse { StatusCode = statusCode, ReasonPhrase = reasonPhrase, };
+        var response = new HttpResponse { StatusCode = statusCode, ReasonPhrase = reasonPhrase };
         return new ReadOnlySequence<byte>(
             HttpResponseSerializer.Serialize(response, closeConnection: true).ToArray()
         );
@@ -45,27 +45,25 @@ internal static class Http1ConnectionProcessor
 
         return parseResult switch
         {
-            { Status: HttpRequestParseStatus.Incomplete, ExpectsContinue: true }
-                => SendContinueIfNeededAsync(connection, parseResult.Consumed, cancellationToken),
-            { Status: HttpRequestParseStatus.Incomplete }
-                => CheckRequestTimeoutAsync(
-                    connection,
-                    state,
-                    parseResult.Consumed,
-                    options,
-                    cancellationToken
-                ),
-            { Status: HttpRequestParseStatus.Success, Request: { } request }
-                => HandleRequestAsync(
-                    connection,
-                    request,
-                    parseResult.Consumed,
-                    options,
-                    requestHandler,
-                    cancellationToken
-                ),
-            { Status: HttpRequestParseStatus.Rejected, Error: { } error }
-                => HandleProtocolErrorAsync(
+            { Status: HttpRequestParseStatus.Incomplete, ExpectsContinue: true } =>
+                SendContinueIfNeededAsync(connection, parseResult.Consumed, cancellationToken),
+            { Status: HttpRequestParseStatus.Incomplete } => CheckRequestTimeoutAsync(
+                connection,
+                state,
+                parseResult.Consumed,
+                options,
+                cancellationToken
+            ),
+            { Status: HttpRequestParseStatus.Success, Request: { } request } => HandleRequestAsync(
+                connection,
+                request,
+                parseResult.Consumed,
+                options,
+                requestHandler,
+                cancellationToken
+            ),
+            { Status: HttpRequestParseStatus.Rejected, Error: { } error } =>
+                HandleProtocolErrorAsync(
                     connection,
                     parseResult.Consumed,
                     error,
@@ -296,11 +294,9 @@ internal static class Http1ConnectionProcessor
             var stream = response.BodyStream!;
             await using (stream.ConfigureAwait(false))
             {
-                var buffer = System
-                    .Buffers
-                    .ArrayPool<byte>
-                    .Shared
-                    .Rent(options.StreamingResponseBufferSize);
+                var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(
+                    options.StreamingResponseBufferSize
+                );
                 try
                 {
                     while (true)

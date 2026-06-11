@@ -117,12 +117,11 @@ public sealed class SmokeTests
                     (request.Method, request.Target) switch
                     {
                         ("GET", "/first") => CreateTextResponse(200, "OK", "first"),
-                        ("POST", "/second")
-                            => CreateTextResponse(
-                                200,
-                                "OK",
-                                $"second:{Encoding.ASCII.GetString(request.Body.Span)}"
-                            ),
+                        ("POST", "/second") => CreateTextResponse(
+                            200,
+                            "OK",
+                            $"second:{Encoding.ASCII.GetString(request.Body.Span)}"
+                        ),
                         _ => CreateTextResponse(404, "Not Found", "missing"),
                     }
                 );
@@ -230,7 +229,8 @@ public sealed class SmokeTests
                     [
                         HttpRoute.MapPost(
                             "/echo",
-                            static (_, _) => ValueTask.FromResult(CreateTextResponse(200, "OK", "echo"))
+                            static (_, _) =>
+                                ValueTask.FromResult(CreateTextResponse(200, "OK", "echo"))
                         ),
                     ],
                 }
@@ -266,7 +266,8 @@ public sealed class SmokeTests
                     [
                         HttpRoute.MapGet(
                             "/hello",
-                            static (_, _) => ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))
+                            static (_, _) =>
+                                ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))
                         ),
                     ],
                     FallbackHandler = static (_, _) =>
@@ -305,7 +306,8 @@ public sealed class SmokeTests
                     [
                         HttpRoute.MapGet(
                             "/hello",
-                            static (_, _) => ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))
+                            static (_, _) =>
+                                ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))
                         ),
                     ],
                 }
@@ -343,11 +345,19 @@ public sealed class SmokeTests
                     [
                         HttpRoute.MapPut(
                             "/resource",
-                            static (_, _) => ValueTask.FromResult(CreateTextResponse(200, "OK", "put-ok"))
+                            static (_, _) =>
+                                ValueTask.FromResult(CreateTextResponse(200, "OK", "put-ok"))
                         ),
                         HttpRoute.MapDelete(
                             "/resource",
-                            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" })
+                            static (_, _) =>
+                                ValueTask.FromResult(
+                                    new HttpResponse
+                                    {
+                                        StatusCode = 204,
+                                        ReasonPhrase = "No Content",
+                                    }
+                                )
                         ),
                     ],
                 }
@@ -389,7 +399,8 @@ public sealed class SmokeTests
                     [
                         HttpRoute.MapGet(
                             "/hello",
-                            static (_, _) => ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))
+                            static (_, _) =>
+                                ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))
                         ),
                     ],
                 }
@@ -427,7 +438,8 @@ public sealed class SmokeTests
                     [
                         HttpRoute.MapGet(
                             "/hello",
-                            static (_, _) => ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))
+                            static (_, _) =>
+                                ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))
                         ),
                     ],
                 }
@@ -748,7 +760,7 @@ public sealed class SmokeTests
                 Endpoint = new IPEndPoint(IPAddress.Loopback, port),
                 ConnectionHandler = new TcpEchoHandler(),
                 DrainTimeout = TimeSpan.FromSeconds(2),
-                SslOptions = new SslServerAuthenticationOptions { ServerCertificate = cert, },
+                SslOptions = new SslServerAuthenticationOptions { ServerCertificate = cert },
             }
         );
 
@@ -794,7 +806,7 @@ public sealed class SmokeTests
                     }
                 ),
                 DrainTimeout = TimeSpan.FromSeconds(2),
-                SslOptions = new SslServerAuthenticationOptions { ServerCertificate = cert, },
+                SslOptions = new SslServerAuthenticationOptions { ServerCertificate = cert },
             }
         );
 
@@ -809,9 +821,9 @@ public sealed class SmokeTests
         );
         await sslStream.AuthenticateAsClientAsync("localhost");
 
-        var requestBytes = Encoding
-            .ASCII
-            .GetBytes("GET /secure HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        var requestBytes = Encoding.ASCII.GetBytes(
+            "GET /secure HTTP/1.1\r\nHost: localhost\r\n\r\n"
+        );
         await sslStream.WriteAsync(requestBytes);
         await sslStream.FlushAsync();
 
@@ -834,7 +846,7 @@ public sealed class SmokeTests
                 ConnectionHandler = new TcpEchoHandler(),
                 DrainTimeout = TimeSpan.FromSeconds(2),
                 Logger = logger,
-                SslOptions = new SslServerAuthenticationOptions { ServerCertificate = cert, },
+                SslOptions = new SslServerAuthenticationOptions { ServerCertificate = cert },
             }
         );
 
@@ -874,7 +886,7 @@ public sealed class SmokeTests
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, port),
                 ConnectionHandler = new HttpConnectionHandler(
-                    new HttpConnectionHandlerOptions { RequestHandler = requestHandler, }
+                    new HttpConnectionHandlerOptions { RequestHandler = requestHandler }
                 ),
                 DrainTimeout = TimeSpan.FromSeconds(2),
             }
@@ -1237,14 +1249,18 @@ file sealed class TcpEchoHandler : ITcpConnectionHandler
 file sealed class BlockingCloseHandler : ITcpConnectionHandler
 {
     private int _connectionCount;
-    private readonly TaskCompletionSource _connected =
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly TaskCompletionSource _closeStarted =
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly TaskCompletionSource _allowClose =
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly TaskCompletionSource _closeCompleted =
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _connected = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+    private readonly TaskCompletionSource _closeStarted = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+    private readonly TaskCompletionSource _allowClose = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+    private readonly TaskCompletionSource _closeCompleted = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
 
     public Task Connected => _connected.Task;
 
@@ -1303,12 +1319,15 @@ file sealed class UdpEchoHandler : IUdpDatagramHandler
 
 file sealed class BlockingUdpHandler : IUdpDatagramHandler
 {
-    private readonly TaskCompletionSource _started =
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly TaskCompletionSource _release =
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly TaskCompletionSource _completed =
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _started = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+    private readonly TaskCompletionSource _release = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+    private readonly TaskCompletionSource _completed = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
 
     public Task Started => _started.Task;
 
@@ -1343,21 +1362,128 @@ file sealed class SmokeTestLogger : ILogger
     public IDisposable BeginScope<TState>(TState state) => throw new NotSupportedException();
 
     public void Log(LogLevel logLevel, string message, Exception? exception) { }
-    public void Log(LogLevel logLevel, string message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception) { }
-    public Task LogAsync(LogLevel logLevel, string message, Exception? exception = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task LogAsync(LogLevel logLevel, string message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public void Log(
+        LogLevel logLevel,
+        string message,
+        IReadOnlyList<KeyValuePair<string, object?>>? properties,
+        Exception? exception
+    ) { }
+
+    public Task LogAsync(
+        LogLevel logLevel,
+        string message,
+        Exception? exception = null,
+        CancellationToken cancellationToken = default
+    ) => Task.CompletedTask;
+
+    public Task LogAsync(
+        LogLevel logLevel,
+        string message,
+        IReadOnlyList<KeyValuePair<string, object?>>? properties,
+        Exception? exception = null,
+        CancellationToken cancellationToken = default
+    ) => Task.CompletedTask;
+
     public void Log(LogLevel logLevel, FormattableString message, Exception? exception = null) { }
-    public void Log(LogLevel logLevel, FormattableString message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null) { }
-    public Task LogAsync(LogLevel logLevel, FormattableString message, Exception? exception = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task LogAsync(LogLevel logLevel, FormattableString message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public void Log(LogLevel logLevel, EventId eventId, string message, Exception? exception) => FaultCodes.Add((NodeFaultCode)eventId.Id);
-    public void Log(LogLevel logLevel, EventId eventId, string message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception) => FaultCodes.Add((NodeFaultCode)eventId.Id);
-    public Task LogAsync(LogLevel logLevel, EventId eventId, string message, Exception? exception = null, CancellationToken cancellationToken = default) { FaultCodes.Add((NodeFaultCode)eventId.Id); return Task.CompletedTask; }
-    public Task LogAsync(LogLevel logLevel, EventId eventId, string message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null, CancellationToken cancellationToken = default) { FaultCodes.Add((NodeFaultCode)eventId.Id); return Task.CompletedTask; }
-    public void Log(LogLevel logLevel, EventId eventId, FormattableString message, Exception? exception = null) => FaultCodes.Add((NodeFaultCode)eventId.Id);
-    public void Log(LogLevel logLevel, EventId eventId, FormattableString message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null) => FaultCodes.Add((NodeFaultCode)eventId.Id);
-    public Task LogAsync(LogLevel logLevel, EventId eventId, FormattableString message, Exception? exception = null, CancellationToken cancellationToken = default) { FaultCodes.Add((NodeFaultCode)eventId.Id); return Task.CompletedTask; }
-    public Task LogAsync(LogLevel logLevel, EventId eventId, FormattableString message, IReadOnlyList<KeyValuePair<string, object?>>? properties, Exception? exception = null, CancellationToken cancellationToken = default) { FaultCodes.Add((NodeFaultCode)eventId.Id); return Task.CompletedTask; }
+
+    public void Log(
+        LogLevel logLevel,
+        FormattableString message,
+        IReadOnlyList<KeyValuePair<string, object?>>? properties,
+        Exception? exception = null
+    ) { }
+
+    public Task LogAsync(
+        LogLevel logLevel,
+        FormattableString message,
+        Exception? exception = null,
+        CancellationToken cancellationToken = default
+    ) => Task.CompletedTask;
+
+    public Task LogAsync(
+        LogLevel logLevel,
+        FormattableString message,
+        IReadOnlyList<KeyValuePair<string, object?>>? properties,
+        Exception? exception = null,
+        CancellationToken cancellationToken = default
+    ) => Task.CompletedTask;
+
+    public void Log(LogLevel logLevel, EventId eventId, string message, Exception? exception) =>
+        FaultCodes.Add((NodeFaultCode)eventId.Id);
+
+    public void Log(
+        LogLevel logLevel,
+        EventId eventId,
+        string message,
+        IReadOnlyList<KeyValuePair<string, object?>>? properties,
+        Exception? exception
+    ) => FaultCodes.Add((NodeFaultCode)eventId.Id);
+
+    public Task LogAsync(
+        LogLevel logLevel,
+        EventId eventId,
+        string message,
+        Exception? exception = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        FaultCodes.Add((NodeFaultCode)eventId.Id);
+        return Task.CompletedTask;
+    }
+
+    public Task LogAsync(
+        LogLevel logLevel,
+        EventId eventId,
+        string message,
+        IReadOnlyList<KeyValuePair<string, object?>>? properties,
+        Exception? exception = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        FaultCodes.Add((NodeFaultCode)eventId.Id);
+        return Task.CompletedTask;
+    }
+
+    public void Log(
+        LogLevel logLevel,
+        EventId eventId,
+        FormattableString message,
+        Exception? exception = null
+    ) => FaultCodes.Add((NodeFaultCode)eventId.Id);
+
+    public void Log(
+        LogLevel logLevel,
+        EventId eventId,
+        FormattableString message,
+        IReadOnlyList<KeyValuePair<string, object?>>? properties,
+        Exception? exception = null
+    ) => FaultCodes.Add((NodeFaultCode)eventId.Id);
+
+    public Task LogAsync(
+        LogLevel logLevel,
+        EventId eventId,
+        FormattableString message,
+        Exception? exception = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        FaultCodes.Add((NodeFaultCode)eventId.Id);
+        return Task.CompletedTask;
+    }
+
+    public Task LogAsync(
+        LogLevel logLevel,
+        EventId eventId,
+        FormattableString message,
+        IReadOnlyList<KeyValuePair<string, object?>>? properties,
+        Exception? exception = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        FaultCodes.Add((NodeFaultCode)eventId.Id);
+        return Task.CompletedTask;
+    }
 }
 
 file sealed class ThrowOnceThenEchoUdpHandler : IUdpDatagramHandler

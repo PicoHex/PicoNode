@@ -130,9 +130,10 @@ internal static class HttpResponseSerializer
                 continue;
             if (
                 isChunked
-                && header
-                    .Key
-                    .Equals(HttpHeaderNames.TransferEncoding, StringComparison.OrdinalIgnoreCase)
+                && header.Key.Equals(
+                    HttpHeaderNames.TransferEncoding,
+                    StringComparison.OrdinalIgnoreCase
+                )
             )
                 continue;
             if (
@@ -322,7 +323,7 @@ internal static class HttpResponseSerializer
 
         public BufferSegment Append(ReadOnlyMemory<byte> memory)
         {
-            var next = new BufferSegment(memory) { RunningIndex = RunningIndex + Memory.Length, };
+            var next = new BufferSegment(memory) { RunningIndex = RunningIndex + Memory.Length };
 
             Next = next;
             return next;

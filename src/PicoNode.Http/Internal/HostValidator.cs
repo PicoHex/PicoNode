@@ -10,9 +10,8 @@ internal static class HostValidator
         }
 
         if (
-            value.Any(
-                character =>
-                    char.IsWhiteSpace(character) || character is ',' or '/' or '?' or '#' or '@'
+            value.Any(character =>
+                char.IsWhiteSpace(character) || character is ',' or '/' or '?' or '#' or '@'
             )
         )
         {

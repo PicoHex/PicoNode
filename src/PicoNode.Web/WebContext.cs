@@ -2,8 +2,9 @@ namespace PicoNode.Web;
 
 public sealed class WebContext
 {
-    private static readonly Dictionary<string, string> EmptyDictionary =
-        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string> EmptyDictionary = new(
+        StringComparer.OrdinalIgnoreCase
+    );
 
     private IReadOnlyDictionary<string, string>? _query;
     private IReadOnlyDictionary<string, string> _routeValues = EmptyDictionary;

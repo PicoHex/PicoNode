@@ -6,16 +6,15 @@ public sealed class UdpNodeBranchTests
     public async Task Constructor_rejects_invalid_dispatch_worker_count()
     {
         await Assert
-            .That(
-                () =>
-                    new UdpNode(
-                        new UdpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            DatagramHandler = new NoOpUdpHandler(),
-                            DispatchWorkerCount = 0,
-                        }
-                    )
+            .That(() =>
+                new UdpNode(
+                    new UdpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        DatagramHandler = new NoOpUdpHandler(),
+                        DispatchWorkerCount = 0,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
     }
@@ -24,72 +23,67 @@ public sealed class UdpNodeBranchTests
     public async Task Constructor_rejects_invalid_buffer_and_queue_settings()
     {
         await Assert
-            .That(
-                () =>
-                    new UdpNode(
-                        new UdpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            DatagramHandler = new NoOpUdpHandler(),
-                            DatagramQueueCapacity = 0,
-                        }
-                    )
+            .That(() =>
+                new UdpNode(
+                    new UdpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        DatagramHandler = new NoOpUdpHandler(),
+                        DatagramQueueCapacity = 0,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(
-                () =>
-                    new UdpNode(
-                        new UdpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            DatagramHandler = new NoOpUdpHandler(),
-                            ReceiveSocketBufferSize = 0,
-                        }
-                    )
+            .That(() =>
+                new UdpNode(
+                    new UdpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        DatagramHandler = new NoOpUdpHandler(),
+                        ReceiveSocketBufferSize = 0,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(
-                () =>
-                    new UdpNode(
-                        new UdpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            DatagramHandler = new NoOpUdpHandler(),
-                            SendSocketBufferSize = 0,
-                        }
-                    )
+            .That(() =>
+                new UdpNode(
+                    new UdpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        DatagramHandler = new NoOpUdpHandler(),
+                        SendSocketBufferSize = 0,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(
-                () =>
-                    new UdpNode(
-                        new UdpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            DatagramHandler = new NoOpUdpHandler(),
-                            ReceiveDatagramBufferSize = 0,
-                        }
-                    )
+            .That(() =>
+                new UdpNode(
+                    new UdpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        DatagramHandler = new NoOpUdpHandler(),
+                        ReceiveDatagramBufferSize = 0,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(
-                () =>
-                    new UdpNode(
-                        new UdpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            DatagramHandler = new NoOpUdpHandler(),
-                            ReceiveDatagramBufferSize = 65528,
-                        }
-                    )
+            .That(() =>
+                new UdpNode(
+                    new UdpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        DatagramHandler = new NoOpUdpHandler(),
+                        ReceiveDatagramBufferSize = 65528,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
     }
@@ -98,16 +92,15 @@ public sealed class UdpNodeBranchTests
     public async Task Constructor_rejects_negative_receive_fault_backoff()
     {
         await Assert
-            .That(
-                () =>
-                    new UdpNode(
-                        new UdpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            DatagramHandler = new NoOpUdpHandler(),
-                            ReceiveFaultBackoff = TimeSpan.FromMilliseconds(-1),
-                        }
-                    )
+            .That(() =>
+                new UdpNode(
+                    new UdpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        DatagramHandler = new NoOpUdpHandler(),
+                        ReceiveFaultBackoff = TimeSpan.FromMilliseconds(-1),
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
     }

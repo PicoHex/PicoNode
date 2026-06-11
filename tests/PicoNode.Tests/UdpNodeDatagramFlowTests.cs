@@ -126,7 +126,9 @@ public sealed class UdpNodeDatagramFlowTests
 
             await Task.Delay(500);
 
-            await Assert.That(logger.Calls.Any(x => x.EventId.Id == (int)NodeFaultCode.DatagramDropped)).IsTrue();
+            await Assert
+                .That(logger.Calls.Any(x => x.EventId.Id == (int)NodeFaultCode.DatagramDropped))
+                .IsTrue();
         }
         finally
         {
@@ -189,7 +191,9 @@ public sealed class UdpNodeDatagramFlowTests
 
         await Task.Delay(500);
 
-        await Assert.That(logger.Calls.Any(x => x.EventId.Id == (int)NodeFaultCode.DatagramReceiveFailed)).IsTrue();
+        await Assert
+            .That(logger.Calls.Any(x => x.EventId.Id == (int)NodeFaultCode.DatagramReceiveFailed))
+            .IsTrue();
     }
 
     private sealed class CapturingUdpHandler : IUdpDatagramHandler
@@ -239,8 +243,9 @@ public sealed class UdpNodeDatagramFlowTests
 
     private sealed class BlockingUdpHandler : IUdpDatagramHandler
     {
-        private readonly TaskCompletionSource _release =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
         public TaskCompletionSource FirstInvocationStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);

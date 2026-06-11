@@ -370,7 +370,12 @@ public sealed class TcpNode : INode, IAsyncDisposable
             }
             catch (Exception socketEx)
             {
-                Options.Logger?.Log(LogLevel.Debug, new EventId(0), "Socket shutdown during TLS teardown failed", socketEx);
+                Options.Logger?.Log(
+                    LogLevel.Debug,
+                    new EventId(0),
+                    "Socket shutdown during TLS teardown failed",
+                    socketEx
+                );
             }
             socket.Dispose();
             return null;
@@ -386,7 +391,12 @@ public sealed class TcpNode : INode, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            Options.Logger?.Log(LogLevel.Debug, new EventId(0), "Socket shutdown during reject cleanup failed", ex);
+            Options.Logger?.Log(
+                LogLevel.Debug,
+                new EventId(0),
+                "Socket shutdown during reject cleanup failed",
+                ex
+            );
         }
 
         socket.Dispose();
@@ -504,7 +514,10 @@ public sealed class TcpNode : INode, IAsyncDisposable
             options.DrainTimeout = ts;
         if (config.TryGetValue("ReceivePipePauseThresholdBytes", out v))
             options.ReceivePipePauseThresholdBytes = int.TryParse(v, out val) ? val : null;
-        if (config.TryGetValue("ReceivePipePauseThresholdMultiplier", out v) && int.TryParse(v, out val))
+        if (
+            config.TryGetValue("ReceivePipePauseThresholdMultiplier", out v)
+            && int.TryParse(v, out val)
+        )
             options.ReceivePipePauseThresholdMultiplier = val;
         // Endpoint, EnableDualMode, ConnectionHandler, LingerState, Logger, SslOptions are code-only
     }

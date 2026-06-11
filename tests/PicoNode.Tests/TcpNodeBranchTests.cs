@@ -6,58 +6,54 @@ public sealed class TcpNodeBranchTests
     public async Task Constructor_rejects_invalid_numeric_options()
     {
         await Assert
-            .That(
-                () =>
-                    new TcpNode(
-                        new TcpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            ConnectionHandler = new NoOpTcpHandler(),
-                            MaxConnections = 0,
-                        }
-                    )
+            .That(() =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        ConnectionHandler = new NoOpTcpHandler(),
+                        MaxConnections = 0,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(
-                () =>
-                    new TcpNode(
-                        new TcpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            ConnectionHandler = new NoOpTcpHandler(),
-                            ReceiveSocketBufferSize = 0,
-                        }
-                    )
+            .That(() =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        ConnectionHandler = new NoOpTcpHandler(),
+                        ReceiveSocketBufferSize = 0,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(
-                () =>
-                    new TcpNode(
-                        new TcpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            ConnectionHandler = new NoOpTcpHandler(),
-                            SendSocketBufferSize = 0,
-                        }
-                    )
+            .That(() =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        ConnectionHandler = new NoOpTcpHandler(),
+                        SendSocketBufferSize = 0,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(
-                () =>
-                    new TcpNode(
-                        new TcpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            ConnectionHandler = new NoOpTcpHandler(),
-                            Backlog = 0,
-                        }
-                    )
+            .That(() =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        ConnectionHandler = new NoOpTcpHandler(),
+                        Backlog = 0,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
     }
@@ -66,58 +62,54 @@ public sealed class TcpNodeBranchTests
     public async Task Constructor_rejects_negative_timeout_options()
     {
         await Assert
-            .That(
-                () =>
-                    new TcpNode(
-                        new TcpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            ConnectionHandler = new NoOpTcpHandler(),
-                            IdleTimeout = TimeSpan.FromMilliseconds(-1),
-                        }
-                    )
+            .That(() =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        ConnectionHandler = new NoOpTcpHandler(),
+                        IdleTimeout = TimeSpan.FromMilliseconds(-1),
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(
-                () =>
-                    new TcpNode(
-                        new TcpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            ConnectionHandler = new NoOpTcpHandler(),
-                            AcceptFaultBackoff = TimeSpan.FromMilliseconds(-1),
-                        }
-                    )
+            .That(() =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        ConnectionHandler = new NoOpTcpHandler(),
+                        AcceptFaultBackoff = TimeSpan.FromMilliseconds(-1),
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(
-                () =>
-                    new TcpNode(
-                        new TcpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            ConnectionHandler = new NoOpTcpHandler(),
-                            DrainTimeout = TimeSpan.FromMilliseconds(-1),
-                        }
-                    )
+            .That(() =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        ConnectionHandler = new NoOpTcpHandler(),
+                        DrainTimeout = TimeSpan.FromMilliseconds(-1),
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(
-                () =>
-                    new TcpNode(
-                        new TcpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            ConnectionHandler = new NoOpTcpHandler(),
-                            IdleScanInterval = TimeSpan.FromMilliseconds(-1),
-                        }
-                    )
+            .That(() =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        ConnectionHandler = new NoOpTcpHandler(),
+                        IdleScanInterval = TimeSpan.FromMilliseconds(-1),
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
     }
@@ -126,16 +118,15 @@ public sealed class TcpNodeBranchTests
     public async Task Constructor_rejects_non_positive_idle_scan_interval()
     {
         await Assert
-            .That(
-                () =>
-                    new TcpNode(
-                        new TcpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            ConnectionHandler = new NoOpTcpHandler(),
-                            IdleScanInterval = TimeSpan.Zero,
-                        }
-                    )
+            .That(() =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        ConnectionHandler = new NoOpTcpHandler(),
+                        IdleScanInterval = TimeSpan.Zero,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
     }
@@ -144,16 +135,15 @@ public sealed class TcpNodeBranchTests
     public async Task Constructor_rejects_non_positive_receive_pipe_pause_threshold()
     {
         await Assert
-            .That(
-                () =>
-                    new TcpNode(
-                        new TcpNodeOptions
-                        {
-                            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
-                            ConnectionHandler = new NoOpTcpHandler(),
-                            ReceivePipePauseThresholdBytes = 0,
-                        }
-                    )
+            .That(() =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        ConnectionHandler = new NoOpTcpHandler(),
+                        ReceivePipePauseThresholdBytes = 0,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
     }
@@ -531,8 +521,7 @@ public sealed class TcpNodeBranchTests
         }
     }
 
-    private static TcpNode CreateNode(ILogger? logger) =>
-        CreateNode(new NoOpTcpHandler(), logger);
+    private static TcpNode CreateNode(ILogger? logger) => CreateNode(new NoOpTcpHandler(), logger);
 
     private static TcpNode CreateNode(
         ITcpConnectionHandler handler,
@@ -641,8 +630,9 @@ public sealed class TcpNodeBranchTests
     private sealed class RecordingTcpHandler : ITcpConnectionHandler
     {
         private readonly bool _blockClose;
-        private readonly TaskCompletionSource _allowClose =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _allowClose = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
         public TaskCompletionSource<ConnectedTcpConnection> Connected { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);

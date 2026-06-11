@@ -59,7 +59,7 @@ public sealed class Http2StreamHandlerTests
 
         HttpRequestHandler handler = (req, ct) =>
             ValueTask.FromResult(
-                new HttpResponse { StatusCode = 200, Body = Encoding.ASCII.GetBytes(bodyText), }
+                new HttpResponse { StatusCode = 200, Body = Encoding.ASCII.GetBytes(bodyText) }
             );
 
         var frame = BuildHeadersFrame(
@@ -103,7 +103,7 @@ public sealed class Http2StreamHandlerTests
 
         HttpRequestHandler handler = (req, ct) =>
             ValueTask.FromResult(
-                new HttpResponse { StatusCode = 204, Body = ReadOnlyMemory<byte>.Empty, }
+                new HttpResponse { StatusCode = 204, Body = ReadOnlyMemory<byte>.Empty }
             );
 
         var frame = BuildHeadersFrame(

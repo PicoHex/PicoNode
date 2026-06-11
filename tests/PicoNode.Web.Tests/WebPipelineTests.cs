@@ -21,15 +21,13 @@ public sealed class WebPipelineTests
             return await next(ctx, ct);
         };
 
-        var router = new WebRouter(
-
-            [
-                WebRoute.MapGet(
-                    "/",
-                    static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
-                ),
-            ]
-        );
+        var router = new WebRouter([
+            WebRoute.MapGet(
+                "/",
+                static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            ),
+        ]);
 
         var pipeline = BuildPipeline([first, second], router);
         var context = CreateContext("GET", "/");
@@ -49,19 +47,18 @@ public sealed class WebPipelineTests
                 new HttpResponse { StatusCode = 401, ReasonPhrase = "Unauthorized" }
             );
 
-        var router = new WebRouter(
-
-            [
-                WebRoute.MapGet(
-                    "/",
-                    (_, _) =>
-                    {
-                        handlerCalled = true;
-                        return ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" });
-                    }
-                ),
-            ]
-        );
+        var router = new WebRouter([
+            WebRoute.MapGet(
+                "/",
+                (_, _) =>
+                {
+                    handlerCalled = true;
+                    return ValueTask.FromResult(
+                        new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
+                    );
+                }
+            ),
+        ]);
 
         var pipeline = BuildPipeline([auth], router);
         var context = CreateContext("GET", "/");
@@ -88,15 +85,13 @@ public sealed class WebPipelineTests
             };
         };
 
-        var router = new WebRouter(
-
-            [
-                WebRoute.MapGet(
-                    "/",
-                    static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
-                ),
-            ]
-        );
+        var router = new WebRouter([
+            WebRoute.MapGet(
+                "/",
+                static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            ),
+        ]);
 
         var pipeline = BuildPipeline([addHeader], router);
         var context = CreateContext("GET", "/");
@@ -110,16 +105,12 @@ public sealed class WebPipelineTests
     [Test]
     public async Task Empty_middleware_chain_routes_directly()
     {
-        var router = new WebRouter(
-
-            [
-                WebRoute.MapGet(
-                    "/hello",
-                    static (_, _) =>
-                        ValueTask.FromResult(WebResults.Text(200, "hi", "OK"))
-                ),
-            ]
-        );
+        var router = new WebRouter([
+            WebRoute.MapGet(
+                "/hello",
+                static (_, _) => ValueTask.FromResult(WebResults.Text(200, "hi", "OK"))
+            ),
+        ]);
 
         var pipeline = BuildPipeline([], router);
         var context = CreateContext("GET", "/hello");
@@ -154,7 +145,7 @@ public sealed class WebPipelineTests
                 Method = method,
                 Target = target,
                 Path = q >= 0 ? target[..q] : target,
-                QueryString = q >= 0 ? target[(q + 1)..] : string.Empty
+                QueryString = q >= 0 ? target[(q + 1)..] : string.Empty,
             }
         );
     }

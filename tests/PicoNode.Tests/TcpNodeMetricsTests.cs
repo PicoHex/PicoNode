@@ -158,17 +158,14 @@ public sealed class TcpNodeMetricsTests
         await Assert.That(type.IsSealed).IsTrue();
         await Assert
             .That(properties)
-            .IsEquivalentTo(
-
-                [
-                    nameof(TcpNodeMetrics.ActiveConnections),
-                    nameof(TcpNodeMetrics.TotalAccepted),
-                    nameof(TcpNodeMetrics.TotalBytesSent),
-                    nameof(TcpNodeMetrics.TotalBytesReceived),
-                    nameof(TcpNodeMetrics.TotalClosed),
-                    nameof(TcpNodeMetrics.TotalRejected),
-                ]
-            );
+            .IsEquivalentTo([
+                nameof(TcpNodeMetrics.ActiveConnections),
+                nameof(TcpNodeMetrics.TotalAccepted),
+                nameof(TcpNodeMetrics.TotalBytesSent),
+                nameof(TcpNodeMetrics.TotalBytesReceived),
+                nameof(TcpNodeMetrics.TotalClosed),
+                nameof(TcpNodeMetrics.TotalRejected),
+            ]);
     }
 
     private static TcpNode CreateNode(ITcpConnectionHandler handler, int maxConnections = 100) =>
@@ -183,14 +180,17 @@ public sealed class TcpNodeMetricsTests
 
     private sealed class EchoTcpHandler : ITcpConnectionHandler
     {
-        private readonly TaskCompletionSource _connected =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _connected = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
-        private readonly TaskCompletionSource _closed =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _closed = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
-        private readonly TaskCompletionSource _dataReceived =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _dataReceived = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
         public Task WaitConnectedAsync() => _connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
 

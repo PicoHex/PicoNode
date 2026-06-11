@@ -8,16 +8,15 @@ public static class ShowcaseApp
 {
     private const string ThemeCookieName = "pico-theme";
     private static readonly string[] SupportedThemes = ["light", "dark"];
-    private static readonly CorsOptions CorsOptions =
-        new()
-        {
-            AllowedOrigins =  ["http://localhost:3000", "http://127.0.0.1:3000"],
-            AllowedMethods =  ["GET", "POST", "OPTIONS"],
-            AllowedHeaders =  ["Content-Type"],
-            ExposedHeaders =  ["Content-Encoding"],
-            AllowCredentials = true,
-            MaxAge = 600,
-        };
+    private static readonly CorsOptions CorsOptions = new()
+    {
+        AllowedOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"],
+        AllowedMethods = ["GET", "POST", "OPTIONS"],
+        AllowedHeaders = ["Content-Type"],
+        ExposedHeaders = ["Content-Encoding"],
+        AllowCredentials = true,
+        MaxAge = 600,
+    };
 
     public static WebApp Create(string? contentRoot = null)
     {
@@ -55,12 +54,12 @@ public static class ShowcaseApp
             {
                 var theme = GetTheme(context.Request);
                 var json = $$"""
-            {
-              "theme":"{{EscapeJson(theme)}}",
-              "cookieName":"{{ThemeCookieName}}",
-              "supportedThemes":["light","dark"]
-            }
-            """;
+                {
+                  "theme":"{{EscapeJson(theme)}}",
+                  "cookieName":"{{ThemeCookieName}}",
+                  "supportedThemes":["light","dark"]
+                }
+                """;
 
                 return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
             }
@@ -79,11 +78,11 @@ public static class ShowcaseApp
                         WebResults.Json(
                             400,
                             """
-                        {
-                          "error":"unsupported-theme",
-                          "supportedThemes":["light","dark"]
-                        }
-                        """,
+                            {
+                              "error":"unsupported-theme",
+                              "supportedThemes":["light","dark"]
+                            }
+                            """,
                             "Bad Request"
                         )
                     );
@@ -94,11 +93,11 @@ public static class ShowcaseApp
                 var response = WebResults.Json(
                     200,
                     $$"""
-                {
-                  "theme":"{{EscapeJson(theme)}}",
-                  "stored":true
-                }
-                """,
+                    {
+                      "theme":"{{EscapeJson(theme)}}",
+                      "stored":true
+                    }
+                    """,
                     "OK"
                 );
 
@@ -132,10 +131,10 @@ public static class ShowcaseApp
                         WebResults.Json(
                             415,
                             """
-                        {
-                          "error":"expected-multipart-form-data"
-                        }
-                        """,
+                            {
+                              "error":"expected-multipart-form-data"
+                            }
+                            """,
                             "Unsupported Media Type"
                         )
                     );

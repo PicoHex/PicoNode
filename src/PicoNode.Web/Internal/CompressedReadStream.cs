@@ -11,7 +11,12 @@ internal sealed class CompressedReadStream : Stream
     private Task? _producerTask;
     private bool _disposed;
 
-    public CompressedReadStream(Stream source, string encoding, CompressionLevel level, ILogger? logger = null)
+    public CompressedReadStream(
+        Stream source,
+        string encoding,
+        CompressionLevel level,
+        ILogger? logger = null
+    )
     {
         ArgumentNullException.ThrowIfNull(source);
         _source = source;
@@ -123,7 +128,12 @@ internal sealed class CompressedReadStream : Stream
             }
             catch (Exception ex)
             {
-                _logger?.Log(LogLevel.Debug, new EventId(0), "Producer task faulted during compression stream dispose", ex);
+                _logger?.Log(
+                    LogLevel.Debug,
+                    new EventId(0),
+                    "Producer task faulted during compression stream dispose",
+                    ex
+                );
                 // Surface producer failures during reads; disposal should stay best-effort.
             }
         }

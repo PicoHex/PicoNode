@@ -5,11 +5,9 @@ public sealed class HttpConnectionHandlerTests
     [Test]
     public async Task OnReceivedAsync_parses_one_request_serializes_response_and_returns_consumed_position()
     {
-        var request = Encoding
-            .ASCII
-            .GetBytes(
-                "POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhelloNEXT"
-            );
+        var request = Encoding.ASCII.GetBytes(
+            "POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhelloNEXT"
+        );
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
             requestHandler: (request, _) =>
@@ -20,7 +18,7 @@ public sealed class HttpConnectionHandlerTests
                     {
                         StatusCode = 200,
                         ReasonPhrase = "OK",
-                        Headers =  [new KeyValuePair<string, string>("Content-Type", "text/plain")],
+                        Headers = [new KeyValuePair<string, string>("Content-Type", "text/plain")],
                         Body = Encoding.ASCII.GetBytes("pong"),
                     }
                 );
@@ -75,11 +73,9 @@ public sealed class HttpConnectionHandlerTests
     public async Task OnReceivedAsync_keeps_incomplete_declared_bodies_buffered_without_invoking_handler()
     {
         var buffer = new ReadOnlySequence<byte>(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhe"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /submit HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhe"
+            )
         );
         var context = new RecordingConnectionContext();
         var requestHandlerCalled = false;
@@ -128,11 +124,9 @@ public sealed class HttpConnectionHandlerTests
     public async Task OnReceivedAsync_maps_unsupported_framing_to_501_and_closes_connection()
     {
         var buffer = new ReadOnlySequence<byte>(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /submit HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: gzip\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /submit HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: gzip\r\n\r\n"
+            )
         );
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
@@ -215,9 +209,9 @@ public sealed class HttpConnectionHandlerTests
     public async Task OnReceivedAsync_honors_connection_close_requests()
     {
         var buffer = new ReadOnlySequence<byte>(
-            Encoding
-                .ASCII
-                .GetBytes("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
+            Encoding.ASCII.GetBytes(
+                "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
+            )
         );
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
@@ -240,11 +234,9 @@ public sealed class HttpConnectionHandlerTests
     public async Task OnReceivedAsync_honors_connection_close_across_repeated_header_fields()
     {
         var buffer = new ReadOnlySequence<byte>(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: keep-alive\r\nConnection: close\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: keep-alive\r\nConnection: close\r\n\r\n"
+            )
         );
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
@@ -289,9 +281,9 @@ public sealed class HttpConnectionHandlerTests
     public async Task OnReceivedAsync_maps_duplicate_host_requests_to_400_and_closes_connection()
     {
         var buffer = new ReadOnlySequence<byte>(
-            Encoding
-                .ASCII
-                .GetBytes("GET / HTTP/1.1\r\nHost: example.com\r\nHost: example.org\r\n\r\n")
+            Encoding.ASCII.GetBytes(
+                "GET / HTTP/1.1\r\nHost: example.com\r\nHost: example.org\r\n\r\n"
+            )
         );
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
@@ -434,9 +426,8 @@ public sealed class HttpConnectionHandlerTests
         cancellationTokenSource.Cancel();
 
         await Assert
-            .That(
-                async () =>
-                    await handler.OnReceivedAsync(context, buffer, cancellationTokenSource.Token)
+            .That(async () =>
+                await handler.OnReceivedAsync(context, buffer, cancellationTokenSource.Token)
             )
             .Throws<OperationCanceledException>();
         await Assert.That(context.SendCount).IsEqualTo(0);
@@ -510,22 +501,17 @@ public sealed class HttpConnectionHandlerTests
     public async Task Constructor_rejects_non_positive_streaming_response_buffer_size()
     {
         await Assert
-            .That(
-                () =>
-                    new HttpConnectionHandler(
-                        new HttpConnectionHandlerOptions
-                        {
-                            RequestHandler = static (_, _) =>
-                                ValueTask.FromResult(
-                                    new HttpResponse
-                                    {
-                                        StatusCode = 204,
-                                        ReasonPhrase = "No Content"
-                                    }
-                                ),
-                            StreamingResponseBufferSize = 0,
-                        }
-                    )
+            .That(() =>
+                new HttpConnectionHandler(
+                    new HttpConnectionHandlerOptions
+                    {
+                        RequestHandler = static (_, _) =>
+                            ValueTask.FromResult(
+                                new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" }
+                            ),
+                        StreamingResponseBufferSize = 0,
+                    }
+                )
             )
             .Throws<ArgumentOutOfRangeException>();
     }
@@ -564,9 +550,9 @@ public sealed class HttpConnectionHandlerTests
     public async Task OnReceivedAsync_streaming_response_closes_connection_when_requested()
     {
         var buffer = new ReadOnlySequence<byte>(
-            Encoding
-                .ASCII
-                .GetBytes("GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
+            Encoding.ASCII.GetBytes(
+                "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n"
+            )
         );
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
@@ -656,11 +642,9 @@ public sealed class HttpConnectionHandlerTests
     {
         // Headers with Expect: 100-continue, but no body yet
         var buffer = new ReadOnlySequence<byte>(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: 1000\r\nExpect: 100-continue\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: 1000\r\nExpect: 100-continue\r\n\r\n"
+            )
         );
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
@@ -680,11 +664,9 @@ public sealed class HttpConnectionHandlerTests
     public async Task OnReceivedAsync_sends_100_continue_only_once()
     {
         var buffer = new ReadOnlySequence<byte>(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: 1000\r\nExpect: 100-continue\r\n\r\n"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: 1000\r\nExpect: 100-continue\r\n\r\n"
+            )
         );
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
@@ -704,11 +686,9 @@ public sealed class HttpConnectionHandlerTests
     public async Task OnReceivedAsync_skips_100_continue_when_body_present()
     {
         var buffer = new ReadOnlySequence<byte>(
-            Encoding
-                .ASCII
-                .GetBytes(
-                    "POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\nExpect: 100-continue\r\n\r\nhello"
-                )
+            Encoding.ASCII.GetBytes(
+                "POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\nExpect: 100-continue\r\n\r\nhello"
+            )
         );
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(
@@ -765,16 +745,14 @@ public sealed class HttpConnectionHandlerTests
     [Test]
     public async Task OnReceivedAsync_switches_connection_to_websocket_mode_after_101()
     {
-        var requestBytes = Encoding
-            .ASCII
-            .GetBytes(
-                "GET /ws HTTP/1.1\r\n"
-                    + "Host: localhost\r\n"
-                    + "Upgrade: websocket\r\n"
-                    + "Connection: Upgrade\r\n"
-                    + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-                    + "Sec-WebSocket-Version: 13\r\n\r\n"
-            );
+        var requestBytes = Encoding.ASCII.GetBytes(
+            "GET /ws HTTP/1.1\r\n"
+                + "Host: localhost\r\n"
+                + "Upgrade: websocket\r\n"
+                + "Connection: Upgrade\r\n"
+                + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                + "Sec-WebSocket-Version: 13\r\n\r\n"
+        );
 
         var buffer = new ReadOnlySequence<byte>(requestBytes);
         var context = new RecordingConnectionContext();
@@ -809,16 +787,14 @@ public sealed class HttpConnectionHandlerTests
     [Test]
     public async Task OnReceivedAsync_websocket_close_frame_sends_close_and_closes_connection()
     {
-        var requestBytes = Encoding
-            .ASCII
-            .GetBytes(
-                "GET /ws HTTP/1.1\r\n"
-                    + "Host: localhost\r\n"
-                    + "Upgrade: websocket\r\n"
-                    + "Connection: Upgrade\r\n"
-                    + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
-                    + "Sec-WebSocket-Version: 13\r\n\r\n"
-            );
+        var requestBytes = Encoding.ASCII.GetBytes(
+            "GET /ws HTTP/1.1\r\n"
+                + "Host: localhost\r\n"
+                + "Upgrade: websocket\r\n"
+                + "Connection: Upgrade\r\n"
+                + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                + "Sec-WebSocket-Version: 13\r\n\r\n"
+        );
 
         var context = new RecordingConnectionContext();
         var handler = CreateHandler(

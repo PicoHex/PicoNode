@@ -162,12 +162,12 @@ internal static class HttpRequestParser
             {
                 if (ConsumedBytes + remaining.Length > maxRequestBytes)
                 {
-                    lineBytes =  [];
+                    lineBytes = [];
                     error = HttpRequestParseError.RequestTooLarge;
                     return false;
                 }
 
-                lineBytes =  [];
+                lineBytes = [];
                 error = null;
                 return false;
             }
@@ -177,7 +177,7 @@ internal static class HttpRequestParser
 
             if (lineLength == 0 || HttpParseHelpers.GetLastByte(lineWithCr) != (byte)'\r')
             {
-                lineBytes =  [];
+                lineBytes = [];
                 error = malformedLineError;
                 return false;
             }
@@ -186,7 +186,7 @@ internal static class HttpRequestParser
             ConsumedBytes += lineLength + 1;
             if (ConsumedBytes > maxRequestBytes)
             {
-                lineBytes =  [];
+                lineBytes = [];
                 error = HttpRequestParseError.RequestTooLarge;
                 return false;
             }
@@ -196,7 +196,7 @@ internal static class HttpRequestParser
 
             if (contentLength == 0)
             {
-                lineBytes =  [];
+                lineBytes = [];
                 return true;
             }
 

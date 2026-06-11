@@ -20,7 +20,7 @@ public sealed partial class HttpPipelineBenchmarks
         var router = CreateRouter();
 
         _handler = new HttpConnectionHandler(
-            new HttpConnectionHandlerOptions { RequestHandler = router.HandleAsync, }
+            new HttpConnectionHandlerOptions { RequestHandler = router.HandleAsync }
         );
 
         _context = new RecordingConnectionContext();
@@ -117,32 +117,46 @@ public sealed partial class HttpPipelineBenchmarks
                 [
                     HttpRoute.MapGet(
                         "/hello",
-                        static (_, _) => ValueTask.FromResult(
-                            new HttpResponse
-                            {
-                                StatusCode = 200,
-                                ReasonPhrase = "OK",
-                                Headers = [new KeyValuePair<string, string>("Content-Type", "text/plain")],
-                                Body = HelloBody,
-                            }
-                        )
+                        static (_, _) =>
+                            ValueTask.FromResult(
+                                new HttpResponse
+                                {
+                                    StatusCode = 200,
+                                    ReasonPhrase = "OK",
+                                    Headers =
+                                    [
+                                        new KeyValuePair<string, string>(
+                                            "Content-Type",
+                                            "text/plain"
+                                        ),
+                                    ],
+                                    Body = HelloBody,
+                                }
+                            )
                     ),
                     HttpRoute.MapPost(
                         "/echo",
-                        static (request, _) => ValueTask.FromResult(
-                            new HttpResponse
-                            {
-                                StatusCode = 200,
-                                ReasonPhrase = "OK",
-                                Headers = [new KeyValuePair<string, string>("Content-Type", "text/plain")],
-                                Body = request.Body.ToArray(),
-                            }
-                        )
+                        static (request, _) =>
+                            ValueTask.FromResult(
+                                new HttpResponse
+                                {
+                                    StatusCode = 200,
+                                    ReasonPhrase = "OK",
+                                    Headers =
+                                    [
+                                        new KeyValuePair<string, string>(
+                                            "Content-Type",
+                                            "text/plain"
+                                        ),
+                                    ],
+                                    Body = request.Body.ToArray(),
+                                }
+                            )
                     ),
                 ],
                 FallbackHandler = static (_, _) =>
                     ValueTask.FromResult(
-                        new HttpResponse { StatusCode = 404, ReasonPhrase = "Not Found", }
+                        new HttpResponse { StatusCode = 404, ReasonPhrase = "Not Found" }
                     ),
             }
         );

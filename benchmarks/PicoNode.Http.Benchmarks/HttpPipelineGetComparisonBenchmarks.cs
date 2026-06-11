@@ -4,9 +4,9 @@ namespace PicoNode.Http.Benchmarks;
 public sealed partial class HttpPipelineGetComparisonBenchmarks
 {
     private static readonly byte[] HelloBody = Encoding.ASCII.GetBytes("hello");
-    private static readonly byte[] RequestBytes = Encoding
-        .ASCII
-        .GetBytes("GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n");
+    private static readonly byte[] RequestBytes = Encoding.ASCII.GetBytes(
+        "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n"
+    );
 
     private HttpConnectionHandler _directHandler = null!;
     private HttpConnectionHandler _routedHandler = null!;
@@ -27,7 +27,7 @@ public sealed partial class HttpPipelineGetComparisonBenchmarks
                             ReasonPhrase = "OK",
                             Headers =
                             [
-                                new KeyValuePair<string, string>("Content-Type", "text/plain")
+                                new KeyValuePair<string, string>("Content-Type", "text/plain"),
                             ],
                             Body = HelloBody,
                         }
@@ -45,15 +45,22 @@ public sealed partial class HttpPipelineGetComparisonBenchmarks
                         [
                             HttpRoute.MapGet(
                                 "/hello",
-                                static (_, _) => ValueTask.FromResult(
-                                    new HttpResponse
-                                    {
-                                        StatusCode = 200,
-                                        ReasonPhrase = "OK",
-                                        Headers = [new KeyValuePair<string, string>("Content-Type", "text/plain")],
-                                        Body = HelloBody,
-                                    }
-                                )
+                                static (_, _) =>
+                                    ValueTask.FromResult(
+                                        new HttpResponse
+                                        {
+                                            StatusCode = 200,
+                                            ReasonPhrase = "OK",
+                                            Headers =
+                                            [
+                                                new KeyValuePair<string, string>(
+                                                    "Content-Type",
+                                                    "text/plain"
+                                                ),
+                                            ],
+                                            Body = HelloBody,
+                                        }
+                                    )
                             ),
                         ],
                     }

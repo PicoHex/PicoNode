@@ -37,7 +37,9 @@ static HttpRouter CreateRouter() =>
                 HttpRoute.MapGet(
                     "/",
                     static (_, _) =>
-                        ValueTask.FromResult(CreateTextResponse(200, "OK", "hello from PicoNode.Http"))
+                        ValueTask.FromResult(
+                            CreateTextResponse(200, "OK", "hello from PicoNode.Http")
+                        )
                 ),
                 HttpRoute.MapPost(
                     "/echo",
@@ -50,7 +52,10 @@ static HttpRouter CreateRouter() =>
                                 Headers =
                                 [
                                     new KeyValuePair<string, string>("Content-Type", "text/plain"),
-                                    new KeyValuePair<string, string>("X-Content-Type-Options", "nosniff"),
+                                    new KeyValuePair<string, string>(
+                                        "X-Content-Type-Options",
+                                        "nosniff"
+                                    ),
                                 ],
                                 Body = request.Body.ToArray(),
                             }

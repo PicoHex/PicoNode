@@ -117,7 +117,10 @@ public sealed class CompressionMiddlewareTests
                         Headers =
                         [
                             new KeyValuePair<string, string>("Content-Type", "text/plain"),
-                            new KeyValuePair<string, string>("Content-Length", body.Length.ToString()),
+                            new KeyValuePair<string, string>(
+                                "Content-Length",
+                                body.Length.ToString()
+                            ),
                         ],
                         BodyStream = new MemoryStream(body),
                     }
@@ -155,7 +158,10 @@ public sealed class CompressionMiddlewareTests
                         ReasonPhrase = "OK",
                         Headers =
                         [
-                            new KeyValuePair<string, string>("Content-Type", "application/octet-stream")
+                            new KeyValuePair<string, string>(
+                                "Content-Type",
+                                "application/octet-stream"
+                            ),
                         ],
                         BodyStream = new MemoryStream(largeBody),
                     }
@@ -191,7 +197,10 @@ public sealed class CompressionMiddlewareTests
                         ReasonPhrase = "OK",
                         Headers =
                         [
-                            new KeyValuePair<string, string>("Content-Type", "application/octet-stream")
+                            new KeyValuePair<string, string>(
+                                "Content-Type",
+                                "application/octet-stream"
+                            ),
                         ],
                         BodyStream = new MemoryStream(smallBody),
                     }
@@ -261,7 +270,10 @@ public sealed class CompressionMiddlewareTests
                         [
                             new KeyValuePair<string, string>("Content-Type", "text/plain"),
                             new KeyValuePair<string, string>("Content-Encoding", "gzip"),
-                            new KeyValuePair<string, string>("Content-Length", body.Length.ToString()),
+                            new KeyValuePair<string, string>(
+                                "Content-Length",
+                                body.Length.ToString()
+                            ),
                         ],
                         Body = body,
                     }
@@ -437,8 +449,7 @@ public sealed class CompressionMiddlewareTests
 
     private static string? GetHeader(HttpResponse response, string name) =>
         response
-            .Headers
-            .FirstOrDefault(h => h.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .Headers.FirstOrDefault(h => h.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
             .Value;
 
     private static byte[] Decompress(ReadOnlyMemory<byte> compressed, string encoding)

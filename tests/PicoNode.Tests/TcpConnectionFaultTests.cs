@@ -46,10 +46,7 @@ public sealed class TcpConnectionFaultTests
         }
     }
 
-    private static TcpConnection CreateConnection(
-        Socket serverSocket,
-        ILogger? logger = null
-    )
+    private static TcpConnection CreateConnection(Socket serverSocket, ILogger? logger = null)
     {
         var node = new TcpNode(
             new TcpNodeOptions

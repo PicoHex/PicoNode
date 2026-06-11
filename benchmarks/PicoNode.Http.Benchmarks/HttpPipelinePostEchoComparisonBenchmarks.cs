@@ -28,7 +28,7 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
                             ReasonPhrase = "OK",
                             Headers =
                             [
-                                new KeyValuePair<string, string>("Content-Type", "text/plain")
+                                new KeyValuePair<string, string>("Content-Type", "text/plain"),
                             ],
                             Body = request.Body.ToArray(),
                         }
@@ -46,15 +46,22 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
                         [
                             HttpRoute.MapPost(
                                 "/echo",
-                                static (request, _) => ValueTask.FromResult(
-                                    new HttpResponse
-                                    {
-                                        StatusCode = 200,
-                                        ReasonPhrase = "OK",
-                                        Headers = [new KeyValuePair<string, string>("Content-Type", "text/plain")],
-                                        Body = request.Body.ToArray(),
-                                    }
-                                )
+                                static (request, _) =>
+                                    ValueTask.FromResult(
+                                        new HttpResponse
+                                        {
+                                            StatusCode = 200,
+                                            ReasonPhrase = "OK",
+                                            Headers =
+                                            [
+                                                new KeyValuePair<string, string>(
+                                                    "Content-Type",
+                                                    "text/plain"
+                                                ),
+                                            ],
+                                            Body = request.Body.ToArray(),
+                                        }
+                                    )
                             ),
                         ],
                     }
@@ -142,11 +149,9 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
 
     private static byte[] CreatePostRequestBytes(byte[] body)
     {
-        var header = Encoding
-            .ASCII
-            .GetBytes(
-                $"POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
-            );
+        var header = Encoding.ASCII.GetBytes(
+            $"POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
+        );
         var request = new byte[header.Length + body.Length];
         Buffer.BlockCopy(header, 0, request, 0, header.Length);
         Buffer.BlockCopy(body, 0, request, header.Length, body.Length);

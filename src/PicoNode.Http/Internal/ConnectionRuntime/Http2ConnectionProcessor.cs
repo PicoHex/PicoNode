@@ -16,11 +16,12 @@ internal static class Http2ConnectionProcessor
 
         if (sendInitialSettings)
         {
-            var settings = (ReadOnlySpan<Http2Setting>)
-            [
-                new(Http2SettingId.MaxConcurrentStreams, 100),
-                new(Http2SettingId.InitialWindowSize, 65535),
-            ];
+            var settings =
+                (ReadOnlySpan<Http2Setting>)
+                    [
+                        new(Http2SettingId.MaxConcurrentStreams, 100),
+                        new(Http2SettingId.InitialWindowSize, 65535),
+                    ];
             var size = Http2FrameCodec.FrameHeaderSize + settings.Length * 6;
             var rented = ArrayPool<byte>.Shared.Rent(size);
             try
@@ -57,7 +58,15 @@ internal static class Http2ConnectionProcessor
             consumed = remaining.GetPosition(frameConsumed);
             remaining = remaining.Slice(frameConsumed);
 
-            if (await HandleFrameAsync(connection, frame!, requestHandler, logger, cancellationToken))
+            if (
+                await HandleFrameAsync(
+                    connection,
+                    frame!,
+                    requestHandler,
+                    logger,
+                    cancellationToken
+                )
+            )
             {
                 return consumed;
             }

@@ -7,15 +7,16 @@ public sealed class CfgBindSmokeTest
     [Test]
     public async Task ConfigBinding_WebAppOptions_ReadsValuesFromCfg()
     {
-        await using var root = await Cfg
-            .CreateBuilder()
-            .Add(new Dictionary<string, string>
-            {
-                ["WebApp:ServerHeader"] = "TestServer/1.0",
-                ["WebApp:MaxRequestBytes"] = "16384",
-                ["WebApp:StreamingResponseBufferSize"] = "8192",
-                ["WebApp:RequestTimeout"] = "00:00:45",
-            })
+        await using var root = await Cfg.CreateBuilder()
+            .Add(
+                new Dictionary<string, string>
+                {
+                    ["WebApp:ServerHeader"] = "TestServer/1.0",
+                    ["WebApp:MaxRequestBytes"] = "16384",
+                    ["WebApp:StreamingResponseBufferSize"] = "8192",
+                    ["WebApp:RequestTimeout"] = "00:00:45",
+                }
+            )
             .BuildAsync();
 
         await Assert.That(root.GetValue("WebApp:ServerHeader")).IsEqualTo("TestServer/1.0");
@@ -27,14 +28,15 @@ public sealed class CfgBindSmokeTest
     [Test]
     public async Task CfgBind_Bind_WorksWithSimpleType()
     {
-        await using var root = await Cfg
-            .CreateBuilder()
-            .Add(new Dictionary<string, string>
-            {
-                ["App:Name"] = "PicoCfg",
-                ["App:Enabled"] = "true",
-                ["App:Count"] = "42",
-            })
+        await using var root = await Cfg.CreateBuilder()
+            .Add(
+                new Dictionary<string, string>
+                {
+                    ["App:Name"] = "PicoCfg",
+                    ["App:Enabled"] = "true",
+                    ["App:Count"] = "42",
+                }
+            )
             .BuildAsync();
 
         var settings = CfgBind.Bind<AppSettings>(root, "App");

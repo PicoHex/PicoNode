@@ -10,6 +10,6 @@ global using System.Security.Cryptography;
 global using System.Security.Cryptography.X509Certificates;
 global using PicoCfg;
 global using PicoCfg.Abs;
+global using PicoDI.Abs;
 global using PicoLog.Abs;
 global using PicoNode.Abs;
-global using PicoDI.Abs;

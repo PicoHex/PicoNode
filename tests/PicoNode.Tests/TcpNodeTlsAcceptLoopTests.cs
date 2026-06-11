@@ -119,10 +119,7 @@ public sealed class TcpNodeTlsAcceptLoopTests
                 ConnectionHandler = new NoOpTcpHandler(),
                 Logger = logger,
                 MaxConnections = maxConnections,
-                SslOptions = new SslServerAuthenticationOptions
-                {
-                    ServerCertificate = certificate,
-                },
+                SslOptions = new SslServerAuthenticationOptions { ServerCertificate = certificate },
             }
         );
     }

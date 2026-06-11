@@ -30,7 +30,7 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
                     {
                         StatusCode = 200,
                         ReasonPhrase = "OK",
-                        Headers =  [new KeyValuePair<string, string>("Content-Type", "text/plain")],
+                        Headers = [new KeyValuePair<string, string>("Content-Type", "text/plain")],
                         Body = request.Body.ToArray(),
                     }
                 )
@@ -44,15 +44,22 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
                     [
                         HttpRoute.MapPost(
                             "/echo",
-                            static (request, _) => ValueTask.FromResult(
-                                new HttpResponse
-                                {
-                                    StatusCode = 200,
-                                    ReasonPhrase = "OK",
-                                    Headers = [new KeyValuePair<string, string>("Content-Type", "text/plain")],
-                                    Body = request.Body.ToArray(),
-                                }
-                            )
+                            static (request, _) =>
+                                ValueTask.FromResult(
+                                    new HttpResponse
+                                    {
+                                        StatusCode = 200,
+                                        ReasonPhrase = "OK",
+                                        Headers =
+                                        [
+                                            new KeyValuePair<string, string>(
+                                                "Content-Type",
+                                                "text/plain"
+                                            ),
+                                        ],
+                                        Body = request.Body.ToArray(),
+                                    }
+                                )
                         ),
                     ],
                 }
@@ -102,7 +109,7 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
                 ConnectionHandler = new HttpConnectionHandler(
-                    new HttpConnectionHandlerOptions { RequestHandler = requestHandler, }
+                    new HttpConnectionHandlerOptions { RequestHandler = requestHandler }
                 ),
                 DrainTimeout = TimeSpan.FromSeconds(2),
             }
@@ -159,11 +166,9 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
 
     private static byte[] CreatePostRequestBytes(byte[] body)
     {
-        var header = Encoding
-            .ASCII
-            .GetBytes(
-                $"POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
-            );
+        var header = Encoding.ASCII.GetBytes(
+            $"POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
+        );
         var request = new byte[header.Length + body.Length];
         Buffer.BlockCopy(header, 0, request, 0, header.Length);
         Buffer.BlockCopy(body, 0, request, header.Length, body.Length);
@@ -172,11 +177,9 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
 
     private static byte[] CreateExpectedResponseBytes(byte[] body)
     {
-        var header = Encoding
-            .ASCII
-            .GetBytes(
-                $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
-            );
+        var header = Encoding.ASCII.GetBytes(
+            $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {body.Length.ToString(CultureInfo.InvariantCulture)}\r\n\r\n"
+        );
         var response = new byte[header.Length + body.Length];
         Buffer.BlockCopy(header, 0, response, 0, header.Length);
         Buffer.BlockCopy(body, 0, response, header.Length, body.Length);

@@ -3,16 +3,18 @@ namespace PicoNode.Http.Benchmarks;
 [BenchmarkClass(Description = "PicoNode.Http HttpRouter exact-route dispatch")]
 public sealed partial class HttpRouterBenchmarks
 {
-    private static readonly HttpResponse NoContentResponse =
-        new() { StatusCode = 204, ReasonPhrase = "No Content", };
+    private static readonly HttpResponse NoContentResponse = new()
+    {
+        StatusCode = 204,
+        ReasonPhrase = "No Content",
+    };
 
-    private static readonly HttpResponse FallbackResponse =
-        new()
-        {
-            StatusCode = 404,
-            ReasonPhrase = "Not Found",
-            Body = Encoding.ASCII.GetBytes("router-missing"),
-        };
+    private static readonly HttpResponse FallbackResponse = new()
+    {
+        StatusCode = 404,
+        ReasonPhrase = "Not Found",
+        Body = Encoding.ASCII.GetBytes("router-missing"),
+    };
 
     [Params(1, 8, 32, 128)]
     public int RouteCount { get; set; }

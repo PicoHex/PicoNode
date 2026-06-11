@@ -27,8 +27,8 @@ internal static class HttpCharacters
 
     public static bool IsValidHeaderValue(string value)
     {
-        return value.All(
-            character => (character >= 0x20 || character == '\t') && character != 0x7F
+        return value.All(character =>
+            (character >= 0x20 || character == '\t') && character != 0x7F
         );
     }
 
