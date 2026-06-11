@@ -54,12 +54,12 @@ public static class ShowcaseApp
             {
                 var theme = GetTheme(context.Request);
                 var json = $$"""
-                {
-                  "theme":"{{EscapeJson(theme)}}",
-                  "cookieName":"{{ThemeCookieName}}",
-                  "supportedThemes":["light","dark"]
-                }
-                """;
+                    {
+                      "theme":"{{EscapeJson(theme)}}",
+                      "cookieName":"{{ThemeCookieName}}",
+                      "supportedThemes":["light","dark"]
+                    }
+                    """;
 
                 return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
             }
