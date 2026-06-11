@@ -156,13 +156,34 @@ internal static class Http2ConnectionProcessor
                 return false;
 
             case Http2FrameType.PushPromise:
-            case Http2FrameType.Continuation:
                 await SendGoAwayAndCloseAsync(
                     connection,
                     Http2ErrorCode.Http11Required,
                     cancellationToken
                 );
                 return true;
+
+            case Http2FrameType.Continuation:
+                // Per RFC 7540 §6.10, CONTINUATION MUST be on the same stream as the HEADERS it continues.
+                if (
+                    GetRuntimeState(connection).PendingContinuationStreamId is int pendingId
+                    && frame.StreamId != pendingId
+                )
+                {
+                    await SendGoAwayAndCloseAsync(
+                        connection,
+                        Http2ErrorCode.ProtocolError,
+                        cancellationToken
+                    );
+                    return true;
+                }
+                return await Http2StreamHandler.ProcessHeadersFrame(
+                    connection,
+                    frame,
+                    requestHandler,
+                    logger,
+                    cancellationToken
+                );
 
             case Http2FrameType.GoAway:
                 connection.Close();
@@ -178,6 +199,17 @@ internal static class Http2ConnectionProcessor
                 );
                 return true;
         }
+    }
+
+    private static ConnectionRuntimeState GetRuntimeState(ITcpConnectionContext connection)
+    {
+        var state = connection.UserState as ConnectionRuntimeState;
+        if (state is null)
+        {
+            state = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+            connection.UserState = state;
+        }
+        return state;
     }
 
     private static async ValueTask SendGoAwayAndCloseAsync(

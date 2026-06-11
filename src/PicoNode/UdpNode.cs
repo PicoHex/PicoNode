@@ -21,6 +21,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
     private Task? _configReloadTask;
     private volatile NodeState _state;
     private int _disposed;
+    private static long _nextConnectionId;
     private long _totalDatagramsReceived;
     private long _totalDatagramsSent;
     private long _totalBytesReceived;
@@ -241,7 +242,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
     }
 
     internal async Task SendAsync(
-        ArraySegment<byte> datagram,
+        ReadOnlyMemory<byte> datagram,
         IPEndPoint remoteEndPoint,
         CancellationToken cancellationToken = default
     )
@@ -255,7 +256,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 cancellationToken
             );
             Interlocked.Increment(ref _totalDatagramsSent);
-            Interlocked.Add(ref _totalBytesSent, datagram.Count);
+            Interlocked.Add(ref _totalBytesSent, datagram.Length);
         }
         catch (Exception ex)
         {
@@ -348,7 +349,11 @@ public sealed class UdpNode : INode, IAsyncDisposable
                     {
                         try
                         {
-                            var context = new UdpDatagramContext(this, lease.RemoteEndPoint);
+                            var context = new UdpDatagramContext(
+                                this,
+                                Interlocked.Increment(ref _nextConnectionId),
+                                lease.RemoteEndPoint
+                            );
                             var handleTask = Options.DatagramHandler.OnDatagramAsync(
                                 context,
                                 lease.Datagram,

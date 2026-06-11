@@ -32,9 +32,9 @@ internal sealed class TcpConnectionReceiveLoop
         CancellationToken cancellationToken
     )
     {
-        var processingTask = ProcessPipeAsync(handler, context, cancellationToken);
-
         await InvokeConnectedAsync(handler, context, cancellationToken);
+
+        var processingTask = ProcessPipeAsync(handler, context, cancellationToken);
         var reason = await PumpSocketToPipeAsync(cancellationToken);
         await _pipe.Writer.CompleteAsync();
         await processingTask;

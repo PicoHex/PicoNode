@@ -201,14 +201,18 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
-    public async Task MissingEndHeadersFlag_SendsGoAwayAndCloses()
+    public async Task MissingEndHeadersFlag_BuffersAndWaitsForContinuation()
     {
         var connection = new TestTcpConnectionContext();
 
         var frame = BuildHeadersFrame(MinimalHpackPayload, Http2FrameFlags.None);
 
+        var handlerCalled = false;
         HttpRequestHandler handler = (req, ct) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        {
+            handlerCalled = true;
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        };
 
         var shouldClose = await Http2StreamHandler.ProcessHeadersFrame(
             connection,
@@ -218,8 +222,10 @@ public sealed class Http2StreamHandlerTests
             CancellationToken.None
         );
 
-        await Assert.That(shouldClose).IsTrue();
-        await Assert.That(connection.IsClosed).IsTrue();
+        // Should NOT close — buffering the header block, waiting for CONTINUATION.
+        await Assert.That(shouldClose).IsFalse();
+        await Assert.That(connection.IsClosed).IsFalse();
+        await Assert.That(handlerCalled).IsFalse();
     }
 
     [Test]
@@ -249,7 +255,7 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
-    public async Task WrongStreamId_SendsGoAwayAndCloses()
+    public async Task StreamId3_AcceptsAndProcessesSuccessfully()
     {
         var connection = new TestTcpConnectionContext();
         var frame = new Http2Frame
@@ -271,8 +277,18 @@ public sealed class Http2StreamHandlerTests
             CancellationToken.None
         );
 
-        await Assert.That(shouldClose).IsTrue();
-        await Assert.That(connection.IsClosed).IsTrue();
+        await Assert.That(shouldClose).IsFalse();
+        await Assert.That(connection.IsClosed).IsFalse();
+        await Assert.That(connection.SentFrames.Count).IsEqualTo(1);
+
+        var sent = connection.SentFrames[0];
+        Http2FrameCodec.TryReadFrame(
+            new ReadOnlySequence<byte>(sent),
+            out var responseFrame,
+            out _
+        );
+        await Assert.That(responseFrame).IsNotNull();
+        await Assert.That(responseFrame!.StreamId).IsEqualTo(3);
     }
 
     [Test]
@@ -406,5 +422,77 @@ public sealed class Http2StreamHandlerTests
         }
 
         public void Close() => IsClosed = true;
+    }
+
+    [Test]
+    public async Task HeadersPlusContinuation_ReassemblesAndProcesses()
+    {
+        var connection = new TestTcpConnectionContext();
+        var hpackData = BuildMinimalHpack("POST", "/data");
+
+        // Split HPACK data into two parts
+        var split = hpackData.Length / 2;
+        var part1 = hpackData[..split];
+        var part2 = hpackData[split..];
+
+        var handlerCalled = false;
+        HttpRequest? captured = null;
+        HttpRequestHandler handler = (req, ct) =>
+        {
+            handlerCalled = true;
+            captured = req;
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        };
+
+        // Send HEADERS frame without END_HEADERS
+        var headersFrame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.EndStream, 1, part1);
+        var shouldClose1 = await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(shouldClose1).IsFalse();
+        await Assert.That(handlerCalled).IsFalse(); // Not yet — waiting for CONTINUATION
+
+        // Send CONTINUATION frame with END_HEADERS
+        var continuationFrame = BuildFrame(
+            Http2FrameType.Headers, // ProcessHeadersFrame handles both HEADERS and CONTINUATION
+            Http2FrameFlags.EndHeaders,
+            1,
+            part2
+        );
+        var shouldClose2 = await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            continuationFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(shouldClose2).IsFalse();
+        await Assert.That(handlerCalled).IsTrue();
+        await Assert.That(captured).IsNotNull();
+        await Assert.That(captured!.Method).IsEqualTo("POST");
+        await Assert.That(captured.Target).IsEqualTo("/data");
+    }
+
+    private static Http2Frame BuildFrame(
+        Http2FrameType type,
+        Http2FrameFlags flags,
+        int streamId,
+        byte[] payload
+    )
+    {
+        return new Http2Frame
+        {
+            Type = type,
+            Flags = flags,
+            StreamId = streamId,
+            Length = payload.Length,
+            Payload = payload,
+        };
     }
 }

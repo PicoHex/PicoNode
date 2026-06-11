@@ -3,6 +3,73 @@ namespace PicoNode.Tests;
 public sealed class UdpNodeDatagramFlowTests
 {
     [Test]
+    public async Task Received_datagram_context_has_nonzero_connection_id()
+    {
+        var handler = new CapturingUdpHandler();
+        await using var node = new UdpNode(
+            new UdpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                DatagramHandler = handler,
+            }
+        );
+
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Dgram,
+            ProtocolType.Udp
+        );
+        client.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+
+        await node.StartAsync();
+
+        await client.SendToAsync(
+            new byte[] { 1, 2, 3, 4 },
+            SocketFlags.None,
+            (IPEndPoint)node.LocalEndPoint
+        );
+
+        var received = await handler.Received.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await Assert.That(received.Context.ConnectionId).IsGreaterThan(0);
+    }
+
+    [Test]
+    public async Task SendAsync_accepts_ReadOnlyMemory()
+    {
+        var handler = new CapturingUdpHandler();
+        await using var node = new UdpNode(
+            new UdpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                DatagramHandler = handler,
+            }
+        );
+
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Dgram,
+            ProtocolType.Udp
+        );
+        client.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+
+        await node.StartAsync();
+
+        var serverEndpoint = (IPEndPoint)node.LocalEndPoint;
+        var reply = new byte[] { 9, 8, 7 };
+        handler.SetReply(reply);
+
+        await client.SendToAsync(new byte[] { 1, 2, 3, 4 }, SocketFlags.None, serverEndpoint);
+
+        var responseBuffer = new byte[reply.Length];
+        var result = await client
+            .ReceiveFromAsync(responseBuffer, SocketFlags.None, new IPEndPoint(IPAddress.Any, 0))
+            .WaitAsync(TimeSpan.FromSeconds(3));
+
+        await Assert.That(result.ReceivedBytes).IsEqualTo(reply.Length);
+        await Assert.That(responseBuffer).IsEquivalentTo(reply);
+    }
+
+    [Test]
     public async Task Received_datagram_exposes_remote_endpoint_and_allows_reply()
     {
         var handler = new CapturingUdpHandler();
@@ -149,7 +216,7 @@ public sealed class UdpNodeDatagramFlowTests
                 Logger = logger,
             }
         );
-        var context = new UdpDatagramContext(node, new IPEndPoint(IPAddress.Loopback, 45678));
+        var context = new UdpDatagramContext(node, 1, new IPEndPoint(IPAddress.Loopback, 45678));
 
         await node.DisposeAsync();
 
@@ -215,11 +282,11 @@ public sealed class UdpNodeDatagramFlowTests
         )
         {
             var copy = datagram.ToArray();
-            Received.TrySetResult(new ReceivedUdpDatagram(context.RemoteEndPoint, copy));
+            Received.TrySetResult(new ReceivedUdpDatagram(context.RemoteEndPoint, copy, context));
 
             if (_reply.Length > 0)
             {
-                await context.SendAsync(new ArraySegment<byte>(_reply), cancellationToken);
+                await context.SendAsync(new ReadOnlyMemory<byte>(_reply), cancellationToken);
             }
         }
     }
@@ -266,5 +333,9 @@ public sealed class UdpNodeDatagramFlowTests
         }
     }
 
-    private sealed record ReceivedUdpDatagram(IPEndPoint RemoteEndPoint, byte[] Datagram);
+    private sealed record ReceivedUdpDatagram(
+        IPEndPoint RemoteEndPoint,
+        byte[] Datagram,
+        IUdpDatagramContext Context
+    );
 }

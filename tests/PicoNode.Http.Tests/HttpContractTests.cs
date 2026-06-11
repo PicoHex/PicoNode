@@ -78,6 +78,7 @@ public sealed class HttpContractTests
             .That(properties.Select(x => x.Name).ToArray())
             .IsEquivalentTo([
                 nameof(HttpRequest.Body),
+                nameof(HttpRequest.BodyStream),
                 nameof(HttpRequest.HeaderFields),
                 nameof(HttpRequest.Headers),
                 nameof(HttpRequest.Method),

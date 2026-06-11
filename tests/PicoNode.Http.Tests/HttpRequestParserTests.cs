@@ -67,6 +67,33 @@ public sealed class HttpRequestParserTests
     }
 
     [Test]
+    public async Task Parse_request_line_spanning_buffer_segments_succeeds()
+    {
+        // Force the request line to span two buffer segments.
+        // Seg1: "GET / HTT"      (9 bytes)
+        // Seg2: "P/1.1\r\nHost: x\r\n\r\n"  (18 bytes)
+        // The line "GET / HTTP/1.1\r" crosses the segment boundary.
+        // FirstSpan.Slice would fail because FirstSpan only covers seg1.
+        var buffer = CreateSequence(
+            "GET / HTT"u8.ToArray(),
+            "P/1.1\r\nHost: x\r\n\r\n"u8.ToArray()
+        );
+
+        var result = HttpRequestParser.Parse(
+            buffer,
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
+        );
+
+        await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
+        await Assert.That(result.Error).IsNull();
+        await Assert.That(result.Request).IsNotNull();
+        var request = result.Request!;
+        await Assert.That(request.Method).IsEqualTo("GET");
+        await Assert.That(request.Target).IsEqualTo("/");
+        await Assert.That(request.Version).IsEqualTo(HttpVersion.Http11);
+    }
+
+    [Test]
     public async Task Parse_incomplete_body_consumes_nothing()
     {
         var buffer = CreateSequence(

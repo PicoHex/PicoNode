@@ -2,6 +2,9 @@ namespace PicoNode.Abs;
 
 public interface IUdpDatagramContext
 {
+    long ConnectionId { get; }
+
     IPEndPoint RemoteEndPoint { get; }
-    Task SendAsync(ArraySegment<byte> datagram, CancellationToken cancellationToken = default);
+
+    Task SendAsync(ReadOnlyMemory<byte> datagram, CancellationToken cancellationToken = default);
 }

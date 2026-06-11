@@ -36,9 +36,18 @@ public static class MultipartFormDataParser
             return null;
 
         var boundary = ExtractBoundary(contentType, options.MaxBoundaryLength);
-        return boundary is null
-            ? null
-            : ParseBody(request.Body, Encoding.UTF8.GetBytes(boundary), logger);
+        if (boundary is null)
+            return null;
+
+        var boundaryBytes = Encoding.UTF8.GetBytes(boundary);
+        var bodyStream = request.BodyStream;
+        if (bodyStream != Stream.Null)
+        {
+            return ParseBody(bodyStream, boundaryBytes, logger);
+        }
+
+        // Fallback: body was provided as in-memory byte array
+        return ParseBody(request.Body, boundaryBytes, logger);
     }
 
     internal static string? ExtractBoundary(
@@ -53,6 +62,17 @@ public static class MultipartFormDataParser
 
         var boundary = ExtractValue(span[(idx + 9)..], [';', ' ']);
         return IsValidBoundary(boundary, maxBoundaryLength) ? boundary : null;
+    }
+
+    private static MultipartFormData ParseBody(
+        Stream bodyStream,
+        byte[] boundary,
+        ILogger? logger = null
+    )
+    {
+        using var ms = new MemoryStream();
+        bodyStream.CopyTo(ms);
+        return ParseBody(ms.ToArray(), boundary, logger);
     }
 
     private static MultipartFormData ParseBody(

@@ -200,7 +200,19 @@ internal static class HttpRequestParser
                 return true;
             }
 
-            lineBytes = lineWithCr.FirstSpan.Slice(0, contentLength);
+            if (lineWithCr.IsSingleSegment)
+            {
+                lineBytes = lineWithCr.FirstSpan.Slice(0, contentLength);
+            }
+            else
+            {
+                // Line crosses a buffer segment boundary: copy to a contiguous byte array.
+                // Slice off the trailing '\r' first so contentLength matches the array size.
+                var temp = new byte[contentLength];
+                lineWithCr.Slice(0, contentLength).CopyTo(temp);
+                lineBytes = temp;
+            }
+
             return true;
         }
     }

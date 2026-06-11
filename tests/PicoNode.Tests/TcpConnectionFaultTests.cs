@@ -94,4 +94,65 @@ public sealed class TcpConnectionFaultTests
             CancellationToken cancellationToken
         ) => ValueTask.CompletedTask;
     }
+
+    [Test]
+    public async Task RunAsync_closes_with_handler_fault_when_OnConnectedAsync_throws()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var logger = new SpyLogger();
+            var handlerException = new InvalidOperationException("connected boom");
+            var handler = new ThrowingOnConnectedHandler(handlerException);
+            var node = new TcpNode(
+                new TcpNodeOptions
+                {
+                    Endpoint = (IPEndPoint)pair.Server.LocalEndPoint!,
+                    ConnectionHandler = handler,
+                    Logger = logger,
+                }
+            );
+            var connection = new TcpConnection(node, pair.Server);
+            var runTask = connection.RunAsync(handler);
+
+            await Task.Delay(500);
+            var closed = await handler.CloseReason.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            await runTask.WaitAsync(TimeSpan.FromSeconds(3));
+
+            await Assert.That(closed).IsEqualTo(TcpCloseReason.HandlerFault);
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    private sealed class ThrowingOnConnectedHandler(Exception exception) : ITcpConnectionHandler
+    {
+        public TaskCompletionSource<TcpCloseReason> CloseReason { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task OnConnectedAsync(
+            ITcpConnectionContext connection,
+            CancellationToken cancellationToken
+        ) => throw exception;
+
+        public ValueTask<SequencePosition> OnReceivedAsync(
+            ITcpConnectionContext connection,
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken
+        ) => ValueTask.FromResult(buffer.End);
+
+        public ValueTask OnClosedAsync(
+            ITcpConnectionContext connection,
+            TcpCloseReason reason,
+            Exception? error,
+            CancellationToken cancellationToken
+        )
+        {
+            CloseReason.TrySetResult(reason);
+            return ValueTask.CompletedTask;
+        }
+    }
 }

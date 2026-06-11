@@ -240,12 +240,36 @@ internal sealed class RadixTree<T>
 
     private static string[] SplitPath(string path)
     {
-        if (path == "/")
+        if (path == "/" || path.Length <= 1)
         {
             return [];
         }
 
-        return path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        // Count segments first so we allocate the exact array size.
+        // This avoids the internal temporary array that string.Split allocates.
+        var segmentCount = 1;
+        for (var i = 1; i < path.Length; i++)
+        {
+            if (path[i] == '/')
+            {
+                segmentCount++;
+            }
+        }
+
+        var result = new string[segmentCount];
+        var start = 1; // skip leading '/'
+        var idx = 0;
+
+        for (var i = 1; i <= path.Length; i++)
+        {
+            if (i == path.Length || path[i] == '/')
+            {
+                result[idx++] = path[start..i];
+                start = i + 1;
+            }
+        }
+
+        return result;
     }
 
     private sealed class Node

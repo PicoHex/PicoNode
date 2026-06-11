@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="PicoCfg" Version="2026.6.0" />
+    <PackageReference Include="PicoCfg.Gen" Version="2026.6.0" />
     <PackageReference Include="TUnit" Version="1.49.0" />
     <ProjectReference Include="..\..\src\PicoNode.Abs\PicoNode.Abs.csproj" />
     <ProjectReference Include="..\..\src\PicoNode\PicoNode.csproj" />

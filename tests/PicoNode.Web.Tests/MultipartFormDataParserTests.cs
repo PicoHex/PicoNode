@@ -418,6 +418,46 @@ public sealed class MultipartFormDataParserTests
                 ["Host"] = "localhost",
             },
             Body = bodyBytes,
+            BodyStream = new MemoryStream(bodyBytes, writable: false),
         };
+    }
+
+    [Test]
+    public async Task Parses_multipart_from_body_stream()
+    {
+        var body =
+            "--bound\r\n"
+            + "Content-Disposition: form-data; name=\"field1\"\r\n"
+            + "\r\n"
+            + "value1\r\n"
+            + "--bound--\r\n";
+
+        var bodyBytes = Encoding.UTF8.GetBytes(body);
+        var request = new HttpRequest
+        {
+            Method = "POST",
+            Target = "/upload",
+            Version = HttpVersion.Http11,
+            HeaderFields =
+            [
+                new("Content-Type", "multipart/form-data; boundary=bound"),
+                new("Content-Length", bodyBytes.Length.ToString()),
+                new("Host", "localhost"),
+            ],
+            Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Content-Type"] = "multipart/form-data; boundary=bound",
+                ["Content-Length"] = bodyBytes.Length.ToString(),
+                ["Host"] = "localhost",
+            },
+            BodyStream = new MemoryStream(bodyBytes, writable: false),
+        };
+
+        var result = MultipartFormDataParser.Parse(request);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Fields.Count).IsEqualTo(1);
+        await Assert.That(result.Fields[0].Name).IsEqualTo("field1");
+        await Assert.That(result.Fields[0].Value).IsEqualTo("value1");
     }
 }

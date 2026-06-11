@@ -251,6 +251,37 @@ public sealed class RadixTreeTests
         await Assert.That(value).IsEqualTo(1);
     }
 
+    // ---- Deeply nested paths ----
+
+    [Test]
+    public async Task TryMatch_deeply_nested_path_with_multiple_segments()
+    {
+        var tree = new RadixTree<int>();
+        tree.Insert("/a/b/c/d/e", "GET", 100);
+
+        var found = tree.TryMatch("/a/b/c/d/e", "GET", out var value, out _);
+        await Assert.That(found).IsTrue();
+        await Assert.That(value).IsEqualTo(100);
+    }
+
+    [Test]
+    public async Task TryMatch_mixed_exact_and_parameter_segments()
+    {
+        var tree = new RadixTree<int>();
+        tree.Insert("/api/v1/users/{userId}/posts/{postId}", "GET", 42);
+
+        var found = tree.TryMatch(
+            "/api/v1/users/abc/posts/xyz",
+            "GET",
+            out var value,
+            out var routeValues
+        );
+        await Assert.That(found).IsTrue();
+        await Assert.That(value).IsEqualTo(42);
+        await Assert.That(routeValues!["userId"]).IsEqualTo("abc");
+        await Assert.That(routeValues!["postId"]).IsEqualTo("xyz");
+    }
+
     // ---- Methodless Insert ----
 
     [Test]

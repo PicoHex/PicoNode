@@ -46,6 +46,7 @@ public sealed class WebServer : IAsyncDisposable
                 Endpoint = _options.Endpoint,
                 ConnectionHandler = handler,
                 Logger = _options.Logger,
+                SslOptions = _options.SslOptions,
             }
         );
 

@@ -17,7 +17,19 @@ public sealed class HttpRequest
     public IReadOnlyDictionary<string, string> Headers { get; init; } =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Request body as a stream. Prefer over <see cref="Body"/> for large payloads.
+    /// The stream is valid only during the request handler invocation.
+    /// </summary>
+    public Stream BodyStream { get; init; } = Stream.Null;
+
+    /// <summary>
+    /// In-memory request body. For large payloads, use <see cref="BodyStream"/> instead
+    /// to avoid buffering the entire body.
+    /// </summary>
     public ReadOnlyMemory<byte> Body { get; init; } = ReadOnlyMemory<byte>.Empty;
 
-    public Stream CreateBodyStream() => new MemoryStream(Body.ToArray(), writable: false);
+    /// <summary>Creates a stream over the request body. Prefer <see cref="BodyStream"/>.</summary>
+    public Stream CreateBodyStream() =>
+        BodyStream != Stream.Null ? BodyStream : new MemoryStream(Body.ToArray(), writable: false);
 }

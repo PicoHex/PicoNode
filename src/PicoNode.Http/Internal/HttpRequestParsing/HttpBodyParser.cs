@@ -16,8 +16,6 @@ internal static class HttpBodyParser
         bool expectsContinue
     )
     {
-        var body = ReadOnlyMemory<byte>.Empty;
-
         if (contentLength <= 0)
             return HttpRequestParseResult.Success(
                 new HttpRequest
@@ -29,7 +27,6 @@ internal static class HttpBodyParser
                     Version = version,
                     HeaderFields = headerFields,
                     Headers = headers,
-                    Body = body,
                 },
                 reader.Position
             );
@@ -51,10 +48,15 @@ internal static class HttpBodyParser
             return HttpRequestParseResult.Incomplete(reader.BufferStart, expectsContinue);
         }
 
-        var bodyArray = new byte[contentLength];
-        bodyBytes.Slice(0, contentLength).CopyTo(bodyArray);
+        // Create a stream over the remaining buffer data to enable streaming reads.
+        // Also populate Body for backward compatibility with existing consumers.
+        var bodySlice = bodyBytes.Slice(0, contentLength);
         reader.Advance(contentLength);
-        body = bodyArray;
+
+        // Body is populated from the stream data so both paths work.
+        // Streaming consumers use BodyStream to avoid the extra allocation once
+        // the non-streaming API is fully migrated.
+        var bodyArray = bodySlice.ToArray();
 
         return HttpRequestParseResult.Success(
             new HttpRequest
@@ -66,7 +68,8 @@ internal static class HttpBodyParser
                 Version = version,
                 HeaderFields = headerFields,
                 Headers = headers,
-                Body = body,
+                BodyStream = new ReadOnlySequenceStream(bodySlice),
+                Body = bodyArray,
             },
             reader.Position
         );
@@ -181,6 +184,8 @@ internal static class HttpBodyParser
             reader.ConsumedBytes += chunkSize + 2;
         }
 
+        // Chunked body is still fully buffered in ArrayBufferWriter; can be streamed
+        // in a future optimization.  For now the in-memory copy is kept for chunked.
         var body = bodyWriter.WrittenSpan.ToArray();
 
         return HttpRequestParseResult.Success(
@@ -194,6 +199,7 @@ internal static class HttpBodyParser
                 HeaderFields = headerFields,
                 Headers = headers,
                 Body = body,
+                BodyStream = new MemoryStream(body, writable: false),
             },
             reader.Position
         );

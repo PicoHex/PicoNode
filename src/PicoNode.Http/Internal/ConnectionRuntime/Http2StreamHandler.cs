@@ -2,8 +2,6 @@ namespace PicoNode.Http.Internal.ConnectionRuntime;
 
 internal static class Http2StreamHandler
 {
-    private const int SingleStreamId = 1;
-
     public static async ValueTask<bool> ProcessHeadersFrame(
         ITcpConnectionContext connection,
         Http2Frame frame,
@@ -12,22 +10,42 @@ internal static class Http2StreamHandler
         CancellationToken ct
     )
     {
-        // Validate stream — MVP supports only stream 1
-        if (frame.StreamId != SingleStreamId)
+        // Get or create stream state, which handles CONTINUATION buffering.
+        var state = GetStreamState(connection, frame.StreamId);
+
+        // CONTINUATION buffering: if END_HEADERS is not set, buffer and return.
+        ArraySegment<byte>? payloadData;
+        try
         {
-            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct);
+            payloadData = state.AppendHeaderData(
+                frame.Payload,
+                frame.HasFlag(Http2FrameFlags.EndHeaders)
+            );
+        }
+        catch (Http2HeaderTooLargeException)
+        {
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.CompressionError, ct);
             return true;
         }
 
-        // Require END_HEADERS — CONTINUATION not supported in MVP
-        if (!frame.HasFlag(Http2FrameFlags.EndHeaders))
+        if (payloadData is null)
         {
-            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct);
-            return true;
+            // Headers not yet complete (waiting for CONTINUATION).
+            // Track the stream ID so Http2ConnectionProcessor can validate
+            // that CONTINUATION frames arrive on the correct stream.
+            var runtimeState = connection.UserState as ConnectionRuntimeState;
+            if (runtimeState is not null)
+                runtimeState.PendingContinuationStreamId = frame.StreamId;
+            return false;
         }
 
-        // Decode HPACK header block
-        if (!HpackDecoder.TryDecode(frame.Payload.Span, out var headerFields))
+        // Clear pending CONTINUATION tracking — headers are now complete.
+        var clearState = connection.UserState as ConnectionRuntimeState;
+        if (clearState is not null)
+            clearState.PendingContinuationStreamId = null;
+
+        // Decode HPACK header block from the complete (possibly reassembled) data.
+        if (!HpackDecoder.TryDecode(payloadData.Value.AsSpan(), out var headerFields))
         {
             await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.CompressionError, ct);
             return true;
@@ -150,7 +168,7 @@ internal static class Http2StreamHandler
                     hpackSize,
                     Http2FrameType.Headers,
                     headersFlags,
-                    SingleStreamId
+                    frame.StreamId
                 );
                 WriteResponseHeaders(
                     frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
@@ -183,7 +201,7 @@ internal static class Http2StreamHandler
                     hpackSize,
                     Http2FrameType.Headers,
                     headersFlags,
-                    SingleStreamId
+                    frame.StreamId
                 );
                 WriteResponseHeaders(
                     frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
@@ -214,7 +232,7 @@ internal static class Http2StreamHandler
                     frameRented,
                     Http2FrameType.Data,
                     Http2FrameFlags.EndStream,
-                    SingleStreamId,
+                    frame.StreamId,
                     response.Body.Span
                 );
                 await connection.SendAsync(
@@ -320,6 +338,18 @@ internal static class Http2StreamHandler
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    private static Http2StreamState GetStreamState(ITcpConnectionContext connection, int streamId)
+    {
+        var state = connection.UserState as ConnectionRuntimeState;
+        if (state is null)
+        {
+            state = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+            connection.UserState = state;
+        }
+
+        return state.GetOrCreateStream(streamId);
+    }
 
     private static async ValueTask SendGoAwayAndCloseAsync(
         ITcpConnectionContext connection,
