@@ -102,6 +102,12 @@ internal static class WebSocketMessageProcessor
 
                 case WebSocketOpCode.Text:
                 case WebSocketOpCode.Binary:
+                    // RFC 6455 §5.4: new data message during fragmentation = protocol error
+                    if (currentState.MessageOpCode is not null)
+                    {
+                        await CloseWithProtocolError(connection, cancellationToken);
+                        return consumed;
+                    }
                     currentState.MessageOpCode = frame.OpCode;
                     currentState.PayloadBuffer.Clear();
 
@@ -135,8 +141,12 @@ internal static class WebSocketMessageProcessor
                     break;
 
                 case WebSocketOpCode.Continuation:
+                    // RFC 6455 §5.4: continuation without start = protocol error
                     if (currentState.MessageOpCode is null)
-                        break;
+                    {
+                        await CloseWithProtocolError(connection, cancellationToken);
+                        return consumed;
+                    }
 
                     var payload2 = frame.Rsv1
                         ? currentState.Decompress(frame.Payload.Span)

@@ -526,7 +526,7 @@ public sealed class WebSocketMessageProcessorTests
     }
 
     [Test]
-    public async Task Continuation_without_initial_frame_ignored()
+    public async Task Continuation_without_initial_frame_triggers_protocol_error()
     {
         var payload = new byte[] { 0x01, 0x02, 0x03 };
         var frame = CreateFrame(WebSocketOpCode.Continuation, payload, fin: true, mask: true);
@@ -546,10 +546,8 @@ public sealed class WebSocketMessageProcessorTests
             CancellationToken.None
         );
 
-        await Assert.That(consumed.GetInteger()).IsEqualTo(frame.Length);
         await Assert.That(capturedMessage).IsNull();
-        await Assert.That(context.SendCount).IsEqualTo(0);
-        await Assert.That(context.CloseCount).IsEqualTo(0);
+        await Assert.That(context.CloseCount).IsEqualTo(1);
     }
 
     private sealed class RecordingConnectionContext : ITcpConnectionContext
