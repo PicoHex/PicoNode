@@ -112,10 +112,18 @@ internal static class WebSocketMessageProcessor
 
                     if (frame.Fin && handler is not null)
                     {
+                        var messageBytes = currentState.PayloadBuffer.WrittenMemory.ToArray();
+                        // RFC 6455 §8.1: Text messages must be valid UTF-8
+                        if (currentState.MessageOpCode == WebSocketOpCode.Text
+                            && !IsValidUtf8(messageBytes))
+                        {
+                            await CloseWithProtocolError(connection, cancellationToken);
+                            return consumed;
+                        }
                         await handler(
                             new WebSocketMessage(
                                 currentState.MessageOpCode.Value,
-                                currentState.PayloadBuffer.WrittenMemory.ToArray(),
+                                messageBytes,
                                 true
                             ),
                             connection,
@@ -137,10 +145,17 @@ internal static class WebSocketMessageProcessor
 
                     if (frame.Fin && handler is not null)
                     {
+                        var messageBytes = currentState.PayloadBuffer.WrittenMemory.ToArray();
+                        if (currentState.MessageOpCode == WebSocketOpCode.Text
+                            && !IsValidUtf8(messageBytes))
+                        {
+                            await CloseWithProtocolError(connection, cancellationToken);
+                            return consumed;
+                        }
                         await handler(
                             new WebSocketMessage(
                                 currentState.MessageOpCode.Value,
-                                currentState.PayloadBuffer.WrittenMemory.ToArray(),
+                                messageBytes,
                                 true
                             ),
                             connection,
@@ -157,6 +172,21 @@ internal static class WebSocketMessageProcessor
         }
 
         return consumed;
+    }
+
+    private static bool IsValidUtf8(byte[] data)
+    {
+        if (data.Length == 0)
+            return true;
+        try
+        {
+            Encoding.UTF8.GetCharCount(data);
+            return true;
+        }
+        catch (DecoderFallbackException)
+        {
+            return false;
+        }
     }
 
     private static async ValueTask CloseWithProtocolError(
