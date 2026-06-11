@@ -17,9 +17,11 @@ internal static class Http2StreamHandler
             var streamCount = runtimeStateForLimit.Http2Streams?.Count ?? 0;
             if (streamCount >= runtimeStateForLimit.RemoteMaxConcurrentStreams)
             {
-                await SendGoAwayAndCloseAsync(
-                    connection, Http2ErrorCode.RefusedStream, ct);
-                return true;
+                // Per RFC 7540, refuse the specific stream with RST_STREAM,
+                // not GoAway (which would close the entire connection).
+                await SendRstStreamAsync(
+                    connection, frame.StreamId, Http2ErrorCode.RefusedStream, ct);
+                return false;
             }
         }
 
@@ -760,6 +762,29 @@ internal static class Http2StreamHandler
 
         if (state is not null)
             state.ResponseSent = true;
+    }
+
+    private static async ValueTask SendRstStreamAsync(
+        ITcpConnectionContext connection,
+        int streamId,
+        Http2ErrorCode errorCode,
+        CancellationToken ct
+    )
+    {
+        // RST_STREAM has a 4-byte payload for the error code
+        var payload = new byte[4];
+        payload[0] = (byte)(((int)errorCode >> 24) & 0xFF);
+        payload[1] = (byte)(((int)errorCode >> 16) & 0xFF);
+        payload[2] = (byte)(((int)errorCode >> 8) & 0xFF);
+        payload[3] = (byte)((int)errorCode & 0xFF);
+
+        var frame = Http2FrameCodec.EncodeFrame(
+            Http2FrameType.RstStream, Http2FrameFlags.None, streamId, payload);
+        await connection.SendAsync(new ReadOnlySequence<byte>(frame), ct);
+
+        // Remove the stream from tracking
+        var state = connection.UserState as ConnectionRuntimeState;
+        state?.Http2Streams?.Remove(streamId);
     }
 
     private static async ValueTask SendGoAwayAndCloseAsync(
