@@ -24,6 +24,9 @@ internal static class WebSocketMessageProcessor
             consumed = remaining.GetPosition(frameConsumed);
             remaining = remaining.Slice(frameConsumed);
 
+            // Update activity timestamp for heartbeat tracking
+            currentState.LastFrameReceivedAt = DateTime.UtcNow;
+
             // RFC 6455 §5.1: client-to-server frames must be masked
             if (!frame!.Masked)
             {

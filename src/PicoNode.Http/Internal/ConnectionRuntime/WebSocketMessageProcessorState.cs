@@ -15,6 +15,20 @@ internal sealed class WebSocketMessageProcessorState
     /// <summary>Whether permessage-deflate compression was negotiated.</summary>
     public bool CompressionNegotiated { get; set; }
 
+    /// <summary>UTC timestamp of the last received frame (for idle timeout).</summary>
+    public DateTime LastFrameReceivedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>Ping interval. Zero = no automatic ping.</summary>
+    public TimeSpan PingInterval { get; set; } = TimeSpan.Zero;
+
+    /// <summary>Time since last frame before connection is closed as idle.</summary>
+    public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>Returns true if the connection should be closed due to idle timeout.</summary>
+    public bool IsIdleTimedOut =>
+        IdleTimeout > TimeSpan.Zero
+        && DateTime.UtcNow - LastFrameReceivedAt >= IdleTimeout;
+
     /// <summary>Compresses outgoing message payload using deflate.</summary>
     public byte[] Compress(ReadOnlySpan<byte> data)
     {
