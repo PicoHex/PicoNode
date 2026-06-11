@@ -217,7 +217,14 @@ internal static class Http2ConnectionProcessor
                 );
 
             case Http2FrameType.GoAway:
-                connection.Close();
+                // RFC 7540 §6.8: stop accepting streams, drain active ones
+                var goAwayState = GetRuntimeState(connection);
+                goAwayState.GoAwayReceived = true;
+                // Check if any streams are still active; if not, close immediately.
+                if (goAwayState.Http2Streams is null || goAwayState.Http2Streams.Count == 0)
+                {
+                    connection.Close();
+                }
                 return true;
 
             case Http2FrameType.RstStream:

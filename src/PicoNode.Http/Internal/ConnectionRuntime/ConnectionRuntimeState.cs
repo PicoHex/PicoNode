@@ -66,6 +66,9 @@ internal sealed class ConnectionRuntimeState
     /// <summary>Settings received but not yet applied (waiting for ACK).</summary>
     public IReadOnlyList<Http2Setting>? PendingSettings { get; set; }
 
+    /// <summary>GoAway frame has been received — stop accepting new streams.</summary>
+    public bool GoAwayReceived { get; set; }
+
     /// <summary>Removes streams that have been idle beyond the timeout.</summary>
     public void RemoveIdleStreams()
     {
@@ -101,6 +104,10 @@ internal sealed class ConnectionRuntimeState
         // Existing stream found — return it regardless of ID rules.
         if (Http2Streams is not null && Http2Streams.TryGetValue(streamId, out var existing))
             return existing;
+
+        // If GoAway received, reject new streams per RFC 7540 §6.8
+        if (GoAwayReceived)
+            return null;
 
         // New stream: validate ID
         if (streamId <= 0 || streamId % 2 == 0)
