@@ -121,12 +121,19 @@ internal static class Http2ConnectionProcessor
                         return true;
                     }
 
+                    // Apply any pending settings now that ACK is received
+                    var ackState = GetRuntimeState(connection);
+                    if (ackState.PendingSettings is not null)
+                    {
+                        ackState.ApplySettings(ackState.PendingSettings);
+                        ackState.PendingSettings = null;
+                    }
                     return false;
                 }
 
-                // Parse and apply settings, then send ACK
-                var settings = Http2FrameCodec.ParseSettings(frame.Payload.Span);
-                GetRuntimeState(connection).ApplySettings(settings);
+                // Buffer settings until ACK, per RFC 7540 §6.5.3
+                var receivedSettings = Http2FrameCodec.ParseSettings(frame.Payload.Span);
+                GetRuntimeState(connection).PendingSettings = receivedSettings;
 
                 await connection.SendAsync(
                     new ReadOnlySequence<byte>(Http2FrameCodec.EncodeSettingsAck()),

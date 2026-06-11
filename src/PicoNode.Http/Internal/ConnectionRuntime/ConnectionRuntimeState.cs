@@ -63,6 +63,9 @@ internal sealed class ConnectionRuntimeState
     /// <summary>Maximum idle time for a stream before it's eligible for cleanup.</summary>
     public TimeSpan StreamIdleTimeout { get; set; } = TimeSpan.FromMinutes(2);
 
+    /// <summary>Settings received but not yet applied (waiting for ACK).</summary>
+    public IReadOnlyList<Http2Setting>? PendingSettings { get; set; }
+
     /// <summary>Removes streams that have been idle beyond the timeout.</summary>
     public void RemoveIdleStreams()
     {
