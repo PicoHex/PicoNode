@@ -26,6 +26,13 @@ internal static class Http2StreamHandler
         }
 
         var state = GetStreamState(connection, frame.StreamId);
+        if (state is null)
+        {
+            // Invalid stream ID (even, non-monotonic, or closed reuse)
+            await SendRstStreamAsync(connection, frame.StreamId,
+                Http2ErrorCode.ProtocolError, ct);
+            return false;
+        }
 
         // CONTINUATION buffering: if END_HEADERS is not set, buffer and return.
         ArraySegment<byte>? payloadData;
@@ -382,7 +389,7 @@ internal static class Http2StreamHandler
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private static Http2StreamState GetStreamState(ITcpConnectionContext connection, int streamId)
+    private static Http2StreamState? GetStreamState(ITcpConnectionContext connection, int streamId)
     {
         var state = connection.UserState as ConnectionRuntimeState;
         if (state is null)

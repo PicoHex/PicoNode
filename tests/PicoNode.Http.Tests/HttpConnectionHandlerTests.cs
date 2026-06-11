@@ -894,6 +894,12 @@ public sealed class HttpConnectionHandlerTests
             CancellationToken.None
         );
 
+        // First frame after preface must be SETTINGS (RFC 7540 §3.5)
+        var settingsFrame = Http2FrameCodec.EncodeFrame(
+            Http2FrameType.Settings, Http2FrameFlags.None, 0, []);
+        await handler.OnReceivedAsync(
+            context, new ReadOnlySequence<byte>(settingsFrame), CancellationToken.None);
+
         var ping = Http2FrameCodec.EncodePing([1, 2, 3, 4, 5, 6, 7, 8]);
         await handler.OnReceivedAsync(
             context,
@@ -901,9 +907,12 @@ public sealed class HttpConnectionHandlerTests
             CancellationToken.None
         );
 
-        await Assert.That(context.SendCount).IsEqualTo(2);
+        // SETTINGS ACK + PING ACK + the server's initial SETTINGS = 3+ frames
+        await Assert.That(context.SendCount).IsGreaterThanOrEqualTo(3);
+        // Check the last frame (should be PING ACK)
+        var last = context.AllSent[^1];
         var success = Http2FrameCodec.TryReadFrame(
-            new ReadOnlySequence<byte>(context.AllSent[1]),
+            new ReadOnlySequence<byte>(last),
             out var ack,
             out _
         );
@@ -926,6 +935,12 @@ public sealed class HttpConnectionHandlerTests
             CancellationToken.None
         );
 
+        // First frame after preface must be SETTINGS (RFC 7540 §3.5)
+        var settingsFrame = Http2FrameCodec.EncodeFrame(
+            Http2FrameType.Settings, Http2FrameFlags.None, 0, []);
+        await handler.OnReceivedAsync(
+            context, new ReadOnlySequence<byte>(settingsFrame), CancellationToken.None);
+
         var headersFrame = Http2FrameCodec.EncodeFrame(
             Http2FrameType.Headers,
             Http2FrameFlags.EndHeaders,
@@ -941,8 +956,7 @@ public sealed class HttpConnectionHandlerTests
 
         // Missing :path is a stream-level error: RST_STREAM sent, connection stays open.
         await Assert.That(context.CloseCount).IsEqualTo(0);
-        // 1 SETTINGS + 1 RST_STREAM = 2 frames sent
-        await Assert.That(context.SendCount).IsGreaterThanOrEqualTo(2);
+        await Assert.That(context.SendCount).IsGreaterThanOrEqualTo(3);
     }
 
     private static HttpConnectionHandler CreateHandler(HttpRequestHandler requestHandler) =>

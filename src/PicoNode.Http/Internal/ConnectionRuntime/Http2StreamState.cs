@@ -11,6 +11,15 @@ internal sealed class Http2StreamState
     public bool EndStreamFromHeaders { get; set; }  // EndStream flag from the HEADERS frame
     public ArrayBufferWriter<byte>? HeaderBlockBuffer { get; set; }
     public bool ResponseSent { get; set; }
+    public Http2StreamStateMachine StateMachine { get; }
+
+    public Http2StreamState(int streamId) : this(streamId, new Http2StreamStateMachine(streamId)) { }
+
+    public Http2StreamState(int streamId, Http2StreamStateMachine stateMachine)
+    {
+        StreamId = streamId;
+        StateMachine = stateMachine;
+    }
 
     // DATA frame buffering for request body assembly
     public ArrayBufferWriter<byte> DataBuffer { get; } = new();
@@ -28,11 +37,6 @@ internal sealed class Http2StreamState
 
     // Buffered response data when send window is exhausted
     public byte[]? PendingDataFrame { get; set; }
-
-    public Http2StreamState(int streamId)
-    {
-        StreamId = streamId;
-    }
 
     /// <summary>
     /// Combines buffered CONTINUATION data with the current frame payload.

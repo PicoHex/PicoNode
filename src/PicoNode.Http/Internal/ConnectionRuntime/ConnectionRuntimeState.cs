@@ -57,6 +57,9 @@ internal sealed class ConnectionRuntimeState
     /// <summary>Highest stream ID processed by this connection (for GoAway last-stream-id).</summary>
     public int HighestProcessedStreamId { get; set; }
 
+    /// <summary>Whether any frame has been received after the connection preface.</summary>
+    public bool ReceivedPostPrefaceFrame { get; set; }
+
     public Http2StreamState GetOrCreateStream(int streamId)
     {
         Http2Streams ??= new Dictionary<int, Http2StreamState>();
@@ -64,15 +67,25 @@ internal sealed class ConnectionRuntimeState
         // Clean up completed streams before creating new ones
         CleanupClosedStreams();
 
-        if (!Http2Streams.TryGetValue(streamId, out var state))
+        // Existing stream found — return it regardless of ID rules.
+        if (Http2Streams is not null && Http2Streams.TryGetValue(streamId, out var existing))
+            return existing;
+
+        // New stream: validate ID
+        if (streamId <= 0 || streamId % 2 == 0)
+            return null;
+
+        if (streamId <= HighestProcessedStreamId)
+            return null;
+
+        CleanupClosedStreams();
+
+        var state = new Http2StreamState(streamId)
         {
-            state = new Http2StreamState(streamId)
-            {
-                // Initialize stream send window from the peer's SETTINGS
-                SendWindow = RemoteInitialWindowSize,
-            };
-            Http2Streams[streamId] = state;
-        }
+            SendWindow = RemoteInitialWindowSize,
+        };
+        Http2Streams ??= new Dictionary<int, Http2StreamState>();
+        Http2Streams[streamId] = state;
 
         if (streamId > HighestProcessedStreamId)
             HighestProcessedStreamId = streamId;

@@ -58,6 +58,19 @@ internal static class Http2ConnectionProcessor
             consumed = remaining.GetPosition(frameConsumed);
             remaining = remaining.Slice(frameConsumed);
 
+            // RFC 7540 §3.5: first frame after connection preface must be SETTINGS.
+            var connState = GetRuntimeState(connection);
+            if (!connState.ReceivedPostPrefaceFrame)
+            {
+                connState.ReceivedPostPrefaceFrame = true;
+                if (frame!.Type != Http2FrameType.Settings)
+                {
+                    await SendGoAwayAndCloseAsync(connection,
+                        Http2ErrorCode.ProtocolError, cancellationToken);
+                    return consumed;
+                }
+            }
+
             if (
                 await HandleFrameAsync(
                     connection,
