@@ -170,6 +170,8 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
 
         public object? UserState { get; set; }
 
+        public string? NegotiatedProtocol => null;
+
         public int SendCount { get; private set; }
 
         public int CloseCount { get; private set; }
