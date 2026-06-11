@@ -146,6 +146,13 @@ internal static class Http1ConnectionProcessor
         state.ContinueSent = false;
         state.RequestParsingStartedAtUtc = default;
 
+        // Check for HTTP/1.1 Upgrade to h2c
+        if (IsH2cUpgradeRequest(request))
+        {
+            return await HandleH2cUpgradeAsync(
+                connection, request, consumed, options, requestHandler, cancellationToken);
+        }
+
         try
         {
             var response = await requestHandler(request, cancellationToken);
@@ -190,6 +197,14 @@ internal static class Http1ConnectionProcessor
             {
                 state.Protocol = ConnectionProtocol.WebSocket;
                 state.WebSocketHandshakeComplete = true;
+
+                // Detect permessage-deflate compression negotiation
+                if (request.Headers.TryGetValue("Sec-WebSocket-Extensions", out var ext)
+                    && ext.Contains("permessage-deflate", StringComparison.OrdinalIgnoreCase))
+                {
+                    state.WebSocketMessageState ??= new WebSocketMessageProcessorState();
+                    state.WebSocketMessageState.CompressionNegotiated = true;
+                }
             }
 
             return consumed;
@@ -218,6 +233,89 @@ internal static class Http1ConnectionProcessor
 
             return consumed;
         }
+    }
+
+    private static bool IsH2cUpgradeRequest(HttpRequest request)
+    {
+        if (!request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (!request.Headers.TryGetValue("Upgrade", out var upgrade)
+            || !upgrade.Contains("h2c", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (!request.Headers.TryGetValue(HttpHeaderNames.Connection, out var conn))
+            return false;
+
+        return conn.Contains("Upgrade", StringComparison.OrdinalIgnoreCase)
+            && conn.Contains("HTTP2-Settings", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async ValueTask<SequencePosition> HandleH2cUpgradeAsync(
+        ITcpConnectionContext connection,
+        HttpRequest request,
+        SequencePosition consumed,
+        HttpConnectionHandlerOptions options,
+        HttpRequestHandler requestHandler,
+        CancellationToken ct)
+    {
+        // Send 101 Switching Protocols
+        var response = Encoding.ASCII.GetBytes(
+            "HTTP/1.1 101 Switching Protocols\r\n"
+            + "Upgrade: h2c\r\n"
+            + "Connection: Upgrade\r\n\r\n");
+        await connection.SendAsync(new ReadOnlySequence<byte>(response), ct);
+
+        // Switch connection state to HTTP/2
+        var state = connection.UserState as ConnectionRuntimeState;
+        if (state is null)
+        {
+            state = new ConnectionRuntimeState();
+            connection.UserState = state;
+        }
+        state.Protocol = ConnectionProtocol.Http2;
+
+        // Send initial HTTP/2 SETTINGS (same handler as connection preface path)
+        // and pass the original request as stream 1 for processing.
+        // Build a minimal HPACK block for the original request.
+        var hpackData = EncodeMinimalHpack(request.Method, request.Target);
+        var frameBytes = Http2FrameCodec.EncodeFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+            1,
+            hpackData);
+
+        var remaining = new ReadOnlySequence<byte>(frameBytes);
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            remaining,
+            sendInitialSettings: true,
+            requestHandler,
+            options.Logger,
+            ct);
+
+        return consumed;
+    }
+
+    private static byte[] EncodeMinimalHpack(string method, string path)
+    {
+        // Build minimal HPACK: :method + :path
+        var result = new List<byte>();
+        // :method via static table (index 2 = GET)
+        if (method.Equals("GET", StringComparison.Ordinal))
+            result.Add(0x82);
+        else if (method.Equals("POST", StringComparison.Ordinal))
+            result.Add(0x83);
+        else
+        {
+            result.AddRange([0x00, .. Encoding.ASCII.GetBytes(":method")]);
+            result.AddRange(Encoding.ASCII.GetBytes(method));
+        }
+        // :path as literal
+        var pathBytes = Encoding.ASCII.GetBytes(path);
+        result.Add((byte)pathBytes.Length);
+        result.AddRange(pathBytes);
+        return result.ToArray();
     }
 
     private static async ValueTask<SequencePosition> HandleProtocolErrorAsync(

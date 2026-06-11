@@ -82,7 +82,11 @@ internal static class WebSocketMessageProcessor
                 case WebSocketOpCode.Binary:
                     currentState.MessageOpCode = frame.OpCode;
                     currentState.PayloadBuffer.Clear();
-                    currentState.PayloadBuffer.Write(frame.Payload.Span);
+
+                    var payload1 = frame.Rsv1
+                        ? currentState.Decompress(frame.Payload.Span)
+                        : frame.Payload.ToArray();
+                    currentState.PayloadBuffer.Write(payload1);
 
                     if (frame.Fin && handler is not null)
                     {
@@ -104,7 +108,10 @@ internal static class WebSocketMessageProcessor
                     if (currentState.MessageOpCode is null)
                         break;
 
-                    currentState.PayloadBuffer.Write(frame.Payload.Span);
+                    var payload2 = frame.Rsv1
+                        ? currentState.Decompress(frame.Payload.Span)
+                        : frame.Payload.ToArray();
+                    currentState.PayloadBuffer.Write(payload2);
 
                     if (frame.Fin && handler is not null)
                     {

@@ -234,4 +234,71 @@ public sealed class WebSocketTests
         await Assert.That(pong!.OpCode).IsEqualTo(WebSocketOpCode.Pong);
         await Assert.That(Encoding.UTF8.GetString(pong.Payload.Span)).IsEqualTo("ping");
     }
+
+    [Test]
+    public async Task TryUpgrade_negotiates_subprotocol_from_request()
+    {
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Host", "localhost"),
+            new("Upgrade", "websocket"),
+            new("Connection", "Upgrade"),
+            new("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="),
+            new("Sec-WebSocket-Version", "13"),
+            new("Sec-WebSocket-Protocol", "chat, v2.chat"),
+        };
+
+        var request = new HttpRequest
+        {
+            Method = "GET",
+            Target = "/ws",
+            Version = HttpVersion.Http11,
+            HeaderFields = headers,
+            Headers = headers.ToDictionary(
+                h => h.Key, h => h.Value, StringComparer.OrdinalIgnoreCase),
+        };
+
+        var supported = new[] { "v2.chat", "superchat" };
+        var result = WebSocketUpgrade.TryUpgrade(request, supported);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.StatusCode).IsEqualTo(101);
+        var protoHeader = result.Headers.FirstOrDefault(
+            h => h.Key.Equals("Sec-WebSocket-Protocol", StringComparison.OrdinalIgnoreCase));
+        await Assert.That(protoHeader.Value).IsEqualTo("v2.chat");
+    }
+
+    [Test]
+    public async Task TryUpgrade_returns_null_when_no_protocol_match()
+    {
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Host", "localhost"),
+            new("Upgrade", "websocket"),
+            new("Connection", "Upgrade"),
+            new("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="),
+            new("Sec-WebSocket-Version", "13"),
+            new("Sec-WebSocket-Protocol", "chat"),
+        };
+
+        var request = new HttpRequest
+        {
+            Method = "GET",
+            Target = "/ws",
+            Version = HttpVersion.Http11,
+            HeaderFields = headers,
+            Headers = headers.ToDictionary(
+                h => h.Key, h => h.Value, StringComparer.OrdinalIgnoreCase),
+        };
+
+        var supported = new[] { "v2.chat", "superchat" };
+        var result = WebSocketUpgrade.TryUpgrade(request, supported);
+
+        // No match means we should not include Sec-WebSocket-Protocol
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.StatusCode).IsEqualTo(101);
+        var protoHeader = result.Headers.FirstOrDefault(
+            h => h.Key.Equals("Sec-WebSocket-Protocol", StringComparison.OrdinalIgnoreCase));
+        await Assert.That(protoHeader.Value).IsNull();
+    }
 }

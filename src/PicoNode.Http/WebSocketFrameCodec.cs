@@ -20,6 +20,7 @@ public static class WebSocketFrameCodec
         reader.TryRead(out var b1);
 
         var fin = (b0 & 0x80) != 0;
+        var rsv1 = (b0 & 0x40) != 0;
         var opCode = (WebSocketOpCode)(b0 & 0x0F);
         var masked = (b1 & 0x80) != 0;
         var payloadLength = (long)(b1 & 0x7F);
@@ -77,6 +78,7 @@ public static class WebSocketFrameCodec
         frame = new WebSocketFrame
         {
             Fin = fin,
+            Rsv1 = rsv1,
             OpCode = opCode,
             Payload = payload,
         };
@@ -101,12 +103,16 @@ public static class WebSocketFrameCodec
         Span<byte> destination,
         WebSocketOpCode opCode,
         ReadOnlySpan<byte> payload,
-        bool mask = false
+        bool mask = false,
+        bool rsv1 = false
     )
     {
         var pos = 0;
 
-        destination[pos++] = (byte)(0x80 | (byte)opCode);
+        var b0 = 0x80 | (byte)opCode;
+        if (rsv1)
+            b0 |= 0x40;
+        destination[pos++] = (byte)b0;
 
         switch (payload.Length)
         {
@@ -151,11 +157,12 @@ public static class WebSocketFrameCodec
     public static byte[] EncodeFrame(
         WebSocketOpCode opCode,
         ReadOnlySpan<byte> payload,
-        bool mask = false
+        bool mask = false,
+        bool rsv1 = false
     )
     {
         var result = new byte[MeasureFrameSize(payload.Length, mask)];
-        WriteFrame(result, opCode, payload, mask);
+        WriteFrame(result, opCode, payload, mask, rsv1);
         return result;
     }
 }

@@ -4,7 +4,9 @@ public static class WebSocketUpgrade
 {
     private const string WebSocketGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-    public static HttpResponse? TryUpgrade(HttpRequest request)
+    public static HttpResponse? TryUpgrade(
+        HttpRequest request,
+        IReadOnlyList<string>? supportedSubProtocols = null)
     {
         if (!request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
             return null;
@@ -29,16 +31,42 @@ public static class WebSocketUpgrade
 
         var acceptKey = ComputeAcceptKey(key);
 
+        // Negotiate subprotocol
+        string? negotiatedProtocol = null;
+        if (supportedSubProtocols is { Count: > 0 }
+            && request.Headers.TryGetValue("Sec-WebSocket-Protocol", out var clientProtocols))
+        {
+            var clientList = clientProtocols.Split(',', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var clientProto in clientList)
+            {
+                var trimmed = clientProto.Trim();
+                if (supportedSubProtocols.Any(
+                    s => s.Equals(trimmed, StringComparison.Ordinal)))
+                {
+                    negotiatedProtocol = trimmed;
+                    break;
+                }
+            }
+        }
+
+        var headers = new HttpHeaderCollection(
+        [
+            new KeyValuePair<string, string>("Upgrade", "websocket"),
+            new KeyValuePair<string, string>(HttpHeaderNames.Connection, "Upgrade"),
+            new KeyValuePair<string, string>("Sec-WebSocket-Accept", acceptKey),
+        ]);
+
+        if (negotiatedProtocol is not null)
+        {
+            headers.Add(
+                "Sec-WebSocket-Protocol", negotiatedProtocol);
+        }
+
         return new HttpResponse
         {
             StatusCode = 101,
             ReasonPhrase = "Switching Protocols",
-            Headers =
-            [
-                new KeyValuePair<string, string>("Upgrade", "websocket"),
-                new KeyValuePair<string, string>(HttpHeaderNames.Connection, "Upgrade"),
-                new KeyValuePair<string, string>("Sec-WebSocket-Accept", acceptKey),
-            ],
+            Headers = headers,
         };
     }
 
