@@ -53,44 +53,51 @@ internal sealed class MultipartBufferedReader : IDisposable
     public async ValueTask<byte[]?> ReadUntilBoundaryAsync(byte[] boundary)
     {
         await EnsureBufferedAsync();
+        using var accumulator = new MemoryStream();
 
         while (true)
         {
-            // Search for \r\n--boundary or --boundary-- in the buffer
             var matchIdx = FindBoundaryInBuffer(boundary);
             if (matchIdx >= 0)
             {
+                // Flush content before boundary to accumulator
                 var contentLen = matchIdx - _position;
-                // Skip leading \r\n if present (content before boundary)
-                if (contentLen > 0 && _buffer[_position] == (byte)'\r')
-                    contentLen -= 2; // skip \r\n before boundary
-
-                var content = contentLen > 0 ? new byte[contentLen] : [];
                 if (contentLen > 0)
-                    Array.Copy(_buffer, _position, content, 0, contentLen);
+                {
+                    // If content starts with \r\n, those belong to the boundary, not content
+                    var skipCrlf = _buffer[_position] == (byte)'\r' ? 2 : 0;
+                    if (contentLen > skipCrlf)
+                        accumulator.Write(_buffer, _position + skipCrlf, contentLen - skipCrlf);
+                }
 
-                // Advance position past the boundary
-                _position = matchIdx + (contentLen > 0 ? 2 : 0) + 2 + boundary.Length; // \r\n or start + -- + boundary
-                // Skip potential -- (terminating boundary) or \r\n
-                var remaining = _buffered - _position;
-                if (remaining >= 2 && _buffer[_position] == (byte)'-' && _buffer[_position + 1] == (byte)'-')
-                    _position += 2; // terminating boundary --
-                if (remaining >= 2 && _buffer[_position] == (byte)'\r' && _buffer[_position + 1] == (byte)'\n')
+                _position = matchIdx + 2 + 2 + boundary.Length;
+                // Skip trailing -- (terminating boundary) or \r\n
+                var rem = _buffered - _position;
+                if (rem >= 2 && _buffer[_position] == (byte)'-')
+                    _position += 2;
+                if (rem >= 2 && _buffer[_position] == (byte)'\r')
                     _position += 2;
 
-                return content;
+                return accumulator.ToArray();
             }
 
-            // Compact: preserve trailing data for cross-chunk boundary detection.
-            // Always keep the last (boundary.Length + 8) bytes at the front.
-            var keepSize = Math.Min(_buffered, boundary.Length + 8);
-            var keepStart = _buffered - keepSize;
-            Array.Copy(_buffer, keepStart, _buffer, 0, keepSize);
-            _buffered = keepSize;
+            // No boundary found. Copy all data except the last (boundary.Length + 4)
+            // bytes (max partial boundary prefix) into the accumulator.
+            var safe = _position;
+            var keep = Math.Min(_buffered - safe, boundary.Length + 4);
+            var flush = (_buffered - safe) - keep;
+            if (flush > 0)
+                accumulator.Write(_buffer, safe, flush);
+
+            // Keep only the trailing bytes that might be a partial boundary match
+            _buffered = safe + keep;
+            if (keep > 0 && safe < _buffered)
+                Array.Copy(_buffer, _buffered - keep, _buffer, 0, keep);
+            _buffered = keep;
             _position = 0;
 
             if (_endOfStream)
-                return null;
+                return accumulator.Length > 0 ? accumulator.ToArray() : null;
 
             await FillBufferAsync();
         }
