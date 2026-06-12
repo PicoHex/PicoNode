@@ -48,7 +48,7 @@ jobs:
           dotnet pack src/PicoNode/PicoNode.csproj
           -c Release -p:Version=${{ env.PACKAGE_VERSION }}
           -p:UseProjectReferences=false
-          -p:RestoreAdditionalProjectSources=./packages
+          -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
           -o packages
 
       - name: Pack PicoNode.Http
@@ -56,7 +56,7 @@ jobs:
           dotnet pack src/PicoNode.Http/PicoNode.Http.csproj
           -c Release -p:Version=${{ env.PACKAGE_VERSION }}
           -p:UseProjectReferences=false
-          -p:RestoreAdditionalProjectSources=./packages
+          -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
           -o packages
 
       - name: Pack PicoNode.Web
@@ -64,7 +64,7 @@ jobs:
           dotnet pack src/PicoNode.Web/PicoNode.Web.csproj
           -c Release -p:Version=${{ env.PACKAGE_VERSION }}
           -p:UseProjectReferences=false
-          -p:RestoreAdditionalProjectSources=./packages
+          -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
           -o packages
 
       - name: Pack PicoWeb
@@ -72,7 +72,7 @@ jobs:
           dotnet pack src/PicoWeb/PicoWeb.csproj
           -c Release -p:Version=${{ env.PACKAGE_VERSION }}
           -p:UseProjectReferences=false
-          -p:RestoreAdditionalProjectSources=./packages
+          -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
           -o packages
 
       - name: Publish to NuGet
