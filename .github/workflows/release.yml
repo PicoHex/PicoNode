@@ -32,16 +32,48 @@ jobs:
       - name: Set version from tag
         run: echo "PACKAGE_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
 
-      - name: Restore
-        run: dotnet restore PicoNode.slnx
+      # ── Pack in dependency order ────────────────────────────
+      # Build + pack each project individually with
+      # UseProjectReferences=false so the nupkg records NuGet
+      # dependencies instead of project references.
 
-      - name: Build
-        run: dotnet build PicoNode.slnx --no-restore -c Release
-
-      - name: Pack
+      - name: Pack PicoNode.Abs
         run: >
-          dotnet pack PicoNode.slnx --no-restore --no-build -c Release
-          -p:Version=${{ env.PACKAGE_VERSION }}
+          dotnet pack src/PicoNode.Abs/PicoNode.Abs.csproj
+          -c Release -p:Version=${{ env.PACKAGE_VERSION }}
+          -p:UseProjectReferences=false
+          -o packages
+
+      - name: Pack PicoNode
+        run: >
+          dotnet pack src/PicoNode/PicoNode.csproj
+          -c Release -p:Version=${{ env.PACKAGE_VERSION }}
+          -p:UseProjectReferences=false
+          -p:RestoreAdditionalProjectSources=./packages
+          -o packages
+
+      - name: Pack PicoNode.Http
+        run: >
+          dotnet pack src/PicoNode.Http/PicoNode.Http.csproj
+          -c Release -p:Version=${{ env.PACKAGE_VERSION }}
+          -p:UseProjectReferences=false
+          -p:RestoreAdditionalProjectSources=./packages
+          -o packages
+
+      - name: Pack PicoNode.Web
+        run: >
+          dotnet pack src/PicoNode.Web/PicoNode.Web.csproj
+          -c Release -p:Version=${{ env.PACKAGE_VERSION }}
+          -p:UseProjectReferences=false
+          -p:RestoreAdditionalProjectSources=./packages
+          -o packages
+
+      - name: Pack PicoWeb
+        run: >
+          dotnet pack src/PicoWeb/PicoWeb.csproj
+          -c Release -p:Version=${{ env.PACKAGE_VERSION }}
+          -p:UseProjectReferences=false
+          -p:RestoreAdditionalProjectSources=./packages
           -o packages
 
       - name: Publish to NuGet
