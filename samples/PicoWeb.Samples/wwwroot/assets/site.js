@@ -139,9 +139,31 @@ document.addEventListener('DOMContentLoaded', () => {
             dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
         });
 
-        ['dragleave', 'drop'].forEach(eventName => {
+        ['dragleave'].forEach(eventName => {
             dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
         });
+
+        dropZone.addEventListener('drop', (e) => {
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0) {
+                // Transfer dropped files to the hidden file input
+                const dt = new DataTransfer();
+                for (const file of files) {
+                    dt.items.add(file);
+                }
+                fileInput.files = dt.files;
+
+                // Update UI
+                const count = fileInput.files.length;
+                const textEl = document.querySelector('.upload-text');
+                if (textEl) {
+                    textEl.textContent = count > 0
+                        ? `[ ${count} FILE(S) READY FOR TRANSFER ]`
+                        : 'SELECT FILES OR DRAG & DROP';
+                }
+            }
+        }, false);
 
         fileInput.addEventListener('change', (e) => {
             const count = e.target.files.length;
