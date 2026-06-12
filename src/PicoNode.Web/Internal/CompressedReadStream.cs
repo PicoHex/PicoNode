@@ -64,31 +64,38 @@ internal sealed class CompressedReadStream : Stream
 
         EnsureStarted(cancellationToken);
 
-        while (true)
+        try
         {
-            using var linkedCts = CreateLinkedToken(cancellationToken);
-            var result = await _pipe.Reader.ReadAsync(linkedCts.Token);
-            var available = result.Buffer;
-
-            if (!available.IsEmpty)
+            while (true)
             {
-                var bytesToCopy = (int)Math.Min(buffer.Length, available.Length);
-                CopySequenceToSpan(available.Slice(0, bytesToCopy), buffer.Span);
-                _pipe.Reader.AdvanceTo(available.GetPosition(bytesToCopy));
-                return bytesToCopy;
-            }
+                using var linkedCts = CreateLinkedToken(cancellationToken);
+                var result = await _pipe.Reader.ReadAsync(linkedCts.Token);
+                var available = result.Buffer;
 
-            _pipe.Reader.AdvanceTo(available.End);
-
-            if (result.IsCompleted)
-            {
-                if (_producerTask is not null)
+                if (!available.IsEmpty)
                 {
-                    await _producerTask.ConfigureAwait(false);
+                    var bytesToCopy = (int)Math.Min(buffer.Length, available.Length);
+                    CopySequenceToSpan(available.Slice(0, bytesToCopy), buffer.Span);
+                    _pipe.Reader.AdvanceTo(available.GetPosition(bytesToCopy));
+                    return bytesToCopy;
                 }
 
-                return 0;
+                _pipe.Reader.AdvanceTo(available.End);
+
+                if (result.IsCompleted)
+                {
+                    if (_producerTask is not null)
+                    {
+                        await _producerTask.ConfigureAwait(false);
+                    }
+
+                    return 0;
+                }
             }
+        }
+        catch (OperationCanceledException) when (_disposeCts.IsCancellationRequested)
+        {
+            return 0;
         }
     }
 

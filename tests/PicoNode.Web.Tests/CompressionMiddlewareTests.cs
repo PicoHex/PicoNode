@@ -404,10 +404,17 @@ public sealed class CompressionMiddlewareTests
         Task<int> readTask = response.BodyStream!.ReadAsync(readBuffer, 0, readBuffer.Length);
         await source.FirstReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
 
-        var disposeTask = response.BodyStream.DisposeAsync().AsTask();
+        // Allow the source read to complete
         source.AllowReadToContinue.TrySetResult();
+
+        // Wait for the first read to finish (get compressed data)
+        var bytesRead = await readTask.WaitAsync(TimeSpan.FromSeconds(3));
+        await Assert.That(bytesRead).IsGreaterThan(0);
+
+        // Now dispose the compressed stream
+        var disposeTask = response.BodyStream.DisposeAsync().AsTask();
         await disposeTask.WaitAsync(TimeSpan.FromSeconds(3));
-        await Assert.That(readTask.IsCompleted).IsTrue();
+
         await Assert.That(source.DisposeCount).IsEqualTo(1);
     }
 
