@@ -1,81 +1,103 @@
+using System.Buffers;
 using System.Net;
 using System.Text;
-using global::PicoNode;
-using global::PicoNode.Http;
+using PicoNode;
+using PicoNode.Http;
+using PicoNode.Web;
 
-var node = new TcpNode(
-    new TcpNodeOptions
-    {
-        Endpoint = new IPEndPoint(IPAddress.Loopback, 7003),
-        ConnectionHandler = new HttpConnectionHandler(
-            new HttpConnectionHandlerOptions
-            {
-                RequestHandler = CreateRouter().HandleAsync,
-                ServerHeader = "PicoNode.Samples.Http",
-            }
-        ),
-        EnableKeepAlive = true,
-    }
-);
+// ────────────────────────────────────────────────────────────
+// PicoNode.Http samples — HTTP/1.1, HTTP/2, WebSocket
+//
+// This server demonstrates:
+//   HTTP/1.1  — GET /, POST /echo, routing
+//   HTTP/2    — h2c (prior knowledge through TcpNode)
+//   WebSocket — /ws with echo messaging
+//   BodyStream— /stream reads request body as stream
+//   Security  — SecurityHeadersMiddleware
+//   Caching   — CacheMiddleware
+// ────────────────────────────────────────────────────────────
+
+// WebSocket echo handler
+WebSocketMessageHandler wsHandler = async (message, connection, ct) =>
+{
+    // Echo the message back to the client
+    var frame = WebSocketFrameCodec.EncodeFrame(
+        message.OpCode,
+        message.Payload.Span,
+        rsv1: false);
+
+    await connection.SendAsync(new ReadOnlySequence<byte>(frame), ct);
+};
+
+var app = new WebApp(new WebAppOptions
+{
+    ServerHeader = "PicoNode.Samples",
+    WebSocketMessageHandler = wsHandler,
+});
+
+// Middleware pipeline
+app.Use(new SecurityHeadersMiddleware().InvokeAsync);
+app.Use(new CacheMiddleware(maxAge: TimeSpan.FromMinutes(5)).InvokeAsync);
+
+// ── HTTP routes ────────────────────────────────────────────
+
+app.MapGet("/", static (_, _) =>
+    ValueTask.FromResult(WebResults.Text(200, "hello from PicoNode.Http", "OK")));
+
+app.MapGet("/info", static (ctx, _) =>
+{
+    var protocol = ctx.Request.Version == PicoNode.Http.HttpVersion.Http11 ? "HTTP/1.1" : "HTTP/2";
+    var body = $$"""
+        {"protocol":"{{protocol}}","path":"{{ctx.Path}}","method":"{{ctx.Request.Method}}"}
+        """;
+    return ValueTask.FromResult(WebResults.Json(200, body, "OK"));
+});
+
+// Read request body as stream
+app.MapPost("/stream", static async (ctx, ct) =>
+{
+    using var reader = new StreamReader(ctx.Request.BodyStream);
+    var body = await reader.ReadToEndAsync(ct);
+    return WebResults.Text(200, $"received {body.Length} chars via streaming", "OK");
+});
+
+app.MapPost("/echo", static (ctx, _) =>
+{
+    var body = Encoding.UTF8.GetString(ctx.Request.Body.Span);
+    return ValueTask.FromResult(WebResults.Text(200, body, "OK"));
+});
+
+// ── WebSocket endpoint ─────────────────────────────────────
+
+app.MapGet("/ws", static (ctx, _) =>
+{
+    var upgrade = WebSocketUpgrade.TryUpgrade(ctx.Request);
+    if (upgrade is not null)
+        return ValueTask.FromResult(upgrade);
+
+    return ValueTask.FromResult(WebResults.Text(400, "WebSocket upgrade failed", "Bad Request"));
+});
+
+// Build and start
+var node = new TcpNode(new TcpNodeOptions
+{
+    Endpoint = new IPEndPoint(IPAddress.Loopback, 7003),
+    ConnectionHandler = app.Build(),
+});
 
 await node.StartAsync();
 
-Console.WriteLine($"HTTP sample listening on {node.LocalEndPoint}");
-Console.WriteLine("GET  /        -> returns a text greeting");
-Console.WriteLine("POST /echo    -> echoes the request body");
+Console.WriteLine($"Listening on {node.LocalEndPoint}");
+Console.WriteLine();
+Console.WriteLine("Routes:");
+Console.WriteLine("  GET  /        -> text greeting");
+Console.WriteLine("  GET  /info    -> JSON with protocol info");
+Console.WriteLine("  POST /echo    -> echoes body (in-memory)");
+Console.WriteLine("  POST /stream  -> echoes body via BodyStream");
+Console.WriteLine("  GET  /ws      -> WebSocket (echo)");
+Console.WriteLine();
+Console.WriteLine("Security headers + ETag caching active.");
 Console.WriteLine("Press Enter to stop...");
 Console.ReadLine();
 
 await node.DisposeAsync();
-
-static HttpRouter CreateRouter() =>
-    new(
-        new HttpRouterOptions
-        {
-            Routes =
-            [
-                HttpRoute.MapGet(
-                    "/",
-                    static (_, _) =>
-                        ValueTask.FromResult(
-                            CreateTextResponse(200, "OK", "hello from PicoNode.Http")
-                        )
-                ),
-                HttpRoute.MapPost(
-                    "/echo",
-                    static (request, _) =>
-                        ValueTask.FromResult(
-                            new HttpResponse
-                            {
-                                StatusCode = 200,
-                                ReasonPhrase = "OK",
-                                Headers =
-                                [
-                                    new KeyValuePair<string, string>("Content-Type", "text/plain"),
-                                    new KeyValuePair<string, string>(
-                                        "X-Content-Type-Options",
-                                        "nosniff"
-                                    ),
-                                ],
-                                Body = request.Body.ToArray(),
-                            }
-                        )
-                ),
-            ],
-            FallbackHandler = static (_, _) =>
-                ValueTask.FromResult(CreateTextResponse(404, "Not Found", "not found")),
-        }
-    );
-
-static HttpResponse CreateTextResponse(int statusCode, string reasonPhrase, string body) =>
-    new()
-    {
-        StatusCode = statusCode,
-        ReasonPhrase = reasonPhrase,
-        Headers =
-        [
-            new KeyValuePair<string, string>("Content-Type", "text/plain"),
-            new KeyValuePair<string, string>("X-Content-Type-Options", "nosniff"),
-        ],
-        Body = Encoding.UTF8.GetBytes(body),
-    };

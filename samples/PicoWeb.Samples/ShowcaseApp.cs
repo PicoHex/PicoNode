@@ -18,7 +18,7 @@ public static class ShowcaseApp
         MaxAge = 600,
     };
 
-    public static WebApp Create(string? contentRoot = null)
+    public static WebApp Create(string? contentRoot = null, PicoCfg.Abs.ICfgRoot? config = null)
     {
         var staticRoot = Path.Combine(contentRoot ?? AppContext.BaseDirectory, "wwwroot");
         var app = new WebApp(
