@@ -301,7 +301,7 @@ public static class ShowcaseApp
                 .Append("\",\"contentType\":\"")
                 .Append(EscapeJson(file.ContentType))
                 .Append("\",\"length\":")
-                .Append(file.Content.Length)
+                .Append(file.Length)
                 .Append('}');
 
             if (index < multipart.Files.Count - 1)

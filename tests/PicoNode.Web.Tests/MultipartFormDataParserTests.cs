@@ -94,9 +94,8 @@ public sealed class MultipartFormDataParserTests
         await Assert.That(result.Files[0].FileName).IsEqualTo("hello.txt");
         await Assert.That(result.Files[0].ContentType).IsEqualTo("text/plain");
         await Assert
-            .That(Encoding.UTF8.GetString(result.Files[0].Content.Span))
+            .That(Encoding.UTF8.GetString(await ReadFileAsync(result.Files[0])))
             .IsEqualTo(fileContent);
-        await Assert.That(result.Files[0].Content.Span.Overlaps(request.Body.Span)).IsTrue();
     }
 
     [Test]
@@ -126,9 +125,8 @@ public sealed class MultipartFormDataParserTests
         await Assert.That(result.Files[0].FileName).IsEqualTo("doc.pdf");
         await Assert.That(result.Files[0].ContentType).IsEqualTo("application/pdf");
         await Assert
-            .That(Encoding.UTF8.GetString(result.Files[0].Content.Span))
+            .That(Encoding.UTF8.GetString(await ReadFileAsync(result.Files[0])))
             .IsEqualTo("PDF-DATA");
-        await Assert.That(result.Files[0].Content.Span.Overlaps(request.Body.Span)).IsTrue();
     }
 
     [Test]
@@ -150,9 +148,8 @@ public sealed class MultipartFormDataParserTests
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Files.Count).IsEqualTo(1);
         await Assert
-            .That(Encoding.UTF8.GetString(result.Files[0].Content.Span))
+            .That(Encoding.UTF8.GetString(await ReadFileAsync(result.Files[0])))
             .IsEqualTo(fileContent);
-        await Assert.That(result.Files[0].Content.Span.Overlaps(request.Body.Span)).IsTrue();
     }
 
     [Test]
@@ -174,7 +171,7 @@ public sealed class MultipartFormDataParserTests
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Files.Count).IsEqualTo(1);
         await Assert
-            .That(Encoding.UTF8.GetString(result.Files[0].Content.Span))
+            .That(Encoding.UTF8.GetString(await ReadFileAsync(result.Files[0])))
             .IsEqualTo(fileContent);
     }
 
@@ -459,5 +456,13 @@ public sealed class MultipartFormDataParserTests
         await Assert.That(result!.Fields.Count).IsEqualTo(1);
         await Assert.That(result.Fields[0].Name).IsEqualTo("field1");
         await Assert.That(result.Fields[0].Value).IsEqualTo("value1");
+    }
+
+    internal static async Task<byte[]> ReadFileAsync(MultipartFormFile file)
+    {
+        using var stream = file.OpenReadStream();
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
     }
 }
