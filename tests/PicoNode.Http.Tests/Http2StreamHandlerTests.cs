@@ -659,4 +659,88 @@ public sealed class Http2StreamHandlerTests
             Payload = payload,
         };
     }
+
+    // ── H2 BodyStream tests ─────────────────────────────────
+
+    [Test]
+    public async Task BodyStream_sends_data_in_DATA_frames()
+    {
+        var connection = new TestTcpConnectionContext();
+        var bodyData = "streamed response body"u8.ToArray();
+
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    BodyStream = new MemoryStream(bodyData),
+                }
+            );
+
+        var headersFrame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
+
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection, headersFrame, handler, null, CancellationToken.None
+        );
+
+        await Assert.That(connection.SentFrames.Count).IsGreaterThanOrEqualTo(2);
+
+        var totalPayloadBytes = 0;
+        for (var i = 1; i < connection.SentFrames.Count; i++)
+        {
+            if (!TryReadFrame(connection.SentFrames[i], out var frame) || frame is null)
+                continue;
+            await Assert.That(frame.Type).IsEqualTo(Http2FrameType.Data);
+            totalPayloadBytes += frame.Payload.Length;
+        }
+
+        await Assert.That(totalPayloadBytes).IsEqualTo(bodyData.Length);
+    }
+
+    [Test]
+    public async Task BodyStream_chunked_by_max_frame_size()
+    {
+        var connection = new TestTcpConnectionContext();
+        var bodySize = 20000;
+        var bodyData = new byte[bodySize];
+        Array.Fill<byte>(bodyData, (byte)'X');
+
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    BodyStream = new MemoryStream(bodyData),
+                }
+            );
+
+        var headersFrame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
+
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection, headersFrame, handler, null, CancellationToken.None
+        );
+
+        var dataFrameCount = 0;
+        var totalBytes = 0L;
+        for (var i = 1; i < connection.SentFrames.Count; i++)
+        {
+            if (!TryReadFrame(connection.SentFrames[i], out var frame) || frame is null)
+                continue;
+            if (frame.Type == Http2FrameType.Data)
+            {
+                dataFrameCount++;
+                totalBytes += frame.Payload.Length;
+                await Assert.That(frame.Payload.Length).IsLessThanOrEqualTo(16384);
+            }
+        }
+
+        await Assert.That(dataFrameCount).IsGreaterThanOrEqualTo(2);
+        await Assert.That(totalBytes).IsEqualTo(bodySize);
+    }
 }

@@ -214,7 +214,7 @@ internal static class Http2StreamHandler
         var hpackSize = MeasureResponseHeadersSize(responseHeaders);
         var headersFlags = Http2FrameFlags.EndHeaders;
 
-        if (response.Body.Length == 0)
+        if (response.Body.Length == 0 && response.BodyStream is null)
         {
             headersFlags |= Http2FrameFlags.EndStream;
             var frameRented = ArrayPool<byte>.Shared.Rent(
@@ -245,6 +245,14 @@ internal static class Http2StreamHandler
                 ArrayPool<byte>.Shared.Return(frameRented);
             }
 
+            return false;
+        }
+
+        // BodyStream (streaming) — reuse SendResponseAsync logic
+        if (response.BodyStream is not null)
+        {
+            await SendResponseAsync(
+                connection, state, response, frame.StreamId, null, ct);
             return false;
         }
 
@@ -946,6 +954,95 @@ internal static class Http2StreamHandler
             {
                 ArrayPool<byte>.Shared.Return(frameRented);
             }
+        }
+
+        // Send DATA from BodyStream (streaming response)
+        if (response.BodyStream is not null)
+        {
+            var connState = connection.UserState as ConnectionRuntimeState;
+            var maxFrame = connState?.RemoteMaxFrameSize ?? 16384;
+            var bufferSize = 4096;
+            var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+
+            try
+            {
+                var stream = response.BodyStream;
+                int bytesRead;
+                while ((bytesRead = await stream.ReadAsync(
+                    buffer.AsMemory(0, bufferSize), ct)) > 0)
+                {
+                    var offset = 0;
+                    while (offset < bytesRead)
+                    {
+                        var connWindow = connState?.ConnectionSendWindow ?? int.MaxValue;
+                        var streamWindow = state?.SendWindow ?? int.MaxValue;
+                        var available = Math.Min(connWindow, streamWindow);
+
+                        if (available <= 0)
+                        {
+                            if (state is not null)
+                                state.PendingDataFrame = buffer[offset..(offset + bytesRead - offset)];
+                            return;
+                        }
+
+                        var chunkSize = Math.Min(bytesRead - offset, maxFrame);
+                        var sendSize = Math.Min(chunkSize, available);
+
+                        var frameRented = ArrayPool<byte>.Shared.Rent(
+                            Http2FrameCodec.FrameHeaderSize + sendSize);
+                        try
+                        {
+                            Http2FrameCodec.WriteFrame(frameRented, Http2FrameType.Data,
+                                Http2FrameFlags.None, streamId,
+                                buffer.AsSpan(offset, sendSize));
+                            await connection.SendAsync(new ReadOnlySequence<byte>(
+                                frameRented.AsMemory(0,
+                                    Http2FrameCodec.FrameHeaderSize + sendSize)), ct);
+
+                            if (connState is not null)
+                                connState.ConnectionSendWindow -= sendSize;
+                            if (state is not null)
+                                state.SendWindow -= sendSize;
+                            offset += sendSize;
+                        }
+                        finally
+                        {
+                            ArrayPool<byte>.Shared.Return(frameRented);
+                        }
+                    }
+                }
+
+                // Stream complete — send final DATA with EndStream
+                var finalFrame = ArrayPool<byte>.Shared.Rent(Http2FrameCodec.FrameHeaderSize);
+                try
+                {
+                    Http2FrameCodec.WriteFrameHeader(finalFrame, 0,
+                        Http2FrameType.Data, Http2FrameFlags.EndStream, streamId);
+                    await connection.SendAsync(new ReadOnlySequence<byte>(
+                        finalFrame.AsMemory(0, Http2FrameCodec.FrameHeaderSize)), ct);
+
+                    if (state is not null)
+                        state.ResponseSent = true;
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(finalFrame);
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                await SendRstStreamAsync(connection, streamId,
+                    Http2ErrorCode.Cancel, ct);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+            return;
         }
 
         // Send DATA frames, chunked by max frame size and flow control window
