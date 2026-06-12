@@ -12,10 +12,11 @@
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
 
-    <!-- Embedded source for better debugging.
-         PDBs are embedded in the DLL — no separate snupkg needed. -->
+    <!-- Symbol packages for NuGet.org debugging experience -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <DebugType>embedded</DebugType>
+    <DebugType>portable</DebugType>
 
     <!-- Default: use project references for local dev -->
     <UseProjectReferences Condition="'$(UseProjectReferences)' == ''">true</UseProjectReferences>
