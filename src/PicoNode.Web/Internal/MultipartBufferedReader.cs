@@ -90,9 +90,9 @@ internal sealed class MultipartBufferedReader : IDisposable
                 accumulator.Write(_buffer, safe, flush);
 
             // Keep only the trailing bytes that might be a partial boundary match
-            _buffered = safe + keep;
-            if (keep > 0 && safe < _buffered)
-                Array.Copy(_buffer, _buffered - keep, _buffer, 0, keep);
+            var srcPos = safe + flush;
+            if (keep > 0 && srcPos + keep <= _buffered + flush)
+                Array.Copy(_buffer, srcPos, _buffer, 0, keep);
             _buffered = keep;
             _position = 0;
 
