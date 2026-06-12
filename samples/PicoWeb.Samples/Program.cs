@@ -21,11 +21,12 @@ ISvcContainer? container = null;
 
 var app = ShowcaseApp.Create();
 
-await using var server = new WebServer(
-    app,
-    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, 7004) },
-    container
-);
+await using var server = container is not null
+    ? new WebServer(app,
+        new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, 7004) },
+        container)
+    : new WebServer(app,
+        new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, 7004) });
 
 await server.StartAsync();
 
