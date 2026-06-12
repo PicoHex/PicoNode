@@ -9,7 +9,22 @@ namespace PicoNode.Http.Internal.Hpack;
 internal sealed class HpackEncoder
 {
     private readonly HpackDynamicTable _dynamicTable;
-    private static readonly UTF8Encoding AsciiEncoder = new(encoderShouldEmitUTF8Identifier: false);
+    private static readonly UTF8Encoding DefaultEncoder = new(encoderShouldEmitUTF8Identifier: false);
+
+    // Static table: name_lower -> (index, is_exact_value)
+    private static readonly Dictionary<string, (int Index, string? Value)> StaticTableIndex;
+
+    static HpackEncoder()
+    {
+        StaticTableIndex = new Dictionary<string, (int, string?)>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i <= StaticTable.EntryCount; i++)
+        {
+            var entry = StaticTable.Entries[i];
+            // Always add name lookup
+            if (!StaticTableIndex.ContainsKey(entry.Name))
+                StaticTableIndex[entry.Name] = (i, string.IsNullOrEmpty(entry.Value) ? null : entry.Value);
+        }
+    }
 
     public HpackEncoder(HpackDynamicTable? dynamicTable = null)
     {
@@ -40,31 +55,20 @@ internal sealed class HpackEncoder
     /// <summary>Tries to encode a header using static or dynamic table index.</summary>
     private bool TryEncodeIndexed(MemoryStream ms, string name, string value)
     {
-        // Check static table for exact match (name + value)
-        for (int i = 1; i <= StaticTable.EntryCount; i++)
+        // Check static table via dictionary index (O(1))
+        if (StaticTableIndex.TryGetValue(name, out var entry))
         {
-            var entry = StaticTable.Entries[i];
-            if (entry.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
-                && entry.Value == value)
+            // Exact match (name + value)
+            if (entry.Value is not null && entry.Value == value)
             {
-                // Indexed header field (RFC 7541 §6.1)
-                // bit 7 = 1 means indexed, with 7-bit prefix
-                EncodeIntegerWithPrefix(ms, i, 7, 0x80);
+                EncodeIntegerWithPrefix(ms, entry.Index, 7, 0x80);
                 return true;
             }
-        }
 
-        // Check static table for name match only (value differs)
-        for (int i = 1; i <= StaticTable.EntryCount; i++)
-        {
-            var entry = StaticTable.Entries[i];
-            if (entry.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
-                && string.IsNullOrEmpty(entry.Value))
+            // Name-only match (empty value in static table)
+            if (entry.Value is null)
             {
-                // Literal with name reference from static table
-                // Use literal with incremental indexing
-                // EncodeInteger with prefixBits=6 places the type bits (01) correctly
-                EncodeIntegerWithPrefix(ms, i, 6, 0x40);
+                EncodeIntegerWithPrefix(ms, entry.Index, 6, 0x40);
                 EncodeString(ms, value);
                 _dynamicTable.Add(name, value);
                 return true;
@@ -74,10 +78,10 @@ internal sealed class HpackEncoder
         // Check dynamic table for exact match
         for (int idx = 1; idx <= _dynamicTable.Count; idx++)
         {
-            var entry = _dynamicTable.GetEntry(idx);
-            if (entry is not null
-                && entry.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
-                && entry.Value == value)
+            var dynEntry = _dynamicTable.GetEntry(idx);
+            if (dynEntry is not null
+                && dynEntry.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+                && dynEntry.Value == value)
             {
                 var dynamicIndex = StaticTable.EntryCount + idx;
                 EncodeIntegerWithPrefix(ms, dynamicIndex, 7, 0x80);
@@ -141,7 +145,7 @@ internal sealed class HpackEncoder
 
     private static void EncodeString(MemoryStream ms, string value)
     {
-        var bytes = AsciiEncoder.GetBytes(value);
+        var bytes = DefaultEncoder.GetBytes(value);
         // Non-Huffman string (bit 7 = 0)
         EncodeInteger(ms, bytes.Length, 7);
         ms.Write(bytes);

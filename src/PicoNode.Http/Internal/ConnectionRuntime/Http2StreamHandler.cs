@@ -37,6 +37,15 @@ internal static class Http2StreamHandler
         // Update activity timestamp for timeout tracking
         state.LastActivityUtc = DateTime.UtcNow;
 
+        // State machine: validate HEADERS is legal in current state
+        if (!state.StateMachine.TryTransition(
+            Http2StreamStateMachine.Trigger.Headers, out _))
+        {
+            await SendRstStreamAsync(connection, frame.StreamId,
+                Http2ErrorCode.ProtocolError, ct);
+            return false;
+        }
+
         // CONTINUATION buffering: if END_HEADERS is not set, buffer and return.
         ArraySegment<byte>? payloadData;
         try
@@ -129,6 +138,10 @@ internal static class Http2StreamHandler
             state.EndStreamReceived = false;
             return false;
         }
+
+        // State machine: EndStream received
+        state.StateMachine.TryTransition(
+            Http2StreamStateMachine.Trigger.EndStream, out _);
 
         // Construct HttpRequest
         var request = new HttpRequest
@@ -657,14 +670,15 @@ internal static class Http2StreamHandler
         CancellationToken ct
     )
     {
-        // Remove the stream from tracking if it exists.
+        // Update state machine to Closed, then remove stream.
         var runtimeState = connection.UserState as ConnectionRuntimeState;
-        if (runtimeState?.Http2Streams is not null)
+        if (runtimeState?.Http2Streams?.TryGetValue(frame.StreamId, out var rstState) == true)
         {
+            rstState.StateMachine.TryTransition(
+                Http2StreamStateMachine.Trigger.RstStream, out _);
             runtimeState.Http2Streams.Remove(frame.StreamId);
         }
 
-        // Never close the connection — RST_STREAM is per-stream.
         return ValueTask.FromResult(false);
     }
 
@@ -687,6 +701,13 @@ internal static class Http2StreamHandler
         // Update activity timestamp for timeout tracking
         state.LastActivityUtc = DateTime.UtcNow;
 
+        // State machine: validate DATA is legal in current state
+        if (!state.StateMachine.TryTransition(
+            Http2StreamStateMachine.Trigger.Data, out _))
+        {
+            return false;
+        }
+
         // Buffer the data
         if (frame.Payload.Length > 0)
         {
@@ -697,6 +718,8 @@ internal static class Http2StreamHandler
         if (frame.HasFlag(Http2FrameFlags.EndStream))
         {
             state.EndStreamReceived = true;
+            state.StateMachine.TryTransition(
+                Http2StreamStateMachine.Trigger.EndStream, out _);
             return await CompleteDeferredRequest(
                 connection, state, requestHandler, logger, ct);
         }

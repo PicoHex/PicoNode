@@ -104,9 +104,9 @@ public sealed class CacheMiddleware
 
             _cache[path] = new CachedEntry(etagValue, bodyData);
 
-            response.Headers.Add("ETag", etagValue);
-            response.Headers.Add("Cache-Control", $"public, max-age={(int)_maxAge.TotalSeconds}");
-            response.Headers.Add("Vary", "Accept-Encoding");
+            AddHeaderIfMissing(response.Headers, "ETag", etagValue);
+            AddHeaderIfMissing(response.Headers, "Cache-Control", $"public, max-age={(int)_maxAge.TotalSeconds}");
+            AddHeaderIfMissing(response.Headers, "Vary", "Accept-Encoding");
         }
 
         return response;
@@ -114,9 +114,15 @@ public sealed class CacheMiddleware
 
     private static HttpResponse AddCacheHeaders(HttpResponse response)
     {
-        response.Headers.Add("Cache-Control", $"public, max-age={(int)DefaultMaxAge.TotalSeconds}");
-        response.Headers.Add("Vary", "Accept-Encoding");
+        AddHeaderIfMissing(response.Headers, "Cache-Control", $"public, max-age={(int)DefaultMaxAge.TotalSeconds}");
+        AddHeaderIfMissing(response.Headers, "Vary", "Accept-Encoding");
         return response;
+    }
+
+    private static void AddHeaderIfMissing(HttpHeaderCollection headers, string name, string value)
+    {
+        if (!headers.TryGetValue(name, out _))
+            headers.Add(name, value);
     }
 
     internal static string GenerateETag(ReadOnlySpan<byte> data)
