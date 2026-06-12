@@ -20,6 +20,12 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
+    <!-- Default: use project references for local dev -->
+    <UseProjectReferences Condition="'$(UseProjectReferences)' == ''">true</UseProjectReferences>
+
+    <!-- Default version for package references when UseProjectReferences=false -->
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
+
     <!-- Default: don't pack unless opted in -->
     <IsPackable Condition="'$(IsPackable)' == ''">false</IsPackable>
   </PropertyGroup>

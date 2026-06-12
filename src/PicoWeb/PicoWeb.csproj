@@ -11,7 +11,15 @@
 
   <ItemGroup>
     <PackageReference Include="PicoCfg.Abs" Version="2026.6.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
     <ProjectReference Include="..\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\PicoNode.Web\PicoNode.Web.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
+    <PackageReference Include="PicoNode" Version="$(Version)" />
+    <PackageReference Include="PicoNode.Web" Version="$(Version)" />
   </ItemGroup>
 </Project>

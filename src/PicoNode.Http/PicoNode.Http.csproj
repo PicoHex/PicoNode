@@ -12,6 +12,13 @@
   <ItemGroup>
     <PackageReference Include="PicoCfg.Abs" Version="2026.6.0" />
     <PackageReference Include="PicoLog.Abs" Version="2026.6.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
     <ProjectReference Include="..\PicoNode.Abs\PicoNode.Abs.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
+    <PackageReference Include="PicoNode.Abs" Version="$(Version)" />
   </ItemGroup>
 </Project>

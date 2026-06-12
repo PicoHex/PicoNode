@@ -17,7 +17,15 @@
     <PackageReference Include="PicoDI.Abs" Version="2026.6.0" />
     <PackageReference Include="PicoLog.Abs" Version="2026.6.0" />
     <PackageReference Include="PicoCfg.Abs" Version="2026.6.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
     <ProjectReference Include="..\PicoNode.Abs\PicoNode.Abs.csproj" />
     <ProjectReference Include="..\PicoNode.Http\PicoNode.Http.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
+    <PackageReference Include="PicoNode.Abs" Version="$(Version)" />
+    <PackageReference Include="PicoNode.Http" Version="$(Version)" />
   </ItemGroup>
 </Project>
