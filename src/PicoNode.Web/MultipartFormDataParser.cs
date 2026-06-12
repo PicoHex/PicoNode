@@ -40,14 +40,20 @@ public static class MultipartFormDataParser
             return null;
 
         var boundaryBytes = Encoding.UTF8.GetBytes(boundary);
+
+        // Prefer BodyStream (streaming reads), fall back to Body (in-memory).
         var bodyStream = request.BodyStream;
         if (bodyStream != Stream.Null)
         {
             return ParseBody(bodyStream, boundaryBytes, logger);
         }
 
-        // Fallback: body was provided as in-memory byte array
-        return ParseBody(request.Body, boundaryBytes, logger);
+        if (request.Body.Length > 0)
+        {
+            return ParseBody(request.Body, boundaryBytes, logger);
+        }
+
+        return null;
     }
 
     internal static string? ExtractBoundary(
@@ -71,8 +77,19 @@ public static class MultipartFormDataParser
     )
     {
         using var ms = new MemoryStream();
-        bodyStream.CopyTo(ms);
-        return ParseBody(ms.ToArray(), boundary, logger);
+        try
+        {
+            bodyStream.CopyTo(ms);
+        }
+        catch
+        {
+            // If stream reading fails (e.g. ReadOnlySequenceStream consumed),
+            // return empty result instead of crashing.
+            return new MultipartFormData([], []);
+        }
+        return ms.Length > 0
+            ? ParseBody(ms.ToArray(), boundary, logger)
+            : new MultipartFormData([], []);
     }
 
     private static MultipartFormData ParseBody(
