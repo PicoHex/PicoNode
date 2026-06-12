@@ -6,7 +6,8 @@ public static class WebSocketUpgrade
 
     public static HttpResponse? TryUpgrade(
         HttpRequest request,
-        IReadOnlyList<string>? supportedSubProtocols = null)
+        IReadOnlyList<string>? supportedSubProtocols = null
+    )
     {
         if (!request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
             return null;
@@ -33,15 +34,16 @@ public static class WebSocketUpgrade
 
         // Negotiate subprotocol
         string? negotiatedProtocol = null;
-        if (supportedSubProtocols is { Count: > 0 }
-            && request.Headers.TryGetValue("Sec-WebSocket-Protocol", out var clientProtocols))
+        if (
+            supportedSubProtocols is { Count: > 0 }
+            && request.Headers.TryGetValue("Sec-WebSocket-Protocol", out var clientProtocols)
+        )
         {
             var clientList = clientProtocols.Split(',', StringSplitOptions.RemoveEmptyEntries);
             foreach (var clientProto in clientList)
             {
                 var trimmed = clientProto.Trim();
-                if (supportedSubProtocols.Any(
-                    s => s.Equals(trimmed, StringComparison.Ordinal)))
+                if (supportedSubProtocols.Any(s => s.Equals(trimmed, StringComparison.Ordinal)))
                 {
                     negotiatedProtocol = trimmed;
                     break;
@@ -49,8 +51,7 @@ public static class WebSocketUpgrade
             }
         }
 
-        var headers = new HttpHeaderCollection(
-        [
+        var headers = new HttpHeaderCollection([
             new KeyValuePair<string, string>("Upgrade", "websocket"),
             new KeyValuePair<string, string>(HttpHeaderNames.Connection, "Upgrade"),
             new KeyValuePair<string, string>("Sec-WebSocket-Accept", acceptKey),
@@ -58,8 +59,7 @@ public static class WebSocketUpgrade
 
         if (negotiatedProtocol is not null)
         {
-            headers.Add(
-                "Sec-WebSocket-Protocol", negotiatedProtocol);
+            headers.Add("Sec-WebSocket-Protocol", negotiatedProtocol);
         }
 
         return new HttpResponse

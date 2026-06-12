@@ -65,8 +65,11 @@ internal static class Http2ConnectionProcessor
                 connState.ReceivedPostPrefaceFrame = true;
                 if (frame!.Type != Http2FrameType.Settings)
                 {
-                    await SendGoAwayAndCloseAsync(connection,
-                        Http2ErrorCode.ProtocolError, cancellationToken);
+                    await SendGoAwayAndCloseAsync(
+                        connection,
+                        Http2ErrorCode.ProtocolError,
+                        cancellationToken
+                    );
                     return consumed;
                 }
             }

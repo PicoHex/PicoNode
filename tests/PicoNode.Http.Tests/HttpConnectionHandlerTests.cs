@@ -896,9 +896,16 @@ public sealed class HttpConnectionHandlerTests
 
         // First frame after preface must be SETTINGS (RFC 7540 §3.5)
         var settingsFrame = Http2FrameCodec.EncodeFrame(
-            Http2FrameType.Settings, Http2FrameFlags.None, 0, []);
+            Http2FrameType.Settings,
+            Http2FrameFlags.None,
+            0,
+            []
+        );
         await handler.OnReceivedAsync(
-            context, new ReadOnlySequence<byte>(settingsFrame), CancellationToken.None);
+            context,
+            new ReadOnlySequence<byte>(settingsFrame),
+            CancellationToken.None
+        );
 
         var ping = Http2FrameCodec.EncodePing([1, 2, 3, 4, 5, 6, 7, 8]);
         await handler.OnReceivedAsync(
@@ -937,9 +944,16 @@ public sealed class HttpConnectionHandlerTests
 
         // First frame after preface must be SETTINGS (RFC 7540 §3.5)
         var settingsFrame = Http2FrameCodec.EncodeFrame(
-            Http2FrameType.Settings, Http2FrameFlags.None, 0, []);
+            Http2FrameType.Settings,
+            Http2FrameFlags.None,
+            0,
+            []
+        );
         await handler.OnReceivedAsync(
-            context, new ReadOnlySequence<byte>(settingsFrame), CancellationToken.None);
+            context,
+            new ReadOnlySequence<byte>(settingsFrame),
+            CancellationToken.None
+        );
 
         var headersFrame = Http2FrameCodec.EncodeFrame(
             Http2FrameType.Headers,

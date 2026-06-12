@@ -26,8 +26,7 @@ internal sealed class WebSocketMessageProcessorState
 
     /// <summary>Returns true if the connection should be closed due to idle timeout.</summary>
     public bool IsIdleTimedOut =>
-        IdleTimeout > TimeSpan.Zero
-        && DateTime.UtcNow - LastFrameReceivedAt >= IdleTimeout;
+        IdleTimeout > TimeSpan.Zero && DateTime.UtcNow - LastFrameReceivedAt >= IdleTimeout;
 
     /// <summary>Compresses outgoing message payload using deflate.</summary>
     public byte[] Compress(ReadOnlySpan<byte> data)

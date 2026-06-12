@@ -27,7 +27,9 @@ public sealed class StreamStateMachineTests
         var sm = new Http2StreamStateMachine(1);
         sm.TryTransition(Http2StreamStateMachine.Trigger.Headers, out _);
         sm.TryTransition(Http2StreamStateMachine.Trigger.EndStream, out _);
-        await Assert.That(sm.CurrentState).IsEqualTo(Http2StreamStateMachine.StreamState.HalfClosedLocal);
+        await Assert
+            .That(sm.CurrentState)
+            .IsEqualTo(Http2StreamStateMachine.StreamState.HalfClosedLocal);
     }
 
     [Test]

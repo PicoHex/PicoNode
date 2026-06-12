@@ -35,7 +35,12 @@ internal static class WebSocketMessageProcessor
             }
 
             // RFC 6455 §5.5: control frames must have FIN=1 and payload ≤ 125
-            if (frame.OpCode is WebSocketOpCode.Ping or WebSocketOpCode.Pong or WebSocketOpCode.Close)
+            if (
+                frame.OpCode
+                is WebSocketOpCode.Ping
+                    or WebSocketOpCode.Pong
+                    or WebSocketOpCode.Close
+            )
             {
                 if (!frame.Fin)
                 {
@@ -129,8 +134,10 @@ internal static class WebSocketMessageProcessor
                     {
                         var messageBytes = currentState.PayloadBuffer.WrittenMemory.ToArray();
                         // RFC 6455 §8.1: Text messages must be valid UTF-8
-                        if (currentState.MessageOpCode == WebSocketOpCode.Text
-                            && !IsValidUtf8(messageBytes))
+                        if (
+                            currentState.MessageOpCode == WebSocketOpCode.Text
+                            && !IsValidUtf8(messageBytes)
+                        )
                         {
                             await CloseWithProtocolError(connection, cancellationToken);
                             return consumed;
@@ -171,8 +178,10 @@ internal static class WebSocketMessageProcessor
                     if (frame.Fin && handler is not null)
                     {
                         var messageBytes = currentState.PayloadBuffer.WrittenMemory.ToArray();
-                        if (currentState.MessageOpCode == WebSocketOpCode.Text
-                            && !IsValidUtf8(messageBytes))
+                        if (
+                            currentState.MessageOpCode == WebSocketOpCode.Text
+                            && !IsValidUtf8(messageBytes)
+                        )
                         {
                             await CloseWithProtocolError(connection, cancellationToken);
                             return consumed;
@@ -216,15 +225,15 @@ internal static class WebSocketMessageProcessor
 
     private static async ValueTask CloseWithProtocolError(
         ITcpConnectionContext connection,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var size = WebSocketFrameCodec.MeasureFrameSize(0);
         var rented = ArrayPool<byte>.Shared.Rent(size);
         try
         {
             WebSocketFrameCodec.WriteFrame(rented, WebSocketOpCode.Close, []);
-            await connection.SendAsync(
-                new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct);
+            await connection.SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct);
         }
         finally
         {

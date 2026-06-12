@@ -9,7 +9,9 @@ namespace PicoNode.Http.Internal.Hpack;
 internal sealed class HpackEncoder
 {
     private readonly HpackDynamicTable _dynamicTable;
-    private static readonly UTF8Encoding DefaultEncoder = new(encoderShouldEmitUTF8Identifier: false);
+    private static readonly UTF8Encoding DefaultEncoder = new(
+        encoderShouldEmitUTF8Identifier: false
+    );
 
     // Static table: name_lower -> (index, is_exact_value)
     private static readonly Dictionary<string, (int Index, string? Value)> StaticTableIndex;
@@ -22,7 +24,10 @@ internal sealed class HpackEncoder
             var entry = StaticTable.Entries[i];
             // Always add name lookup
             if (!StaticTableIndex.ContainsKey(entry.Name))
-                StaticTableIndex[entry.Name] = (i, string.IsNullOrEmpty(entry.Value) ? null : entry.Value);
+                StaticTableIndex[entry.Name] = (
+                    i,
+                    string.IsNullOrEmpty(entry.Value) ? null : entry.Value
+                );
         }
     }
 
@@ -79,9 +84,11 @@ internal sealed class HpackEncoder
         for (int idx = 1; idx <= _dynamicTable.Count; idx++)
         {
             var dynEntry = _dynamicTable.GetEntry(idx);
-            if (dynEntry is not null
+            if (
+                dynEntry is not null
                 && dynEntry.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
-                && dynEntry.Value == value)
+                && dynEntry.Value == value
+            )
             {
                 var dynamicIndex = StaticTable.EntryCount + idx;
                 EncodeIntegerWithPrefix(ms, dynamicIndex, 7, 0x80);
@@ -123,7 +130,12 @@ internal sealed class HpackEncoder
         }
     }
 
-    private static void EncodeIntegerWithPrefix(MemoryStream ms, int value, int prefixBits, byte prefixBitsValue)
+    private static void EncodeIntegerWithPrefix(
+        MemoryStream ms,
+        int value,
+        int prefixBits,
+        byte prefixBitsValue
+    )
     {
         var prefixMax = (1 << prefixBits) - 1;
         if (value < prefixMax)

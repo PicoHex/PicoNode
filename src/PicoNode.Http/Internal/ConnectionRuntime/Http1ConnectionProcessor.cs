@@ -150,7 +150,13 @@ internal static class Http1ConnectionProcessor
         if (IsH2cUpgradeRequest(request))
         {
             return await HandleH2cUpgradeAsync(
-                connection, request, consumed, options, requestHandler, cancellationToken);
+                connection,
+                request,
+                consumed,
+                options,
+                requestHandler,
+                cancellationToken
+            );
         }
 
         try
@@ -199,8 +205,10 @@ internal static class Http1ConnectionProcessor
                 state.WebSocketHandshakeComplete = true;
 
                 // Detect permessage-deflate compression negotiation
-                if (request.Headers.TryGetValue("Sec-WebSocket-Extensions", out var ext)
-                    && ext.Contains("permessage-deflate", StringComparison.OrdinalIgnoreCase))
+                if (
+                    request.Headers.TryGetValue("Sec-WebSocket-Extensions", out var ext)
+                    && ext.Contains("permessage-deflate", StringComparison.OrdinalIgnoreCase)
+                )
                 {
                     state.WebSocketMessageState ??= new WebSocketMessageProcessorState();
                     state.WebSocketMessageState.CompressionNegotiated = true;
@@ -240,8 +248,10 @@ internal static class Http1ConnectionProcessor
         if (!request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
             return false;
 
-        if (!request.Headers.TryGetValue("Upgrade", out var upgrade)
-            || !upgrade.Contains("h2c", StringComparison.OrdinalIgnoreCase))
+        if (
+            !request.Headers.TryGetValue("Upgrade", out var upgrade)
+            || !upgrade.Contains("h2c", StringComparison.OrdinalIgnoreCase)
+        )
             return false;
 
         if (!request.Headers.TryGetValue(HttpHeaderNames.Connection, out var conn))
@@ -257,13 +267,15 @@ internal static class Http1ConnectionProcessor
         SequencePosition consumed,
         HttpConnectionHandlerOptions options,
         HttpRequestHandler requestHandler,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         // Send 101 Switching Protocols
         var response = Encoding.ASCII.GetBytes(
             "HTTP/1.1 101 Switching Protocols\r\n"
-            + "Upgrade: h2c\r\n"
-            + "Connection: Upgrade\r\n\r\n");
+                + "Upgrade: h2c\r\n"
+                + "Connection: Upgrade\r\n\r\n"
+        );
         await connection.SendAsync(new ReadOnlySequence<byte>(response), ct);
 
         // Switch connection state to HTTP/2
@@ -283,7 +295,8 @@ internal static class Http1ConnectionProcessor
             Http2FrameType.Headers,
             Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
             1,
-            hpackData);
+            hpackData
+        );
 
         var remaining = new ReadOnlySequence<byte>(frameBytes);
         await Http2ConnectionProcessor.ProcessAsync(
@@ -292,7 +305,8 @@ internal static class Http1ConnectionProcessor
             sendInitialSettings: true,
             requestHandler,
             options.Logger,
-            ct);
+            ct
+        );
 
         return consumed;
     }

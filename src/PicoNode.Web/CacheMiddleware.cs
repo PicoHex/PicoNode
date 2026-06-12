@@ -105,7 +105,11 @@ public sealed class CacheMiddleware
             _cache[path] = new CachedEntry(etagValue, bodyData);
 
             AddHeaderIfMissing(response.Headers, "ETag", etagValue);
-            AddHeaderIfMissing(response.Headers, "Cache-Control", $"public, max-age={(int)_maxAge.TotalSeconds}");
+            AddHeaderIfMissing(
+                response.Headers,
+                "Cache-Control",
+                $"public, max-age={(int)_maxAge.TotalSeconds}"
+            );
             AddHeaderIfMissing(response.Headers, "Vary", "Accept-Encoding");
         }
 
@@ -114,7 +118,11 @@ public sealed class CacheMiddleware
 
     private static HttpResponse AddCacheHeaders(HttpResponse response)
     {
-        AddHeaderIfMissing(response.Headers, "Cache-Control", $"public, max-age={(int)DefaultMaxAge.TotalSeconds}");
+        AddHeaderIfMissing(
+            response.Headers,
+            "Cache-Control",
+            $"public, max-age={(int)DefaultMaxAge.TotalSeconds}"
+        );
         AddHeaderIfMissing(response.Headers, "Vary", "Accept-Encoding");
         return response;
     }

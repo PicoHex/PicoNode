@@ -8,12 +8,13 @@ internal sealed class Http2StreamState
     public int StreamId { get; }
     public bool EndHeadersReceived { get; set; }
     public bool EndStreamReceived { get; set; }
-    public bool EndStreamFromHeaders { get; set; }  // EndStream flag from the HEADERS frame
+    public bool EndStreamFromHeaders { get; set; } // EndStream flag from the HEADERS frame
     public ArrayBufferWriter<byte>? HeaderBlockBuffer { get; set; }
     public bool ResponseSent { get; set; }
     public Http2StreamStateMachine StateMachine { get; }
 
-    public Http2StreamState(int streamId) : this(streamId, new Http2StreamStateMachine(streamId)) { }
+    public Http2StreamState(int streamId)
+        : this(streamId, new Http2StreamStateMachine(streamId)) { }
 
     public Http2StreamState(int streamId, Http2StreamStateMachine stateMachine)
     {

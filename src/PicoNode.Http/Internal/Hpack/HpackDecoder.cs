@@ -330,7 +330,8 @@ internal static class HpackDecoder
     public static bool TryDecode(
         ReadOnlySpan<byte> block,
         out List<(string, string)> headers,
-        HpackDynamicTable? dynamicTable = null)
+        HpackDynamicTable? dynamicTable = null
+    )
     {
         headers = new List<(string, string)>();
         int offset = 0;

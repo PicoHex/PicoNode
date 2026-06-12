@@ -12,7 +12,8 @@ internal sealed class HpackDynamicTable
     private int _currentSize;
     private int _capacity;
 
-    public HpackDynamicTable() : this(DefaultCapacity) { }
+    public HpackDynamicTable()
+        : this(DefaultCapacity) { }
 
     public HpackDynamicTable(int capacity)
     {

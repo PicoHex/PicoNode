@@ -142,18 +142,18 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         CancellationToken ct
     )
     {
-        var settings = (ReadOnlySpan<Http2Setting>)
-        [
-            new(Http2SettingId.MaxConcurrentStreams, 100),
-            new(Http2SettingId.InitialWindowSize, 65535),
-        ];
+        var settings =
+            (ReadOnlySpan<Http2Setting>)
+                [
+                    new(Http2SettingId.MaxConcurrentStreams, 100),
+                    new(Http2SettingId.InitialWindowSize, 65535),
+                ];
         var size = Http2FrameCodec.FrameHeaderSize + settings.Length * 6;
         var rented = ArrayPool<byte>.Shared.Rent(size);
         try
         {
             Http2FrameCodec.WriteSettings(rented, settings);
-            await connection.SendAsync(
-                new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct);
+            await connection.SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct);
         }
         finally
         {

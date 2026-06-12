@@ -6,8 +6,22 @@ namespace PicoNode.Http.Internal.ConnectionRuntime;
 /// </summary>
 internal sealed class Http2StreamStateMachine
 {
-    public enum StreamState { Idle, Open, HalfClosedLocal, HalfClosedRemote, Closed }
-    public enum Trigger { Headers, Data, EndStream, RstStream }
+    public enum StreamState
+    {
+        Idle,
+        Open,
+        HalfClosedLocal,
+        HalfClosedRemote,
+        Closed,
+    }
+
+    public enum Trigger
+    {
+        Headers,
+        Data,
+        EndStream,
+        RstStream,
+    }
 
     public StreamState CurrentState { get; private set; } = StreamState.Idle;
     public int StreamId { get; }
@@ -38,14 +52,12 @@ internal sealed class Http2StreamStateMachine
         switch (CurrentState)
         {
             case StreamState.Idle:
-                return trigger == Trigger.Headers
-                    ? TransitionTo(StreamState.Open)
-                    : false;
+                return trigger == Trigger.Headers ? TransitionTo(StreamState.Open) : false;
 
             case StreamState.Open:
                 return trigger switch
                 {
-                    Trigger.Headers => true,        // trailers
+                    Trigger.Headers => true, // trailers
                     Trigger.Data => true,
                     Trigger.EndStream => TransitionTo(StreamState.HalfClosedLocal),
                     _ => false,
@@ -53,8 +65,7 @@ internal sealed class Http2StreamStateMachine
 
             case StreamState.HalfClosedLocal:
                 // We sent END_STREAM — only peer can send more
-                return trigger == Trigger.Data
-                    || trigger == Trigger.EndStream;   // peer's END_STREAM
+                return trigger == Trigger.Data || trigger == Trigger.EndStream; // peer's END_STREAM
 
             case StreamState.HalfClosedRemote:
                 // Peer sent END_STREAM — only we can send more

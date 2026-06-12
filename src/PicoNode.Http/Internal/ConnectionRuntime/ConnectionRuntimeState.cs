@@ -121,10 +121,7 @@ internal sealed class ConnectionRuntimeState
 
         CleanupClosedStreams();
 
-        var state = new Http2StreamState(streamId)
-        {
-            SendWindow = RemoteInitialWindowSize,
-        };
+        var state = new Http2StreamState(streamId) { SendWindow = RemoteInitialWindowSize };
         Http2Streams ??= new Dictionary<int, Http2StreamState>();
         Http2Streams[streamId] = state;
 

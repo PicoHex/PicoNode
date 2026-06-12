@@ -514,7 +514,12 @@ public sealed class Http2StreamHandlerTests
         // Send HEADERS without EndStream
         var headersFrame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.None, 1, hpackData);
         var shouldClose1 = await Http2StreamHandler.ProcessHeadersFrame(
-            connection, headersFrame, handler, null, CancellationToken.None);
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
 
         await Assert.That(shouldClose1).IsFalse();
         await Assert.That(receivedBody.Length).IsEqualTo(0);
@@ -522,14 +527,24 @@ public sealed class Http2StreamHandlerTests
         // Send DATA frames (non-final)
         var dataFrame1 = BuildDataFrame(1, "Hello "u8.ToArray(), endStream: false);
         await Http2StreamHandler.ProcessDataFrame(
-            connection, dataFrame1, handler, null, CancellationToken.None);
+            connection,
+            dataFrame1,
+            handler,
+            null,
+            CancellationToken.None
+        );
 
         await Assert.That(receivedBody.Length).IsEqualTo(0);
 
         // Send final DATA with EndStream
         var dataFrame2 = BuildDataFrame(1, "World"u8.ToArray(), endStream: true);
         await Http2StreamHandler.ProcessDataFrame(
-            connection, dataFrame2, handler, null, CancellationToken.None);
+            connection,
+            dataFrame2,
+            handler,
+            null,
+            CancellationToken.None
+        );
 
         await Assert.That(Encoding.UTF8.GetString(receivedBody.ToArray())).IsEqualTo("Hello World");
     }
@@ -543,13 +558,19 @@ public sealed class Http2StreamHandlerTests
         Array.Fill<byte>(body, 0x58); // 'X'
 
         HttpRequestHandler handler = (req, ct) =>
-            ValueTask.FromResult(
-                new HttpResponse { StatusCode = 200, Body = body });
+            ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = body });
 
-        var headersFrame = BuildHeadersFrame(MinimalHpackPayload,
-            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream);
+        var headersFrame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
         await Http2StreamHandler.ProcessHeadersFrame(
-            connection, headersFrame, handler, null, CancellationToken.None);
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
 
         var frames = connection.SentFrames;
         await Assert.That(frames.Count).IsGreaterThanOrEqualTo(2);
@@ -582,12 +603,17 @@ public sealed class Http2StreamHandlerTests
         var connection = new TestTcpConnectionContext();
 
         // First, establish a stream via HEADERS
-        var headersFrame = BuildHeadersFrame(MinimalHpackPayload,
-            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream);
+        var headersFrame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
         await Http2StreamHandler.ProcessHeadersFrame(
-            connection, headersFrame,
+            connection,
+            headersFrame,
             static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            null, CancellationToken.None);
+            null,
+            CancellationToken.None
+        );
 
         // The stream should exist and response should have been sent
         await Assert.That(connection.SentFrames.Count).IsEqualTo(1);
@@ -595,7 +621,10 @@ public sealed class Http2StreamHandlerTests
         // Send RST_STREAM for an unused stream ID — should be no-op
         var rstFrame = BuildRstStreamFrame(3);
         var shouldClose = await Http2StreamHandler.ProcessRstStreamFrame(
-            connection, rstFrame, CancellationToken.None);
+            connection,
+            rstFrame,
+            CancellationToken.None
+        );
 
         await Assert.That(shouldClose).IsFalse();
         await Assert.That(connection.IsClosed).IsFalse();

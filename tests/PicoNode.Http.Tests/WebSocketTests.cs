@@ -255,7 +255,10 @@ public sealed class WebSocketTests
             Version = HttpVersion.Http11,
             HeaderFields = headers,
             Headers = headers.ToDictionary(
-                h => h.Key, h => h.Value, StringComparer.OrdinalIgnoreCase),
+                h => h.Key,
+                h => h.Value,
+                StringComparer.OrdinalIgnoreCase
+            ),
         };
 
         var supported = new[] { "v2.chat", "superchat" };
@@ -263,8 +266,9 @@ public sealed class WebSocketTests
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.StatusCode).IsEqualTo(101);
-        var protoHeader = result.Headers.FirstOrDefault(
-            h => h.Key.Equals("Sec-WebSocket-Protocol", StringComparison.OrdinalIgnoreCase));
+        var protoHeader = result.Headers.FirstOrDefault(h =>
+            h.Key.Equals("Sec-WebSocket-Protocol", StringComparison.OrdinalIgnoreCase)
+        );
         await Assert.That(protoHeader.Value).IsEqualTo("v2.chat");
     }
 
@@ -288,7 +292,10 @@ public sealed class WebSocketTests
             Version = HttpVersion.Http11,
             HeaderFields = headers,
             Headers = headers.ToDictionary(
-                h => h.Key, h => h.Value, StringComparer.OrdinalIgnoreCase),
+                h => h.Key,
+                h => h.Value,
+                StringComparer.OrdinalIgnoreCase
+            ),
         };
 
         var supported = new[] { "v2.chat", "superchat" };
@@ -297,8 +304,9 @@ public sealed class WebSocketTests
         // No match means we should not include Sec-WebSocket-Protocol
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.StatusCode).IsEqualTo(101);
-        var protoHeader = result.Headers.FirstOrDefault(
-            h => h.Key.Equals("Sec-WebSocket-Protocol", StringComparison.OrdinalIgnoreCase));
+        var protoHeader = result.Headers.FirstOrDefault(h =>
+            h.Key.Equals("Sec-WebSocket-Protocol", StringComparison.OrdinalIgnoreCase)
+        );
         await Assert.That(protoHeader.Value).IsNull();
     }
 }
