@@ -158,24 +158,12 @@ await node.DisposeAsync();
 using System.Net;
 using PicoDI.Abs;
 using PicoLog.Abs;
-using PicoCfg.Abs;
 using PicoNode.Web;
 using PicoWeb;
-
-// Configuration
-var config = await Cfg.CreateBuilder()
-    .Add(new Dictionary<string, string>
-    {
-        ["WebApp:ServerHeader"] = "MyApp",
-        ["WebApp:MaxRequestBytes"] = "16384",
-    })
-    .BuildAsync();
 
 var app = new WebApp(new WebAppOptions
 {
     ServerHeader = "MyApp",
-    Logger = new ConsoleSink().CreateLogger("PicoNode.Web"),
-    Config = config,
 });
 
 // Middleware
@@ -236,12 +224,20 @@ var node = new TcpNode(options);
 
 ```csharp
 var config = await Cfg.CreateBuilder()
-    .AddEnvironmentVariables("PICONODE_")
+    .Add(new Dictionary<string, string>
+    {
+        ["App:Name"] = "PicoCfg",
+        ["App:Enabled"] = "true",
+    })
     .BuildAsync();
 
-var options = CfgBind.Bind<TcpNodeOptions>(config, "TcpNode");
-options.Endpoint = new IPEndPoint(IPAddress.Any, 8080); // required
-var node = new TcpNode(options);
+var settings = CfgBind.Bind<AppSettings>(config, "App");
+
+public sealed class AppSettings
+{
+    public string? Name { get; set; }
+    public bool Enabled { get; set; }
+}
 ```
 
 ### Runtime Reload
@@ -363,7 +359,7 @@ Serves files from a root directory. Prevents directory traversal. Maps 30+ file 
 ### CORS
 
 ```csharp
-app.Use((ctx, next, ct) =>
+app.Use(async (ctx, next, ct) =>
 {
     var corsOptions = new CorsOptions
     {
@@ -373,9 +369,13 @@ app.Use((ctx, next, ct) =>
     };
     var preflight = CorsHandler.HandlePreflight(ctx.Request, corsOptions);
     if (preflight is not null)
-        return ValueTask.FromResult(preflight);
+        return preflight;
     var response = await next(ctx, ct);
-    CorsHandler.ApplyResponseHeaders(response, corsOptions);
+    // Add CORS response headers
+    foreach (var header in CorsHandler.GetResponseHeaders(ctx.Request, corsOptions))
+    {
+        response.Headers.Add(header.Key, header.Value);
+    }
     return response;
 });
 ```
@@ -396,7 +396,7 @@ var form = MultipartFormDataParser.Parse(context.Request);
 foreach (var field in form?.Fields ?? [])
     Console.WriteLine($"{field.Name} = {field.Value}");
 foreach (var file in form?.Files ?? [])
-    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Data.Length} bytes)");
+    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
 ## Metrics
@@ -405,17 +405,15 @@ Both `TcpNode` and `UdpNode` expose real-time counters:
 
 ```csharp
 // TCP
-var tcpMetrics = tcpNode.GetMetrics();
+var tcpMetrics = node.GetMetrics();  // only TcpNode
 Console.WriteLine($"Accepted: {tcpMetrics.TotalAccepted}");
 Console.WriteLine($"Active: {tcpMetrics.ActiveConnections}");
 Console.WriteLine($"Sent: {tcpMetrics.TotalBytesSent}");
 Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
 
-// UDP
-var udpMetrics = udpNode.GetMetrics();
-Console.WriteLine($"Datagrams Rx: {udpMetrics.TotalDatagramsReceived}");
-Console.WriteLine($"Datagrams Tx: {udpMetrics.TotalDatagramsSent}");
-Console.WriteLine($"Dropped: {udpMetrics.TotalDropped}");
+// UDP counters available via internal state
+// (UdpNode tracks datagrams, bytes, and drops internally)
+```
 ```
 
 ## Projects
