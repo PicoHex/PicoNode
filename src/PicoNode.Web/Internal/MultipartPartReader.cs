@@ -10,13 +10,14 @@ internal sealed record MultipartPart(
 internal static class MultipartPartReader
 {
     public static async ValueTask<MultipartPart?> ReadPartAsync(
-        MultipartBufferedReader reader, byte[] boundary)
+        MultipartBufferedReader reader, byte[] boundary,
+        CancellationToken ct = default)
     {
         // Read headers until empty line (\r\n\r\n)
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         while (true)
         {
-            var line = await reader.ReadLineAsync();
+            var line = await reader.ReadLineAsync(ct);
             if (line is null)
                 return null;
             if (line.Length == 0)
@@ -33,7 +34,7 @@ internal static class MultipartPartReader
         }
 
         // Read content until next boundary
-        var content = await reader.ReadUntilBoundaryAsync(boundary);
+        var content = await reader.ReadUntilBoundaryAsync(boundary, ct);
         return new MultipartPart(headers, content);
     }
 }

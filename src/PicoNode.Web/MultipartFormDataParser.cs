@@ -21,6 +21,55 @@ public static class MultipartFormDataParser
         ILogger? logger = null
     )
     {
+        var boundary = ResolveBoundary(request, options);
+        if (boundary is null) return null;
+
+        if (request.Body.Length > 0)
+        {
+            var boundaryBytes = Encoding.UTF8.GetBytes(boundary);
+            return ParseBody(request.Body, boundaryBytes, logger);
+        }
+
+        var bodyStream = request.BodyStream;
+        if (bodyStream != Stream.Null)
+        {
+            return StreamingMultipartParser.ParseAsync(
+                bodyStream, boundary).GetAwaiter().GetResult();
+        }
+
+        return null;
+    }
+
+    /// <summary>Async variant. Prefer this for streaming scenarios.</summary>
+    public static async ValueTask<MultipartFormData?> ParseAsync(
+        HttpRequest request,
+        MultipartFormDataParserOptions? options = null,
+        ILogger? logger = null,
+        CancellationToken ct = default)
+    {
+        options ??= new MultipartFormDataParserOptions();
+        var boundary = ResolveBoundary(request, options);
+        if (boundary is null) return null;
+
+        if (request.Body.Length > 0)
+        {
+            var boundaryBytes = Encoding.UTF8.GetBytes(boundary);
+            return ParseBody(request.Body, boundaryBytes, logger);
+        }
+
+        var bodyStream = request.BodyStream;
+        if (bodyStream != Stream.Null)
+        {
+            return await StreamingMultipartParser.ParseAsync(
+                bodyStream, boundary, ct: ct).ConfigureAwait(false);
+        }
+
+        return null;
+    }
+
+    /// <summary>Validates content type and extracts boundary string. Returns null on failure.</summary>
+    private static string? ResolveBoundary(HttpRequest request, MultipartFormDataParserOptions options)
+    {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxBoundaryLength, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(
@@ -35,26 +84,7 @@ public static class MultipartFormDataParser
         if (!contentType.StartsWith("multipart/form-data", StringComparison.OrdinalIgnoreCase))
             return null;
 
-        var boundary = ExtractBoundary(contentType, options.MaxBoundaryLength);
-        if (boundary is null)
-            return null;
-
-        // Prefer Body (in-memory, safe) over BodyStream (streaming).
-        if (request.Body.Length > 0)
-        {
-            var boundaryBytes = Encoding.UTF8.GetBytes(boundary);
-            return ParseBody(request.Body, boundaryBytes, logger);
-        }
-
-        // Use streaming parser when BodyStream is available.
-        var bodyStream = request.BodyStream;
-        if (bodyStream != Stream.Null)
-        {
-            return StreamingMultipartParser.ParseAsync(
-                bodyStream, boundary, bufferSize: 65536).GetAwaiter().GetResult();
-        }
-
-        return null;
+        return ExtractBoundary(contentType, options.MaxBoundaryLength);
     }
 
     internal static string? ExtractBoundary(

@@ -22,16 +22,14 @@ internal sealed class MultipartBufferedReader : IDisposable
     }
 
     /// <summary>Reads a line until \r\n. Returns null at end of stream.</summary>
-    public async ValueTask<byte[]?> ReadLineAsync()
+    public async ValueTask<byte[]?> ReadLineAsync(CancellationToken ct = default)
     {
         while (true)
         {
-            // Search for \n in current buffer
             for (var i = _position; i < _buffered; i++)
             {
                 if (_buffer[i] == (byte)'\n')
                 {
-                    // Check for \r before \n
                     var lineEnd = i > _position && _buffer[i - 1] == (byte)'\r' ? i - 1 : i;
                     var line = new byte[lineEnd - _position];
                     if (line.Length > 0)
@@ -44,19 +42,21 @@ internal sealed class MultipartBufferedReader : IDisposable
             if (_endOfStream)
                 return null;
 
-            await FillBufferAsync();
+            ct.ThrowIfCancellationRequested();
+            await FillBufferAsync(ct);
         }
     }
 
     /// <summary>Reads content until the boundary delimiter (\r\n--boundary or --boundary--). 
     /// Returns the content bytes, or null if the stream ends unexpectedly.</summary>
-    public async ValueTask<byte[]?> ReadUntilBoundaryAsync(byte[] boundary)
+    public async ValueTask<byte[]?> ReadUntilBoundaryAsync(byte[] boundary, CancellationToken ct = default)
     {
-        await EnsureBufferedAsync();
+        await EnsureBufferedAsync(ct);
         using var accumulator = new MemoryStream();
 
         while (true)
         {
+            ct.ThrowIfCancellationRequested();
             var matchIdx = FindBoundaryInBuffer(boundary);
             if (matchIdx >= 0)
             {
@@ -90,8 +90,8 @@ internal sealed class MultipartBufferedReader : IDisposable
                 accumulator.Write(_buffer, safe, flush);
 
             // Keep only the trailing bytes that might be a partial boundary match
-            var srcPos = safe + flush;
-            if (keep > 0 && srcPos + keep <= _buffered + flush)
+            var srcPos = safe + flush;  // = _buffered - keep
+            if (keep > 0)
                 Array.Copy(_buffer, srcPos, _buffer, 0, keep);
             _buffered = keep;
             _position = 0;
@@ -99,7 +99,7 @@ internal sealed class MultipartBufferedReader : IDisposable
             if (_endOfStream)
                 return accumulator.Length > 0 ? accumulator.ToArray() : null;
 
-            await FillBufferAsync();
+            await FillBufferAsync(ct);
         }
     }
 
@@ -142,13 +142,13 @@ internal sealed class MultipartBufferedReader : IDisposable
         return true;
     }
 
-    private async ValueTask EnsureBufferedAsync()
+    private async ValueTask EnsureBufferedAsync(CancellationToken ct = default)
     {
         if (_buffered - _position < 256 && !_endOfStream)
-            await FillBufferAsync();
+            await FillBufferAsync(ct);
     }
 
-    private async ValueTask FillBufferAsync()
+    private async ValueTask FillBufferAsync(CancellationToken ct = default)
     {
         if (_endOfStream) return;
 
@@ -178,7 +178,7 @@ internal sealed class MultipartBufferedReader : IDisposable
 
         try
         {
-            var read = await _stream.ReadAsync(_buffer.AsMemory(freeStart, freeSize));
+            var read = await _stream.ReadAsync(_buffer.AsMemory(freeStart, freeSize), ct);
             if (read == 0)
             {
                 _endOfStream = true;
