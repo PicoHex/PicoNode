@@ -1,0 +1,34 @@
+<Project>
+
+  <!-- ═══════════════════════════════════════════════════════
+       PicoNode shared build properties
+       ═══════════════════════════════════════════════════════ -->
+
+  <PropertyGroup>
+    <!-- Default version for local / non-CI builds -->
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
+
+    <!-- Deterministic builds when CI=true -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Embedded source for better debugging -->
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <DebugType>embedded</DebugType>
+
+    <!-- Symbol packages for packable projects -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!-- Default: don't pack unless opted in -->
+    <IsPackable Condition="'$(IsPackable)' == ''">false</IsPackable>
+  </PropertyGroup>
+
+  <!-- ═══════════════════════════════════════════════════════
+       SourceLink — enabled only for packable projects
+       ═══════════════════════════════════════════════════════ -->
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.*" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

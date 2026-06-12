@@ -1,0 +1,97 @@
+# PicoNode CI — validation pipeline
+# Tier 3: multi-component framework with AOT validation
+# Runs on PR and push to main
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: [win-x64, win-arm64, linux-x64, linux-arm64, osx-arm64]
+        include:
+          - rid: win-x64
+            os: windows-latest
+          - rid: win-arm64
+            os: windows-11-arm
+          - rid: linux-x64
+            os: ubuntu-latest
+          - rid: linux-arm64
+            os: ubuntu-24.04-arm
+          - rid: osx-arm64
+            os: macos-latest
+
+    runs-on: ${{ matrix.os }}
+    name: build ${{ matrix.rid }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Linux AOT prerequisites
+        if: startsWith(matrix.rid, 'linux-')
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev
+
+      - name: Restore
+        run: dotnet restore PicoNode.slnx
+
+      - name: Build
+        run: dotnet build PicoNode.slnx --no-restore -c Release
+
+      - name: Test PicoNode.Abs
+        run: dotnet test --project tests/PicoNode.Tests/PicoNode.Tests.csproj --no-build -c Release
+
+      - name: Test PicoNode.Http
+        run: dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj --no-build -c Release
+
+      - name: Test PicoNode.Web
+        run: dotnet test --project tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj --no-build -c Release
+
+      - name: Test PicoWeb.DI
+        run: dotnet test --project tests/PicoWeb.DI.Tests/PicoWeb.DI.Tests.csproj --no-build -c Release
+
+      - name: Test PicoNode.Smoke
+        run: dotnet test --project tests/PicoNode.Smoke/PicoNode.Smoke.csproj --no-build -c Release
+
+      - name: Test PicoNode.PerfHarness
+        run: dotnet test --project tests/PicoNode.PerfHarness/PicoNode.PerfHarness.csproj --no-build -c Release
+
+      - name: AOT publish (sample HTTP server)
+        run: >
+          dotnet publish samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj
+          --no-restore -c Release -r ${{ matrix.rid }}
+          -p:PublishAot=true --self-contained
+          -o publish/${{ matrix.rid }}
+
+      - name: AOT publish (Echo server)
+        run: >
+          dotnet publish samples/PicoNode.Samples.Echo/PicoNode.Samples.Echo.csproj
+          --no-restore -c Release -r ${{ matrix.rid }}
+          -p:PublishAot=true --self-contained
+          -o publish-echo/${{ matrix.rid }}
