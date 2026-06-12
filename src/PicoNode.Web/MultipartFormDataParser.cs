@@ -41,16 +41,18 @@ public static class MultipartFormDataParser
 
         var boundaryBytes = Encoding.UTF8.GetBytes(boundary);
 
-        // Prefer BodyStream (streaming reads), fall back to Body (in-memory).
+        // Use Body (in-memory copy) when available — it is always safe to read.
+        // BodyStream references pipe memory that may be recycled after AdvanceTo.
+        if (request.Body.Length > 0)
+        {
+            return ParseBody(request.Body, boundaryBytes, logger);
+        }
+
+        // Fallback: BodyStream for streaming scenarios.
         var bodyStream = request.BodyStream;
         if (bodyStream != Stream.Null)
         {
             return ParseBody(bodyStream, boundaryBytes, logger);
-        }
-
-        if (request.Body.Length > 0)
-        {
-            return ParseBody(request.Body, boundaryBytes, logger);
         }
 
         return null;
