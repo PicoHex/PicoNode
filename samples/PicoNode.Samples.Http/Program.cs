@@ -67,6 +67,19 @@ app.MapPost("/echo", static (ctx, _) =>
     return ValueTask.FromResult(WebResults.Text(200, body, "OK"));
 });
 
+// ── SSE endpoint (Server-Sent Events) ─────────────────────
+
+app.MapGet("/sse", SseEndpoint.Create(async (sse, ct) =>
+{
+    // Simulate a stream of events (e.g., LLM output, live updates)
+    var events = new[] { "Hello", ", ", "world", "!" };
+    foreach (var token in events)
+    {
+        await sse.WriteJsonAsync($$"""{"token":"{{token}}"}""", ct);
+        await Task.Delay(200, ct);
+    }
+}));
+
 // ── WebSocket endpoint ─────────────────────────────────────
 
 app.MapGet("/ws", static (ctx, _) =>
@@ -94,9 +107,10 @@ Console.WriteLine("  GET  /        -> text greeting");
 Console.WriteLine("  GET  /info    -> JSON with protocol info");
 Console.WriteLine("  POST /echo    -> echoes body (in-memory)");
 Console.WriteLine("  POST /stream  -> echoes body via BodyStream");
+Console.WriteLine("  GET  /sse     -> SSE event stream (text/event-stream)");
 Console.WriteLine("  GET  /ws      -> WebSocket (echo)");
 Console.WriteLine();
-Console.WriteLine("Security headers + ETag caching active.");
+Console.WriteLine("Security headers + ETag caching + SSE streaming active.");
 Console.WriteLine("Press Enter to stop...");
 Console.ReadLine();
 
