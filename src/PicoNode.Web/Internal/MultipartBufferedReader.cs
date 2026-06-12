@@ -81,15 +81,13 @@ internal sealed class MultipartBufferedReader : IDisposable
                 return content;
             }
 
-            // Compact buffer: move unread data to start
-            if (_position > 0)
-            {
-                var unread = _buffered - _position;
-                if (unread > 0)
-                    Array.Copy(_buffer, _position, _buffer, 0, unread);
-                _buffered = unread;
-                _position = 0;
-            }
+            // Compact: preserve trailing data for cross-chunk boundary detection.
+            // Always keep the last (boundary.Length + 8) bytes at the front.
+            var keepSize = Math.Min(_buffered, boundary.Length + 8);
+            var keepStart = _buffered - keepSize;
+            Array.Copy(_buffer, keepStart, _buffer, 0, keepSize);
+            _buffered = keepSize;
+            _position = 0;
 
             if (_endOfStream)
                 return null;
@@ -147,9 +145,29 @@ internal sealed class MultipartBufferedReader : IDisposable
     {
         if (_endOfStream) return;
 
+        // Compact: move unread data to the front to free space at the end.
+        if (_position > 0 && _buffered > _position)
+        {
+            var unread = _buffered - _position;
+            Array.Copy(_buffer, _position, _buffer, 0, unread);
+            _buffered = unread;
+            _position = 0;
+        }
+
         var freeStart = _buffered;
         var freeSize = _buffer.Length - freeStart;
-        if (freeSize <= 0) return;
+        if (freeSize <= 0)
+        {
+            // Buffer completely full. Compact by keeping trailing data
+            // at the front, capped at buffer capacity.
+            var keepSize = Math.Min(_buffered, _buffer.Length / 2);
+            var keepStart = _buffered - keepSize;
+            Array.Copy(_buffer, keepStart, _buffer, 0, keepSize);
+            _buffered = keepSize;
+            _position = 0;
+            freeStart = _buffered;
+            freeSize = _buffer.Length - freeStart;
+        }
 
         try
         {
