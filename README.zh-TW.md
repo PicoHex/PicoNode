@@ -158,24 +158,13 @@ await node.DisposeAsync();
 using System.Net;
 using PicoDI.Abs;
 using PicoLog.Abs;
-using PicoCfg.Abs;
 using PicoNode.Web;
 using PicoWeb;
 
-// Configuration
-var config = await Cfg.CreateBuilder()
-    .Add(new Dictionary<string, string>
-    {
-        ["WebApp:ServerHeader"] = "MyApp",
-        ["WebApp:MaxRequestBytes"] = "16384",
-    })
-    .BuildAsync();
 
 var app = new WebApp(new WebAppOptions
 {
     ServerHeader = "MyApp",
-    Logger = new ConsoleSink().CreateLogger("PicoNode.Web"),
-    Config = config,
 });
 
 // Middleware
@@ -239,7 +228,7 @@ var config = await Cfg.CreateBuilder()
     .AddEnvironmentVariables("PICONODE_")
     .BuildAsync();
 
-var options = CfgBind.Bind<TcpNodeOptions>(config, "TcpNode");
+var settings = CfgBind.Bind<AppSettings>(config, "App");
 options.Endpoint = new IPEndPoint(IPAddress.Any, 8080); // required
 var node = new TcpNode(options);
 ```
@@ -251,7 +240,6 @@ var node = new TcpNode(options);
 var options = new TcpNodeOptions
 {
     Endpoint = new IPEndPoint(IPAddress.Loopback, 8080),
-    Config = config, // 用於即時重新載入的 ICfgRoot
 };
 // 節點會啟動一個監聽設定變更的重新載入迴圈
 ```
@@ -296,8 +284,6 @@ var options = new TcpNodeOptions
 PicoNode 使用 PicoLog 進行結構化診斷。所有非致命錯誤都會附帶操作上下文進行紀錄：
 
 ```csharp
-var logger = new LoggerFactory([new ConsoleSink()])
-    .CreateLogger("PicoNode.Tcp");
 
 var node = new TcpNode(new TcpNodeOptions
 {
@@ -373,9 +359,13 @@ app.Use((ctx, next, ct) =>
     };
     var preflight = CorsHandler.HandlePreflight(ctx.Request, corsOptions);
     if (preflight is not null)
-        return ValueTask.FromResult(preflight);
+        return preflight;
     var response = await next(ctx, ct);
-    CorsHandler.ApplyResponseHeaders(response, corsOptions);
+    // Add CORS response headers
+    foreach (var header in CorsHandler.GetResponseHeaders(ctx.Request, corsOptions))
+    {
+        response.Headers.Add(header.Key, header.Value);
+    }
     return response;
 });
 ```
@@ -396,7 +386,7 @@ var form = MultipartFormDataParser.Parse(context.Request);
 foreach (var field in form?.Fields ?? [])
     Console.WriteLine($"{field.Name} = {field.Value}");
 foreach (var file in form?.Files ?? [])
-    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Data.Length} bytes)");
+    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length bytes)");
 ```
 
 ## 度量
@@ -410,74 +400,6 @@ Console.WriteLine($"Accepted: {tcpMetrics.TotalAccepted}");
 Console.WriteLine($"Active: {tcpMetrics.ActiveConnections}");
 Console.WriteLine($"Sent: {tcpMetrics.TotalBytesSent}");
 Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
+n// UDP counters available via internal state
+// (UdpNode tracks datagrams, bytes, and drops internally)
 
-// UDP
-var udpMetrics = udpNode.GetMetrics();
-Console.WriteLine($"Datagrams Rx: {udpMetrics.TotalDatagramsReceived}");
-Console.WriteLine($"Datagrams Tx: {udpMetrics.TotalDatagramsSent}");
-Console.WriteLine($"Dropped: {udpMetrics.TotalDropped}");
-```
-
-## 專案
-
-| 專案 | 目標框架 | 說明 |
-|---------|--------|-------------|
-| **PicoNode.Abs** | netstandard2.0 | 核心介面：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、錯誤碼、列舉 |
-| **PicoNode** | net10.0 | `TcpNode` 和 `UdpNode` — 生產等級的非同步通訊端傳輸 |
-| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
-| **PicoNode.Web** | net10.0 | `WebApp`、`WebRouter`、中介軟體、靜態檔案、壓縮、CORS、DI |
-| **PicoWeb** | net10.0 | `WebServer` — 將 `WebApp` 連接至 `TcpNode` 的精簡主機 |
-
-## 範例
-
-| 範例專案 | 埠號 | 說明 |
-|--------|------|-------------|
-| `PicoNode.Samples.Echo` | 7001（TCP）、7002（UDP） | 原始 TCP/UDP 回聲伺服器 |
-| `PicoNode.Samples.Http` | 7003 | 使用 `HttpRouter` 的 HTTP 路由 |
-| `PicoWeb.Samples` | 7004 | 包含中介軟體和 DI 的完整網頁應用程式 |
-
-```bash
-dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj
-```
-
-## 建置與測試
-
-```bash
-# 建置整個解決方案
-dotnet build PicoNode.slnx -c Release
-
-# 執行所有測試
-dotnet test --solution PicoNode.slnx -c Release
-
-# 執行特定測試專案
-dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj -c Release
-
-# AOT 發行檢查
-dotnet publish src/PicoWeb/PicoWeb.csproj -c Release -r win-x64 -p:PublishAot=true
-```
-
-## 基準測試
-
-微基準測試透過 [PicoBench](https://github.com/PicoHex/PicoBench) 提供：
-
-```bash
-dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -c Release -- quick
-```
-
-基準測試涵蓋 HTTP 解析、路由分派（命中/未命中/405）、完整管線，以及本機回環往返。
-
-## 系統需求
-
-- **.NET 10.0+**（PicoNode、PicoNode.Http、PicoNode.Web、PicoWeb）
-- **.NET Standard 2.0**（PicoNode.Abs — 最大相容性）
-- PicoHex 生態系（選用）：PicoDI、PicoLog、PicoCfg
-
-## 授權
-
-[MIT](LICENSE) © 2025 XiaoFei Du
-
----
-
-<p align="center">
-  <b>PicoNode</b> — 適用於 .NET 的分層式網路堆疊
-</p>

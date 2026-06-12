@@ -158,7 +158,6 @@ await node.DisposeAsync();
 using System.Net;
 using PicoDI.Abs;
 using PicoLog.Abs;
-using PicoCfg.Abs;
 using PicoNode.Web;
 using PicoWeb;
 
@@ -174,8 +173,6 @@ var config = await Cfg.CreateBuilder()
 var app = new WebApp(new WebAppOptions
 {
     ServerHeader = "MyApp",
-    Logger = new ConsoleSink().CreateLogger("PicoNode.Web"),
-    Config = config,
 });
 
 // Middleware
@@ -239,7 +236,7 @@ var config = await Cfg.CreateBuilder()
     .AddEnvironmentVariables("PICONODE_")
     .BuildAsync();
 
-var options = CfgBind.Bind<TcpNodeOptions>(config, "TcpNode");
+var settings = CfgBind.Bind<AppSettings>(config, "App");
 options.Endpoint = new IPEndPoint(IPAddress.Any, 8080); // obrigatório
 var node = new TcpNode(options);
 ```
@@ -251,7 +248,6 @@ var node = new TcpNode(options);
 var options = new TcpNodeOptions
 {
     Endpoint = new IPEndPoint(IPAddress.Loopback, 8080),
-    Config = config, // ICfgRoot para recarga ao vivo
 };
 // O nó inicia um loop de recarga monitorando mudanças na configuração
 ```
@@ -296,8 +292,6 @@ var options = new TcpNodeOptions
 O PicoNode usa PicoLog para diagnósticos estruturados. Todos os erros não fatais são registrados com contexto da operação:
 
 ```csharp
-var logger = new LoggerFactory([new ConsoleSink()])
-    .CreateLogger("PicoNode.Tcp");
 
 var node = new TcpNode(new TcpNodeOptions
 {
@@ -373,9 +367,13 @@ app.Use((ctx, next, ct) =>
     };
     var preflight = CorsHandler.HandlePreflight(ctx.Request, corsOptions);
     if (preflight is not null)
-        return ValueTask.FromResult(preflight);
+        return preflight;
     var response = await next(ctx, ct);
-    CorsHandler.ApplyResponseHeaders(response, corsOptions);
+    // Add CORS response headers
+    foreach (var header in CorsHandler.GetResponseHeaders(ctx.Request, corsOptions))
+    {
+        response.Headers.Add(header.Key, header.Value);
+    }
     return response;
 });
 ```
@@ -396,7 +394,7 @@ var form = MultipartFormDataParser.Parse(context.Request);
 foreach (var field in form?.Fields ?? [])
     Console.WriteLine($"{field.Name} = {field.Value}");
 foreach (var file in form?.Files ?? [])
-    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Data.Length} bytes)");
+    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length bytes)");
 ```
 
 ## Métricas
@@ -410,74 +408,6 @@ Console.WriteLine($"Accepted: {tcpMetrics.TotalAccepted}");
 Console.WriteLine($"Active: {tcpMetrics.ActiveConnections}");
 Console.WriteLine($"Sent: {tcpMetrics.TotalBytesSent}");
 Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
+n// UDP counters available via internal state
+// (UdpNode tracks datagrams, bytes, and drops internally)
 
-// UDP
-var udpMetrics = udpNode.GetMetrics();
-Console.WriteLine($"Datagrams Rx: {udpMetrics.TotalDatagramsReceived}");
-Console.WriteLine($"Datagrams Tx: {udpMetrics.TotalDatagramsSent}");
-Console.WriteLine($"Dropped: {udpMetrics.TotalDropped}");
-```
-
-## Projetos
-
-| Projeto | Alvo | Descrição |
-|---------|------|-----------|
-| **PicoNode.Abs** | netstandard2.0 | Interfaces centrais: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, códigos de falha, enums |
-| **PicoNode** | net10.0 | `TcpNode` e `UdpNode` — transportes de socket assíncronos de nível de produção |
-| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
-| **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, middleware, arquivos estáticos, compressão, CORS, DI |
-| **PicoWeb** | net10.0 | `WebServer` — hospedagem fina conectando `WebApp` ao `TcpNode` |
-
-## Exemplos
-
-| Exemplo | Porta | Descrição |
-|---------|-------|-----------|
-| `PicoNode.Samples.Echo` | 7001 (TCP), 7002 (UDP) | Servidor echo TCP/UDP bruto |
-| `PicoNode.Samples.Http` | 7003 | Roteamento HTTP com `HttpRouter` |
-| `PicoWeb.Samples` | 7004 | Aplicação web completa com middleware e DI |
-
-```bash
-dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj
-```
-
-## Compilação & Testes
-
-```bash
-# Compilar a solução inteira
-dotnet build PicoNode.slnx -c Release
-
-# Executar todos os testes
-dotnet test --solution PicoNode.slnx -c Release
-
-# Executar um projeto de teste específico
-dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj -c Release
-
-# Verificação de publicação AOT
-dotnet publish src/PicoWeb/PicoWeb.csproj -c Release -r win-x64 -p:PublishAot=true
-```
-
-## Benchmarks
-
-Microbenchmarks são fornecidos via [PicoBench](https://github.com/PicoHex/PicoBench):
-
-```bash
-dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -c Release -- quick
-```
-
-Os benchmarks cobrem análise HTTP, despacho de roteador (acerto/erro/405), pipeline completo e viagens de ida e volta em localhost.
-
-## Requisitos
-
-- **.NET 10.0+** (PicoNode, PicoNode.Http, PicoNode.Web, PicoWeb)
-- **.NET Standard 2.0** (PicoNode.Abs — compatibilidade máxima)
-- Ecossistema PicoHex (opcional): PicoDI, PicoLog, PicoCfg
-
-## Licença
-
-[MIT](LICENSE) © 2025 XiaoFei Du
-
----
-
-<p align="center">
-  <b>PicoNode</b> — redes em camadas para .NET
-</p>

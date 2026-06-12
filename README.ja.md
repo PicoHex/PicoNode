@@ -158,7 +158,6 @@ await node.DisposeAsync();
 using System.Net;
 using PicoDI.Abs;
 using PicoLog.Abs;
-using PicoCfg.Abs;
 using PicoNode.Web;
 using PicoWeb;
 
@@ -174,8 +173,6 @@ var config = await Cfg.CreateBuilder()
 var app = new WebApp(new WebAppOptions
 {
     ServerHeader = "MyApp",
-    Logger = new ConsoleSink().CreateLogger("PicoNode.Web"),
-    Config = config,
 });
 
 // ミドルウェア
@@ -239,7 +236,7 @@ var config = await Cfg.CreateBuilder()
     .AddEnvironmentVariables("PICONODE_")
     .BuildAsync();
 
-var options = CfgBind.Bind<TcpNodeOptions>(config, "TcpNode");
+var settings = CfgBind.Bind<AppSettings>(config, "App");
 options.Endpoint = new IPEndPoint(IPAddress.Any, 8080); // 必須
 var node = new TcpNode(options);
 ```
@@ -251,7 +248,6 @@ var node = new TcpNode(options);
 var options = new TcpNodeOptions
 {
     Endpoint = new IPEndPoint(IPAddress.Loopback, 8080),
-    Config = config, // ライブリロード用の ICfgRoot
 };
 // ノードが設定変更を監視するリロードループを開始
 ```
@@ -296,8 +292,6 @@ var options = new TcpNodeOptions
 PicoNodeは構造化診断にPicoLogを使用します。致命的でないエラーはすべて操作コンテキストとともに記録されます:
 
 ```csharp
-var logger = new LoggerFactory([new ConsoleSink()])
-    .CreateLogger("PicoNode.Tcp");
 
 var node = new TcpNode(new TcpNodeOptions
 {
@@ -373,9 +367,13 @@ app.Use((ctx, next, ct) =>
     };
     var preflight = CorsHandler.HandlePreflight(ctx.Request, corsOptions);
     if (preflight is not null)
-        return ValueTask.FromResult(preflight);
+        return preflight;
     var response = await next(ctx, ct);
-    CorsHandler.ApplyResponseHeaders(response, corsOptions);
+    // Add CORS response headers
+    foreach (var header in CorsHandler.GetResponseHeaders(ctx.Request, corsOptions))
+    {
+        response.Headers.Add(header.Key, header.Value);
+    }
     return response;
 });
 ```
@@ -396,7 +394,7 @@ var form = MultipartFormDataParser.Parse(context.Request);
 foreach (var field in form?.Fields ?? [])
     Console.WriteLine($"{field.Name} = {field.Value}");
 foreach (var file in form?.Files ?? [])
-    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Data.Length} bytes)");
+    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length bytes)");
 ```
 
 ## メトリクス
@@ -410,74 +408,6 @@ Console.WriteLine($"Accepted: {tcpMetrics.TotalAccepted}");
 Console.WriteLine($"Active: {tcpMetrics.ActiveConnections}");
 Console.WriteLine($"Sent: {tcpMetrics.TotalBytesSent}");
 Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
+n// UDP counters available via internal state
+// (UdpNode tracks datagrams, bytes, and drops internally)
 
-// UDP
-var udpMetrics = udpNode.GetMetrics();
-Console.WriteLine($"Datagrams Rx: {udpMetrics.TotalDatagramsReceived}");
-Console.WriteLine($"Datagrams Tx: {udpMetrics.TotalDatagramsSent}");
-Console.WriteLine($"Dropped: {udpMetrics.TotalDropped}");
-```
-
-## プロジェクト
-
-| プロジェクト | ターゲット | 説明 |
-|---------|--------|-------------|
-| **PicoNode.Abs** | netstandard2.0 | コアインターフェース: `INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、障害コード、enum |
-| **PicoNode** | net10.0 | `TcpNode` と `UdpNode` — プロダクション品質の非同期ソケットトランスポート |
-| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
-| **PicoNode.Web** | net10.0 | `WebApp`、`WebRouter`、ミドルウェア、静的ファイル、圧縮、CORS、DI |
-| **PicoWeb** | net10.0 | `WebServer` — `WebApp` を `TcpNode` に接続する薄いホスティング層 |
-
-## サンプル
-
-| サンプル | ポート | 説明 |
-|--------|------|-------------|
-| `PicoNode.Samples.Echo` | 7001 (TCP), 7002 (UDP) | 生のTCP/UDPエコーサーバー |
-| `PicoNode.Samples.Http` | 7003 | `HttpRouter` によるHTTPルーティング |
-| `PicoWeb.Samples` | 7004 | ミドルウェアとDIを備えた本格的なWebアプリ |
-
-```bash
-dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj
-```
-
-## ビルドとテスト
-
-```bash
-# ソリューション全体のビルド
-dotnet build PicoNode.slnx -c Release
-
-# 全テストの実行
-dotnet test --solution PicoNode.slnx -c Release
-
-# 特定のテストプロジェクトの実行
-dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj -c Release
-
-# AOT公開の確認
-dotnet publish src/PicoWeb/PicoWeb.csproj -c Release -r win-x64 -p:PublishAot=true
-```
-
-## ベンチマーク
-
-マイクロベンチマークは [PicoBench](https://github.com/PicoHex/PicoBench) 経由で提供されます:
-
-```bash
-dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -c Release -- quick
-```
-
-ベンチマークはHTTPパース、ルーターディスパッチ (ヒット/ミス/405)、フルパイプライン、およびlocalhostラウンドトリップをカバーします。
-
-## 要件
-
-- **.NET 10.0以上** (PicoNode、PicoNode.Http、PicoNode.Web、PicoWeb)
-- **.NET Standard 2.0** (PicoNode.Abs — 最大互換性)
-- PicoHexエコシステム (オプション): PicoDI、PicoLog、PicoCfg
-
-## ライセンス
-
-[MIT](LICENSE) © 2025 XiaoFei Du
-
----
-
-<p align="center">
-  <b>PicoNode</b> — layered networking for .NET
-</p>
