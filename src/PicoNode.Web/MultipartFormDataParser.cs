@@ -33,8 +33,9 @@ public static class MultipartFormDataParser
         var bodyStream = request.BodyStream;
         if (bodyStream != Stream.Null)
         {
-            return StreamingMultipartParser.ParseAsync(
-                bodyStream, boundary).GetAwaiter().GetResult();
+            return Task.Run(
+                async () => await StreamingMultipartParser.ParseAsync(bodyStream, boundary)
+            ).GetAwaiter().GetResult();
         }
 
         return null;
