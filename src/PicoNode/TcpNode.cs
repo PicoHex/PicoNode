@@ -31,6 +31,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
     public TcpNode(TcpNodeOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.ConnectionHandler);
         Options = options;
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.MaxConnections, 0);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.ReceiveSocketBufferSize, 0);

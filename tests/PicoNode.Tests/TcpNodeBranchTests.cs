@@ -696,6 +696,22 @@ public sealed class TcpNodeBranchTests
         }
     }
 
+    [Test]
+    public async Task Constructor_rejects_null_connection_handler()
+    {
+        await Assert
+            .That(() =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        ConnectionHandler = null!,
+                    }
+                )
+            )
+            .Throws<ArgumentNullException>();
+    }
+
     private sealed class NoOpTcpHandler : ITcpConnectionHandler
     {
         public Task OnConnectedAsync(
