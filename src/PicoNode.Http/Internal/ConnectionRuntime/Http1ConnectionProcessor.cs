@@ -161,14 +161,14 @@ internal static class Http1ConnectionProcessor
 
         try
         {
-            var response = await requestHandler(request, cancellationToken);
+            var response = await requestHandler(request, cancellationToken).ConfigureAwait(false);
             var shouldClose = ShouldCloseConnection(request);
 
             if (response.BodyStream is not null)
             {
                 if (request.Version == HttpVersion.Http10)
                 {
-                    var buffered = await BufferStreamResponseAsync(response, cancellationToken);
+                    var buffered = await BufferStreamResponseAsync(response, cancellationToken).ConfigureAwait(false);
                     await SendResponseAsync(
                         connection,
                         buffered,
@@ -232,7 +232,7 @@ internal static class Http1ConnectionProcessor
 
             try
             {
-                await connection.SendAsync(InternalServerErrorBytes, cancellationToken);
+                await connection.SendAsync(InternalServerErrorBytes, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -276,7 +276,7 @@ internal static class Http1ConnectionProcessor
                 + "Upgrade: h2c\r\n"
                 + "Connection: Upgrade\r\n\r\n"
         );
-        await connection.SendAsync(new ReadOnlySequence<byte>(response), ct);
+        await connection.SendAsync(new ReadOnlySequence<byte>(response), ct).ConfigureAwait(false);
 
         // Switch connection state to HTTP/2
         var state = connection.UserState as ConnectionRuntimeState;
@@ -348,7 +348,7 @@ internal static class Http1ConnectionProcessor
 
         try
         {
-            await connection.SendAsync(payload, cancellationToken);
+            await connection.SendAsync(payload, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -374,7 +374,7 @@ internal static class Http1ConnectionProcessor
 
         try
         {
-            await connection.SendAsync(payload, cancellationToken);
+            await connection.SendAsync(payload, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -401,7 +401,7 @@ internal static class Http1ConnectionProcessor
 
         try
         {
-            await connection.SendAsync(headers, cancellationToken);
+            await connection.SendAsync(headers, cancellationToken).ConfigureAwait(false);
 
             var stream = response.BodyStream!;
             await using (stream.ConfigureAwait(false))
@@ -423,7 +423,7 @@ internal static class Http1ConnectionProcessor
                         }
 
                         var chunk = HttpResponseSerializer.FormatChunk(buffer.AsMemory(0, read));
-                        await connection.SendAsync(chunk, cancellationToken);
+                        await connection.SendAsync(chunk, cancellationToken).ConfigureAwait(false);
                     }
                 }
                 finally
@@ -432,7 +432,7 @@ internal static class Http1ConnectionProcessor
                 }
             }
 
-            await connection.SendAsync(HttpResponseSerializer.ChunkTerminator, cancellationToken);
+            await connection.SendAsync(HttpResponseSerializer.ChunkTerminator, cancellationToken).ConfigureAwait(false);
         }
         finally
         {

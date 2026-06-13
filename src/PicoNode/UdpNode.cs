@@ -197,7 +197,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
             _state = NodeState.Stopping;
         }
 
-        await _receiveCts.CancelAsync();
+        await _receiveCts.CancelAsync().ConfigureAwait(false);
 
         try
         {
@@ -217,10 +217,10 @@ public sealed class UdpNode : INode, IAsyncDisposable
         {
             if (_receiveTask is not null)
             {
-                await _receiveTask.WaitAsync(cancellationToken);
+                await _receiveTask.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await Task.WhenAll(_workers).WaitAsync(cancellationToken);
+            await Task.WhenAll(_workers).WaitAsync(cancellationToken).ConfigureAwait(false);
             stopCompleted = true;
         }
         catch (OperationCanceledException)
@@ -297,7 +297,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
                 if (Options.QueueOverflowMode == UdpOverflowMode.Wait)
                 {
-                    await queue.Writer.WriteAsync(lease, cancellationToken);
+                    await queue.Writer.WriteAsync(lease, cancellationToken).ConfigureAwait(false);
                 }
                 else if (!queue.Writer.TryWrite(lease))
                 {
@@ -322,7 +322,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 ReportFault(NodeFaultCode.DatagramReceiveFailed, OperationReceive, ex);
                 try
                 {
-                    await Task.Delay(Options.ReceiveFaultBackoff, cancellationToken);
+                    await Task.Delay(Options.ReceiveFaultBackoff, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -362,7 +362,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
                             );
                             if (!handleTask.IsCompletedSuccessfully)
                             {
-                                await handleTask;
+                                await handleTask.ConfigureAwait(false);
                             }
                         }
                         catch (OperationCanceledException)
@@ -383,7 +383,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
             }
         }
         catch (OperationCanceledException) when (handlerCancellationToken.IsCancellationRequested)
-        { /* expected during shutdown â€” datagram queue processing cancelled */
+        { /* expected during shutdown â€?datagram queue processing cancelled */
         }
     }
 
@@ -403,12 +403,12 @@ public sealed class UdpNode : INode, IAsyncDisposable
         {
             while (!_configCts.IsCancellationRequested)
             {
-                await config.WaitForChangeAsync(_configCts.Token);
+                await config.WaitForChangeAsync(_configCts.Token).ConfigureAwait(false);
 
                 if (_configCts.IsCancellationRequested)
                     break;
 
-                var reloaded = await config.ReloadAsync(_configCts.Token);
+                var reloaded = await config.ReloadAsync(_configCts.Token).ConfigureAwait(false);
                 if (reloaded)
                 {
                     ApplyConfigReload(config, options);
@@ -459,7 +459,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
         try
         {
-            await StopAsync();
+            await StopAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -477,7 +477,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
         {
             try
             {
-                await _configReloadTask;
+                await _configReloadTask.ConfigureAwait(false);
             }
             catch
             { /* best-effort */

@@ -153,7 +153,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         try
         {
             Http2FrameCodec.WriteSettings(rented, settings);
-            await connection.SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct);
+            await connection.SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct).ConfigureAwait(false);
         }
         finally
         {

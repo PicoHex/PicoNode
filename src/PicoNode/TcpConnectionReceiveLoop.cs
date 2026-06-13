@@ -32,12 +32,12 @@ internal sealed class TcpConnectionReceiveLoop
         CancellationToken cancellationToken
     )
     {
-        await InvokeConnectedAsync(handler, context, cancellationToken);
+        await InvokeConnectedAsync(handler, context, cancellationToken).ConfigureAwait(false);
 
         var processingTask = ProcessPipeAsync(handler, context, cancellationToken);
-        var reason = await PumpSocketToPipeAsync(cancellationToken);
-        await _pipe.Writer.CompleteAsync();
-        await processingTask;
+        var reason = await PumpSocketToPipeAsync(cancellationToken).ConfigureAwait(false);
+        await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
+        await processingTask.ConfigureAwait(false);
         return NormalizeCompletionReason(reason, cancellationToken);
     }
 
@@ -62,7 +62,7 @@ internal sealed class TcpConnectionReceiveLoop
                 var readOperation = _pipe.Reader.ReadAsync(cancellationToken);
                 var readResult = readOperation.IsCompletedSuccessfully
                     ? readOperation.Result
-                    : await readOperation;
+                    : await readOperation.ConfigureAwait(false);
                 var buffer = readResult.Buffer;
 
                 if (buffer.Length > 0)
@@ -83,11 +83,11 @@ internal sealed class TcpConnectionReceiveLoop
             }
         }
         catch (OperationCanceledException)
-        { /* expected during connection close â€” pipe read cancelled */
+        { /* expected during connection close â€?pipe read cancelled */
         }
         finally
         {
-            await _pipe.Reader.CompleteAsync();
+            await _pipe.Reader.CompleteAsync().ConfigureAwait(false);
         }
     }
 
@@ -100,7 +100,7 @@ internal sealed class TcpConnectionReceiveLoop
         var connectedTask = handler.OnConnectedAsync(context, cancellationToken);
         if (!connectedTask.IsCompletedSuccessfully)
         {
-            await connectedTask;
+            await connectedTask.ConfigureAwait(false);
         }
     }
 
@@ -108,7 +108,7 @@ internal sealed class TcpConnectionReceiveLoop
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            var bytesRead = await ReceiveIntoPipeBufferAsync(cancellationToken);
+            var bytesRead = await ReceiveIntoPipeBufferAsync(cancellationToken).ConfigureAwait(false);
             if (bytesRead <= 0)
             {
                 return TcpCloseReason.RemoteClosed;
@@ -117,7 +117,7 @@ internal sealed class TcpConnectionReceiveLoop
             _node.RecordBytesReceived(bytesRead);
             _touchCallback();
 
-            var flushResult = await FlushReceivedBytesAsync(bytesRead, cancellationToken);
+            var flushResult = await FlushReceivedBytesAsync(bytesRead, cancellationToken).ConfigureAwait(false);
             if (flushResult.IsCompleted || flushResult.IsCanceled)
             {
                 break;
@@ -132,7 +132,7 @@ internal sealed class TcpConnectionReceiveLoop
         ITcpConnectionContext context,
         ReadOnlySequence<byte> buffer,
         CancellationToken cancellationToken
-    ) => await handler.OnReceivedAsync(context, buffer, cancellationToken);
+    ) => await handler.OnReceivedAsync(context, buffer, cancellationToken).ConfigureAwait(false);
 
     private async ValueTask<int> ReceiveIntoPipeBufferAsync(CancellationToken cancellationToken)
     {
@@ -141,13 +141,13 @@ internal sealed class TcpConnectionReceiveLoop
         if (_stream is not null)
         {
             var readOp = _stream.ReadAsync(memory, cancellationToken);
-            return readOp.IsCompletedSuccessfully ? readOp.Result : await readOp;
+            return readOp.IsCompletedSuccessfully ? readOp.Result : await readOp.ConfigureAwait(false);
         }
 
         var receiveOperation = _socket.ReceiveAsync(memory, SocketFlags.None, cancellationToken);
         return receiveOperation.IsCompletedSuccessfully
             ? receiveOperation.Result
-            : await receiveOperation;
+            : await receiveOperation.ConfigureAwait(false);
     }
 
     private async ValueTask<FlushResult> FlushReceivedBytesAsync(
@@ -159,6 +159,6 @@ internal sealed class TcpConnectionReceiveLoop
         var flushOperation = _pipe.Writer.FlushAsync(cancellationToken);
         return flushOperation.IsCompletedSuccessfully
             ? flushOperation.Result
-            : await flushOperation;
+            : await flushOperation.ConfigureAwait(false);
     }
 }

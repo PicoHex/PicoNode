@@ -96,7 +96,7 @@ internal sealed class TcpConnection : IAsyncDisposable
         CancellationToken cancellationToken
     )
     {
-        await _sendLock.WaitAsync(cancellationToken);
+        await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_lifecycle.IsCloseInitiated)
@@ -109,7 +109,7 @@ internal sealed class TcpConnection : IAsyncDisposable
                 return;
             }
 
-            await _sendPath.SendSequenceAsync(buffer, cancellationToken);
+            await _sendPath.SendSequenceAsync(buffer, cancellationToken).ConfigureAwait(false);
 
             _node.RecordBytesSent(buffer.Length);
             Touch();

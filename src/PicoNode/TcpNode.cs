@@ -169,7 +169,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
         try
         {
-            await _cts.CancelAsync();
+            await _cts.CancelAsync().ConfigureAwait(false);
 
             try
             {
@@ -184,10 +184,10 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 try
                 {
-                    await _acceptTask.WaitAsync(cancellationToken);
+                    await _acceptTask.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
-                { /* expected during shutdown â€” accept task cancelled */
+                { /* expected during shutdown â€?accept task cancelled */
                 }
             }
 
@@ -195,10 +195,10 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 try
                 {
-                    await _idleMonitorTask.WaitAsync(cancellationToken);
+                    await _idleMonitorTask.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
-                { /* expected during shutdown â€” idle monitor task cancelled */
+                { /* expected during shutdown â€?idle monitor task cancelled */
                 }
             }
 
@@ -209,7 +209,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
             if (drained is not null)
             {
-                await drained.Task.WaitAsync(cancellationToken);
+                await drained.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
 
             stopCompleted = true;
@@ -240,7 +240,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 try
                 {
-                    var acceptResult = await acceptArgs.AcceptAsync(_listener);
+                    var acceptResult = await acceptArgs.AcceptAsync(_listener).ConfigureAwait(false);
                     if (acceptResult.SocketError != SocketError.Success)
                     {
                         throw new SocketException((int)acceptResult.SocketError);
@@ -250,7 +250,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
                         acceptArgs.AcceptSocket
                         ?? throw new SocketException((int)SocketError.NotSocket);
                     acceptArgs.AcceptSocket = null;
-                    await ProcessAcceptedSocketAsync(socket);
+                    await ProcessAcceptedSocketAsync(socket).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (_cts.IsCancellationRequested)
                 {
@@ -275,7 +275,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
                     try
                     {
-                        await Task.Delay(Options.AcceptFaultBackoff, _cts.Token);
+                        await Task.Delay(Options.AcceptFaultBackoff, _cts.Token).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (_cts.IsCancellationRequested)
                     {
@@ -309,7 +309,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 try
                 {
-                    await TrackAndRunAsync(socket);
+                    await TrackAndRunAsync(socket).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -326,7 +326,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
     {
         if (stream is null && Options.SslOptions is not null)
         {
-            stream = await NegotiateTlsAsync(socket);
+            stream = await NegotiateTlsAsync(socket).ConfigureAwait(false);
             if (stream is null)
             {
                 return;
@@ -338,7 +338,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
         {
             ReportFault(NodeFaultCode.SessionRejected, OperationRejectTracking);
             Interlocked.Increment(ref _totalRejected);
-            await connection.DisposeAsync();
+            await connection.DisposeAsync().ConfigureAwait(false);
             return;
         }
 
@@ -352,19 +352,19 @@ public sealed class TcpNode : INode, IAsyncDisposable
         var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
         try
         {
-            await sslStream.AuthenticateAsServerAsync(Options.SslOptions!, _cts.Token);
+            await sslStream.AuthenticateAsServerAsync(Options.SslOptions!, _cts.Token).ConfigureAwait(false);
             return sslStream;
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
-            await sslStream.DisposeAsync();
+            await sslStream.DisposeAsync().ConfigureAwait(false);
             socket.Dispose();
             return null;
         }
         catch (Exception ex)
         {
             ReportFault(NodeFaultCode.TlsFailed, OperationTls, ex);
-            await sslStream.DisposeAsync();
+            await sslStream.DisposeAsync().ConfigureAwait(false);
             try
             {
                 socket.Shutdown(SocketShutdown.Both);
@@ -419,7 +419,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
         {
             while (!_cts.IsCancellationRequested)
             {
-                await Task.Delay(interval, _cts.Token);
+                await Task.Delay(interval, _cts.Token).ConfigureAwait(false);
 
                 foreach (var connection in _connections.Values)
                 {
@@ -431,7 +431,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
             }
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
-        { /* expected during shutdown â€” idle monitor exits via cancellation */
+        { /* expected during shutdown â€?idle monitor exits via cancellation */
         }
     }
 
@@ -469,12 +469,12 @@ public sealed class TcpNode : INode, IAsyncDisposable
         {
             while (!_configCts.IsCancellationRequested)
             {
-                await config.WaitForChangeAsync(_configCts.Token);
+                await config.WaitForChangeAsync(_configCts.Token).ConfigureAwait(false);
 
                 if (_configCts.IsCancellationRequested)
                     break;
 
-                var reloaded = await config.ReloadAsync(_configCts.Token);
+                var reloaded = await config.ReloadAsync(_configCts.Token).ConfigureAwait(false);
                 if (reloaded)
                 {
                     ApplyConfigReload(config, options);
@@ -533,7 +533,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
         try
         {
-            await StopAsync();
+            await StopAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -552,7 +552,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
         {
             try
             {
-                await _configReloadTask;
+                await _configReloadTask.ConfigureAwait(false);
             }
             catch
             { /* best-effort */

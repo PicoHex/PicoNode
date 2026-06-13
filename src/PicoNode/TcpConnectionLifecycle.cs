@@ -66,7 +66,7 @@ internal sealed class TcpConnectionLifecycle
 
         try
         {
-            reason = await _receiveLoop.ExecuteReceiveLoopAsync(handler, _context, ct);
+            reason = await _receiveLoop.ExecuteReceiveLoopAsync(handler, _context, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
@@ -109,7 +109,7 @@ internal sealed class TcpConnectionLifecycle
         }
         finally
         {
-            await CloseCoreAsync(reason, error, handler);
+            await CloseCoreAsync(reason, error, handler).ConfigureAwait(false);
         }
     }
 
@@ -126,15 +126,15 @@ internal sealed class TcpConnectionLifecycle
                 return;
             }
 
-            await CancelConnectionAsync();
+            await CancelConnectionAsync().ConfigureAwait(false);
             ShutdownSocketSafely(_node.Options.Logger);
-            await InvokeClosedHandlerAsync(handler, reason, error);
-            await FinalizeCloseAsync();
+            await InvokeClosedHandlerAsync(handler, reason, error).ConfigureAwait(false);
+            await FinalizeCloseAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _node.ReportFault(NodeFaultCode.HandlerFailed, OperationCloseCore, ex);
-            // Do NOT rethrow â€” close is best-effort
+            // Do NOT rethrow â€?close is best-effort
         }
     }
 
@@ -161,7 +161,7 @@ internal sealed class TcpConnectionLifecycle
 
     private async ValueTask DisposeStreamAndSocketAsync()
     {
-        await _stream!.DisposeAsync();
+        await _stream!.DisposeAsync().ConfigureAwait(false);
         _socket.Dispose();
     }
 
@@ -193,7 +193,7 @@ internal sealed class TcpConnectionLifecycle
             var closeTask = handler.OnClosedAsync(_context, reason, error, CancellationToken.None);
             if (!closeTask.IsCompletedSuccessfully)
             {
-                await closeTask;
+                await closeTask.ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -204,7 +204,7 @@ internal sealed class TcpConnectionLifecycle
 
     private async Task FinalizeCloseAsync()
     {
-        await DisposeAsync();
+        await DisposeAsync().ConfigureAwait(false);
         _onClosed?.Invoke();
     }
 

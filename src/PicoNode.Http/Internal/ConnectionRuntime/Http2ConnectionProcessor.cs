@@ -277,7 +277,7 @@ internal static class Http2ConnectionProcessor
             lastStreamId = state.HighestProcessedStreamId;
 
         var frame = Http2FrameCodec.EncodeGoAway(lastStreamId, errorCode);
-        await connection.SendAsync(new ReadOnlySequence<byte>(frame), cancellationToken);
+        await connection.SendAsync(new ReadOnlySequence<byte>(frame), cancellationToken).ConfigureAwait(false);
         connection.Close();
     }
 }
