@@ -69,6 +69,44 @@ public sealed class HpackEncoderTests
     }
 
     [Test]
+    public async Task Encodes_indexed_method_POST_using_static_table()
+    {
+        var encoder = new HpackEncoder();
+        var headers = new List<(string, string)> { (":method", "POST") };
+        var encoded = encoder.Encode(headers);
+
+        // Index 3 = :method POST → single byte 0x83 (1000 0011, prefix 7 = index 3)
+        // If this test fails, StaticTableIndex is only storing the first entry (:method GET)
+        // and missing :method POST at index 3.
+        await Assert.That(encoded.Length).IsEqualTo(1);
+        await Assert.That((int)encoded[0]).IsEqualTo(0x83);
+    }
+
+    [Test]
+    public async Task Encodes_indexed_path_index_html_using_static_table()
+    {
+        var encoder = new HpackEncoder();
+        var headers = new List<(string, string)> { (":path", "/index.html") };
+        var encoded = encoder.Encode(headers);
+
+        // Index 5 = :path /index.html → single byte 0x85
+        await Assert.That(encoded.Length).IsEqualTo(1);
+        await Assert.That((int)encoded[0]).IsEqualTo(0x85);
+    }
+
+    [Test]
+    public async Task Encodes_indexed_scheme_https_using_static_table()
+    {
+        var encoder = new HpackEncoder();
+        var headers = new List<(string, string)> { (":scheme", "https") };
+        var encoded = encoder.Encode(headers);
+
+        // Index 7 = :scheme https → single byte 0x87
+        await Assert.That(encoded.Length).IsEqualTo(1);
+        await Assert.That((int)encoded[0]).IsEqualTo(0x87);
+    }
+
+    [Test]
     public async Task Dynamic_table_reuses_repeated_headers()
     {
         var dynamicTable = new HpackDynamicTable();
