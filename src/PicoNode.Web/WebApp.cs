@@ -76,10 +76,10 @@ public sealed class WebApp
     public WebApp MapPut(string pattern, Delegate handler) => Map("PUT", pattern, handler);
     public WebApp MapDelete(string pattern, Delegate handler) => Map("DELETE", pattern, handler);
 
-    public WebApp MapFallback(WebRequestHandler handler)
+    public WebApp MapFallback(Delegate handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        _fallbackHandler = handler;
+        _fallbackHandler = WrapDelegate(handler);
         return this;
     }
 
