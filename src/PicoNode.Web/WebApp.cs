@@ -2,19 +2,23 @@ namespace PicoNode.Web;
 
 public sealed class WebApp
 {
-    private readonly WebAppOptions? _options;
+    private readonly ISvcContainer _container;
+    private readonly WebAppOptions _options;
     private List<WebMiddleware> _middlewares = [];
     private readonly List<WebRoute> _routes = [];
 
     private WebRequestHandler? _fallbackHandler;
 
-    public WebApp() { }
+    public WebApp(ISvcContainer container)
+        : this(container, new()) { }
 
-    public WebApp(WebAppOptions options)
+    public WebApp(ISvcContainer container, WebAppOptions options)
     {
+        ArgumentNullException.ThrowIfNull(container);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.MaxRequestBytes, 0);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.StreamingResponseBufferSize, 0);
+        _container = container;
         _options = options;
     }
 

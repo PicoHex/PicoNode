@@ -1,14 +1,49 @@
 using System.Net;
+using PicoDI.Abs;
 
 namespace PicoNode.Web.Tests;
+
+internal sealed class TestContainer : ISvcContainer
+{
+    public ISvcContainer Register(SvcDescriptor descriptor) => this;
+    public bool IsRegistered(Type serviceType) => false;
+    public ISvcScope CreateScope() => new TestScope();
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal sealed class TestScope : ISvcScope
+{
+    public object GetService(Type serviceType) => null!;
+    public IReadOnlyList<object> GetServices(Type serviceType) => [];
+    public bool TryGetService(Type serviceType, out object? result)
+    {
+        result = null;
+        return false;
+    }
+    public bool TryGetServices(Type serviceType, out IReadOnlyList<object>? result)
+    {
+        result = null;
+        return false;
+    }
+    public ISvcScope CreateScope() => new TestScope();
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
 
 public sealed class WebAppBuildTests
 {
     [Test]
+    public async Task Constructor_requires_ISvcContainer()
+    {
+        var container = new TestContainer();
+        var app = new WebApp(container);
+        await Assert.That(app).IsNotNull();
+    }
+
+    [Test]
     public async Task Build_propagates_streaming_response_buffer_size_behaviorally()
     {
         var stream = new ChunkRecordingStream(Encoding.ASCII.GetBytes("abcdef"));
-        var app = new WebApp(new WebAppOptions { StreamingResponseBufferSize = 3 });
+        var app = new WebApp(new TestContainer(), new WebAppOptions { StreamingResponseBufferSize = 3 });
         app.MapGet(
             "/",
             (_, _) =>
