@@ -47,6 +47,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             connection.UserState = new ConnectionRuntimeState
             {
                 Protocol = ConnectionProtocol.Http2,
+                MaxRequestBodyBytes = _options.MaxRequestBytes,
             };
             return SendInitialSettingsAsync(connection, cancellationToken);
         }
@@ -129,12 +130,16 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         return ValueTask.CompletedTask;
     }
 
-    private static void SetConnectionState(
+    private void SetConnectionState(
         ITcpConnectionContext connection,
         ConnectionProtocol protocol
     )
     {
-        connection.UserState = new ConnectionRuntimeState { Protocol = protocol };
+        connection.UserState = new ConnectionRuntimeState
+        {
+            Protocol = protocol,
+            MaxRequestBodyBytes = _options.MaxRequestBytes,
+        };
     }
 
     private static async Task SendInitialSettingsAsync(

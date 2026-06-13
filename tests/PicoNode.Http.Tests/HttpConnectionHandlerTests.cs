@@ -1060,7 +1060,7 @@ public sealed class HttpConnectionHandlerTests
 
         public object? UserState { get; set; }
 
-        public string? NegotiatedProtocol => null;
+        public string? NegotiatedProtocol { get; set; }
 
         public byte[] LastSent { get; private set; } = [];
 
@@ -1085,5 +1085,24 @@ public sealed class HttpConnectionHandlerTests
         {
             CloseCount++;
         }
+    }
+
+    [Test]
+    public async Task OnConnectedAsync_with_h2_ALPN_sets_MaxRequestBodyBytes_from_options()
+    {
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = (req, ct) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+                MaxRequestBytes = 12345,
+            }
+        );
+        var connection = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
+        await handler.OnConnectedAsync(connection, CancellationToken.None);
+
+        var state = connection.UserState as ConnectionRuntimeState;
+        await Assert.That(state).IsNotNull();
+        await Assert.That(state!.MaxRequestBodyBytes).IsEqualTo(12345);
     }
 }
