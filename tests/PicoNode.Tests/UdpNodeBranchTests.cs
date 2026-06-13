@@ -222,6 +222,22 @@ public sealed class UdpNodeBranchTests
         method.Invoke(node, [code, operation, exception]);
     }
 
+    [Test]
+    public async Task Constructor_rejects_null_datagram_handler()
+    {
+        await Assert
+            .That(() =>
+                new UdpNode(
+                    new UdpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                        DatagramHandler = null!,
+                    }
+                )
+            )
+            .Throws<ArgumentNullException>();
+    }
+
     private sealed class NoOpUdpHandler : IUdpDatagramHandler
     {
         public Task OnDatagramAsync(

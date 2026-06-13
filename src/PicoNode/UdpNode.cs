@@ -31,6 +31,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
     public UdpNode(UdpNodeOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.DatagramHandler);
         Options = options;
         if (options.DispatchWorkerCount <= 0)
         {
