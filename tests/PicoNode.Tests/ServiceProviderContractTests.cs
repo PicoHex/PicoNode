@@ -53,6 +53,8 @@ file sealed class MockServiceProvider : ISvcContainer
 
     public ISvcScope CreateScope() => new MockServiceScope();
 
+    public bool IsRegistered(Type serviceType) => false;
+
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
@@ -71,6 +73,18 @@ file sealed class MockServiceScope : ISvcScope
     {
         var result = GetService(serviceType);
         return result is not null ? new[] { result } : Array.Empty<object>();
+    }
+
+    public bool TryGetService(Type serviceType, out object? result)
+    {
+        result = GetService(serviceType);
+        return true;
+    }
+
+    public bool TryGetServices(Type serviceType, out IReadOnlyList<object>? result)
+    {
+        result = GetServices(serviceType);
+        return true;
     }
 
     public ISvcScope CreateScope() => new MockServiceScope();
