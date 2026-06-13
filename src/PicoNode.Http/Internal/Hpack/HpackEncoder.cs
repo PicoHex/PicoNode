@@ -173,8 +173,20 @@ internal sealed class HpackEncoder
     private static void EncodeString(MemoryStream ms, string value)
     {
         var bytes = DefaultEncoder.GetBytes(value);
-        // Non-Huffman string (bit 7 = 0)
-        EncodeInteger(ms, bytes.Length, 7);
-        ms.Write(bytes);
+        var huffBytes = HuffmanCodec.Encode(bytes);
+
+        // Use Huffman if it saves space, otherwise fall back to plain.
+        if (huffBytes.Length < bytes.Length)
+        {
+            // Huffman string (bit 7 = 1)
+            EncodeIntegerWithPrefix(ms, huffBytes.Length, 7, 0x80);
+            ms.Write(huffBytes);
+        }
+        else
+        {
+            // Non-Huffman string (bit 7 = 0)
+            EncodeInteger(ms, bytes.Length, 7);
+            ms.Write(bytes);
+        }
     }
 }

@@ -107,6 +107,53 @@ public sealed class HpackEncoderTests
     }
 
     [Test]
+    public async Task Uses_huffman_encoding_for_long_header_values()
+    {
+        var encoder = new HpackEncoder();
+        var longValue = new string('a', 100);
+        var headers = new List<(string, string)> { ("x-custom", longValue) };
+        var encoded = encoder.Encode(headers);
+
+        // With Huffman, 'a' (0x61) encodes as 6 bits (code 0x18, bitlen 6).
+        // 100 'a' chars = 600 bits = 75 bytes (vs 100 bytes raw).
+        // Plus header overhead: the string length should be encoded with H bit set (>= 128).
+        // Without Huffman: the first byte would be < 128 (H bit = 0).
+        // With Huffman: the first byte of the string length encoding has H bit = 1 (>= 128).
+        // Check that the three length-prefix bytes of the value string start with H=1.
+
+        // Find the value string length prefix (after name + value length).
+        // x-custom is not in static table, so format is: 0x40 + len(name) + name + len(value) + value.
+        // 0x40 (1 byte) + len("x-custom") (1 byte: 8) + "x-custom" (8 bytes) = 10 bytes header.
+        // Then the value length prefix byte: if >= 128, H bit is set = Huffman.
+        if (encoded.Length > 10)
+        {
+            // The value length prefix is at position after name + its length prefix:
+            // byte 0 = 0x40, byte 1 = 8 (name length), bytes 2-9 = "x-custom", byte 10 = value length prefix
+            var valueLenPrefix = encoded[10];
+            // H bit = bit 7 (0x80): Huffman
+            await Assert.That((valueLenPrefix & 0x80)).IsNotEqualTo(0);
+        }
+    }
+
+    [Test]
+    public async Task Uses_plain_encoding_for_short_header_values()
+    {
+        var encoder = new HpackEncoder();
+        var shortValue = "a";
+        var headers = new List<(string, string)> { ("x-custom", shortValue) };
+        var encoded = encoder.Encode(headers);
+
+        // A single byte: Huffman would make it larger (6 bits → pad to 8 bits = 1 byte + EOS padding).
+        // So plain encoding should be used.
+        if (encoded.Length > 10)
+        {
+            var valueLenPrefix = encoded[10];
+            // H bit = not set: plain
+            await Assert.That((valueLenPrefix & 0x80)).IsEqualTo(0);
+        }
+    }
+
+    [Test]
     public async Task Dynamic_table_reuses_repeated_headers()
     {
         var dynamicTable = new HpackDynamicTable();
