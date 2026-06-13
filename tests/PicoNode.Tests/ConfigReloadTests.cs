@@ -1,4 +1,3 @@
-using PicoCfg.Extensions;
 
 namespace PicoNode.Tests;
 

@@ -1,4 +1,6 @@
 global using System.Buffers;
+global using System.Collections.Concurrent;
+global using System.Security.Cryptography;
 global using System.Globalization;
 global using System.IO.Compression;
 global using System.IO.Pipelines;

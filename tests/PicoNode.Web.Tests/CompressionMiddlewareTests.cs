@@ -1,5 +1,3 @@
-using System.IO.Compression;
-using PicoNode.Web.Internal;
 
 namespace PicoNode.Web.Tests;
 

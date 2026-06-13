@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace PicoNode.Http.Internal.Hpack;
 
 /// <summary>

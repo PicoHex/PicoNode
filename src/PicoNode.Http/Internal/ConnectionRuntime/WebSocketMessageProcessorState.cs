@@ -1,5 +1,3 @@
-using System.IO.Compression;
-
 namespace PicoNode.Http.Internal.ConnectionRuntime;
 
 internal sealed class WebSocketMessageProcessorState

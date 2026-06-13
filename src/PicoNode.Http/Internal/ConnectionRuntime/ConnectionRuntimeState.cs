@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-
 namespace PicoNode.Http.Internal.ConnectionRuntime;
 
 internal sealed class ConnectionRuntimeState

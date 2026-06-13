@@ -1,4 +1,3 @@
-using PicoBench.Formatters;
 
 namespace PicoNode.Http.Benchmarks;
 

@@ -1,5 +1,3 @@
-using System.Buffers;
-using System.Net;
 
 namespace PicoNode.Web.Tests;
 

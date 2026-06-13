@@ -1,4 +1,3 @@
-using PicoNode.Http.Internal.Hpack;
 
 namespace PicoNode.Http.Tests;
 

@@ -1,4 +1,3 @@
-using PicoNode.Http.Internal.ConnectionRuntime;
 
 namespace PicoNode.Http.Tests;
 

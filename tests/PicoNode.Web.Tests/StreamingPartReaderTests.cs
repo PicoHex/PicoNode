@@ -1,4 +1,3 @@
-using PicoNode.Web.Internal;
 
 namespace PicoNode.Web.Tests;
 
