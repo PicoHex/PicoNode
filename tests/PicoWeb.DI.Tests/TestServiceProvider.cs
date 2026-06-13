@@ -36,6 +36,11 @@ internal sealed class TestServiceProvider : ISvcContainer
         return this;
     }
 
+    public bool IsRegistered(Type serviceType)
+    {
+        return _registrations.ContainsKey(serviceType);
+    }
+
     public void Build()
     {
         // no-op for compatibility with SvcContainer API
@@ -113,6 +118,19 @@ internal sealed class TestServiceScope : ISvcScope
     {
         var result = GetService(serviceType);
         return result is not null ? new[] { result } : Array.Empty<object>();
+    }
+
+    public bool TryGetService(Type serviceType, out object? result)
+    {
+        result = _provider.Resolve(serviceType, this);
+        return result is not null;
+    }
+
+    public bool TryGetServices(Type serviceType, out IReadOnlyList<object>? result)
+    {
+        var r = GetService(serviceType);
+        result = r is not null ? new[] { r } : null;
+        return result is not null;
     }
 
     public ISvcScope CreateScope()

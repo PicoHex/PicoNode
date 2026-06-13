@@ -163,6 +163,8 @@ internal sealed class EmptyServiceProvider : ISvcContainer
 {
     public ISvcContainer Register(SvcDescriptor descriptor) => this;
 
+    public bool IsRegistered(Type serviceType) => false;
+
     public ISvcScope CreateScope() => new EmptyServiceScope();
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -173,6 +175,18 @@ internal sealed class EmptyServiceScope : ISvcScope
     public object GetService(Type serviceType) => null!;
 
     public IReadOnlyList<object> GetServices(Type serviceType) => Array.Empty<object>();
+
+    public bool TryGetService(Type serviceType, out object? result)
+    {
+        result = null;
+        return false;
+    }
+
+    public bool TryGetServices(Type serviceType, out IReadOnlyList<object>? result)
+    {
+        result = null;
+        return false;
+    }
 
     public ISvcScope CreateScope() => new EmptyServiceScope();
 
