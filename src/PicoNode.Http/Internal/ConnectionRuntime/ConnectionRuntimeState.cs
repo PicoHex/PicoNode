@@ -30,6 +30,9 @@ internal sealed class ConnectionRuntimeState
     public int RemoteMaxFrameSize { get; set; } = 16384;
     public int RemoteHeaderTableSize { get; set; } = 4096;
 
+    /// <summary>Maximum request body size per stream (HTTP/2 DataBuffer limit).</summary>
+    public int MaxRequestBodyBytes { get; set; } = 64 * 1024 * 1024;
+
     // Connection-level flow control (how much we can send to the peer)
     private int _connectionSendWindow = 65535;
     public int ConnectionSendWindow

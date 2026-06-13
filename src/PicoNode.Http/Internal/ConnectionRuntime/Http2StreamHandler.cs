@@ -703,6 +703,13 @@ internal static class Http2StreamHandler
         // Buffer the data
         if (frame.Payload.Length > 0)
         {
+            // Check request body size limit (protects against OOM from large or multi-stream bodies)
+            var maxBody = runtimeState?.MaxRequestBodyBytes ?? 64 * 1024 * 1024;
+            if (state.DataBuffer.WrittenCount > maxBody - frame.Payload.Length)
+            {
+                await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.EnhanceYourCalm, ct).ConfigureAwait(false);
+                return false;
+            }
             state.DataBuffer.Write(frame.Payload.Span);
         }
 
