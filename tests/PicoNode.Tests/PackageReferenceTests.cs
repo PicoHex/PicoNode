@@ -38,21 +38,21 @@ public sealed class PackageReferenceTests
     [Test]
     public async Task PicoNode_Web_csproj_has_PicoDI_Abs()
     {
-        var refs = GetPicoHexPackageRefs(@"src\PicoNode.Web\PicoNode.Web.csproj");
+        var refs = GetPicoHexPackageRefs("src/PicoNode.Web/PicoNode.Web.csproj");
         await Assert.That(refs).Contains("PicoDI.Abs");
     }
 
     [Test]
     public async Task PicoNode_Web_csproj_has_PicoLog_Abs()
     {
-        var refs = GetPicoHexPackageRefs(@"src\PicoNode.Web\PicoNode.Web.csproj");
+        var refs = GetPicoHexPackageRefs("src/PicoNode.Web/PicoNode.Web.csproj");
         await Assert.That(refs).Contains("PicoLog.Abs");
     }
 
     [Test]
     public async Task PicoNode_Web_csproj_has_PicoCfg_Abs()
     {
-        var refs = GetPicoHexPackageRefs(@"src\PicoNode.Web\PicoNode.Web.csproj");
+        var refs = GetPicoHexPackageRefs("src/PicoNode.Web/PicoNode.Web.csproj");
         await Assert.That(refs).Contains("PicoCfg.Abs");
     }
 
