@@ -74,7 +74,7 @@ internal static class Http2StreamHandler
             return false;
         }
 
-        // Clear pending CONTINUATION tracking â€?headers are now complete.
+        // Clear pending CONTINUATION tracking ï¿½?headers are now complete.
         var clearState = connection.UserState as ConnectionRuntimeState;
         if (clearState is not null)
             clearState.PendingContinuationStreamId = null;
@@ -113,7 +113,7 @@ internal static class Http2StreamHandler
         regularHeaders = validation.RegularHeaders;
         headerDict = validation.HeaderDict;
 
-        // Validate required pseudo-headers â€?stream-level error, not connection-level
+        // Validate required pseudo-headers ï¿½?stream-level error, not connection-level
         if (method is null || path is null)
         {
             await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct).ConfigureAwait(false);
@@ -191,7 +191,7 @@ internal static class Http2StreamHandler
             (":status", response.StatusCode.ToString()),
         };
 
-        // Map response headers â€?skip connection-specific fields
+        // Map response headers ï¿½?skip connection-specific fields
         foreach (var header in response.Headers)
         {
             var keyLower = header.Key.ToLowerInvariant();
@@ -245,7 +245,7 @@ internal static class Http2StreamHandler
             return false;
         }
 
-        // BodyStream (streaming) â€?reuse SendResponseAsync logic
+        // BodyStream (streaming) ï¿½?reuse SendResponseAsync logic
         if (response.BodyStream is not null)
         {
             await SendResponseAsync(
@@ -549,7 +549,7 @@ internal static class Http2StreamHandler
         if (frame.StreamId == 0)
         {
             // Connection-level window update
-            state.ConnectionSendWindow += increment;
+            state.AddConnectionSendWindow(increment);
 
             // Distribute window across pending streams fairly (round-robin)
             if (state.Http2Streams is not null && state.Http2Streams.Count > 0)
@@ -642,7 +642,7 @@ internal static class Http2StreamHandler
                     ct
                 );
 
-                state.ConnectionSendWindow -= toSend;
+                state.AddConnectionSendWindow(-toSend);
                 stream.SendWindow -= toSend;
                 offset += toSend;
             }
@@ -667,7 +667,7 @@ internal static class Http2StreamHandler
         if (runtimeState?.Http2Streams?.TryGetValue(frame.StreamId, out var rstState) == true)
         {
             rstState.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.RstStream, out _);
-            runtimeState.Http2Streams.Remove(frame.StreamId);
+            runtimeState.Http2Streams.TryRemove(frame.StreamId, out _);
         }
 
         return ValueTask.FromResult(false);
@@ -912,7 +912,7 @@ internal static class Http2StreamHandler
                                     Http2FrameCodec.FrameHeaderSize + sendSize)), ct);
 
                             if (connState is not null)
-                                connState.ConnectionSendWindow -= sendSize;
+                                connState.AddConnectionSendWindow(-sendSize);
                             if (state is not null)
                                 state.SendWindow -= sendSize;
                             offset += sendSize;
@@ -924,7 +924,7 @@ internal static class Http2StreamHandler
                     }
                 }
 
-                // Stream complete â€?send final DATA with EndStream
+                // Stream complete ï¿½?send final DATA with EndStream
                 var finalFrame = ArrayPool<byte>.Shared.Rent(Http2FrameCodec.FrameHeaderSize);
                 try
                 {
@@ -1006,7 +1006,7 @@ internal static class Http2StreamHandler
                     );
 
                     if (connState is not null)
-                        connState.ConnectionSendWindow -= sendSize;
+                        connState.AddConnectionSendWindow(-sendSize);
                     if (state is not null)
                         state.SendWindow -= sendSize;
 
@@ -1051,7 +1051,7 @@ internal static class Http2StreamHandler
 
         // Remove the stream from tracking
         var state = connection.UserState as ConnectionRuntimeState;
-        state?.Http2Streams?.Remove(streamId);
+        state?.Http2Streams?.TryRemove(streamId, out _);
     }
 
     private static async ValueTask SendGoAwayAndCloseAsync(

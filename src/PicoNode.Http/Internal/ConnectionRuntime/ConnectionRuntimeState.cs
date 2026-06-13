@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace PicoNode.Http.Internal.ConnectionRuntime;
 
 internal sealed class ConnectionRuntimeState
@@ -13,7 +15,7 @@ internal sealed class ConnectionRuntimeState
     public WebSocketMessageProcessorState? WebSocketMessageState { get; set; }
 
     // HTTP/2 stream tracking
-    public Dictionary<int, Http2StreamState>? Http2Streams { get; set; }
+    public ConcurrentDictionary<int, Http2StreamState>? Http2Streams { get; set; }
 
     // HPACK dynamic table (shared across streams on this connection)
     public HpackDynamicTable HpackTable { get; } = new();
@@ -29,7 +31,15 @@ internal sealed class ConnectionRuntimeState
     public int RemoteHeaderTableSize { get; set; } = 4096;
 
     // Connection-level flow control (how much we can send to the peer)
-    public int ConnectionSendWindow { get; set; } = 65535;
+    private int _connectionSendWindow = 65535;
+    public int ConnectionSendWindow
+    {
+        get => Volatile.Read(ref _connectionSendWindow);
+        set => Interlocked.Exchange(ref _connectionSendWindow, value);
+    }
+
+    public int AddConnectionSendWindow(int increment) =>
+        Interlocked.Add(ref _connectionSendWindow, increment);
 
     public void ApplySettings(IReadOnlyList<Http2Setting> settings)
     {
@@ -59,7 +69,12 @@ internal sealed class ConnectionRuntimeState
     public int? PendingContinuationStreamId { get; set; }
 
     /// <summary>Highest stream ID processed by this connection (for GoAway last-stream-id).</summary>
-    public int HighestProcessedStreamId { get; set; }
+    private int _highestProcessedStreamId;
+    public int HighestProcessedStreamId
+    {
+        get => Volatile.Read(ref _highestProcessedStreamId);
+        set => Interlocked.Exchange(ref _highestProcessedStreamId, value);
+    }
 
     /// <summary>Whether any frame has been received after the connection preface.</summary>
     public bool ReceivedPostPrefaceFrame { get; set; }
@@ -96,13 +111,13 @@ internal sealed class ConnectionRuntimeState
         if (toRemove is not null)
         {
             foreach (var id in toRemove)
-                Http2Streams.Remove(id);
+                Http2Streams.TryRemove(id, out _);
         }
     }
 
     public Http2StreamState GetOrCreateStream(int streamId)
     {
-        Http2Streams ??= new Dictionary<int, Http2StreamState>();
+        Http2Streams ??= new ConcurrentDictionary<int, Http2StreamState>();
 
         // Clean up completed and idle streams before creating new ones
         CleanupClosedStreams();
@@ -126,7 +141,7 @@ internal sealed class ConnectionRuntimeState
         CleanupClosedStreams();
 
         var state = new Http2StreamState(streamId) { SendWindow = RemoteInitialWindowSize };
-        Http2Streams ??= new Dictionary<int, Http2StreamState>();
+        Http2Streams ??= new ConcurrentDictionary<int, Http2StreamState>();
         Http2Streams[streamId] = state;
 
         if (streamId > HighestProcessedStreamId)
@@ -155,7 +170,7 @@ internal sealed class ConnectionRuntimeState
         {
             foreach (var id in toRemove)
             {
-                Http2Streams.Remove(id);
+                Http2Streams.TryRemove(id, out _);
             }
         }
     }
