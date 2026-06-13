@@ -14,9 +14,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoCfg" Version="2026.6.0" />
-    <PackageReference Include="PicoDI" Version="2026.6.0" />
-    <PackageReference Include="PicoLog.Abs" Version="2026.6.0" />
+    <PackageReference Include="PicoCfg" Version="2026.6.2" />
+    <PackageReference Include="PicoDI" Version="2026.6.2" />
+    <PackageReference Include="PicoLog.Abs" Version="2026.6.2" />
   </ItemGroup>
 
   <ItemGroup>
