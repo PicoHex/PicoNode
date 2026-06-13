@@ -383,7 +383,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
             }
         }
         catch (OperationCanceledException) when (handlerCancellationToken.IsCancellationRequested)
-        { /* expected during shutdown â€?datagram queue processing cancelled */
+        { /* expected during shutdown ï¿½?datagram queue processing cancelled */
         }
     }
 
@@ -418,8 +418,14 @@ public sealed class UdpNode : INode, IAsyncDisposable
         catch (OperationCanceledException) when (_configCts.IsCancellationRequested)
         { /* expected during shutdown */
         }
-        catch
-        { /* config reload is best-effort */
+        catch (Exception ex)
+        {
+            Options.Logger?.Log(
+                LogLevel.Warning,
+                new EventId(0),
+                "Config reload failed (best-effort, continuing)",
+                ex
+            );
         }
     }
 
@@ -479,8 +485,14 @@ public sealed class UdpNode : INode, IAsyncDisposable
             {
                 await _configReloadTask.ConfigureAwait(false);
             }
-            catch
-            { /* best-effort */
+            catch (Exception ex)
+            {
+                Options.Logger?.Log(
+                    LogLevel.Debug,
+                    new EventId(0),
+                    "Config reload task completion failed (best-effort)",
+                    ex
+                );
             }
         }
 

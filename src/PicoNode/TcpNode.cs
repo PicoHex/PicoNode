@@ -187,7 +187,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
                     await _acceptTask.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
-                { /* expected during shutdown â€?accept task cancelled */
+                { /* expected during shutdown ï¿½?accept task cancelled */
                 }
             }
 
@@ -198,7 +198,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
                     await _idleMonitorTask.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
-                { /* expected during shutdown â€?idle monitor task cancelled */
+                { /* expected during shutdown ï¿½?idle monitor task cancelled */
                 }
             }
 
@@ -431,7 +431,7 @@ public sealed class TcpNode : INode, IAsyncDisposable
             }
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
-        { /* expected during shutdown â€?idle monitor exits via cancellation */
+        { /* expected during shutdown ï¿½?idle monitor exits via cancellation */
         }
     }
 
@@ -484,8 +484,14 @@ public sealed class TcpNode : INode, IAsyncDisposable
         catch (OperationCanceledException) when (_configCts.IsCancellationRequested)
         { /* expected during shutdown */
         }
-        catch
-        { /* config reload is best-effort */
+        catch (Exception ex)
+        {
+            Options.Logger?.Log(
+                LogLevel.Warning,
+                new EventId(0),
+                "Config reload failed (best-effort, continuing)",
+                ex
+            );
         }
     }
 
@@ -554,8 +560,14 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 await _configReloadTask.ConfigureAwait(false);
             }
-            catch
-            { /* best-effort */
+            catch (Exception ex)
+            {
+                Options.Logger?.Log(
+                    LogLevel.Debug,
+                    new EventId(0),
+                    "Config reload task completion failed (best-effort)",
+                    ex
+                );
             }
         }
 
