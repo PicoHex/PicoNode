@@ -44,10 +44,9 @@ internal sealed class CompressedReadStream : Stream
     public override int Read(byte[] buffer, int offset, int count)
     {
         ArgumentNullException.ThrowIfNull(buffer);
-        return ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None)
-            .AsTask()
-            .GetAwaiter()
-            .GetResult();
+        // Offload to thread pool to avoid deadlock from sync-context capture.
+        return Task.Run(async () => await ReadAsync(buffer.AsMemory(offset, count), CancellationToken.None))
+            .GetAwaiter().GetResult();
     }
 
     public override async ValueTask<int> ReadAsync(
@@ -154,7 +153,8 @@ internal sealed class CompressedReadStream : Stream
     {
         if (disposing)
         {
-            DisposeAsync().AsTask().GetAwaiter().GetResult();
+            Task.Run(async () => await DisposeAsync().ConfigureAwait(false))
+                .GetAwaiter().GetResult();
         }
 
         base.Dispose(disposing);

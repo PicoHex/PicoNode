@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using PicoNode.Web.Internal;
 
 namespace PicoNode.Web.Tests;
 
@@ -610,5 +611,32 @@ public sealed class CompressionMiddlewareTests
             DisposeCount++;
             return base.DisposeAsync();
         }
+    }
+
+    [Test]
+    public async Task CompressedReadStream_sync_Read_returns_compressed_data()
+    {
+        var original = "Hello, CompressedReadStream!"u8.ToArray();
+        using var source = new MemoryStream(original);
+        using var stream = new CompressedReadStream(source, "gzip", CompressionLevel.Fastest);
+        var buffer = new byte[1024];
+        var bytesRead = stream.Read(buffer, 0, buffer.Length);
+
+        await Assert.That(bytesRead).IsGreaterThan(0);
+        // Verify we got gzip-compressed data that decompresses to original
+        using var decompress = new GZipStream(new MemoryStream(buffer, 0, bytesRead), CompressionMode.Decompress);
+        using var result = new MemoryStream();
+        decompress.CopyTo(result);
+        await Assert.That(Encoding.UTF8.GetString(result.ToArray())).IsEqualTo("Hello, CompressedReadStream!");
+    }
+
+    [Test]
+    public async Task CompressedReadStream_sync_Dispose_does_not_throw()
+    {
+        var original = "test"u8.ToArray();
+        var source = new MemoryStream(original);
+        var stream = new CompressedReadStream(source, "gzip", CompressionLevel.Fastest);
+        stream.Dispose(); // should not deadlock or throw — if it throws, test fails
+        await Assert.That(true).IsTrue();
     }
 }
