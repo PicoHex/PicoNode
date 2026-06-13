@@ -40,13 +40,35 @@ public sealed class WebAppBuildTests
     }
 
     [Test]
+    public async Task Delegate_handler_is_wrapped_and_executed()
+    {
+        var app = new WebApp(new TestContainer());
+        var invoked = false;
+        app.MapGet("/test", (WebContext ctx) =>
+        {
+            invoked = true;
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        });
+
+        var handler = app.Build();
+        var context = new RecordingConnectionContext();
+        var request = new ReadOnlySequence<byte>(
+            Encoding.ASCII.GetBytes("GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        );
+
+        await handler.OnReceivedAsync(context, request, CancellationToken.None);
+
+        await Assert.That(invoked).IsTrue();
+    }
+
+    [Test]
     public async Task Build_propagates_streaming_response_buffer_size_behaviorally()
     {
         var stream = new ChunkRecordingStream(Encoding.ASCII.GetBytes("abcdef"));
         var app = new WebApp(new TestContainer(), new WebAppOptions { StreamingResponseBufferSize = 3 });
         app.MapGet(
             "/",
-            (_, _) =>
+            (WebContext _, CancellationToken _) =>
                 ValueTask.FromResult(
                     new HttpResponse
                     {

@@ -9,6 +9,34 @@ public sealed class WebApp
 
     private WebRequestHandler? _fallbackHandler;
 
+    private static WebRequestHandler WrapDelegate(Delegate handler)
+    {
+        return async (ctx, ct) =>
+        {
+            var parameters = handler.Method.GetParameters();
+            var args = new object?[parameters.Length];
+            for (var i = 0; i < parameters.Length; i++)
+            {
+                var type = parameters[i].ParameterType;
+                if (type == typeof(WebContext))
+                    args[i] = ctx;
+                else if (type == typeof(CancellationToken))
+                    args[i] = ct;
+                else
+                    args[i] = ctx.Services.GetService(type);
+            }
+            var result = handler.DynamicInvoke(args);
+            return result switch
+            {
+                ValueTask<HttpResponse> vt => await vt,
+                Task<HttpResponse> t => await t,
+                HttpResponse r => r,
+                _ => throw new InvalidOperationException(
+                    $"Handler must return HttpResponse, ValueTask<HttpResponse>, or Task<HttpResponse>.")
+            };
+        };
+    }
+
     public WebApp(ISvcContainer container)
         : this(container, new()) { }
 
@@ -31,30 +59,22 @@ public sealed class WebApp
     }
 
     /// <summary>Maps a route to a handler for the specified HTTP method and URL pattern.</summary>
-    public WebApp Map(string method, string pattern, WebRequestHandler handler)
+    public WebApp Map(string method, string pattern, Delegate handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        _routes.Add(
-            new WebRoute
-            {
-                Method = method,
-                Pattern = pattern,
-                Handler = handler,
-            }
-        );
+        _routes.Add(new()
+        {
+            Method = method,
+            Pattern = pattern,
+            Handler = WrapDelegate(handler),
+        });
         return this;
     }
 
-    /// <summary>Convenience to register a GET route.</summary>
-    public WebApp MapGet(string pattern, WebRequestHandler handler) => Map("GET", pattern, handler);
-
-    public WebApp MapPost(string pattern, WebRequestHandler handler) =>
-        Map("POST", pattern, handler);
-
-    public WebApp MapPut(string pattern, WebRequestHandler handler) => Map("PUT", pattern, handler);
-
-    public WebApp MapDelete(string pattern, WebRequestHandler handler) =>
-        Map("DELETE", pattern, handler);
+    public WebApp MapGet(string pattern, Delegate handler) => Map("GET", pattern, handler);
+    public WebApp MapPost(string pattern, Delegate handler) => Map("POST", pattern, handler);
+    public WebApp MapPut(string pattern, Delegate handler) => Map("PUT", pattern, handler);
+    public WebApp MapDelete(string pattern, Delegate handler) => Map("DELETE", pattern, handler);
 
     public WebApp MapFallback(WebRequestHandler handler)
     {
