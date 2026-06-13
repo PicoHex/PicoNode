@@ -1,4 +1,3 @@
-
 namespace PicoNode.Smoke;
 
 public sealed class PicoWebShowcaseSmokeTests

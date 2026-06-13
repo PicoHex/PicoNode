@@ -1,4 +1,3 @@
-
 namespace PicoNode.Http.Benchmarks;
 
 public static class Program

@@ -1,4 +1,3 @@
-
 namespace PicoNode.Http.Tests;
 
 public sealed class StreamStateMachineTests
