@@ -7,7 +7,12 @@
     <IsPackable>true</IsPackable>
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PicoNode.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="PicoCfg.Abs" Version="2026.6.0" />
@@ -20,5 +25,9 @@
 
   <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
     <PackageReference Include="PicoNode.Abs" Version="$(Version)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
 </Project>

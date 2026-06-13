@@ -1,4 +1,6 @@
 
+using System.Net;
+
 namespace PicoNode.Web.Tests;
 
 public sealed class WebAppBuildTests
