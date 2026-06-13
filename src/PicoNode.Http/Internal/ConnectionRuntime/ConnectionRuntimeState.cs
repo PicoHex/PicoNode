@@ -18,6 +18,10 @@ internal sealed class ConnectionRuntimeState
     // HPACK dynamic table (shared across streams on this connection)
     public HpackDynamicTable HpackTable { get; } = new();
 
+    // HPACK encoder for OUTGOING response headers. Uses its own dynamic table
+    // (independent from HpackTable which tracks incoming request headers).
+    public HpackEncoder ResponseHpackEncoder { get; } = new();
+
     // Remote (peer) SETTINGS values
     public int RemoteMaxConcurrentStreams { get; set; } = 100;
     public int RemoteInitialWindowSize { get; set; } = 65535;

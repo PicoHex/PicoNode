@@ -211,31 +211,28 @@ internal static class Http2StreamHandler
         }
 
         // Encode response headers as HPACK block and send HEADERS frame in one allocation
-        var hpackSize = MeasureResponseHeadersSize(responseHeaders);
+        var encodedHeaders = EncodeResponseHeadersHpack(connection, responseHeaders);
         var headersFlags = Http2FrameFlags.EndHeaders;
 
         if (response.Body.Length == 0 && response.BodyStream is null)
         {
             headersFlags |= Http2FrameFlags.EndStream;
             var frameRented = ArrayPool<byte>.Shared.Rent(
-                Http2FrameCodec.FrameHeaderSize + hpackSize
+                Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length
             );
             try
             {
                 Http2FrameCodec.WriteFrameHeader(
                     frameRented,
-                    hpackSize,
+                    encodedHeaders.Length,
                     Http2FrameType.Headers,
                     headersFlags,
                     frame.StreamId
                 );
-                WriteResponseHeaders(
-                    frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
-                    responseHeaders
-                );
+                encodedHeaders.CopyTo(frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize));
                 await connection.SendAsync(
                     new ReadOnlySequence<byte>(
-                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + hpackSize)
+                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length)
                     ),
                     ct
                 );
@@ -259,24 +256,21 @@ internal static class Http2StreamHandler
         // Has body: send HEADERS frame first (no END_STREAM), then DATA frame
         {
             var frameRented = ArrayPool<byte>.Shared.Rent(
-                Http2FrameCodec.FrameHeaderSize + hpackSize
+                Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length
             );
             try
             {
                 Http2FrameCodec.WriteFrameHeader(
                     frameRented,
-                    hpackSize,
+                    encodedHeaders.Length,
                     Http2FrameType.Headers,
                     headersFlags,
                     frame.StreamId
                 );
-                WriteResponseHeaders(
-                    frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
-                    responseHeaders
-                );
+                encodedHeaders.CopyTo(frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize));
                 await connection.SendAsync(
                     new ReadOnlySequence<byte>(
-                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + hpackSize)
+                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length)
                     ),
                     ct
                 );
@@ -330,91 +324,18 @@ internal static class Http2StreamHandler
         return false;
     }
 
-    // ── Minimal HPACK encoder (no Huffman, literal-without-indexing only) ──
+    // ── HPACK response encoder (uses shared HpackEncoder with independent dynamic table) ──
 
-    internal static int MeasureResponseHeadersSize(List<(string Name, string Value)> headers)
+    private static byte[] EncodeResponseHeadersHpack(
+        ITcpConnectionContext connection,
+        List<(string Name, string Value)> headers)
     {
-        var size = 0;
-        foreach (var (name, value) in headers)
-        {
-            size += 1; // literal header field without indexing prefix
-            size += MeasureRawStringSize(name);
-            size += MeasureRawStringSize(value);
-        }
-        return size;
+        var state = connection.UserState as ConnectionRuntimeState;
+        var encoder = state?.ResponseHpackEncoder ?? new HpackEncoder();
+        return encoder.Encode(headers);
     }
 
-    internal static void WriteResponseHeaders(
-        Span<byte> destination,
-        List<(string Name, string Value)> headers
-    )
-    {
-        var pos = 0;
-        foreach (var (name, value) in headers)
-        {
-            destination[pos++] = 0x00;
-            pos += WriteRawString(destination.Slice(pos), name);
-            pos += WriteRawString(destination.Slice(pos), value);
-        }
-    }
 
-    internal static byte[] EncodeResponseHeaders(List<(string Name, string Value)> headers)
-    {
-        var result = new byte[MeasureResponseHeadersSize(headers)];
-        WriteResponseHeaders(result, headers);
-        return result;
-    }
-
-    private static int MeasureRawStringSize(string value)
-    {
-        var rawLength = Encoding.ASCII.GetByteCount(value);
-        var size = rawLength;
-        if (rawLength < 127)
-            size += 1;
-        else
-        {
-            size += 1;
-            var remaining = rawLength - 127;
-            while (remaining >= 128)
-            {
-                size++;
-                remaining >>= 7;
-            }
-            size++;
-        }
-        return size;
-    }
-
-    private static int WriteRawString(Span<byte> destination, string value)
-    {
-        var rawBytes = Encoding.ASCII.GetBytes(value);
-        var length = rawBytes.Length;
-        var pos = 0;
-
-        if (length < 127)
-        {
-            destination[pos++] = (byte)length;
-        }
-        else
-        {
-            destination[pos++] = 0x7F;
-            var remaining = length - 127;
-            while (remaining >= 128)
-            {
-                destination[pos++] = (byte)((remaining & 0x7F) | 0x80);
-                remaining >>= 7;
-            }
-            destination[pos++] = (byte)remaining;
-        }
-
-        if (length > 0)
-        {
-            rawBytes.CopyTo(destination.Slice(pos));
-            pos += length;
-        }
-
-        return pos;
-    }
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -442,24 +363,21 @@ internal static class Http2StreamHandler
         // Send 200 response to complete the extended CONNECT handshake
         var responseHeaders = new List<(string, string)> { (":status", "200") };
 
-        var hpackSize = MeasureResponseHeadersSize(responseHeaders);
-        var frameRented = ArrayPool<byte>.Shared.Rent(Http2FrameCodec.FrameHeaderSize + hpackSize);
+        var encodedHeaders = EncodeResponseHeadersHpack(connection, responseHeaders);
+        var frameRented = ArrayPool<byte>.Shared.Rent(Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length);
         try
         {
             Http2FrameCodec.WriteFrameHeader(
                 frameRented,
-                hpackSize,
+                encodedHeaders.Length,
                 Http2FrameType.Headers,
                 Http2FrameFlags.EndHeaders,
                 state.StreamId
             );
-            WriteResponseHeaders(
-                frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
-                responseHeaders
-            );
+            encodedHeaders.CopyTo(frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize));
             await connection.SendAsync(
                 new ReadOnlySequence<byte>(
-                    frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + hpackSize)
+                    frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length)
                 ),
                 ct
             );
@@ -889,31 +807,28 @@ internal static class Http2StreamHandler
             responseHeaders.Add((header.Key, header.Value));
         }
 
-        var hpackSize = MeasureResponseHeadersSize(responseHeaders);
+        var encodedHeaders = EncodeResponseHeadersHpack(connection, responseHeaders);
         var headersFlags = Http2FrameFlags.EndHeaders;
 
         if (response.Body.Length == 0 && response.BodyStream is null)
         {
             headersFlags |= Http2FrameFlags.EndStream;
             var frameRented = ArrayPool<byte>.Shared.Rent(
-                Http2FrameCodec.FrameHeaderSize + hpackSize
+                Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length
             );
             try
             {
                 Http2FrameCodec.WriteFrameHeader(
                     frameRented,
-                    hpackSize,
+                    encodedHeaders.Length,
                     Http2FrameType.Headers,
                     headersFlags,
                     streamId
                 );
-                WriteResponseHeaders(
-                    frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
-                    responseHeaders
-                );
+                encodedHeaders.CopyTo(frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize));
                 await connection.SendAsync(
                     new ReadOnlySequence<byte>(
-                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + hpackSize)
+                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length)
                     ),
                     ct
                 );
@@ -928,24 +843,21 @@ internal static class Http2StreamHandler
         // Has body: HEADERS (no EndStream) + DATA (with EndStream)
         {
             var frameRented = ArrayPool<byte>.Shared.Rent(
-                Http2FrameCodec.FrameHeaderSize + hpackSize
+                Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length
             );
             try
             {
                 Http2FrameCodec.WriteFrameHeader(
                     frameRented,
-                    hpackSize,
+                    encodedHeaders.Length,
                     Http2FrameType.Headers,
                     headersFlags,
                     streamId
                 );
-                WriteResponseHeaders(
-                    frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize),
-                    responseHeaders
-                );
+                encodedHeaders.CopyTo(frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize));
                 await connection.SendAsync(
                     new ReadOnlySequence<byte>(
-                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + hpackSize)
+                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length)
                     ),
                     ct
                 );
