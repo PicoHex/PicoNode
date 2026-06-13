@@ -5,7 +5,8 @@ public sealed class MultipartFormDataParserAsyncTests
     [Test]
     public async Task ParseAsync_parses_multipart()
     {
-        var body = "--bound\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\nvalue1\r\n--bound--\r\n"u8.ToArray();
+        var body =
+            "--bound\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\nvalue1\r\n--bound--\r\n"u8.ToArray();
         var request = new HttpRequest
         {
             Method = "POST",

@@ -624,10 +624,15 @@ public sealed class CompressionMiddlewareTests
 
         await Assert.That(bytesRead).IsGreaterThan(0);
         // Verify we got gzip-compressed data that decompresses to original
-        using var decompress = new GZipStream(new MemoryStream(buffer, 0, bytesRead), CompressionMode.Decompress);
+        using var decompress = new GZipStream(
+            new MemoryStream(buffer, 0, bytesRead),
+            CompressionMode.Decompress
+        );
         using var result = new MemoryStream();
         decompress.CopyTo(result);
-        await Assert.That(Encoding.UTF8.GetString(result.ToArray())).IsEqualTo("Hello, CompressedReadStream!");
+        await Assert
+            .That(Encoding.UTF8.GetString(result.ToArray()))
+            .IsEqualTo("Hello, CompressedReadStream!");
     }
 
     [Test]

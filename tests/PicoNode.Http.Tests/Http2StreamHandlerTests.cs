@@ -670,11 +670,7 @@ public sealed class Http2StreamHandlerTests
 
         HttpRequestHandler handler = (req, ct) =>
             ValueTask.FromResult(
-                new HttpResponse
-                {
-                    StatusCode = 200,
-                    BodyStream = new MemoryStream(bodyData),
-                }
+                new HttpResponse { StatusCode = 200, BodyStream = new MemoryStream(bodyData) }
             );
 
         var headersFrame = BuildHeadersFrame(
@@ -683,7 +679,11 @@ public sealed class Http2StreamHandlerTests
         );
 
         await Http2StreamHandler.ProcessHeadersFrame(
-            connection, headersFrame, handler, null, CancellationToken.None
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
         );
 
         await Assert.That(connection.SentFrames.Count).IsGreaterThanOrEqualTo(2);
@@ -710,11 +710,7 @@ public sealed class Http2StreamHandlerTests
 
         HttpRequestHandler handler = (req, ct) =>
             ValueTask.FromResult(
-                new HttpResponse
-                {
-                    StatusCode = 200,
-                    BodyStream = new MemoryStream(bodyData),
-                }
+                new HttpResponse { StatusCode = 200, BodyStream = new MemoryStream(bodyData) }
             );
 
         var headersFrame = BuildHeadersFrame(
@@ -723,7 +719,11 @@ public sealed class Http2StreamHandlerTests
         );
 
         await Http2StreamHandler.ProcessHeadersFrame(
-            connection, headersFrame, handler, null, CancellationToken.None
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
         );
 
         var dataFrameCount = 0;
@@ -767,20 +767,35 @@ public sealed class Http2StreamHandlerTests
         // Send HEADERS without EndStream (deferred handler)
         var headersFrame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.None, 1, hpackData);
         await Http2StreamHandler.ProcessHeadersFrame(
-            connection, headersFrame, handler, null, CancellationToken.None);
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
 
         // Send DATA frames that accumulate to exceed the 100-byte limit
         // This frame pushes total over 100 (payload is 60 bytes each)
         var dataFrame = BuildDataFrame(1, new byte[60], endStream: false);
         await Http2StreamHandler.ProcessDataFrame(
-            connection, dataFrame, handler, null, CancellationToken.None);
+            connection,
+            dataFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
 
         await Assert.That(handlerCalled).IsFalse(); // Handler still deferred
 
         // Send second DATA frame — this should exceed the 100-byte limit
         var dataFrame2 = BuildDataFrame(1, new byte[60], endStream: false);
         await Http2StreamHandler.ProcessDataFrame(
-            connection, dataFrame2, handler, null, CancellationToken.None);
+            connection,
+            dataFrame2,
+            handler,
+            null,
+            CancellationToken.None
+        );
 
         // Verify RST_STREAM was sent
         await Assert.That(connection.SentFrames.Count).IsGreaterThanOrEqualTo(1);
@@ -792,10 +807,11 @@ public sealed class Http2StreamHandlerTests
         await Assert.That(rstFrame.StreamId).IsEqualTo(1);
 
         // Verify ENHANCE_YOUR_CALM error code (0xB)
-        var errorCode = (rstFrame.Payload.Span[0] << 24)
-                      | (rstFrame.Payload.Span[1] << 16)
-                      | (rstFrame.Payload.Span[2] << 8)
-                      | rstFrame.Payload.Span[3];
+        var errorCode =
+            (rstFrame.Payload.Span[0] << 24)
+            | (rstFrame.Payload.Span[1] << 16)
+            | (rstFrame.Payload.Span[2] << 8)
+            | rstFrame.Payload.Span[3];
         await Assert.That(errorCode).IsEqualTo((int)Http2ErrorCode.EnhanceYourCalm);
 
         // Verify the stream was removed from tracking
@@ -825,16 +841,31 @@ public sealed class Http2StreamHandlerTests
         // HEADERS without EndStream
         var headersFrame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.None, 1, hpackData);
         await Http2StreamHandler.ProcessHeadersFrame(
-            connection, headersFrame, handler, null, CancellationToken.None);
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
 
         // Send DATA frames under the limit
         var dataFrame1 = BuildDataFrame(1, "Hello "u8.ToArray(), endStream: false);
         await Http2StreamHandler.ProcessDataFrame(
-            connection, dataFrame1, handler, null, CancellationToken.None);
+            connection,
+            dataFrame1,
+            handler,
+            null,
+            CancellationToken.None
+        );
 
         var dataFrame2 = BuildDataFrame(1, "World"u8.ToArray(), endStream: true);
         await Http2StreamHandler.ProcessDataFrame(
-            connection, dataFrame2, handler, null, CancellationToken.None);
+            connection,
+            dataFrame2,
+            handler,
+            null,
+            CancellationToken.None
+        );
 
         await Assert.That(Encoding.UTF8.GetString(receivedBody.ToArray())).IsEqualTo("Hello World");
     }

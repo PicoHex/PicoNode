@@ -46,9 +46,24 @@ public sealed partial class HttpRouterBenchmarks
         );
 
         var hitPath = $"/route-{RouteCount - 1}";
-        _hitRequest = new HttpRequest { Method = "GET", Target = hitPath, Path = hitPath };
-        _missRequest = new HttpRequest { Method = "GET", Target = "/missing", Path = "/missing" };
-        _methodNotAllowedRequest = new HttpRequest { Method = "POST", Target = "/route-0", Path = "/route-0" };
+        _hitRequest = new HttpRequest
+        {
+            Method = "GET",
+            Target = hitPath,
+            Path = hitPath,
+        };
+        _missRequest = new HttpRequest
+        {
+            Method = "GET",
+            Target = "/missing",
+            Path = "/missing",
+        };
+        _methodNotAllowedRequest = new HttpRequest
+        {
+            Method = "POST",
+            Target = "/route-0",
+            Path = "/route-0",
+        };
 
         var hitResponse = _router
             .HandleAsync(_hitRequest, CancellationToken.None)

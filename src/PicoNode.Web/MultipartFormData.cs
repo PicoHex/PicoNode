@@ -39,7 +39,8 @@ public sealed class MultipartFormFile
         string fileName,
         string contentType,
         ReadOnlyMemory<byte> content
-    ) : this(name, fileName, contentType)
+    )
+        : this(name, fileName, contentType)
     {
         _content = content;
         Length = content.Length;
@@ -51,7 +52,8 @@ public sealed class MultipartFormFile
         string contentType,
         Stream contentStream,
         long length
-    ) : this(name, fileName, contentType)
+    )
+        : this(name, fileName, contentType)
     {
         _contentStream = contentStream ?? throw new ArgumentNullException(nameof(contentStream));
         Length = length;
@@ -74,7 +76,8 @@ public sealed class MultipartFormFile
     public long Length { get; }
 
     /// <summary>In-memory file content (only available when Length ≤ buffer threshold).</summary>
-    public ReadOnlyMemory<byte> Content => _contentStream is null ? _content : ReadOnlyMemory<byte>.Empty;
+    public ReadOnlyMemory<byte> Content =>
+        _contentStream is null ? _content : ReadOnlyMemory<byte>.Empty;
 
     /// <summary>Opens a read-only stream for reading the file content.</summary>
     public Stream OpenReadStream() =>

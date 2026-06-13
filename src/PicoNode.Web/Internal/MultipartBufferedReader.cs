@@ -47,9 +47,12 @@ internal sealed class MultipartBufferedReader : IDisposable
         }
     }
 
-    /// <summary>Reads content until the boundary delimiter (\r\n--boundary or --boundary--). 
+    /// <summary>Reads content until the boundary delimiter (\r\n--boundary or --boundary--).
     /// Returns the content bytes, or null if the stream ends unexpectedly.</summary>
-    public async ValueTask<byte[]?> ReadUntilBoundaryAsync(byte[] boundary, CancellationToken ct = default)
+    public async ValueTask<byte[]?> ReadUntilBoundaryAsync(
+        byte[] boundary,
+        CancellationToken ct = default
+    )
     {
         await EnsureBufferedAsync(ct);
         using var accumulator = new MemoryStream();
@@ -90,7 +93,7 @@ internal sealed class MultipartBufferedReader : IDisposable
                 accumulator.Write(_buffer, safe, flush);
 
             // Keep only the trailing bytes that might be a partial boundary match
-            var srcPos = safe + flush;  // = _buffered - keep
+            var srcPos = safe + flush; // = _buffered - keep
             if (keep > 0)
                 Array.Copy(_buffer, srcPos, _buffer, 0, keep);
             _buffered = keep;
@@ -110,9 +113,15 @@ internal sealed class MultipartBufferedReader : IDisposable
         for (var i = _position; i <= searchEnd; i++)
         {
             // Look for \r\n-- or -- at start
-            if (i > _position && i + 1 < _buffered
-                && _buffer[i] == (byte)'\r' && _buffer[i + 1] == (byte)'\n'
-                && i + 3 < _buffered && _buffer[i + 2] == (byte)'-' && _buffer[i + 3] == (byte)'-')
+            if (
+                i > _position
+                && i + 1 < _buffered
+                && _buffer[i] == (byte)'\r'
+                && _buffer[i + 1] == (byte)'\n'
+                && i + 3 < _buffered
+                && _buffer[i + 2] == (byte)'-'
+                && _buffer[i + 3] == (byte)'-'
+            )
             {
                 // Check if this is our boundary
                 var bStart = i + 4;
@@ -150,7 +159,8 @@ internal sealed class MultipartBufferedReader : IDisposable
 
     private async ValueTask FillBufferAsync(CancellationToken ct = default)
     {
-        if (_endOfStream) return;
+        if (_endOfStream)
+            return;
 
         // Compact: move unread data to the front to free space at the end.
         if (_position > 0 && _buffered > _position)

@@ -240,7 +240,9 @@ public sealed class TcpNode : INode, IAsyncDisposable
             {
                 try
                 {
-                    var acceptResult = await acceptArgs.AcceptAsync(_listener).ConfigureAwait(false);
+                    var acceptResult = await acceptArgs
+                        .AcceptAsync(_listener)
+                        .ConfigureAwait(false);
                     if (acceptResult.SocketError != SocketError.Success)
                     {
                         throw new SocketException((int)acceptResult.SocketError);
@@ -275,7 +277,8 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
                     try
                     {
-                        await Task.Delay(Options.AcceptFaultBackoff, _cts.Token).ConfigureAwait(false);
+                        await Task.Delay(Options.AcceptFaultBackoff, _cts.Token)
+                            .ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (_cts.IsCancellationRequested)
                     {
@@ -352,7 +355,9 @@ public sealed class TcpNode : INode, IAsyncDisposable
         var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
         try
         {
-            await sslStream.AuthenticateAsServerAsync(Options.SslOptions!, _cts.Token).ConfigureAwait(false);
+            await sslStream
+                .AuthenticateAsServerAsync(Options.SslOptions!, _cts.Token)
+                .ConfigureAwait(false);
             return sslStream;
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)

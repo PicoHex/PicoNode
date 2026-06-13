@@ -130,10 +130,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         return ValueTask.CompletedTask;
     }
 
-    private void SetConnectionState(
-        ITcpConnectionContext connection,
-        ConnectionProtocol protocol
-    )
+    private void SetConnectionState(ITcpConnectionContext connection, ConnectionProtocol protocol)
     {
         connection.UserState = new ConnectionRuntimeState
         {
@@ -158,7 +155,9 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         try
         {
             Http2FrameCodec.WriteSettings(rented, settings);
-            await connection.SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct).ConfigureAwait(false);
+            await connection
+                .SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct)
+                .ConfigureAwait(false);
         }
         finally
         {

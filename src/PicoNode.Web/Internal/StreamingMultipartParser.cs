@@ -3,8 +3,11 @@ namespace PicoNode.Web.Internal;
 internal static class StreamingMultipartParser
 {
     public static async ValueTask<MultipartFormData?> ParseAsync(
-        Stream bodyStream, string boundaryName, int bufferSize = 65536,
-        CancellationToken ct = default)
+        Stream bodyStream,
+        string boundaryName,
+        int bufferSize = 65536,
+        CancellationToken ct = default
+    )
     {
         var boundaryBytes = Encoding.ASCII.GetBytes(boundaryName);
         using var reader = new MultipartBufferedReader(bodyStream, bufferSize);
@@ -36,7 +39,8 @@ internal static class StreamingMultipartParser
             if (fileName is not null)
             {
                 var contentType = part.Headers.TryGetValue("Content-Type", out var contentTypeVal)
-                    ? contentTypeVal : "application/octet-stream";
+                    ? contentTypeVal
+                    : "application/octet-stream";
                 var content = part.Content ?? [];
                 files.Add(new MultipartFormFile(name, fileName, contentType, content));
             }

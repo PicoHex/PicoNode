@@ -38,7 +38,8 @@ if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
     var certs = store.Certificates.Find(
         X509FindType.FindBySubjectName,
         "localhost",
-        validOnly: false);
+        validOnly: false
+    );
     certificate = certs.FirstOrDefault();
     store.Close();
 }
@@ -47,7 +48,14 @@ else
     // Linux/macOS: dev-cert path is ~/.dotnet/corefx/cryptography/x509store/
     // or can be exported via: dotnet dev-certs https --export-path server.pfx
     var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    var certPath = Path.Combine(home, ".dotnet", "corefx", "cryptography", "x509store", "localhost.pfx");
+    var certPath = Path.Combine(
+        home,
+        ".dotnet",
+        "corefx",
+        "cryptography",
+        "x509store",
+        "localhost.pfx"
+    );
     if (File.Exists(certPath))
     {
         certificate = X509CertificateLoader.LoadPkcs12(File.ReadAllBytes(certPath), null);
@@ -76,41 +84,44 @@ if (certificate is null)
 
 // ─── Build the WebApp ─────────────────────────────────────
 
-var app = new WebApp(new WebAppOptions
-{
-    ServerHeader = "PicoNode.Https",
-});
+var app = new WebApp(new WebAppOptions { ServerHeader = "PicoNode.Https" });
 
 app.Use(new SecurityHeadersMiddleware().InvokeAsync);
 
-app.MapGet("/", static (_, _) =>
-    ValueTask.FromResult(WebResults.Text(200, "Hello from PicoNode over HTTPS!", "OK")));
+app.MapGet(
+    "/",
+    static (_, _) =>
+        ValueTask.FromResult(WebResults.Text(200, "Hello from PicoNode over HTTPS!", "OK"))
+);
 
-app.MapGet("/info", static (ctx, _) =>
-{
-    var tlsInfo = ctx.Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)
-        ? proto : "https";
-    return ValueTask.FromResult(
-        WebResults.Json(200, $$"""{"protocol":"{{tlsInfo}}","tls":true}""", "OK"));
-});
+app.MapGet(
+    "/info",
+    static (ctx, _) =>
+    {
+        var tlsInfo = ctx.Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)
+            ? proto
+            : "https";
+        return ValueTask.FromResult(
+            WebResults.Json(200, $$"""{"protocol":"{{tlsInfo}}","tls":true}""", "OK")
+        );
+    }
+);
 
 // ─── Start HTTPS server ───────────────────────────────────
 
-var node = new TcpNode(new TcpNodeOptions
-{
-    Endpoint = new IPEndPoint(IPAddress.Loopback, 5001),
-    ConnectionHandler = app.Build(),
-    SslOptions = new SslServerAuthenticationOptions
+var node = new TcpNode(
+    new TcpNodeOptions
     {
-        ServerCertificate = certificate,
-        // ALPN: negotiate HTTP/1.1 and HTTP/2 over TLS
-        ApplicationProtocols =
-        [
-            SslApplicationProtocol.Http2,
-            SslApplicationProtocol.Http11,
-        ],
-    },
-});
+        Endpoint = new IPEndPoint(IPAddress.Loopback, 5001),
+        ConnectionHandler = app.Build(),
+        SslOptions = new SslServerAuthenticationOptions
+        {
+            ServerCertificate = certificate,
+            // ALPN: negotiate HTTP/1.1 and HTTP/2 over TLS
+            ApplicationProtocols = [SslApplicationProtocol.Http2, SslApplicationProtocol.Http11],
+        },
+    }
+);
 
 await node.StartAsync();
 

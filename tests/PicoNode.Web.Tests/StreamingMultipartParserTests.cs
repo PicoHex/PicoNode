@@ -7,7 +7,8 @@ public sealed class StreamingMultipartParserTests
     [Test]
     public async Task ParseAsync_parses_single_text_field()
     {
-        var data = "--b\r\nContent-Disposition: form-data; name=\"user\"\r\n\r\nalice\r\n--b--\r\n"u8.ToArray();
+        var data =
+            "--b\r\nContent-Disposition: form-data; name=\"user\"\r\n\r\nalice\r\n--b--\r\n"u8.ToArray();
         using var stream = new MemoryStream(data);
 
         var result = await StreamingMultipartParser.ParseAsync(stream, "b");
@@ -22,7 +23,8 @@ public sealed class StreamingMultipartParserTests
     [Test]
     public async Task ParseAsync_parses_file()
     {
-        var data = "--b\r\nContent-Disposition: form-data; name=\"doc\"; filename=\"readme.txt\"\r\nContent-Type: text/plain\r\n\r\nhello world\r\n--b--\r\n"u8.ToArray();
+        var data =
+            "--b\r\nContent-Disposition: form-data; name=\"doc\"; filename=\"readme.txt\"\r\nContent-Type: text/plain\r\n\r\nhello world\r\n--b--\r\n"u8.ToArray();
         using var stream = new MemoryStream(data);
 
         var result = await StreamingMultipartParser.ParseAsync(stream, "b");
@@ -38,7 +40,8 @@ public sealed class StreamingMultipartParserTests
     [Test]
     public async Task ParseAsync_parses_mixed_field_and_file()
     {
-        var data = "--b\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nhello\r\n--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"data.bin\"\r\n\r\nbinary\r\n--b--\r\n"u8.ToArray();
+        var data =
+            "--b\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nhello\r\n--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"data.bin\"\r\n\r\nbinary\r\n--b--\r\n"u8.ToArray();
         using var stream = new MemoryStream(data);
 
         var result = await StreamingMultipartParser.ParseAsync(stream, "b");

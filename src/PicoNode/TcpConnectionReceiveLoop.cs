@@ -83,7 +83,7 @@ internal sealed class TcpConnectionReceiveLoop
             }
         }
         catch (OperationCanceledException)
-        { /* expected during connection close â€?pipe read cancelled */
+        { /* expected during connection close ï¿½?pipe read cancelled */
         }
         finally
         {
@@ -108,7 +108,8 @@ internal sealed class TcpConnectionReceiveLoop
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            var bytesRead = await ReceiveIntoPipeBufferAsync(cancellationToken).ConfigureAwait(false);
+            var bytesRead = await ReceiveIntoPipeBufferAsync(cancellationToken)
+                .ConfigureAwait(false);
             if (bytesRead <= 0)
             {
                 return TcpCloseReason.RemoteClosed;
@@ -117,7 +118,8 @@ internal sealed class TcpConnectionReceiveLoop
             _node.RecordBytesReceived(bytesRead);
             _touchCallback();
 
-            var flushResult = await FlushReceivedBytesAsync(bytesRead, cancellationToken).ConfigureAwait(false);
+            var flushResult = await FlushReceivedBytesAsync(bytesRead, cancellationToken)
+                .ConfigureAwait(false);
             if (flushResult.IsCompleted || flushResult.IsCanceled)
             {
                 break;
@@ -141,7 +143,9 @@ internal sealed class TcpConnectionReceiveLoop
         if (_stream is not null)
         {
             var readOp = _stream.ReadAsync(memory, cancellationToken);
-            return readOp.IsCompletedSuccessfully ? readOp.Result : await readOp.ConfigureAwait(false);
+            return readOp.IsCompletedSuccessfully
+                ? readOp.Result
+                : await readOp.ConfigureAwait(false);
         }
 
         var receiveOperation = _socket.ReceiveAsync(memory, SocketFlags.None, cancellationToken);

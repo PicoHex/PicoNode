@@ -18,7 +18,9 @@ internal sealed class HpackEncoder
 
     static HpackEncoder()
     {
-        StaticTableIndex = new Dictionary<string, List<(int, string?)>>(StringComparer.OrdinalIgnoreCase);
+        StaticTableIndex = new Dictionary<string, List<(int, string?)>>(
+            StringComparer.OrdinalIgnoreCase
+        );
         for (int i = 1; i <= StaticTable.EntryCount; i++)
         {
             var entry = StaticTable.Entries[i];

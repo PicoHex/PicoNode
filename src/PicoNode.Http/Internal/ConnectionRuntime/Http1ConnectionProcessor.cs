@@ -168,7 +168,8 @@ internal static class Http1ConnectionProcessor
             {
                 if (request.Version == HttpVersion.Http10)
                 {
-                    var buffered = await BufferStreamResponseAsync(response, cancellationToken).ConfigureAwait(false);
+                    var buffered = await BufferStreamResponseAsync(response, cancellationToken)
+                        .ConfigureAwait(false);
                     await SendResponseAsync(
                         connection,
                         buffered,
@@ -232,7 +233,9 @@ internal static class Http1ConnectionProcessor
 
             try
             {
-                await connection.SendAsync(InternalServerErrorBytes, cancellationToken).ConfigureAwait(false);
+                await connection
+                    .SendAsync(InternalServerErrorBytes, cancellationToken)
+                    .ConfigureAwait(false);
             }
             finally
             {
@@ -432,7 +435,9 @@ internal static class Http1ConnectionProcessor
                 }
             }
 
-            await connection.SendAsync(HttpResponseSerializer.ChunkTerminator, cancellationToken).ConfigureAwait(false);
+            await connection
+                .SendAsync(HttpResponseSerializer.ChunkTerminator, cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {

@@ -22,7 +22,8 @@ public static class MultipartFormDataParser
     )
     {
         var boundary = ResolveBoundary(request, options);
-        if (boundary is null) return null;
+        if (boundary is null)
+            return null;
 
         if (request.Body.Length > 0)
         {
@@ -33,9 +34,11 @@ public static class MultipartFormDataParser
         var bodyStream = request.BodyStream;
         if (bodyStream != Stream.Null)
         {
-            return Task.Run(
-                async () => await StreamingMultipartParser.ParseAsync(bodyStream, boundary)
-            ).GetAwaiter().GetResult();
+            return Task.Run(async () =>
+                    await StreamingMultipartParser.ParseAsync(bodyStream, boundary)
+                )
+                .GetAwaiter()
+                .GetResult();
         }
 
         return null;
@@ -46,11 +49,13 @@ public static class MultipartFormDataParser
         HttpRequest request,
         MultipartFormDataParserOptions? options = null,
         ILogger? logger = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         options ??= new MultipartFormDataParserOptions();
         var boundary = ResolveBoundary(request, options);
-        if (boundary is null) return null;
+        if (boundary is null)
+            return null;
 
         if (request.Body.Length > 0)
         {
@@ -61,15 +66,19 @@ public static class MultipartFormDataParser
         var bodyStream = request.BodyStream;
         if (bodyStream != Stream.Null)
         {
-            return await StreamingMultipartParser.ParseAsync(
-                bodyStream, boundary, ct: ct).ConfigureAwait(false);
+            return await StreamingMultipartParser
+                .ParseAsync(bodyStream, boundary, ct: ct)
+                .ConfigureAwait(false);
         }
 
         return null;
     }
 
     /// <summary>Validates content type and extracts boundary string. Returns null on failure.</summary>
-    private static string? ResolveBoundary(HttpRequest request, MultipartFormDataParserOptions options)
+    private static string? ResolveBoundary(
+        HttpRequest request,
+        MultipartFormDataParserOptions options
+    )
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxBoundaryLength, 1);

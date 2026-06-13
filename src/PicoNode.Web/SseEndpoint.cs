@@ -17,8 +17,8 @@ public sealed class SseConnection
     }
 
     /// <summary>Writes a pre-serialized JSON string as an SSE event.</summary>
-    public Task WriteJsonAsync(string json, CancellationToken ct)
-        => WriteAsync($"data: {json}\n\n", ct);
+    public Task WriteJsonAsync(string json, CancellationToken ct) =>
+        WriteAsync($"data: {json}\n\n", ct);
 
     /// <summary>Writes raw text as an SSE event.</summary>
     public async Task WriteAsync(string text, CancellationToken ct)
@@ -76,7 +76,8 @@ public static class SseEndpoint
         Func<SseConnection, CancellationToken, Task> handler,
         SseConnection sse,
         PipeWriter writer,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         try
         {

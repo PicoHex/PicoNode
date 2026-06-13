@@ -21,10 +21,12 @@ public sealed class SseEndpointTests
     [Test]
     public async Task SseEndpoint_create_returns_response_with_event_stream_content_type()
     {
-        WebRequestHandler handler = SseEndpoint.Create(async (sse, ct) =>
-        {
-            await sse.WriteJsonAsync("{\"ok\":true}", ct);
-        });
+        WebRequestHandler handler = SseEndpoint.Create(
+            async (sse, ct) =>
+            {
+                await sse.WriteJsonAsync("{\"ok\":true}", ct);
+            }
+        );
 
         var context = CreateContext("GET", "/stream");
         var response = await handler(context, CancellationToken.None);

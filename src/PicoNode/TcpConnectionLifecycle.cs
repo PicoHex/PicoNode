@@ -66,7 +66,9 @@ internal sealed class TcpConnectionLifecycle
 
         try
         {
-            reason = await _receiveLoop.ExecuteReceiveLoopAsync(handler, _context, ct).ConfigureAwait(false);
+            reason = await _receiveLoop
+                .ExecuteReceiveLoopAsync(handler, _context, ct)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
         {
@@ -134,7 +136,7 @@ internal sealed class TcpConnectionLifecycle
         catch (Exception ex)
         {
             _node.ReportFault(NodeFaultCode.HandlerFailed, OperationCloseCore, ex);
-            // Do NOT rethrow â€?close is best-effort
+            // Do NOT rethrow ï¿½?close is best-effort
         }
     }
 

@@ -7,7 +7,8 @@ public sealed class StreamingPartReaderTests
     [Test]
     public async Task ReadPart_reads_headers_and_content()
     {
-        var data = "--bound\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\nvalue1\r\n--bound--\r\n"u8.ToArray();
+        var data =
+            "--bound\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\nvalue1\r\n--bound--\r\n"u8.ToArray();
         using var reader = new MultipartBufferedReader(new MemoryStream(data), 1024);
         var boundary = "bound"u8.ToArray();
 
@@ -26,7 +27,8 @@ public sealed class StreamingPartReaderTests
     [Test]
     public async Task ReadPart_parses_headers()
     {
-        var data = "--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"doc.txt\"\r\nContent-Type: text/plain\r\n\r\nhello\r\n--b--\r\n"u8.ToArray();
+        var data =
+            "--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"doc.txt\"\r\nContent-Type: text/plain\r\n\r\nhello\r\n--b--\r\n"u8.ToArray();
         using var reader = new MultipartBufferedReader(new MemoryStream(data), 1024);
         var boundary = "b"u8.ToArray();
 

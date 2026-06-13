@@ -33,7 +33,8 @@ internal static class Http2StreamHandler
         if (state is null)
         {
             // Invalid stream ID (even, non-monotonic, or closed reuse)
-            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct).ConfigureAwait(false);
+            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct)
+                .ConfigureAwait(false);
             return false;
         }
 
@@ -43,7 +44,8 @@ internal static class Http2StreamHandler
         // State machine: validate HEADERS is legal in current state
         if (!state.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.Headers, out _))
         {
-            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct).ConfigureAwait(false);
+            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct)
+                .ConfigureAwait(false);
             return false;
         }
 
@@ -58,7 +60,8 @@ internal static class Http2StreamHandler
         }
         catch (Http2HeaderTooLargeException)
         {
-            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.CompressionError, ct).ConfigureAwait(false);
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.CompressionError, ct)
+                .ConfigureAwait(false);
             return true;
         }
 
@@ -83,7 +86,8 @@ internal static class Http2StreamHandler
         var dynamicTable = runtimeStateForLimit?.HpackTable;
         if (!HpackDecoder.TryDecode(payloadData.Value.AsSpan(), out var headerFields, dynamicTable))
         {
-            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.CompressionError, ct).ConfigureAwait(false);
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.CompressionError, ct)
+                .ConfigureAwait(false);
             return true;
         }
 
@@ -101,7 +105,8 @@ internal static class Http2StreamHandler
         var validation = ValidateHeadersPublic(headerFields);
         if (!validation.IsValid)
         {
-            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct).ConfigureAwait(false);
+            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct)
+                .ConfigureAwait(false);
             return false;
         }
 
@@ -116,7 +121,8 @@ internal static class Http2StreamHandler
         // Validate required pseudo-headers �?stream-level error, not connection-level
         if (method is null || path is null)
         {
-            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct).ConfigureAwait(false);
+            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct)
+                .ConfigureAwait(false);
             return false;
         }
 
@@ -232,7 +238,10 @@ internal static class Http2StreamHandler
                 encodedHeaders.CopyTo(frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize));
                 await connection.SendAsync(
                     new ReadOnlySequence<byte>(
-                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length)
+                        frameRented.AsMemory(
+                            0,
+                            Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length
+                        )
                     ),
                     ct
                 );
@@ -248,8 +257,7 @@ internal static class Http2StreamHandler
         // BodyStream (streaming) �?reuse SendResponseAsync logic
         if (response.BodyStream is not null)
         {
-            await SendResponseAsync(
-                connection, state, response, frame.StreamId, null, ct);
+            await SendResponseAsync(connection, state, response, frame.StreamId, null, ct);
             return false;
         }
 
@@ -270,7 +278,10 @@ internal static class Http2StreamHandler
                 encodedHeaders.CopyTo(frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize));
                 await connection.SendAsync(
                     new ReadOnlySequence<byte>(
-                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length)
+                        frameRented.AsMemory(
+                            0,
+                            Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length
+                        )
                     ),
                     ct
                 );
@@ -328,14 +339,13 @@ internal static class Http2StreamHandler
 
     private static byte[] EncodeResponseHeadersHpack(
         ITcpConnectionContext connection,
-        List<(string Name, string Value)> headers)
+        List<(string Name, string Value)> headers
+    )
     {
         var state = connection.UserState as ConnectionRuntimeState;
         var encoder = state?.ResponseHpackEncoder ?? new HpackEncoder();
         return encoder.Encode(headers);
     }
-
-
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -364,7 +374,9 @@ internal static class Http2StreamHandler
         var responseHeaders = new List<(string, string)> { (":status", "200") };
 
         var encodedHeaders = EncodeResponseHeadersHpack(connection, responseHeaders);
-        var frameRented = ArrayPool<byte>.Shared.Rent(Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length);
+        var frameRented = ArrayPool<byte>.Shared.Rent(
+            Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length
+        );
         try
         {
             Http2FrameCodec.WriteFrameHeader(
@@ -576,7 +588,8 @@ internal static class Http2StreamHandler
                         var sid = pending[idx];
                         if (state.Http2Streams.TryGetValue(sid, out var stream))
                         {
-                            await FlushPendingDataAsync(connection, stream, state, ct).ConfigureAwait(false);
+                            await FlushPendingDataAsync(connection, stream, state, ct)
+                                .ConfigureAwait(false);
                         }
                     }
 
@@ -707,7 +720,13 @@ internal static class Http2StreamHandler
             var maxBody = runtimeState?.MaxRequestBodyBytes ?? 64 * 1024 * 1024;
             if (state.DataBuffer.WrittenCount > maxBody - frame.Payload.Length)
             {
-                await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.EnhanceYourCalm, ct).ConfigureAwait(false);
+                await SendRstStreamAsync(
+                        connection,
+                        frame.StreamId,
+                        Http2ErrorCode.EnhanceYourCalm,
+                        ct
+                    )
+                    .ConfigureAwait(false);
                 return false;
             }
             state.DataBuffer.Write(frame.Payload.Span);
@@ -718,7 +737,8 @@ internal static class Http2StreamHandler
         {
             state.EndStreamReceived = true;
             state.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.EndStream, out _);
-            return await CompleteDeferredRequest(connection, state, requestHandler, logger, ct).ConfigureAwait(false);
+            return await CompleteDeferredRequest(connection, state, requestHandler, logger, ct)
+                .ConfigureAwait(false);
         }
 
         return false;
@@ -759,7 +779,8 @@ internal static class Http2StreamHandler
             state.HandlerInvoked = true;
 
             // Send response
-            await SendResponseAsync(connection, state, response, state.StreamId, logger, ct).ConfigureAwait(false);
+            await SendResponseAsync(connection, state, response, state.StreamId, logger, ct)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -779,7 +800,8 @@ internal static class Http2StreamHandler
                 StatusCode = 500,
                 ReasonPhrase = "Internal Server Error",
             };
-            await SendResponseAsync(connection, state, errorResponse, state.StreamId, logger, ct).ConfigureAwait(false);
+            await SendResponseAsync(connection, state, errorResponse, state.StreamId, logger, ct)
+                .ConfigureAwait(false);
         }
 
         return false;
@@ -835,7 +857,10 @@ internal static class Http2StreamHandler
                 encodedHeaders.CopyTo(frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize));
                 await connection.SendAsync(
                     new ReadOnlySequence<byte>(
-                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length)
+                        frameRented.AsMemory(
+                            0,
+                            Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length
+                        )
                     ),
                     ct
                 );
@@ -864,7 +889,10 @@ internal static class Http2StreamHandler
                 encodedHeaders.CopyTo(frameRented.AsSpan(Http2FrameCodec.FrameHeaderSize));
                 await connection.SendAsync(
                     new ReadOnlySequence<byte>(
-                        frameRented.AsMemory(0, Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length)
+                        frameRented.AsMemory(
+                            0,
+                            Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length
+                        )
                     ),
                     ct
                 );
@@ -887,8 +915,7 @@ internal static class Http2StreamHandler
             {
                 var stream = response.BodyStream;
                 int bytesRead;
-                while ((bytesRead = await stream.ReadAsync(
-                    buffer.AsMemory(0, bufferSize), ct)) > 0)
+                while ((bytesRead = await stream.ReadAsync(buffer.AsMemory(0, bufferSize), ct)) > 0)
                 {
                     var offset = 0;
                     while (offset < bytesRead)
@@ -900,7 +927,9 @@ internal static class Http2StreamHandler
                         if (available <= 0)
                         {
                             if (state is not null)
-                                state.PendingDataFrame = buffer[offset..(offset + bytesRead - offset)];
+                                state.PendingDataFrame = buffer[
+                                    offset..(offset + bytesRead - offset)
+                                ];
                             return;
                         }
 
@@ -908,15 +937,26 @@ internal static class Http2StreamHandler
                         var sendSize = Math.Min(chunkSize, available);
 
                         var frameRented = ArrayPool<byte>.Shared.Rent(
-                            Http2FrameCodec.FrameHeaderSize + sendSize);
+                            Http2FrameCodec.FrameHeaderSize + sendSize
+                        );
                         try
                         {
-                            Http2FrameCodec.WriteFrame(frameRented, Http2FrameType.Data,
-                                Http2FrameFlags.None, streamId,
-                                buffer.AsSpan(offset, sendSize));
-                            await connection.SendAsync(new ReadOnlySequence<byte>(
-                                frameRented.AsMemory(0,
-                                    Http2FrameCodec.FrameHeaderSize + sendSize)), ct);
+                            Http2FrameCodec.WriteFrame(
+                                frameRented,
+                                Http2FrameType.Data,
+                                Http2FrameFlags.None,
+                                streamId,
+                                buffer.AsSpan(offset, sendSize)
+                            );
+                            await connection.SendAsync(
+                                new ReadOnlySequence<byte>(
+                                    frameRented.AsMemory(
+                                        0,
+                                        Http2FrameCodec.FrameHeaderSize + sendSize
+                                    )
+                                ),
+                                ct
+                            );
 
                             if (connState is not null)
                                 connState.AddConnectionSendWindow(-sendSize);
@@ -935,10 +975,19 @@ internal static class Http2StreamHandler
                 var finalFrame = ArrayPool<byte>.Shared.Rent(Http2FrameCodec.FrameHeaderSize);
                 try
                 {
-                    Http2FrameCodec.WriteFrameHeader(finalFrame, 0,
-                        Http2FrameType.Data, Http2FrameFlags.EndStream, streamId);
-                    await connection.SendAsync(new ReadOnlySequence<byte>(
-                        finalFrame.AsMemory(0, Http2FrameCodec.FrameHeaderSize)), ct);
+                    Http2FrameCodec.WriteFrameHeader(
+                        finalFrame,
+                        0,
+                        Http2FrameType.Data,
+                        Http2FrameFlags.EndStream,
+                        streamId
+                    );
+                    await connection.SendAsync(
+                        new ReadOnlySequence<byte>(
+                            finalFrame.AsMemory(0, Http2FrameCodec.FrameHeaderSize)
+                        ),
+                        ct
+                    );
 
                     if (state is not null)
                         state.ResponseSent = true;
@@ -954,8 +1003,7 @@ internal static class Http2StreamHandler
             }
             catch (Exception)
             {
-                await SendRstStreamAsync(connection, streamId,
-                    Http2ErrorCode.Cancel, ct);
+                await SendRstStreamAsync(connection, streamId, Http2ErrorCode.Cancel, ct);
             }
             finally
             {

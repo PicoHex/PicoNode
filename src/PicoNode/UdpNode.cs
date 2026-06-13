@@ -322,7 +322,8 @@ public sealed class UdpNode : INode, IAsyncDisposable
                 ReportFault(NodeFaultCode.DatagramReceiveFailed, OperationReceive, ex);
                 try
                 {
-                    await Task.Delay(Options.ReceiveFaultBackoff, cancellationToken).ConfigureAwait(false);
+                    await Task.Delay(Options.ReceiveFaultBackoff, cancellationToken)
+                        .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

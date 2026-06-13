@@ -34,7 +34,7 @@ internal static class WebSocketMessageProcessor
                 return consumed;
             }
 
-            // RFC 6455 §5.5: control frames must have FIN=1 and payload �?125
+            // RFC 6455 §5.5: control frames must have FIN=1 and payload �?125
             if (
                 frame.OpCode
                 is WebSocketOpCode.Ping
@@ -44,12 +44,14 @@ internal static class WebSocketMessageProcessor
             {
                 if (!frame.Fin)
                 {
-                    await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
+                    await CloseWithProtocolError(connection, cancellationToken)
+                        .ConfigureAwait(false);
                     return consumed;
                 }
                 if (frame.Payload.Length > 125)
                 {
-                    await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
+                    await CloseWithProtocolError(connection, cancellationToken)
+                        .ConfigureAwait(false);
                     return consumed;
                 }
             }
@@ -113,7 +115,8 @@ internal static class WebSocketMessageProcessor
                     // RFC 6455 §5.4: new data message during fragmentation = protocol error
                     if (currentState.MessageOpCode is not null)
                     {
-                        await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
+                        await CloseWithProtocolError(connection, cancellationToken)
+                            .ConfigureAwait(false);
                         return consumed;
                     }
                     currentState.MessageOpCode = frame.OpCode;
@@ -126,7 +129,8 @@ internal static class WebSocketMessageProcessor
 
                     if (currentState.PayloadBuffer.WrittenCount > currentState.MaxMessageSize)
                     {
-                        await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
+                        await CloseWithProtocolError(connection, cancellationToken)
+                            .ConfigureAwait(false);
                         return consumed;
                     }
 
@@ -139,7 +143,8 @@ internal static class WebSocketMessageProcessor
                             && !IsValidUtf8(messageBytes)
                         )
                         {
-                            await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
+                            await CloseWithProtocolError(connection, cancellationToken)
+                                .ConfigureAwait(false);
                             return consumed;
                         }
                         await handler(
@@ -160,7 +165,8 @@ internal static class WebSocketMessageProcessor
                     // RFC 6455 §5.4: continuation without start = protocol error
                     if (currentState.MessageOpCode is null)
                     {
-                        await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
+                        await CloseWithProtocolError(connection, cancellationToken)
+                            .ConfigureAwait(false);
                         return consumed;
                     }
 
@@ -171,7 +177,8 @@ internal static class WebSocketMessageProcessor
 
                     if (currentState.PayloadBuffer.WrittenCount > currentState.MaxMessageSize)
                     {
-                        await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
+                        await CloseWithProtocolError(connection, cancellationToken)
+                            .ConfigureAwait(false);
                         return consumed;
                     }
 
@@ -183,7 +190,8 @@ internal static class WebSocketMessageProcessor
                             && !IsValidUtf8(messageBytes)
                         )
                         {
-                            await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
+                            await CloseWithProtocolError(connection, cancellationToken)
+                                .ConfigureAwait(false);
                             return consumed;
                         }
                         await handler(
@@ -233,7 +241,9 @@ internal static class WebSocketMessageProcessor
         try
         {
             WebSocketFrameCodec.WriteFrame(rented, WebSocketOpCode.Close, []);
-            await connection.SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct).ConfigureAwait(false);
+            await connection
+                .SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct)
+                .ConfigureAwait(false);
         }
         finally
         {
