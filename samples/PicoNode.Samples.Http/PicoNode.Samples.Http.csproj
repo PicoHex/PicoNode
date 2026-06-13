@@ -14,4 +14,8 @@
     <ProjectReference Include="..\..\src\PicoNode.Http\PicoNode.Http.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PicoDI" Version="2026.6.2" />
+  </ItemGroup>
 </Project>

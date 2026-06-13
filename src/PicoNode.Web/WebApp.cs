@@ -84,39 +84,33 @@ public sealed class WebApp
     }
 
     /// <summary>Builds the middleware pipeline and returns an <c>ITcpConnectionHandler</c> (backed by <c>HttpConnectionHandler</c>) ready for use with TcpNode.</summary>
-    public ITcpConnectionHandler Build(ISvcContainer? container = null)
+    public ITcpConnectionHandler Build()
     {
         _middlewares = [.. _middlewares];
-        if (container is not null)
-        {
-            _middlewares.Insert(0, ScopeMiddleware.Create(container));
-        }
-
         var router = new WebRouter(_routes, _fallbackHandler);
         var pipeline = BuildPipeline(router);
 
-        HttpRequestHandler httpHandler = (request, ct) =>
+        HttpRequestHandler httpHandler = async (request, ct) =>
         {
-            var context = WebContext.Create(request);
-            return pipeline(context, ct);
+            var scope = _container.CreateScope();
+            await using (scope.ConfigureAwait(false))
+            {
+                var context = WebContext.Create(request);
+                context.Services = scope;
+                return await pipeline(context, ct);
+            }
         };
 
         return new HttpConnectionHandler(
             new HttpConnectionHandlerOptions
             {
                 RequestHandler = httpHandler,
-                ServerHeader = _options?.ServerHeader,
-                Logger = _options?.Logger,
-                MaxRequestBytes = _options?.MaxRequestBytes ?? 8192,
-                StreamingResponseBufferSize =
-                    _options?.StreamingResponseBufferSize
-                    ?? HttpConnectionHandlerOptions.DefaultStreamingResponseBufferSize,
-                RequestTimeout =
-                    _options?.RequestTimeout
-                    ?? TimeSpan.FromSeconds(
-                        HttpConnectionHandlerOptions.DefaultRequestTimeoutSeconds
-                    ),
-                WebSocketMessageHandler = _options?.WebSocketMessageHandler,
+                ServerHeader = _options.ServerHeader,
+                Logger = _options.Logger,
+                MaxRequestBytes = _options.MaxRequestBytes,
+                StreamingResponseBufferSize = _options.StreamingResponseBufferSize,
+                RequestTimeout = _options.RequestTimeout,
+                WebSocketMessageHandler = _options.WebSocketMessageHandler,
             }
         );
     }

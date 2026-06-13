@@ -40,7 +40,7 @@ public sealed class WebContext
 
     internal void SetRouteValues(Dictionary<string, string> values) => _routeValues = values;
 
-    public ISvcScope? Services { get; internal set; }
+    public ISvcScope Services { get; internal set; } = null!;
 
     public static WebContext Create(HttpRequest request)
     {

@@ -18,10 +18,11 @@ public static class ShowcaseApp
         MaxAge = 600,
     };
 
-    public static WebApp Create(string? contentRoot = null, PicoCfg.Abs.ICfgRoot? config = null)
+    public static WebApp Create(PicoDI.Abs.ISvcContainer container, string? contentRoot = null, PicoCfg.Abs.ICfgRoot? config = null)
     {
         var staticRoot = Path.Combine(contentRoot ?? AppContext.BaseDirectory, "wwwroot");
         var app = new WebApp(
+            container,
             new WebAppOptions
             {
                 ServerHeader = "PicoWeb.Samples.Showcase",
@@ -33,14 +34,15 @@ public static class ShowcaseApp
         var staticFiles = new StaticFileMiddleware(staticRoot);
 
         app.Use(
-            (context, next, cancellationToken) => HandleCorsAsync(context, next, cancellationToken)
+            (WebContext context, WebRequestHandler next, CancellationToken cancellationToken) =>
+                HandleCorsAsync(context, next, cancellationToken)
         );
         app.Use(compression.InvokeAsync);
         app.Use(staticFiles.InvokeAsync);
 
         app.MapGet(
             "/api/showcase",
-            static (context, _) =>
+            (WebContext context, CancellationToken _) =>
             {
                 var theme = GetTheme(context.Request);
                 var json = BuildShowcasePayload(theme);
@@ -50,7 +52,7 @@ public static class ShowcaseApp
 
         app.MapGet(
             "/api/preferences",
-            static (context, _) =>
+            (WebContext context, CancellationToken _) =>
             {
                 var theme = GetTheme(context.Request);
                 var json = $$"""
@@ -67,7 +69,7 @@ public static class ShowcaseApp
 
         app.MapPost(
             "/api/preferences/{theme}",
-            static (context, _) =>
+            (WebContext context, CancellationToken _) =>
             {
                 if (
                     !context.RouteValues.TryGetValue("theme", out var theme)
@@ -113,7 +115,7 @@ public static class ShowcaseApp
 
         app.MapGet(
             "/api/content",
-            static (_, _) =>
+            (WebContext _, CancellationToken _) =>
             {
                 var body = BuildCompressionPayload();
                 return ValueTask.FromResult(WebResults.Text(200, body, "OK"));
@@ -122,7 +124,7 @@ public static class ShowcaseApp
 
         app.MapPost(
             "/api/uploads",
-            static (context, _) =>
+            (WebContext context, CancellationToken _) =>
             {
                 var multipart = MultipartFormDataParser.Parse(context.Request);
                 if (multipart is null)
@@ -146,7 +148,7 @@ public static class ShowcaseApp
         );
 
         app.MapFallback(
-            static (context, _) =>
+            (WebContext context, CancellationToken _) =>
                 ValueTask.FromResult(
                     WebResults.Text(404, $"No route matched '{context.Path}'.", "Not Found")
                 )

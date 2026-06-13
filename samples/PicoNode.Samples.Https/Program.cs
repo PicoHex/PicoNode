@@ -5,6 +5,7 @@ using System.Security.Cryptography.X509Certificates;
 using PicoNode;
 using PicoNode.Http;
 using PicoNode.Web;
+using PicoDI;
 using PicoWeb;
 
 // ────────────────────────────────────────────────────────────
@@ -84,19 +85,19 @@ if (certificate is null)
 
 // ─── Build the WebApp ─────────────────────────────────────
 
-var app = new WebApp(new WebAppOptions { ServerHeader = "PicoNode.Https" });
+var app = new WebApp(new SvcContainer(), new WebAppOptions { ServerHeader = "PicoNode.Https" });
 
 app.Use(new SecurityHeadersMiddleware().InvokeAsync);
 
 app.MapGet(
     "/",
-    static (_, _) =>
+    (WebContext _, CancellationToken _) =>
         ValueTask.FromResult(WebResults.Text(200, "Hello from PicoNode over HTTPS!", "OK"))
 );
 
 app.MapGet(
     "/info",
-    static (ctx, _) =>
+    (WebContext ctx, CancellationToken _) =>
     {
         var tlsInfo = ctx.Request.Headers.TryGetValue("X-Forwarded-Proto", out var proto)
             ? proto
