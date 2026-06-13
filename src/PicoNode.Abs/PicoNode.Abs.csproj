@@ -7,6 +7,9 @@
     <LangVersion>latest</LangVersion>
     <IsPackable>true</IsPackable>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageId>PicoNode.Abs</PackageId>
+    <Description>Core abstractions for PicoNode networking framework: INode, ITcpConnectionHandler, IUdpDatagramHandler, and fault contracts. Targets netstandard2.0 for maximum compatibility.</Description>
+    <PackageTags>PicoHex;PicoNode;AOT;Networking;Abstractions</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

@@ -8,6 +8,9 @@
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageId>PicoNode</PackageId>
+    <Description>TCP/UDP transport layer for PicoNode. Provides TcpNode and UdpNode with pipe-based I/O, backpressure, TLS/ALPN support, connection lifecycle management, and config hot-reload.</Description>
+    <PackageTags>PicoHex;PicoNode;AOT;TCP;UDP;Networking;Transport</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

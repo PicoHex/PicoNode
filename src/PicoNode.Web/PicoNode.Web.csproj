@@ -8,6 +8,9 @@
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageId>PicoNode.Web</PackageId>
+    <Description>Web application middleware framework for PicoNode. Provides WebApp builder, RadixTree router, middleware pipeline (CORS, compression, caching, security headers, static files), Server-Sent Events, and multipart form data parsing.</Description>
+    <PackageTags>PicoHex;PicoNode;AOT;Web;Middleware;Router;CORS;SSE;Networking</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

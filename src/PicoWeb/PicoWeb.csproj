@@ -8,6 +8,9 @@
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageId>PicoWeb</PackageId>
+    <Description>Web server host for PicoNode. Combines WebApp with TcpNode into a single WebServer that manages the full HTTP server lifecycle with DI container integration.</Description>
+    <PackageTags>PicoHex;PicoNode;AOT;Web;Server;Host;DI;Networking</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

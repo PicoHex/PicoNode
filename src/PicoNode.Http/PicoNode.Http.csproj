@@ -8,6 +8,9 @@
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageId>PicoNode.Http</PackageId>
+    <Description>HTTP protocol layer for PicoNode. Implements HTTP/1.1, HTTP/2 (including h2c upgrade), WebSocket (RFC 6455), and HPACK (RFC 7541) with Huffman encoding. Includes request/response serialization and routing.</Description>
+    <PackageTags>PicoHex;PicoNode;AOT;HTTP;HTTP2;WebSocket;HPACK;Networking</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
