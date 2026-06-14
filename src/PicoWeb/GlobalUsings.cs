@@ -4,6 +4,7 @@ global using PicoDI;
 global using PicoDI.Abs;
 global using PicoJetson;
 global using PicoNode.Abs;
+global using PicoNode.Http;
 global using PicoLog.Abs;
 global using PicoNode;
 global using PicoNode.Web;

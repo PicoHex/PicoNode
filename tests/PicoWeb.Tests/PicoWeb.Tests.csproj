@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="TUnit" Version="1.54.0" />
+    <PackageReference Include="PicoJetson" Version="2026.1.9" />
     <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Http\PicoNode.Http.csproj" />
