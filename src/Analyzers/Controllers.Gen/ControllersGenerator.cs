@@ -259,8 +259,8 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                     }
                 }
 
-                // Replicate the method body but rewrite the last return statement
-                // to capture the value into __result instead of early-exiting the lambda.
+                // Replicate the method body, rewriting every `return <expr>;` to
+                // `__result = <expr>;` so execution continues to serialization below.
                 var body = method.BodyText;
                 // Remove outer braces if present
                 if (body.StartsWith("{") && body.EndsWith("}"))
