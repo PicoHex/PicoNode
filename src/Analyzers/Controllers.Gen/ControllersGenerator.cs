@@ -191,8 +191,24 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
     private static void GenerateSources(SourceProductionContext context, System.Collections.Immutable.ImmutableArray<ControllerModel> controllers)
     {
+        // Always generate an EndpointRegistrar so user code can call it unconditionally.
+        // When controllers exist, it registers them. When none, it's empty.
+        var registrarCode = new StringBuilder();
+        registrarCode.AppendLine("using PicoNode.Web;");
+        registrarCode.AppendLine();
+        registrarCode.AppendLine("public static class EndpointRegistrar");
+        registrarCode.AppendLine("{");
+        registrarCode.AppendLine("    public static void RegisterAll(WebApp app)");
+        registrarCode.AppendLine("    {");
+
         if (controllers.Length == 0)
+        {
+            registrarCode.AppendLine("        // No controllers found — nothing to register");
+            registrarCode.AppendLine("    }");
+            registrarCode.AppendLine("}");
+            context.AddSource("EndpointRegistrar.g.cs", registrarCode.ToString());
             return;
+        }
 
         var serializables = new HashSet<string>();
         var endpointsCode = new StringBuilder();
@@ -278,14 +294,8 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             serializablesCode.AppendLine($"[assembly: PicoJetson.PicoJsonSerializable(typeof({type}))]");
         }
 
-        // Generate EndpointRegistrar
-        var registrarCode = new StringBuilder();
-        registrarCode.AppendLine("using PicoNode.Web;");
-        registrarCode.AppendLine();
-        registrarCode.AppendLine("public static class EndpointRegistrar");
-        registrarCode.AppendLine("{");
-        registrarCode.AppendLine("    public static void RegisterAll(WebApp app)");
-        registrarCode.AppendLine("    {");
+        // Append registrar methods from controllers to the EndpointRegistrar
+        registrarCode.Append("    ");
         registrarCode.Append(registrarMethods);
         registrarCode.AppendLine("    }");
         registrarCode.AppendLine("}");

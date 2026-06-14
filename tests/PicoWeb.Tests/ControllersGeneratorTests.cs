@@ -41,7 +41,7 @@ public sealed class ControllersGeneratorTests
     }
 
     [Test]
-    public async Task File_outside_Controllers_folder_is_ignored()
+    public async Task File_outside_Controllers_folder_only_has_EndpointRegistrar()
     {
         var source = """
             namespace MyApp;
@@ -53,7 +53,9 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Models/NotAController.cs");
 
-        await Assert.That(result.Length).IsEqualTo(0);
+        // EndpointRegistrar is always generated (even empty)
+        await Assert.That(result).Contains("EndpointRegistrar");
+        await Assert.That(result).DoesNotContain("MapGet");
     }
 
     private static string RunGenerator(string source, string fileName)
