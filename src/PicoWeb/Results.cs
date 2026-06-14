@@ -2,7 +2,7 @@ namespace PicoWeb;
 
 public static class Results
 {
-    /// <summary>Creates a JSON response with the specified body bytes (already serialized).</summary>
+    /// <summary>Creates a JSON response with pre-serialized body bytes.</summary>
     public static HttpResponse Json(int statusCode, ReadOnlyMemory<byte> jsonBody, string? reasonPhrase = null)
     {
         return new HttpResponse
@@ -25,6 +25,9 @@ public static class Results
     public static HttpResponse Empty(int statusCode, string? reasonPhrase = null) =>
         WebResults.Empty(statusCode, reasonPhrase ?? "");
 
+    public static HttpResponse Redirect(string location, bool permanent = false) =>
+        WebResults.Redirect(location, permanent);
+
     private static string GetDefaultReason(int code) => code switch
     {
         200 => "OK",
@@ -39,8 +42,8 @@ public static class Results
 
 internal static class AppSerializationOptions
 {
-    public static JsonOptions Default { get; set; } = new()
+    public static PicoJetson.JsonOptions Default { get; set; } = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNamingPolicy = PicoJetson.JsonNamingPolicy.CamelCase,
     };
 }
