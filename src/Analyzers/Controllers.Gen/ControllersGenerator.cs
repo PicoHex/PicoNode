@@ -294,13 +294,29 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         if (type is INamedTypeSymbol named)
         {
             var fullName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            if (!fullName.StartsWith("global::System") && !types.Contains(fullName))
-            {
-                types.Add(fullName);
-                foreach (var arg in named.TypeArguments)
-                    CollectTypes(arg, types);
-            }
+            if (fullName.StartsWith("global::System"))
+                return;
+            if (IsBuiltIn(type))
+                return;
+            if (types.Contains(fullName))
+                return;
+            types.Add(fullName);
+            foreach (var arg in named.TypeArguments)
+                CollectTypes(arg, types);
         }
+    }
+
+    private static bool IsBuiltIn(ITypeSymbol type)
+    {
+        var name = type.ToDisplayString();
+        return name switch
+        {
+            "string" or "bool" or "int" or "long" or "double" or "float" or "decimal"
+                or "char" or "byte" or "short" or "uint" or "ulong" or "ushort" or "sbyte"
+                or "Guid" or "DateTime" or "DateTimeOffset" or "DateOnly" or "TimeOnly"
+                or "TimeSpan" => true,
+            _ => false,
+        };
     }
 
     private static bool IsComplexType(ITypeSymbol type)
