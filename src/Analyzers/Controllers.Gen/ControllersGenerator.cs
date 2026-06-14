@@ -225,8 +225,6 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
             foreach (var method in controller.Methods)
             {
-                var returnType = method.Symbol.ReturnType;
-                CollectTypes(returnType, serializables);
 
                 foreach (var param in method.Symbol.Parameters)
                 {
@@ -244,59 +242,36 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 else
                     routeParams = "WebContext ctx";
 
-                var returnTypeName = returnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 endpointsCode.AppendLine($"            app.Map{method.HttpMethod}(\"{controller.RoutePrefix}{method.Route}\", async ({routeParams}) =>");
                 endpointsCode.AppendLine("            {");
-                endpointsCode.AppendLine($"                {returnTypeName} __result = default!;");
 
-                // Inject service resolution calls for non-primitive, non-WebContext params
-                foreach (var param in method.Symbol.Parameters)
+                // Resolve controller from DI, call the original method, capture return
+                var retType = method.Symbol.ReturnType;
+                var isAsync = false;
+                var resultTypeName = retType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+                // Unwrap Task<T> / ValueTask<T> to get the actual return type
+                if (retType is INamedTypeSymbol namedRet && namedRet.TypeArguments.Length == 1)
                 {
-                    var typeName = param.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    if (param.Type.TypeKind == TypeKind.Class && param.Type.Name != "String")
+                    var name = namedRet.Name;
+                    if (name is "Task" or "ValueTask")
                     {
-                        endpointsCode.AppendLine($"                var {param.Name} = ({typeName})ctx.Services.GetService(typeof({typeName}))!;");
+                        isAsync = true;
+                        resultTypeName = namedRet.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     }
                 }
 
-                // Replicate the method body, rewriting every `return <expr>;` to
-                // `__result = <expr>;` so execution continues to serialization below.
-                var body = method.BodyText;
-                // Remove outer braces if present
-                if (body.StartsWith("{") && body.EndsWith("}"))
-                    body = body.Substring(1, body.Length - 2).Trim();
+                var controllerTypeName = controller.Name;
+                var callArgs = string.Join(", ", method.Symbol.Parameters.Select(p => p.Name));
+                var awaitPrefix = isAsync ? "await " : "";
 
-                // Rewrite ALL `return <expr>;` to `__result = <expr>;` so every code path
-                // captures its value into __result. The last assigned value wins — correct
-                // for all code paths. Void returns (`return;`) are left as-is.
-                var bodyLines = body.Split('\n');
-                for (int i = 0; i < bodyLines.Length; i++)
-                {
-                    var trimmed = bodyLines[i].TrimStart();
-                    if (!trimmed.StartsWith("return "))
-                        continue;
-                    // Skip void return (just "return;") — no value to capture
-                    var afterReturn = trimmed.Substring("return ".Length);
-                    if (afterReturn.TrimStart().StartsWith(";") || afterReturn.Trim().Length == 0)
-                        continue;
-                    // Rewrite: return <expr>; → __result = <expr>;
-                    var indent = bodyLines[i].Length - trimmed.Length;
-                    bodyLines[i] = new string(' ', indent) + "__result = " + afterReturn;
-                }
-
-                // Normalize indentation to match the generated stub's 16-space level
-                for (int i = 0; i < bodyLines.Length; i++)
-                {
-                    if (bodyLines[i].TrimStart().Length > 0)
-                        bodyLines[i] = "                " + bodyLines[i].TrimStart();
-                }
-
-                body = string.Join("\n", bodyLines);
-                body = body.TrimEnd();
-
-                endpointsCode.AppendLine(body);
+                endpointsCode.AppendLine($"                var __controller = ctx.Services.GetService(typeof({controllerTypeName}))!;");
+                endpointsCode.AppendLine($"                var __result = ({resultTypeName}){awaitPrefix}(({controllerTypeName})__controller).{method.Symbol.Name}({callArgs});");
                 endpointsCode.AppendLine($"                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);");
                 endpointsCode.AppendLine($"                return PicoWeb.Results.Json(200, __bytes);");
+
+                // Register controller type for serialization
+                CollectTypes(retType, serializables);
                 endpointsCode.AppendLine("            });");
                 endpointsCode.AppendLine();
             }
