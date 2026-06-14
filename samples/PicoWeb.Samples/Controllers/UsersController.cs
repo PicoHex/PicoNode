@@ -9,5 +9,11 @@ namespace PicoWeb.Samples.Controllers;
 
 public class UsersController
 {
-    public string GetUser(int id) => $"User {id}";
+    public UserDto GetUser(int id) => new UserDto { Id = id, Name = $"User {id}" };
+}
+
+public class UserDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
 }
