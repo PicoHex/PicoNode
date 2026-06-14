@@ -56,15 +56,22 @@ public sealed class WebApiBuilder
 
     private static void TryRegisterEndpoints(WebApp app)
     {
-        var registrarType = System.Type.GetType("EndpointRegistrar");
-        if (registrarType is null)
-            return;
+#pragma warning disable IL2026, IL2075 // Reflection fallback for development
+        // Search all loaded assemblies for the generated EndpointRegistrar
+        foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
+        {
+            var registrarType = asm.GetType("EndpointRegistrar");
+            if (registrarType is null)
+                continue;
 
-        var method = registrarType.GetMethod("RegisterAll",
-            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-        if (method is null)
-            return;
+            var method = registrarType.GetMethod("RegisterAll",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+            if (method is null)
+                continue;
 
-        method.Invoke(null, [app]);
+            method.Invoke(null, [app]);
+            return;
+        }
+#pragma warning restore IL2026, IL2075
     }
 }

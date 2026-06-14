@@ -55,7 +55,8 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
             var route = GetRoute(member, methodSymbol);
 
-            methods.Add(new MethodModel(httpMethod, route, methodSymbol));
+            var bodyText = member.Body?.ToString() ?? "";
+            methods.Add(new MethodModel(httpMethod, route, methodSymbol, bodyText));
         }
 
         if (methods.Count == 0)
@@ -227,8 +228,10 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 else
                     routeParams = "WebContext ctx";
 
+                var returnTypeName = returnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                 endpointsCode.AppendLine($"            app.Map{method.HttpMethod}(\"{controller.RoutePrefix}{method.Route}\", async ({routeParams}) =>");
                 endpointsCode.AppendLine("            {");
+                endpointsCode.AppendLine($"                {returnTypeName} __result = default!;");
 
                 // Inject service resolution calls for non-primitive, non-WebContext params
                 foreach (var param in method.Symbol.Parameters)
@@ -240,10 +243,21 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                     }
                 }
 
-                // Copy the method body — we can't access the body from IMethodSymbol directly
-                // So we generate a placeholder call pattern
-                var callArgs = string.Join(", ", method.Symbol.Parameters.Select(p => p.Name));
-                endpointsCode.AppendLine($"                var __result = default({returnType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)});");
+                // Replicate the method body but rewrite return statements
+                // to capture values instead of early-exiting the lambda.
+                var body = method.BodyText;
+                // Remove outer braces if present
+                if (body.StartsWith("{") && body.EndsWith("}"))
+                    body = body.Substring(1, body.Length - 2).Trim();
+
+                // Replace return with captured variable assignment
+                var hasReturn = body.Contains("return ");
+                if (hasReturn)
+                {
+                    body = body.Replace("return ", "__result = ");
+                }
+
+                endpointsCode.AppendLine(body);
                 endpointsCode.AppendLine($"                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);");
                 endpointsCode.AppendLine($"                return PicoWeb.Results.Json(200, __bytes);");
                 endpointsCode.AppendLine("            });");
@@ -351,11 +365,13 @@ internal sealed class MethodModel
     public string HttpMethod { get; }
     public string Route { get; }
     public IMethodSymbol Symbol { get; }
+    public string BodyText { get; }
 
-    public MethodModel(string httpMethod, string route, IMethodSymbol symbol)
+    public MethodModel(string httpMethod, string route, IMethodSymbol symbol, string bodyText)
     {
         HttpMethod = httpMethod;
         Route = route;
         Symbol = symbol;
+        BodyText = bodyText;
     }
 }
