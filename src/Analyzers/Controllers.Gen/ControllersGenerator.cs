@@ -259,19 +259,35 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                     }
                 }
 
-                // Replicate the method body but rewrite return statements
-                // to capture values instead of early-exiting the lambda.
+                // Replicate the method body but rewrite the last return statement
+                // to capture the value into __result instead of early-exiting the lambda.
                 var body = method.BodyText;
                 // Remove outer braces if present
                 if (body.StartsWith("{") && body.EndsWith("}"))
                     body = body.Substring(1, body.Length - 2).Trim();
 
-                // Replace return with captured variable assignment
-                var hasReturn = body.Contains("return ");
-                if (hasReturn)
+                // Find the last line that returns a value and capture it
+                var bodyLines = body.Split('\n');
+                for (int i = bodyLines.Length - 1; i >= 0; i--)
                 {
-                    body = body.Replace("return ", "__result = ");
+                    var trimmed = bodyLines[i].TrimStart();
+                    if (trimmed.StartsWith("return "))
+                    {
+                        var indent = bodyLines[i].Length - trimmed.Length;
+                        bodyLines[i] = new string(' ', indent) + "__result = " + trimmed.Substring("return ".Length);
+                        break;
+                    }
                 }
+
+                // Normalize indentation to match the generated stub's 16-space level
+                for (int i = 0; i < bodyLines.Length; i++)
+                {
+                    if (bodyLines[i].TrimStart().Length > 0)
+                        bodyLines[i] = "                " + bodyLines[i].TrimStart();
+                }
+
+                body = string.Join("\n", bodyLines);
+                body = body.TrimEnd();
 
                 endpointsCode.AppendLine(body);
                 endpointsCode.AppendLine($"                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);");
