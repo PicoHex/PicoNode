@@ -3,7 +3,7 @@ namespace PicoWeb;
 public sealed class WebApiBuilder
 {
     private readonly SvcContainer _container = new();
-    private WebAppOptions? _options;
+    private WebAppOptions _options = new();
     private JsonOptions? _jsonOptions;
 
     public WebApiBuilder ConfigureJson(Action<JsonOptions> configure)
@@ -13,10 +13,9 @@ public sealed class WebApiBuilder
         return this;
     }
 
-    public WebApiBuilder ConfigureApp(Action<WebAppOptions> configure)
+    public WebApiBuilder ConfigureApp(Func<WebAppOptions, WebAppOptions> configure)
     {
-        _options ??= new WebAppOptions();
-        configure(_options);
+        _options = configure(new WebAppOptions());
         return this;
     }
 

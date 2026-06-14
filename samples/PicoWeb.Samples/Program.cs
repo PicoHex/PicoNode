@@ -1,20 +1,13 @@
-using System.Net;
-using PicoDI;
+using PicoNode.Web;
 using PicoWeb;
-using PicoWeb.Samples;
 
-var container = new SvcContainer();
-var app = ShowcaseApp.Create(container);
+var api = new WebApiBuilder()
+    .ConfigureApp(o => new WebAppOptions { ServerHeader = "PicoWeb" })
+    .Build();
 
-await using var server = new WebServer(
-    app,
-    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, 7004) }
-);
+api.MapGet("/api/showcase", (WebContext ctx) =>
+    Results.Json(200, """
+        {"status":"ok","path":"/api/showcase"}
+        """u8.ToArray()));
 
-await server.StartAsync();
-
-Console.WriteLine($"PicoWeb showcase listening on {server.LocalEndPoint}");
-Console.WriteLine("Press Enter to stop...");
-Console.ReadLine();
-
-await server.StopAsync();
+await api.RunAsync("http://+:7004");
