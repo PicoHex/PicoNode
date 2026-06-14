@@ -370,7 +370,9 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         if (type.TypeKind == TypeKind.Enum)
             return false;
         var name = type.ToDisplayString();
-        if (name is "string" or "bool" or "int" or "long" or "double" or "float" or "decimal" or "Guid" or "DateTime" or "DateTimeOffset" or "DateOnly" or "TimeOnly")
+        if (name is "string" or "bool" or "int" or "long" or "double" or "float" or "decimal"
+            or "char" or "byte" or "short" or "uint" or "ulong" or "ushort" or "sbyte"
+            or "Guid" or "DateTime" or "DateTimeOffset" or "DateOnly" or "TimeOnly" or "TimeSpan")
             return false;
         return true;
     }
