@@ -152,56 +152,55 @@ Console.ReadLine();
 await node.DisposeAsync();
 ```
 
-### Web Application (with PicoHex Ecosystem)
+### Web Application (DI First + Delegate)
 
 ```csharp
-using System.Net;
-using PicoDI.Abs;
-using PicoLog.Abs;
 using PicoNode.Web;
 using PicoWeb;
 
-var app = new WebApp(new WebAppOptions
+var api = new WebApiBuilder()
+    .ConfigureApp(o => o.ServerHeader = "MyApp")
+    .RegisterScoped<IUserService, UserService>()
+    .Build();
+
+api.MapGet("/", (WebContext ctx) =>
+    Results.Text(200, "Hello, World!"));
+
+api.MapGet("/users/{id}", async (WebContext ctx, IUserService svc) =>
 {
-    ServerHeader = "MyApp",
+    var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+    return Results.Json(200, bytes);
 });
 
-// Middleware
-app.Use(async (context, next, ct) =>
+api.MapPost("/echo", async (WebContext ctx) =>
 {
-    var response = await next(context, ct);
-    return response;
+    using var reader = new StreamReader(ctx.Request.BodyStream);
+    var body = await reader.ReadToEndAsync();
+    return Results.Text(200, body);
 });
 
-// Routes
-app.MapGet("/", static (_, _) =>
-    ValueTask.FromResult(WebResults.Text(200, "Hello, World!", "OK")));
+await api.RunAsync("http://+:8080");
+```
 
-app.MapGet("/users/{id}", static (ctx, _) =>
+### Web Application (Controller-based)
+
+```csharp
+// Controllers/UsersController.cs
+using PicoJetson;
+
+public class UsersController
 {
-    var id = ctx.RouteValues["id"];
-    return ValueTask.FromResult(
-        WebResults.Json(200, $$"""{"id":"{{id}}"}""", "OK"));
-});
+    public UserDto GetUser(int id) { return new UserDto { Id = id }; }
+}
 
-app.MapPost("/echo", static (ctx, _) =>
-{
-    var body = Encoding.UTF8.GetString(ctx.Request.Body.Span);
-    return ValueTask.FromResult(WebResults.Text(200, body, "OK"));
-});
+// Program.cs
+var api = new WebApiBuilder()
+    .RegisterScoped<UsersController>()
+    .Build();
 
-// DI-aware hosting
-var container = new SvcContainer();
-container.RegisterSingleton<IMyService, MyServiceImpl>();
-
-await using var server = new WebServer(app, new WebServerOptions
-{
-    Endpoint = new IPEndPoint(IPAddress.Loopback, 8080),
-}, container);
-
-await server.StartAsync();
-Console.ReadLine();
-await server.StopAsync();
+// Controllers.Gen auto-generates endpoint stubs + [PicoJsonSerializable]
+await api.RunAsync("http://+:8080");
 ```
 
 ## Configuration
@@ -315,23 +314,110 @@ var node = new TcpNode(new TcpNodeOptions
 
 ## Dependency Injection
 
-PicoNode's Web layer integrates with PicoDI for scoped request handling:
+PicoNode.Web requires `ISvcContainer` at construction time (DI First). Scopes are created per-request automatically.
+
+### Manual DI resolution in handlers
 
 ```csharp
+using PicoNode.Web;
+using PicoWeb;
+using PicoJetson;
+
 var container = new SvcContainer();
 container.RegisterScoped<IDatabase, SqlDatabase>();
-container.RegisterSingleton<ICache, RedisCache>();
 
-var app = new WebApp();
-app.Build(container); // Injects scope middleware per request
-
-// In your route handler:
-app.MapGet("/db", async (ctx, ct) =>
+var app = new WebApp(container);
+app.MapGet("/db", async (WebContext ctx) =>
 {
-    var db = ctx.Services!.GetService<IDatabase>();
-    var data = await db.QueryAsync("...");
-    return WebResults.Json(200, data);
+    var db = ctx.Services.GetService<IDatabase>() as IDatabase;
+    var data = await db!.QueryAsync("...");
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(data);
+    return Results.Json(200, bytes);
 });
+
+app.Build();
+```
+
+### Auto-parameter injection via Delegate
+
+Handler parameters are automatically resolved (requires `using PicoNode.Web;`):
+- `WebContext` → current context
+- `CancellationToken` → request cancellation token
+- Any registered service → resolved from DI scope
+
+```csharp
+app.MapGet("/users/{id}", async (WebContext ctx, IUserService svc) =>
+{
+    var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+    return Results.Json(200, bytes);
+});
+```
+
+### AOT-compatible serialization
+
+PicoJetson source generators run at compile time. Handlers must call `SerializeToUtf8Bytes<T>()` directly in user code to trigger generator:
+
+```csharp
+// ✅ Triggers PicoJetson.Gen — UserDto serializer generated
+var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+
+// ❌ Does NOT trigger generator (cross-assembly generic)
+Results.Json<UserDto>(200, user);
+```
+
+### WebApiBuilder (convenience)
+
+```csharp
+using PicoNode.Web;
+using PicoWeb;
+
+var api = new WebApiBuilder()
+    .RegisterScoped<IUserService, UserService>()
+    .ConfigureJson(o => o.PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
+    .Build();
+
+api.MapGet("/api/users/{id}", async (WebContext ctx, IUserService svc) =>
+{
+    var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+    return Results.Json(200, bytes);
+});
+
+await api.RunAsync("http://+:5000");
+```
+
+### WebApiBuilder with Controllers (three-way endpoint registration)
+
+```csharp
+// 1. Controller in Controllers/ folder (convention)
+//    Controllers/UsersController.cs
+public class UsersController
+{
+    public UserDto GetUser(int id) { return new UserDto { ... }; }
+    public List<UserDto> GetAllUsers() { return ...; }
+}
+
+// 2. Register controller in DI
+builder.RegisterScoped<UsersController>();
+
+// 3. Call EndpointRegistrar (auto-generated by Controllers.Gen)
+EndpointRegistrar.RegisterAll(app);
+
+// 4. Or use WebApiBuilder (calls it automatically)
+new WebApiBuilder()
+    .RegisterScoped<UsersController>()
+    .Build()
+    .RunAsync("http://+:5000");
+```
+
+Controllers.Gen and PicoWeb.Gen source generators:
+- Scan `Controllers/` folder and `app.MapGet/MapPost` calls
+- Generate `[PicoJsonSerializable]` for discovered DTOs
+- Generate endpoint stubs that resolve controllers from DI
+
+> **Note:** The controller-based pattern requires PicoJetson.Gen for automatic DTO serialization registration.
+> For the MapXX pattern, call `PicoJetson.JsonSerializer.SerializeToUtf8Bytes<T>()` explicitly in your handler.
 ```
 
 ## Built-in Middleware
