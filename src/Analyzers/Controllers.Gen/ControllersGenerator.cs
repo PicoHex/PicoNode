@@ -313,6 +313,11 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         if (type is INamedTypeSymbol named)
         {
             var fullName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            // Always recurse into type arguments first (handles Task<T>, ValueTask<T>, List<T>)
+            foreach (var arg in named.TypeArguments)
+                CollectTypes(arg, types);
+
+            // Skip System types and primitives — they don't need serialization registration
             if (fullName.StartsWith("global::System"))
                 return;
             if (IsBuiltIn(type))
@@ -320,8 +325,6 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             if (types.Contains(fullName))
                 return;
             types.Add(fullName);
-            foreach (var arg in named.TypeArguments)
-                CollectTypes(arg, types);
         }
     }
 
