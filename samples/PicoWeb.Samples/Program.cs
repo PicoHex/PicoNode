@@ -2,7 +2,6 @@ using System.Net;
 using PicoNode.Web;
 using PicoWeb;
 using PicoDI;
-using PicoDI.Abs;
 
 // ── DI First WebAPI with Controller ─────────────────────
 //
@@ -12,7 +11,10 @@ using PicoDI.Abs;
 // 3. HttpGet/HttpPost attributes
 
 var container = new SvcContainer();
-container.RegisterScoped(typeof(PicoWeb.Samples.Controllers.UsersController));
+container.Register(new PicoDI.Abs.SvcDescriptor(
+    typeof(PicoWeb.Samples.Controllers.UsersController),
+    typeof(PicoWeb.Samples.Controllers.UsersController),
+    PicoDI.Abs.SvcLifetime.Scoped));
 
 var app = new WebApp(container);
 
