@@ -266,17 +266,22 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 if (body.StartsWith("{") && body.EndsWith("}"))
                     body = body.Substring(1, body.Length - 2).Trim();
 
-                // Find the last line that returns a value and capture it
+                // Rewrite ALL `return <expr>;` to `__result = <expr>;` so every code path
+                // captures its value into __result. The last assigned value wins — correct
+                // for all code paths. Void returns (`return;`) are left as-is.
                 var bodyLines = body.Split('\n');
-                for (int i = bodyLines.Length - 1; i >= 0; i--)
+                for (int i = 0; i < bodyLines.Length; i++)
                 {
                     var trimmed = bodyLines[i].TrimStart();
-                    if (trimmed.StartsWith("return "))
-                    {
-                        var indent = bodyLines[i].Length - trimmed.Length;
-                        bodyLines[i] = new string(' ', indent) + "__result = " + trimmed.Substring("return ".Length);
-                        break;
-                    }
+                    if (!trimmed.StartsWith("return "))
+                        continue;
+                    // Skip void return (just "return;") — no value to capture
+                    var afterReturn = trimmed.Substring("return ".Length);
+                    if (afterReturn.TrimStart().StartsWith(";") || afterReturn.Trim().Length == 0)
+                        continue;
+                    // Rewrite: return <expr>; → __result = <expr>;
+                    var indent = bodyLines[i].Length - trimmed.Length;
+                    bodyLines[i] = new string(' ', indent) + "__result = " + afterReturn;
                 }
 
                 // Normalize indentation to match the generated stub's 16-space level
