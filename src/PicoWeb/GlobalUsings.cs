@@ -1,6 +1,9 @@
 global using System.Net;
 global using System.Net.Security;
+global using PicoDI;
 global using PicoDI.Abs;
+global using PicoJetson;
+global using PicoNode.Abs;
 global using PicoLog.Abs;
 global using PicoNode;
 global using PicoNode.Web;
