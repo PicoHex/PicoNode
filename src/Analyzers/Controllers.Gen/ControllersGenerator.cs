@@ -295,7 +295,6 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         }
 
         // Append registrar methods from controllers to the EndpointRegistrar
-        registrarCode.Append("    ");
         registrarCode.Append(registrarMethods);
         registrarCode.AppendLine("    }");
         registrarCode.AppendLine("}");
