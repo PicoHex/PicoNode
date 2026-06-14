@@ -47,6 +47,24 @@ public sealed class WebApiBuilder
             AppSerializationOptions.Default = _jsonOptions;
 
         var app = new WebApp(_container, _options ?? new());
+
+        // Auto-register controller endpoints if EndpointRegistrar exists
+        TryRegisterEndpoints(app);
+
         return new WebApiApp(app);
+    }
+
+    private static void TryRegisterEndpoints(WebApp app)
+    {
+        var registrarType = System.Type.GetType("EndpointRegistrar");
+        if (registrarType is null)
+            return;
+
+        var method = registrarType.GetMethod("RegisterAll",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+        if (method is null)
+            return;
+
+        method.Invoke(null, [app]);
     }
 }
