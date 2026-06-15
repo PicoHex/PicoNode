@@ -34,15 +34,4 @@
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.*" PrivateAssets="all" />
   </ItemGroup>
 
-  <!-- ═══════════════════════════════════════════════════════
-       PicoWeb source generators — available to all projects in the repo.
-       These are pre-built DLLs in src/Analyzers/. NuGet consumers get them
-       via buildTransitive/PicoWeb.props (see src/PicoWeb/buildTransitive/).
-       ═══════════════════════════════════════════════════════ -->
-  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)src\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll')">
-    <Analyzer Include="$(MSBuildThisFileDirectory)src\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll" />
-  </ItemGroup>
-  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)src\Analyzers\PicoWeb.Gen\bin\Release\netstandard2.0\PicoWeb.Gen.dll')">
-    <Analyzer Include="$(MSBuildThisFileDirectory)src\Analyzers\PicoWeb.Gen\bin\Release\netstandard2.0\PicoWeb.Gen.dll" />
-  </ItemGroup>
 </Project>
