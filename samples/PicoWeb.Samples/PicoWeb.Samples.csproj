@@ -13,6 +13,8 @@
     <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
   </ItemGroup>
 
+
+
   <ItemGroup>
     <PackageReference Include="PicoCfg" Version="2026.6.4" />
     <PackageReference Include="PicoDI" Version="2026.6.4" />
