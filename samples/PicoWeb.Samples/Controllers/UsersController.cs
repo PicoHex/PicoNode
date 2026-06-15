@@ -12,6 +12,7 @@ public class UsersController
     public UserDto GetUser(int id) => new UserDto { Id = id, Name = $"User {id}" };
 }
 
+[PicoJetson.PicoJsonSerializable]
 public class UserDto
 {
     public int Id { get; set; }

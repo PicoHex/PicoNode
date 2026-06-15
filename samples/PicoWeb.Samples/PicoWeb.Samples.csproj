@@ -14,9 +14,13 @@
     <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
   </ItemGroup>
 
-
-
-
+  <!-- Source generators (ProjectReference doesn't transitively flow analyzers) -->
+  <ItemGroup Condition="Exists('..\..\src\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll')">
+    <Analyzer Include="..\..\src\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll" />
+  </ItemGroup>
+  <ItemGroup Condition="Exists('..\..\src\Analyzers\PicoWeb.Gen\bin\Release\netstandard2.0\PicoWeb.Gen.dll')">
+    <Analyzer Include="..\..\src\Analyzers\PicoWeb.Gen\bin\Release\netstandard2.0\PicoWeb.Gen.dll" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="PicoCfg" Version="2026.6.7" />
