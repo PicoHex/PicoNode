@@ -7,11 +7,14 @@
     <LangVersion>latest</LangVersion>
     <PublishAot>true</PublishAot>
     <TrimMode>full</TrimMode>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
   </ItemGroup>
+
+
 
 
 

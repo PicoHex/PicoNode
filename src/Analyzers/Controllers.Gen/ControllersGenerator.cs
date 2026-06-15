@@ -63,9 +63,10 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             return null;
 
         var controllerName = classSymbol.Name;
+        var controllerFullName = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var routePrefix = GetRoutePrefix(classDecl, classSymbol);
 
-        return new ControllerModel(controllerName, routePrefix, methods);
+        return new ControllerModel(controllerName, controllerFullName, routePrefix, methods);
     }
 
     private static string? GetHttpMethod(MethodDeclarationSyntax method, IMethodSymbol methodSymbol)
@@ -127,21 +128,26 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             }
         }
 
-        // Convert method name segments: GetUserById → /user/by/{id}
-        var parts = new List<string>();
+        // Convert method name: GetUserById → /user/{id}
         var routeParams = new List<string>();
         foreach (var param in methodSymbol.Parameters)
         {
-            routeParams.Add(param.Name);
+            // Simple types (int, string, Guid, etc.) become route parameters
+            if (!IsComplexType(param.Type))
+                routeParams.Add("{" + param.Name + "}");
         }
 
-        var lastParam = routeParams.LastOrDefault();
-        if (lastParam != null && methodName.IndexOf(lastParam, StringComparison.OrdinalIgnoreCase) >= 0)
+        // Strip trailing parameter name from method name if present
+        var lastParam = methodSymbol.Parameters.LastOrDefault();
+        if (lastParam != null && methodName.IndexOf(lastParam.Name, StringComparison.OrdinalIgnoreCase) >= 0)
         {
-            methodName = methodName.Substring(0, methodName.Length - lastParam.Length);
+            methodName = methodName.Substring(0, methodName.Length - lastParam.Name.Length);
         }
 
-        return "/" + ToKebabCase(methodName);
+        var route = "/" + ToKebabCase(methodName);
+        if (routeParams.Count > 0)
+            route += "/" + string.Join("/", routeParams);
+        return route;
     }
 
     private static string GetRoutePrefix(
@@ -226,31 +232,63 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             foreach (var method in controller.Methods)
             {
 
+                // Register complex types for serialization
                 foreach (var param in method.Symbol.Parameters)
                 {
                     if (IsComplexType(param.Type))
                         CollectTypes(param.Type, serializables);
                 }
 
-                var routeParams = string.Join(", ", method.Symbol.Parameters.Select(p =>
+                var mapMethod = method.HttpMethod switch
                 {
-                    var typeName = p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    return $"{typeName} {p.Name}";
-                }));
-                if (routeParams.Length > 0)
-                    routeParams = "WebContext ctx, " + routeParams;
-                else
-                    routeParams = "WebContext ctx";
+                    "GET" => "MapGet",
+                    "POST" => "MapPost",
+                    "PUT" => "MapPut",
+                    "DELETE" => "MapDelete",
+                    "PATCH" => "MapPatch",
+                    _ => "MapGet",
+                };
 
-                endpointsCode.AppendLine($"            app.Map{method.HttpMethod}(\"{controller.RoutePrefix}{method.Route}\", async ({routeParams}) =>");
+                endpointsCode.AppendLine($"            app.{mapMethod}(\"{controller.RoutePrefix}{method.Route}\", async (WebContext ctx) =>");
                 endpointsCode.AppendLine("            {");
 
-                // Resolve controller from DI, call the original method, capture return
+                // Bind route parameters and DI services
+                var callArgs = new List<string>();
+                foreach (var param in method.Symbol.Parameters)
+                {
+                    var typeName = param.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    var paramName = param.Name;
+
+                    if (!IsComplexType(param.Type))
+                    {
+                        // Simple type — bind from route values (AOT-safe: no Convert.ChangeType)
+                        if (typeName == "int" || typeName == "global::System.Int32")
+                            endpointsCode.AppendLine($"                var __{paramName} = int.Parse(ctx.RouteValues[\"{paramName}\"]);");
+                        else if (typeName == "string" || typeName == "global::System.String")
+                            endpointsCode.AppendLine($"                var __{paramName} = ctx.RouteValues[\"{paramName}\"];");
+                        else if (typeName == "long" || typeName == "global::System.Int64")
+                            endpointsCode.AppendLine($"                var __{paramName} = long.Parse(ctx.RouteValues[\"{paramName}\"]);");
+                        else if (typeName == "double" || typeName == "global::System.Double")
+                            endpointsCode.AppendLine($"                var __{paramName} = double.Parse(ctx.RouteValues[\"{paramName}\"]);");
+                        else
+                            endpointsCode.AppendLine($"                var __{paramName} = ({typeName})System.Convert.ChangeType(ctx.RouteValues[\"{paramName}\"], typeof({typeName}));");
+                    }
+                    else
+                    {
+                        // Complex type — resolve from DI
+                        endpointsCode.AppendLine($"                var __{paramName} = ctx.Services.GetService(typeof({typeName}));");
+                    }
+                    callArgs.Add($"__{paramName}");
+                }
+
+                // Collect and resolve the controller
+                endpointsCode.AppendLine($"                var __controller = ctx.Services.GetService(typeof({controller.FullName}))!;");
+
+                // Call the original method
                 var retType = method.Symbol.ReturnType;
                 var isAsync = false;
                 var resultTypeName = retType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
-                // Unwrap Task<T> / ValueTask<T> to get the actual return type
                 if (retType is INamedTypeSymbol namedRet && namedRet.TypeArguments.Length == 1)
                 {
                     var name = namedRet.Name;
@@ -261,16 +299,14 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                     }
                 }
 
-                var controllerTypeName = controller.Name;
-                var callArgs = string.Join(", ", method.Symbol.Parameters.Select(p => p.Name));
                 var awaitPrefix = isAsync ? "await " : "";
+                endpointsCode.AppendLine($"                var __result = ({resultTypeName}){awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});");
 
-                endpointsCode.AppendLine($"                var __controller = ctx.Services.GetService(typeof({controllerTypeName}))!;");
-                endpointsCode.AppendLine($"                var __result = ({resultTypeName}){awaitPrefix}(({controllerTypeName})__controller).{method.Symbol.Name}({callArgs});");
+                // Serialize and return
                 endpointsCode.AppendLine($"                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);");
                 endpointsCode.AppendLine($"                return PicoWeb.Results.Json(200, __bytes);");
 
-                // Register controller type for serialization
+                // Register return type for serialization
                 CollectTypes(retType, serializables);
                 endpointsCode.AppendLine("            });");
                 endpointsCode.AppendLine();
@@ -283,11 +319,14 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             registrarMethods.AppendLine($"        {stubClassName}.Register(app);");
         }
 
-        // Generate [assembly: PicoJsonSerializable(...)]
+        // Generate marker classes with [PicoJsonSerializable] (assembly-level not supported)
         var serializablesCode = new StringBuilder();
+        var markerIdx = 0;
         foreach (var type in serializables)
         {
-            serializablesCode.AppendLine($"[assembly: PicoJetson.PicoJsonSerializable(typeof({type}))]");
+            serializablesCode.AppendLine("[PicoJetson.PicoJsonSerializable(typeof(" + type + "))]");
+            serializablesCode.AppendLine("file sealed class __PicoJetson_Serializable_" + markerIdx + " { }");
+            markerIdx++;
         }
 
         // Append registrar methods from controllers to the EndpointRegistrar
@@ -359,12 +398,14 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 internal sealed class ControllerModel
 {
     public string Name { get; }
+    public string FullName { get; }
     public string RoutePrefix { get; }
     public List<MethodModel> Methods { get; }
 
-    public ControllerModel(string name, string routePrefix, List<MethodModel> methods)
+    public ControllerModel(string name, string fullName, string routePrefix, List<MethodModel> methods)
     {
         Name = name;
+        FullName = fullName;
         RoutePrefix = routePrefix;
         Methods = methods;
     }

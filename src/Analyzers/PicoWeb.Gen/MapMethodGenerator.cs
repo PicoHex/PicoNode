@@ -111,11 +111,14 @@ public sealed class MapMethodGenerator : IIncrementalGenerator
         var seen = new HashSet<string>();
         var sb = new StringBuilder();
 
+        var idx = 0;
         foreach (var type in types)
         {
             if (type != null && seen.Add(type))
             {
-                sb.AppendLine($"[assembly: PicoJetson.PicoJsonSerializable(typeof({type}))]");
+                sb.AppendLine("[PicoJetson.PicoJsonSerializable(typeof(" + type + "))]");
+                sb.AppendLine("file sealed class __PicoJetson_Serializable_" + idx + " { }");
+                idx++;
             }
         }
 
