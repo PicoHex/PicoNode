@@ -216,7 +216,6 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             return;
         }
 
-        var serializables = new HashSet<string>();
         var endpointsCode = new StringBuilder();
         var registrarMethods = new StringBuilder();
 
@@ -231,13 +230,6 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
             foreach (var method in controller.Methods)
             {
-
-                // Register complex types for serialization
-                foreach (var param in method.Symbol.Parameters)
-                {
-                    if (IsComplexType(param.Type))
-                        CollectTypes(param.Type, serializables);
-                }
 
                 var mapMethod = method.HttpMethod switch
                 {
@@ -306,8 +298,6 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 endpointsCode.AppendLine($"                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);");
                 endpointsCode.AppendLine($"                return PicoWeb.Results.Json(200, __bytes);");
 
-                // Register return type for serialization
-                CollectTypes(retType, serializables);
                 endpointsCode.AppendLine("            });");
                 endpointsCode.AppendLine();
             }
@@ -319,25 +309,12 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             registrarMethods.AppendLine($"        {stubClassName}.Register(app);");
         }
 
-        // Generate marker classes with [PicoJsonSerializable] (assembly-level not supported)
-        var serializablesCode = new StringBuilder();
-        var markerIdx = 0;
-        foreach (var type in serializables)
-        {
-            serializablesCode.AppendLine("[PicoJetson.PicoJsonSerializable(typeof(" + type + "))]");
-            serializablesCode.AppendLine("file sealed class __PicoJetson_Serializable_" + markerIdx + " { }");
-            markerIdx++;
-        }
-
         // Append registrar methods from controllers to the EndpointRegistrar
         registrarCode.Append(registrarMethods);
         registrarCode.AppendLine("    }");
         registrarCode.AppendLine("}");
 
         // Add sources
-        if (serializablesCode.Length > 0)
-            context.AddSource("PicoJetson_Serializables.g.cs", serializablesCode.ToString());
-
         if (endpointsCode.Length > 0)
         {
             var endpointSource = "using PicoNode.Web;\nusing PicoJetson;\n\n" + endpointsCode.ToString();
@@ -345,39 +322,6 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         }
 
         context.AddSource("EndpointRegistrar.g.cs", registrarCode.ToString());
-    }
-
-    private static void CollectTypes(ITypeSymbol type, HashSet<string> types)
-    {
-        if (type is INamedTypeSymbol named)
-        {
-            var fullName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            // Always recurse into type arguments first (handles Task<T>, ValueTask<T>, List<T>)
-            foreach (var arg in named.TypeArguments)
-                CollectTypes(arg, types);
-
-            // Skip System types and primitives — they don't need serialization registration
-            if (fullName.StartsWith("global::System"))
-                return;
-            if (IsBuiltIn(type))
-                return;
-            if (types.Contains(fullName))
-                return;
-            types.Add(fullName);
-        }
-    }
-
-    private static bool IsBuiltIn(ITypeSymbol type)
-    {
-        var name = type.ToDisplayString();
-        return name switch
-        {
-            "string" or "bool" or "int" or "long" or "double" or "float" or "decimal"
-                or "char" or "byte" or "short" or "uint" or "ulong" or "ushort" or "sbyte"
-                or "Guid" or "DateTime" or "DateTimeOffset" or "DateOnly" or "TimeOnly"
-                or "TimeSpan" => true,
-            _ => false,
-        };
     }
 
     private static bool IsComplexType(ITypeSymbol type)

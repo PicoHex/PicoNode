@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    PicoWeb source generators — auto-registered as Analyzers for all consuming projects.
+    These generators produce:
+      - Controllers.Gen: endpoint stubs for Controllers/ folder convention
+      - PicoWeb.Gen: serializable type discovery for MapGet/MapPost return types
+  -->
+  <ItemGroup>
+    <Analyzer Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\Controllers.Gen.dll" />
+    <Analyzer Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\PicoWeb.Gen.dll" />
+  </ItemGroup>
+</Project>

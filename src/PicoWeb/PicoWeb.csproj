@@ -34,12 +34,15 @@
     <InternalsVisibleTo Include="PicoWeb.Tests" />
   </ItemGroup>
 
-  <!-- Source generators — reference pre-built DLLs from src/Analyzers/ -->
-  <ItemGroup Condition="Exists('..\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll')">
-    <Analyzer Include="..\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll" />
+  <!-- Pack analyzers into NuGet package for transitive consumption -->
+  <ItemGroup>
+    <None Include="..\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll" Pack="true" PackagePath="analyzers\dotnet\cs\" Visible="false" />
+    <None Include="..\Analyzers\PicoWeb.Gen\bin\Release\netstandard2.0\PicoWeb.Gen.dll" Pack="true" PackagePath="analyzers\dotnet\cs\" Visible="false" />
   </ItemGroup>
-  <ItemGroup Condition="Exists('..\Analyzers\PicoWeb.Gen\bin\Release\netstandard2.0\PicoWeb.Gen.dll')">
-    <Analyzer Include="..\Analyzers\PicoWeb.Gen\bin\Release\netstandard2.0\PicoWeb.Gen.dll" />
+
+  <!-- Pack buildTransitive .props for transitive analyzer registration -->
+  <ItemGroup>
+    <None Include="buildTransitive\PicoWeb.props" Pack="true" PackagePath="buildTransitive\" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>

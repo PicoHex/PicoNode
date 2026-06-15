@@ -25,7 +25,7 @@ public sealed class ControllersGeneratorTests
     }
 
     [Test]
-    public async Task Controller_with_DTO_return_generates_serializable_marker_class()
+    public async Task Controller_with_DTO_return_does_not_need_serializable_marker()
     {
         var source = """
             namespace MyApp.Controllers;
@@ -38,10 +38,9 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Controllers/UsersController.cs");
 
-        // Should generate marker class, NOT assembly-level attribute
-        await Assert.That(result).DoesNotContain("[assembly:");
-        await Assert.That(result).Contains("PicoJetson.PicoJsonSerializable(typeof(global::MyApp.Controllers.UserDto))");
-        await Assert.That(result).Contains("file sealed class __PicoJetson_Serializable_0");
+        // Controllers.Gen no longer generates [PicoJsonSerializable] markers.
+        // Users must apply the attribute directly to DTOs for PicoJetson.Gen to discover.
+        await Assert.That(result).DoesNotContain("PicoJsonSerializable");
     }
 
     [Test]

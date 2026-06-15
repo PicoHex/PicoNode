@@ -105,24 +105,12 @@ public sealed class MapMethodGenerator : IIncrementalGenerator
 
     private static void GenerateSource(SourceProductionContext context, ImmutableArray<string> types)
     {
-        if (types.Length == 0)
-            return;
-
-        var seen = new HashSet<string>();
-        var sb = new StringBuilder();
-
-        var idx = 0;
-        foreach (var type in types)
-        {
-            if (type != null && seen.Add(type))
-            {
-                sb.AppendLine("[PicoJetson.PicoJsonSerializable(typeof(" + type + "))]");
-                sb.AppendLine("file sealed class __PicoJetson_Serializable_" + idx + " { }");
-                idx++;
-            }
-        }
-
-        if (sb.Length > 0)
-            context.AddSource("MapMethod_Serializables.g.cs", sb.ToString());
+        // PicoWeb.Gen's serializable registration has been removed because
+        // source generators cannot rely on other generators' output.
+        // Users must apply [PicoJetson.PicoJsonSerializable] directly to their DTOs
+        // so PicoJetson.Gen can discover them at compile time.
+        //
+        // This generator remains as a placeholder for future type-analysis features.
+        _ = types;
     }
 }
