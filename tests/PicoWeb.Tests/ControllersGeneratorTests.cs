@@ -357,7 +357,7 @@ public sealed class ControllersGeneratorTests
         var compilation = CSharpCompilation.Create("TestAssembly",
             new[] { syntaxTree },
             references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            new CSharpCompilationOptions(OutputKind.ConsoleApplication));
 
         var generator = new ControllersGenerator();
 

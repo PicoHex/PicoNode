@@ -12,8 +12,6 @@ namespace Controllers.Gen;
 [Generator(LanguageNames.CSharp)]
 public sealed class ControllersGenerator : IIncrementalGenerator
 {
-    private const string ControllersFolder = "Controllers";
-
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var controllerClasses = context.SyntaxProvider.CreateSyntaxProvider(
@@ -29,10 +27,23 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
     private static ControllerModel? GetClassModel(GeneratorSyntaxContext ctx, CancellationToken ct)
     {
+        // Only generate for executable projects that reference PicoNode.Web.WebApp
+        var comp = ctx.SemanticModel.Compilation;
+        if (comp.GetTypeByMetadataName("PicoNode.Web.WebApp") is null)
+            return null;
+        // Library projects (DLL) would export EndpointRegistrar and cause conflicts;
+        // only ConsoleApplication / WindowsApplication need generated endpoints.
+        var kind = comp.Options.OutputKind;
+        if (kind != OutputKind.ConsoleApplication && kind != OutputKind.WindowsApplication)
+            return null;
+
         var classDecl = (ClassDeclarationSyntax)ctx.Node;
         var filePath = classDecl.SyntaxTree.FilePath;
 
-        if (!filePath.Contains(ControllersFolder))
+        // Match Controllers/ folder as a directory segment (not just any path with "Controllers")
+        var normalized = filePath.Replace('\\', '/');
+        var idx = normalized.IndexOf("/Controllers/", StringComparison.Ordinal);
+        if (idx < 0 && !normalized.StartsWith("Controllers/", StringComparison.Ordinal))
             return null;
 
         var semanticModel = ctx.SemanticModel;
@@ -197,24 +208,30 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
     private static void GenerateSources(SourceProductionContext context, System.Collections.Immutable.ImmutableArray<ControllerModel> controllers)
     {
-        // Always generate an EndpointRegistrar so user code can call it unconditionally.
-        // When controllers exist, it registers them. When none, it's empty.
         var registrarCode = new StringBuilder();
-        registrarCode.AppendLine("using PicoNode.Web;");
-        registrarCode.AppendLine();
-        registrarCode.AppendLine("public static class EndpointRegistrar");
-        registrarCode.AppendLine("{");
-        registrarCode.AppendLine("    public static void RegisterAll(WebApp app)");
-        registrarCode.AppendLine("    {");
 
         if (controllers.Length == 0)
         {
+            // No controllers — use object parameter so this compiles even in projects
+            // without PicoNode.Web reference (e.g., class libraries using the analyzer).
+            registrarCode.AppendLine("public static class EndpointRegistrar");
+            registrarCode.AppendLine("{");
+            registrarCode.AppendLine("    public static void RegisterAll(object app)");
+            registrarCode.AppendLine("    {");
             registrarCode.AppendLine("        // No controllers found — nothing to register");
             registrarCode.AppendLine("    }");
             registrarCode.AppendLine("}");
             context.AddSource("EndpointRegistrar.g.cs", registrarCode.ToString());
             return;
         }
+
+        // Controllers exist — strongly-typed WebApp parameter
+        registrarCode.AppendLine("using PicoNode.Web;");
+        registrarCode.AppendLine();
+        registrarCode.AppendLine("public static class EndpointRegistrar");
+        registrarCode.AppendLine("{");
+        registrarCode.AppendLine("    public static void RegisterAll(WebApp app)");
+        registrarCode.AppendLine("    {");
 
         var endpointsCode = new StringBuilder();
         var registrarMethods = new StringBuilder();
