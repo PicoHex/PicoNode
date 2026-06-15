@@ -14,9 +14,9 @@
     <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
 
     <!--
-      Source generators: MSBuild's ProjectReference does NOT flow <Analyzer> items.
-      With NuGet PackageReference, buildTransitive/PicoWeb.props handles this automatically.
-      Until PicoWeb is consumed via NuGet, add the analyzers explicitly here.
+      Source generators: MSBuild ProjectReference does NOT propagate <Analyzer> items.
+      They MUST be referenced by the consuming project. NuGet consumers get them
+      automatically via buildTransitive/PicoWeb.props (see src/PicoWeb/buildTransitive/).
     -->
     <Analyzer Include="..\..\src\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll"
               Condition="Exists('..\..\src\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll')" />
