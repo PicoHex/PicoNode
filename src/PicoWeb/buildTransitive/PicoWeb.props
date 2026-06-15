@@ -6,7 +6,9 @@
       - PicoWeb.Gen: serializable type discovery for MapGet/MapPost return types
   -->
   <ItemGroup>
-    <Analyzer Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\Controllers.Gen.dll" />
-    <Analyzer Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\PicoWeb.Gen.dll" />
+    <Analyzer Condition="Exists('$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\Controllers.Gen.dll')"
+              Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\Controllers.Gen.dll" />
+    <Analyzer Condition="Exists('$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\PicoWeb.Gen.dll')"
+              Include="$(MSBuildThisFileDirectory)..\analyzers\dotnet\cs\PicoWeb.Gen.dll" />
   </ItemGroup>
 </Project>
