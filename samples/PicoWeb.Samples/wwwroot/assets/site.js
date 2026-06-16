@@ -127,6 +127,71 @@ document.addEventListener('DOMContentLoaded', () => {
     const dropZone = document.querySelector('.file-input-wrapper');
     const uploadForm = document.getElementById('upload-form');
 
+    // ── Pattern 1: Convention ──
+    const conventionBtn = document.getElementById('btn-convention');
+    const conventionInput = document.getElementById('convention-id');
+    if (conventionBtn) {
+        conventionBtn.addEventListener('click', async () => {
+            const id = conventionInput ? conventionInput.value : 42;
+            try {
+                updateOutput('convention', 'FETCHING...', '');
+                const start = performance.now();
+                const res = await fetch(`/api/users/user/${id}`);
+                const data = await readResponse(res);
+                const ms = Math.round(performance.now() - start);
+                updateOutput('convention', `STATUS: ${res.status} | LATENCY: ${ms}ms`, data);
+            } catch (e) {
+                updateOutput('convention', 'ERROR', formatError(e), true);
+            }
+        });
+    }
+
+    // ── Pattern 2: Route attribute ──
+    const routeAttrBtn = document.getElementById('btn-route-attr');
+    const categoryInput = document.getElementById('route-category');
+    const routeIdInput = document.getElementById('route-id');
+    if (routeAttrBtn) {
+        routeAttrBtn.addEventListener('click', async () => {
+            const cat = categoryInput ? categoryInput.value : 'electronics';
+            const id = routeIdInput ? routeIdInput.value : 99;
+            try {
+                updateOutput('route-attr', 'FETCHING...', '');
+                const start = performance.now();
+                const res = await fetch(`/api/v2/products/${cat}/${id}`);
+                const data = await readResponse(res);
+                const ms = Math.round(performance.now() - start);
+                updateOutput('route-attr', `STATUS: ${res.status} | LATENCY: ${ms}ms`, data);
+            } catch (e) {
+                updateOutput('route-attr', 'ERROR', formatError(e), true);
+            }
+        });
+    }
+
+    // ── Pattern 3: Verb attributes ──
+    const verbDeleteBtn = document.getElementById('btn-verb-delete');
+    const verbPatchBtn = document.getElementById('btn-verb-patch');
+    const verbIdInput = document.getElementById('verb-id');
+    const doVerbRequest = async (method, label) => {
+        const id = verbIdInput ? verbIdInput.value : 7;
+        try {
+            updateOutput('verb-attr', `${label}...`, '');
+            const start = performance.now();
+            const res = await fetch(`/api/posts/${id}`, { method });
+            const text = await res.text();
+            const ms = Math.round(performance.now() - start);
+            const display = text || `{ }  (${res.status} ${method})`;
+            updateOutput('verb-attr', `STATUS: ${res.status} | ${label} | LATENCY: ${ms}ms`, display);
+        } catch (e) {
+            updateOutput('verb-attr', 'ERROR', formatError(e), true);
+        }
+    };
+    if (verbDeleteBtn) {
+        verbDeleteBtn.addEventListener('click', () => doVerbRequest('DELETE', 'DELETE /api/posts/{id}'));
+    }
+    if (verbPatchBtn) {
+        verbPatchBtn.addEventListener('click', () => doVerbRequest('PATCH', 'PATCH /api/posts/{id}'));
+    }
+
     if (dropZone && fileInput && uploadForm) {
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, (e) => {

@@ -8,12 +8,12 @@
 </head>
 <body>
     <div class="blueprint-grid"></div>
-    
+
     <header class="sys-header">
         <div class="logo-mark">PW</div>
         <div>
-            <h1 class="sys-title">PicoWeb Static Showcase</h1>
-            <p class="sys-subtitle">Static files, compression, CORS, cookies, and multipart forms on one tiny pipeline</p>
+            <h1 class="sys-title">PicoWeb Controller Patterns</h1>
+            <p class="sys-subtitle">Three controller discovery modes · AOT-ready · DI First · Source-generated endpoints</p>
         </div>
         <div class="status-indicator">
             <span class="pulse"></span> LIVE
@@ -21,13 +21,75 @@
     </header>
 
     <main class="dashboard">
+        <!-- ── Pattern 1: Convention ── -->
+        <section class="panel" id="panel-convention">
+            <div class="panel-header">
+                <h2>Pattern 1 · Convention</h2>
+                <span class="badge">Controllers/ + Get* prefix</span>
+            </div>
+            <div class="panel-body">
+                <p><code>UsersController.GetUser(int id)</code> discovered by <strong>file path</strong> (<code>Controllers/</code>) + <strong>method prefix</strong> (<code>Get*</code> → GET) → <code>/api/users/user/{id}</code></p>
+                <div class="input-group">
+                    <input type="number" id="convention-id" value="42" class="text-input" style="width:80px">
+                    <button class="btn primary" id="btn-convention">GET /api/users/user/{id}</button>
+                </div>
+                <div class="output-container">
+                    <div class="output-meta" id="meta-convention">Waiting...</div>
+                    <pre class="code-block" id="out-convention">// Convention pattern result</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── Pattern 2: Route attribute ── -->
+        <section class="panel" id="panel-route-attr">
+            <div class="panel-header">
+                <h2>Pattern 2 · Route Attribute</h2>
+                <span class="badge">[Route] + [HttpGet]</span>
+            </div>
+            <div class="panel-body">
+                <p><code>[Route("/api/v2/products")]</code> on class + <code>[HttpGet("{category}/{id}")]</code> on method override the default convention.</p>
+                <div class="input-group">
+                    <input type="text" id="route-category" value="electronics" class="text-input" style="width:120px" placeholder="category">
+                    <input type="number" id="route-id" value="99" class="text-input" style="width:80px" placeholder="id">
+                    <button class="btn primary" id="btn-route-attr">GET /api/v2/products/{cat}/{id}</button>
+                </div>
+                <div class="output-container">
+                    <div class="output-meta" id="meta-route-attr">Waiting...</div>
+                    <pre class="code-block" id="out-route-attr">// Route attribute pattern result</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── Pattern 3: HTTP verb attributes ── -->
+        <section class="panel" id="panel-verb-attr">
+            <div class="panel-header">
+                <h2>Pattern 3 · Verb Attributes</h2>
+                <span class="badge">[HttpPost] [HttpDelete] [HttpPatch]</span>
+            </div>
+            <div class="panel-body">
+                <p><code>[HttpPost]</code>, <code>[HttpDelete]</code>, <code>[HttpPatch]</code> on methods specify the HTTP verb explicitly.</p>
+                <div class="btn-group">
+                    <button class="btn secondary" id="btn-verb-delete">DELETE /api/posts/{id}</button>
+                    <button class="btn secondary" id="btn-verb-patch">PATCH /api/posts/{id}</button>
+                </div>
+                <div class="input-group" style="margin-top:8px">
+                    <input type="number" id="verb-id" value="7" class="text-input" style="width:80px" placeholder="id">
+                </div>
+                <div class="output-container">
+                    <div class="output-meta" id="meta-verb-attr">Waiting...</div>
+                    <pre class="code-block" id="out-verb-attr">// Verb attribute pattern result</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── Original Showcase panels ── -->
         <section class="panel" id="panel-api">
             <div class="panel-header">
-                <h2>01. Routing & CORS</h2>
+                <h2>Showcase API</h2>
                 <span class="badge">GET /api/showcase</span>
             </div>
             <div class="panel-body">
-                <p>Fetch the live sample contract, including enabled features and the CORS policy exposed for local cross-origin API clients.</p>
+                <p>Fetch the live sample contract, including enabled features and the CORS policy.</p>
                 <button class="btn primary" id="btn-fetch-showcase">Execute Request</button>
                 <div class="output-container">
                     <div class="output-meta" id="meta-showcase">Waiting...</div>
@@ -38,11 +100,11 @@
 
         <section class="panel" id="panel-content">
             <div class="panel-header">
-                <h2>02. Content Compression</h2>
+                <h2>Content Compression</h2>
                 <span class="badge">GET /api/content</span>
             </div>
             <div class="panel-body">
-                <p>Ask the browser for a larger response and inspect the returned <code>Content-Encoding</code> header to confirm negotiated compression.</p>
+                <p>Fetch a larger response and inspect the <code>Content-Encoding</code> header.</p>
                 <button class="btn primary" id="btn-fetch-content">Fetch Content Payload</button>
                 <div class="output-container">
                     <div class="output-meta" id="meta-content">Waiting...</div>
@@ -53,11 +115,11 @@
 
         <section class="panel" id="panel-state">
             <div class="panel-header">
-                <h2>03. State & Cookies</h2>
+                <h2>State & Cookies</h2>
                 <span class="badge">GET/POST /api/preferences*</span>
             </div>
             <div class="panel-body">
-                <p>Set a same-origin theme cookie on the server, then read it back through the API and apply the preference to this static page.</p>
+                <p>Set a theme cookie on the server and read it back.</p>
                 <div class="btn-group">
                     <button class="btn secondary" data-theme-set="light">Set Light Theme</button>
                     <button class="btn secondary" data-theme-set="dark">Set Dark Theme</button>
@@ -72,11 +134,11 @@
 
         <section class="panel span-2" id="panel-upload">
             <div class="panel-header">
-                <h2>04. Multipart Form Data</h2>
+                <h2>Multipart Form Data</h2>
                 <span class="badge">POST /api/uploads</span>
             </div>
             <div class="panel-body">
-                <p>Submit a real <code>multipart/form-data</code> request and inspect the parsed field and file metadata returned by the server.</p>
+                <p>Submit a <code>multipart/form-data</code> request and inspect parsed fields/files.</p>
                 <form id="upload-form" class="upload-zone" method="post" action="/api/uploads" enctype="multipart/form-data">
                     <div class="file-input-wrapper">
                         <input type="file" id="file-input" name="file" multiple>
@@ -98,7 +160,7 @@
 
     <footer class="sys-footer">
         <div>PicoWeb showcase sample</div>
-        <div>Static HTML • plain JavaScript • existing PicoNode.Web primitives</div>
+        <div>3 controller patterns • inline routes • AOT-ready</div>
     </footer>
 
     <script src="/assets/site.js"></script>
