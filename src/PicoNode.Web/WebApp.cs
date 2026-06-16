@@ -9,6 +9,8 @@ public sealed class WebApp
 
     private WebRequestHandler? _fallbackHandler;
 
+    /// <summary>Wraps a Delegate into a WebRequestHandler. Uses reflection (DynamicInvoke),
+    /// so prefer the typed overloads for AOT-safe code paths.</summary>
     private static WebRequestHandler WrapDelegate(Delegate handler)
     {
         return async (ctx, ct) =>
@@ -58,7 +60,35 @@ public sealed class WebApp
         return this;
     }
 
-    /// <summary>Maps a route to a handler for the specified HTTP method and URL pattern.</summary>
+    // ── AOT-safe typed overloads (no reflection) ──
+
+    /// <summary>Maps a route to a typed handler. AOT-safe — no DynamicInvoke.</summary>
+    public WebApp Map(string method, string pattern, WebRequestHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        _routes.Add(new()
+        {
+            Method = method,
+            Pattern = pattern,
+            Handler = handler,
+        });
+        return this;
+    }
+
+    public WebApp MapGet(string pattern, WebRequestHandler handler) => Map("GET", pattern, handler);
+    public WebApp MapPost(string pattern, WebRequestHandler handler) => Map("POST", pattern, handler);
+    public WebApp MapPut(string pattern, WebRequestHandler handler) => Map("PUT", pattern, handler);
+    public WebApp MapDelete(string pattern, WebRequestHandler handler) => Map("DELETE", pattern, handler);
+    public WebApp MapPatch(string pattern, WebRequestHandler handler) => Map("PATCH", pattern, handler);
+    public WebApp MapFallback(WebRequestHandler handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        _fallbackHandler = handler;
+        return this;
+    }
+
+    // ── Delegate overloads (convenience, uses DynamicInvoke / reflection) ──
+
     public WebApp Map(string method, string pattern, Delegate handler)
     {
         ArgumentNullException.ThrowIfNull(handler);

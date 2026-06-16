@@ -264,7 +264,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 var fullRoute = methodRoute.StartsWith("/")
                     ? controller.RoutePrefix + methodRoute
                     : controller.RoutePrefix + "/" + methodRoute;
-                endpointsCode.AppendLine($"            app.{mapMethod}(\"{fullRoute}\", async (WebContext ctx) =>");
+                endpointsCode.AppendLine($"            app.{mapMethod}(\"{fullRoute}\", (WebContext ctx, CancellationToken _) =>");
                 endpointsCode.AppendLine("            {");
 
                 // Bind route parameters and DI services
@@ -320,13 +320,13 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 if (isVoid)
                 {
                     endpointsCode.AppendLine($"                {awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});");
-                    endpointsCode.AppendLine($"                return PicoWeb.Results.Empty(204);");
+                    endpointsCode.AppendLine($"                return ValueTask.FromResult(PicoWeb.Results.Empty(204));");
                 }
                 else
                 {
                     endpointsCode.AppendLine($"                var __result = ({resultTypeName}){awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});");
                     endpointsCode.AppendLine($"                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);");
-                    endpointsCode.AppendLine($"                return PicoWeb.Results.Json(200, __bytes);");
+                    endpointsCode.AppendLine($"                return ValueTask.FromResult(PicoWeb.Results.Json(200, __bytes));");
                 }
 
                 endpointsCode.AppendLine("            });");

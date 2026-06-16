@@ -331,9 +331,10 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Controllers/UsersController.cs");
 
-        // The handler lambda should take only WebContext, not route params
-        await Assert.That(result).Contains("async (WebContext ctx) =>");
-        await Assert.That(result).DoesNotContain("async (WebContext ctx, int id) =>");
+        // The handler lambda uses WebRequestHandler signature (ctx + CancellationToken),
+        // not route params as lambda parameters
+        await Assert.That(result).Contains("(WebContext ctx, CancellationToken _) =>");
+        await Assert.That(result).DoesNotContain("int id");
     }
 
     private static string RunGenerator(string source, string fileName)
