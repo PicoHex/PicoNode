@@ -22,6 +22,10 @@ container.Build();
 
 var app = new WebApp(container);
 
+// Static file middleware — serves the interactive landing page from wwwroot/
+var staticFiles = new StaticFileMiddleware(Path.Combine(AppContext.BaseDirectory, "wwwroot"));
+app.Use(staticFiles.InvokeAsync);
+
 // ── Generated controller endpoints ──
 EndpointRegistrar.RegisterAll(app);
 
