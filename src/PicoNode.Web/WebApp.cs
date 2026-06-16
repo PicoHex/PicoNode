@@ -75,6 +75,7 @@ public sealed class WebApp
     public WebApp MapPost(string pattern, Delegate handler) => Map("POST", pattern, handler);
     public WebApp MapPut(string pattern, Delegate handler) => Map("PUT", pattern, handler);
     public WebApp MapDelete(string pattern, Delegate handler) => Map("DELETE", pattern, handler);
+    public WebApp MapPatch(string pattern, Delegate handler) => Map("PATCH", pattern, handler);
 
     public WebApp MapFallback(Delegate handler)
     {

@@ -1,9 +1,13 @@
-// Controllers/UsersController.cs
+// ── Pattern 1: Convention-based (file path + method prefix) ──
 //
-// This file is auto-discovered by Controllers.Gen source generator.
-// Convention: Get* prefix → GET /api/users/{id}
-// Method parameter `int id` → route parameter {id}
-// The controller must be registered in DI (see Program.cs).
+// Discovery:
+//   File:     Controllers/UsersController.cs            ← /Controllers/ 目录
+//   Verb:     Get* prefix                                ← GET
+//   Route:    UsersController → /api/users              ← 类名去 Controller 后缀
+//             GetUser(int id) → /user/{id}               ← 方法名去 Get 前缀，int 参数展开为 {id}
+//   Result:   GET /api/users/user/{id}
+//
+// DTO must be marked [PicoJsonSerializable] for AOT serialization.
 
 namespace PicoWeb.Samples.Controllers;
 

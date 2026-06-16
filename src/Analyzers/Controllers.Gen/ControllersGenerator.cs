@@ -155,7 +155,8 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             methodName = methodName.Substring(0, methodName.Length - lastParam.Name.Length);
         }
 
-        var route = "/" + ToKebabCase(methodName);
+        // If method name is empty after stripping prefix, omit the method path segment
+        var route = string.IsNullOrEmpty(methodName) ? "" : "/" + ToKebabCase(methodName);
         if (routeParams.Count > 0)
             route += "/" + string.Join("/", routeParams);
         return route;
@@ -258,7 +259,12 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                     _ => "MapGet",
                 };
 
-                endpointsCode.AppendLine($"            app.{mapMethod}(\"{controller.RoutePrefix}{method.Route}\", async (WebContext ctx) =>");
+                // Ensure proper separator between prefix and method route
+                var methodRoute = method.Route;
+                var fullRoute = methodRoute.StartsWith("/")
+                    ? controller.RoutePrefix + methodRoute
+                    : controller.RoutePrefix + "/" + methodRoute;
+                endpointsCode.AppendLine($"            app.{mapMethod}(\"{fullRoute}\", async (WebContext ctx) =>");
                 endpointsCode.AppendLine("            {");
 
                 // Bind route parameters and DI services
@@ -295,6 +301,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
                 // Call the original method
                 var retType = method.Symbol.ReturnType;
+                var isVoid = retType.SpecialType == SpecialType.System_Void;
                 var isAsync = false;
                 var resultTypeName = retType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
@@ -309,11 +316,18 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 }
 
                 var awaitPrefix = isAsync ? "await " : "";
-                endpointsCode.AppendLine($"                var __result = ({resultTypeName}){awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});");
 
-                // Serialize and return
-                endpointsCode.AppendLine($"                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);");
-                endpointsCode.AppendLine($"                return PicoWeb.Results.Json(200, __bytes);");
+                if (isVoid)
+                {
+                    endpointsCode.AppendLine($"                {awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});");
+                    endpointsCode.AppendLine($"                return PicoWeb.Results.Empty(204);");
+                }
+                else
+                {
+                    endpointsCode.AppendLine($"                var __result = ({resultTypeName}){awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});");
+                    endpointsCode.AppendLine($"                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);");
+                    endpointsCode.AppendLine($"                return PicoWeb.Results.Json(200, __bytes);");
+                }
 
                 endpointsCode.AppendLine("            });");
                 endpointsCode.AppendLine();
