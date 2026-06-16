@@ -14,14 +14,17 @@
     <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
 
     <!--
-      Source generators: MSBuild ProjectReference does NOT propagate <Analyzer> items.
-      They MUST be referenced by the consuming project. NuGet consumers get them
-      automatically via buildTransitive/PicoWeb.props (see src/PicoWeb/buildTransitive/).
+      Source generators: ProjectReference does NOT propagate <Analyzer> items,
+      so reference the Gen projects directly with OutputItemType=Analyzer.
+      This is the standard pattern — see PicoJetson's sample for the same approach.
+      NuGet consumers get analyzers automatically via buildTransitive/PicoWeb.props.
     -->
-    <Analyzer Include="..\..\src\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll"
-              Condition="Exists('..\..\src\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll')" />
-    <Analyzer Include="..\..\src\Analyzers\PicoWeb.Gen\bin\Release\netstandard2.0\PicoWeb.Gen.dll"
-              Condition="Exists('..\..\src\Analyzers\PicoWeb.Gen\bin\Release\netstandard2.0\PicoWeb.Gen.dll')" />
+    <ProjectReference Include="..\..\src\Analyzers\Controllers.Gen\Controllers.Gen.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\Analyzers\PicoWeb.Gen\PicoWeb.Gen.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
