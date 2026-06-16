@@ -42,8 +42,30 @@ public static class Results
 
 internal static class AppSerializationOptions
 {
-    public static PicoJetson.JsonOptions Default { get; set; } = new()
+    private static PicoJetson.JsonOptions _default = CreateDefault();
+
+    public static PicoJetson.JsonOptions Default
+    {
+        get => Clone(_default);
+        set => _default = value ?? CreateDefault();
+    }
+
+    private static PicoJetson.JsonOptions CreateDefault() => new()
     {
         PropertyNamingPolicy = PicoJetson.JsonNamingPolicy.CamelCase,
+    };
+
+    private static PicoJetson.JsonOptions Clone(PicoJetson.JsonOptions source) => new()
+    {
+        PropertyNamingPolicy = source.PropertyNamingPolicy,
+        Indented = source.Indented,
+        MaxDepth = source.MaxDepth,
+        DefaultIgnoreCondition = source.DefaultIgnoreCondition,
+        IncludeFields = source.IncludeFields,
+        NumberHandling = source.NumberHandling,
+        PropertyNameCaseInsensitive = source.PropertyNameCaseInsensitive,
+        AllowTrailingCommas = source.AllowTrailingCommas,
+        ReadCommentHandling = source.ReadCommentHandling,
+        UnmappedMemberHandling = source.UnmappedMemberHandling,
     };
 }

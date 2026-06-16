@@ -26,7 +26,6 @@ internal sealed class TcpConnection : IAsyncDisposable
         }
 
         _node = node;
-        _node = node;
         _receiveBufferSize = Math.Max(
             node.Options.ReceiveSocketBufferSize,
             MinimumReceiveBufferSize
