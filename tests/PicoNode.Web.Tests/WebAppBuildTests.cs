@@ -44,7 +44,7 @@ public sealed class WebAppBuildTests
     {
         var app = new WebApp(new TestContainer());
         var invoked = false;
-        app.MapGet("/test", (WebContext ctx) =>
+        app.MapGet("/test", (WebContext ctx, CancellationToken _) =>
         {
             invoked = true;
             return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });

@@ -9,36 +9,6 @@ public sealed class WebApp
 
     private WebRequestHandler? _fallbackHandler;
 
-    /// <summary>Wraps a Delegate into a WebRequestHandler. Uses reflection (DynamicInvoke),
-    /// so prefer the typed overloads for AOT-safe code paths.</summary>
-    private static WebRequestHandler WrapDelegate(Delegate handler)
-    {
-        return async (ctx, ct) =>
-        {
-            var parameters = handler.Method.GetParameters();
-            var args = new object?[parameters.Length];
-            for (var i = 0; i < parameters.Length; i++)
-            {
-                var type = parameters[i].ParameterType;
-                if (type == typeof(WebContext))
-                    args[i] = ctx;
-                else if (type == typeof(CancellationToken))
-                    args[i] = ct;
-                else
-                    args[i] = ctx.Services.GetService(type);
-            }
-            var result = handler.DynamicInvoke(args);
-            return result switch
-            {
-                ValueTask<HttpResponse> vt => await vt,
-                Task<HttpResponse> t => await t,
-                HttpResponse r => r,
-                _ => throw new InvalidOperationException(
-                    $"Handler must return HttpResponse, ValueTask<HttpResponse>, or Task<HttpResponse>.")
-            };
-        };
-    }
-
     public WebApp(ISvcContainer container)
         : this(container, new()) { }
 
@@ -60,9 +30,6 @@ public sealed class WebApp
         return this;
     }
 
-    // ── AOT-safe typed overloads (no reflection) ──
-
-    /// <summary>Maps a route to a typed handler. AOT-safe — no DynamicInvoke.</summary>
     public WebApp Map(string method, string pattern, WebRequestHandler handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
@@ -84,33 +51,6 @@ public sealed class WebApp
     {
         ArgumentNullException.ThrowIfNull(handler);
         _fallbackHandler = handler;
-        return this;
-    }
-
-    // ── Delegate overloads (convenience, uses DynamicInvoke / reflection) ──
-
-    public WebApp Map(string method, string pattern, Delegate handler)
-    {
-        ArgumentNullException.ThrowIfNull(handler);
-        _routes.Add(new()
-        {
-            Method = method,
-            Pattern = pattern,
-            Handler = WrapDelegate(handler),
-        });
-        return this;
-    }
-
-    public WebApp MapGet(string pattern, Delegate handler) => Map("GET", pattern, handler);
-    public WebApp MapPost(string pattern, Delegate handler) => Map("POST", pattern, handler);
-    public WebApp MapPut(string pattern, Delegate handler) => Map("PUT", pattern, handler);
-    public WebApp MapDelete(string pattern, Delegate handler) => Map("DELETE", pattern, handler);
-    public WebApp MapPatch(string pattern, Delegate handler) => Map("PATCH", pattern, handler);
-
-    public WebApp MapFallback(Delegate handler)
-    {
-        ArgumentNullException.ThrowIfNull(handler);
-        _fallbackHandler = WrapDelegate(handler);
         return this;
     }
 

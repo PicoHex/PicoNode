@@ -10,25 +10,25 @@ public sealed class WebApiApp : IAsyncDisposable
         _app = app;
     }
 
-    public WebApiApp MapGet(string pattern, Delegate handler)
+    public WebApiApp MapGet(string pattern, WebRequestHandler handler)
     {
         _app.MapGet(pattern, handler);
         return this;
     }
 
-    public WebApiApp MapPost(string pattern, Delegate handler)
+    public WebApiApp MapPost(string pattern, WebRequestHandler handler)
     {
         _app.MapPost(pattern, handler);
         return this;
     }
 
-    public WebApiApp MapPut(string pattern, Delegate handler)
+    public WebApiApp MapPut(string pattern, WebRequestHandler handler)
     {
         _app.MapPut(pattern, handler);
         return this;
     }
 
-    public WebApiApp MapDelete(string pattern, Delegate handler)
+    public WebApiApp MapDelete(string pattern, WebRequestHandler handler)
     {
         _app.MapDelete(pattern, handler);
         return this;

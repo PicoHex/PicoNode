@@ -11,7 +11,7 @@ public sealed class WebApiAppTests
         var api = builder.Build();
 
         var invoked = false;
-        api.MapGet("/hello", (WebContext ctx) =>
+        api.MapGet("/hello", (WebContext ctx, CancellationToken _) =>
         {
             invoked = true;
             return ValueTask.FromResult(Results.Text(200, "ok"));
