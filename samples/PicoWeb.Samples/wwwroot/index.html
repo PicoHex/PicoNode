@@ -3,166 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PicoWeb | Showcase</title>
+    <title>PicoWeb | Controller Patterns Demo</title>
     <link rel="stylesheet" href="/assets/site.css">
 </head>
 <body>
     <div class="blueprint-grid"></div>
-
     <header class="sys-header">
         <div class="logo-mark">PW</div>
         <div>
             <h1 class="sys-title">PicoWeb Controller Patterns</h1>
-            <p class="sys-subtitle">Three controller discovery modes · AOT-ready · DI First · Source-generated endpoints</p>
+            <p class="sys-subtitle">Three discovery modes · AOT-ready · DI-first · Source-generated endpoints</p>
         </div>
-        <div class="status-indicator">
-            <span class="pulse"></span> LIVE
-        </div>
+        <div class="status-indicator"><span class="pulse"></span> LIVE</div>
     </header>
-
     <main class="dashboard">
-        <!-- ── Pattern 1: Convention ── -->
-        <section class="panel" id="panel-convention">
-            <div class="panel-header">
-                <h2>Pattern 1 · Convention</h2>
-                <span class="badge">Controllers/ + Get* prefix</span>
-            </div>
+        <section class="panel" id="panel-health">
+            <div class="panel-header"><h2>Health Check</h2><span class="badge">GET /api/health</span></div>
             <div class="panel-body">
-                <p><code>UsersController.GetUser(int id)</code> discovered by <strong>file path</strong> (<code>Controllers/</code>) + <strong>method prefix</strong> (<code>Get*</code> → GET) → <code>/api/users/user/{id}</code></p>
+                <p>Inline <code>MapGet</code> — typed <code>WebRequestHandler</code> lambda, zero reflection.</p>
+                <button class="btn primary" id="btn-health">GET /api/health</button>
+                <div class="output-container">
+                    <div class="output-meta" id="meta-health">Waiting...</div>
+                    <pre class="code-block" id="out-health">// Result</pre>
+                </div>
+            </div>
+        </section>
+        <section class="panel" id="panel-convention">
+            <div class="panel-header"><h2>Pattern 1 · Convention</h2><span class="badge">Controllers/ + Get* prefix</span></div>
+            <div class="panel-body">
+                <p><code>UsersController.GetUser(int id)</code> — <code>Controllers/</code> folder + <code>Get*</code> prefix → <code>/api/users/user/{id}</code></p>
                 <div class="input-group">
                     <input type="number" id="convention-id" value="42" class="text-input" style="width:80px">
                     <button class="btn primary" id="btn-convention">GET /api/users/user/{id}</button>
                 </div>
                 <div class="output-container">
                     <div class="output-meta" id="meta-convention">Waiting...</div>
-                    <pre class="code-block" id="out-convention">// Convention pattern result</pre>
+                    <pre class="code-block" id="out-convention">// Result</pre>
                 </div>
             </div>
         </section>
-
-        <!-- ── Pattern 2: Route attribute ── -->
         <section class="panel" id="panel-route-attr">
-            <div class="panel-header">
-                <h2>Pattern 2 · Route Attribute</h2>
-                <span class="badge">[Route] + [HttpGet]</span>
-            </div>
+            <div class="panel-header"><h2>Pattern 2 · Route Attribute</h2><span class="badge">[Route] + [HttpGet]</span></div>
             <div class="panel-body">
-                <p><code>[Route("/api/v2/products")]</code> on class + <code>[HttpGet("{category}/{id}")]</code> on method override the default convention.</p>
+                <p><code>[Route("/api/v2/products")]</code> + <code>[HttpGet("{category}/{id}")]</code> override conventions.</p>
                 <div class="input-group">
-                    <input type="text" id="route-category" value="electronics" class="text-input" style="width:120px" placeholder="category">
-                    <input type="number" id="route-id" value="99" class="text-input" style="width:80px" placeholder="id">
-                    <button class="btn primary" id="btn-route-attr">GET /api/v2/products/{cat}/{id}</button>
+                    <input type="text" id="route-category" value="electronics" class="text-input" style="width:120px">
+                    <input type="number" id="route-id" value="99" class="text-input" style="width:80px">
+                    <button class="btn primary" id="btn-route-attr">Execute</button>
                 </div>
                 <div class="output-container">
                     <div class="output-meta" id="meta-route-attr">Waiting...</div>
-                    <pre class="code-block" id="out-route-attr">// Route attribute pattern result</pre>
+                    <pre class="code-block" id="out-route-attr">// Result</pre>
                 </div>
             </div>
         </section>
-
-        <!-- ── Pattern 3: HTTP verb attributes ── -->
         <section class="panel" id="panel-verb-attr">
-            <div class="panel-header">
-                <h2>Pattern 3 · Verb Attributes</h2>
-                <span class="badge">[HttpPost] [HttpDelete] [HttpPatch]</span>
-            </div>
+            <div class="panel-header"><h2>Pattern 3 · Verb Attributes</h2><span class="badge">[HttpDelete] [HttpPatch]</span></div>
             <div class="panel-body">
-                <p><code>[HttpPost]</code>, <code>[HttpDelete]</code>, <code>[HttpPatch]</code> on methods specify the HTTP verb explicitly.</p>
+                <p><code>[HttpDelete]</code> / <code>[HttpPatch]</code> on <code>PostsController</code> — route: <code>/api/posts/{id}</code></p>
                 <div class="btn-group">
-                    <button class="btn secondary" id="btn-verb-delete">DELETE /api/posts/{id}</button>
-                    <button class="btn secondary" id="btn-verb-patch">PATCH /api/posts/{id}</button>
+                    <button class="btn secondary" id="btn-verb-delete">DELETE</button>
+                    <button class="btn secondary" id="btn-verb-patch">PATCH</button>
                 </div>
                 <div class="input-group" style="margin-top:8px">
-                    <input type="number" id="verb-id" value="7" class="text-input" style="width:80px" placeholder="id">
+                    <input type="number" id="verb-id" value="7" class="text-input" style="width:80px">
                 </div>
                 <div class="output-container">
                     <div class="output-meta" id="meta-verb-attr">Waiting...</div>
-                    <pre class="code-block" id="out-verb-attr">// Verb attribute pattern result</pre>
-                </div>
-            </div>
-        </section>
-
-        <!-- ── Original Showcase panels ── -->
-        <section class="panel" id="panel-api">
-            <div class="panel-header">
-                <h2>Showcase API</h2>
-                <span class="badge">GET /api/showcase</span>
-            </div>
-            <div class="panel-body">
-                <p>Fetch the live sample contract, including enabled features and the CORS policy.</p>
-                <button class="btn primary" id="btn-fetch-showcase">Execute Request</button>
-                <div class="output-container">
-                    <div class="output-meta" id="meta-showcase">Waiting...</div>
-                    <pre class="code-block" id="out-showcase">// Response payload will appear here</pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="panel" id="panel-content">
-            <div class="panel-header">
-                <h2>Content Compression</h2>
-                <span class="badge">GET /api/content</span>
-            </div>
-            <div class="panel-body">
-                <p>Fetch a larger response and inspect the <code>Content-Encoding</code> header.</p>
-                <button class="btn primary" id="btn-fetch-content">Fetch Content Payload</button>
-                <div class="output-container">
-                    <div class="output-meta" id="meta-content">Waiting...</div>
-                    <pre class="code-block" id="out-content">// Response payload will appear here</pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="panel" id="panel-state">
-            <div class="panel-header">
-                <h2>State & Cookies</h2>
-                <span class="badge">GET/POST /api/preferences*</span>
-            </div>
-            <div class="panel-body">
-                <p>Set a theme cookie on the server and read it back.</p>
-                <div class="btn-group">
-                    <button class="btn secondary" data-theme-set="light">Set Light Theme</button>
-                    <button class="btn secondary" data-theme-set="dark">Set Dark Theme</button>
-                    <button class="btn" id="btn-check-prefs">Check Status</button>
-                </div>
-                <div class="output-container">
-                    <div class="output-meta" id="meta-state">Waiting...</div>
-                    <pre class="code-block" id="out-state">// Cookie state will appear here</pre>
-                </div>
-            </div>
-        </section>
-
-        <section class="panel span-2" id="panel-upload">
-            <div class="panel-header">
-                <h2>Multipart Form Data</h2>
-                <span class="badge">POST /api/uploads</span>
-            </div>
-            <div class="panel-body">
-                <p>Submit a <code>multipart/form-data</code> request and inspect parsed fields/files.</p>
-                <form id="upload-form" class="upload-zone" method="post" action="/api/uploads" enctype="multipart/form-data">
-                    <div class="file-input-wrapper">
-                        <input type="file" id="file-input" name="file" multiple>
-                        <div class="file-input-ui">
-                            <span class="upload-icon">↑</span>
-                            <span class="upload-text">Select files or drag & drop</span>
-                        </div>
-                    </div>
-                    <input type="text" name="metadata" placeholder="Optional metadata string" class="text-input">
-                    <button type="submit" class="btn primary full-width">Upload Files</button>
-                </form>
-                <div class="output-container mt-4">
-                    <div class="output-meta" id="meta-upload">Waiting...</div>
-                    <pre class="code-block" id="out-upload">// Upload result will appear here</pre>
+                    <pre class="code-block" id="out-verb-attr">// Result</pre>
                 </div>
             </div>
         </section>
     </main>
-
     <footer class="sys-footer">
-        <div>PicoWeb showcase sample</div>
-        <div>3 controller patterns • inline routes • AOT-ready</div>
+        <div>PicoWeb · Samples</div>
+        <div>3 controller patterns · AOT-ready · DI-first</div>
     </footer>
-
     <script src="/assets/site.js"></script>
 </body>
 </html>
