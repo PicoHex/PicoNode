@@ -47,7 +47,7 @@ internal static class AppSerializationOptions
     public static PicoJetson.JsonOptions Default
     {
         get => Clone(_default);
-        set => _default = value ?? CreateDefault();
+        set => _default = Clone(value ?? CreateDefault());
     }
 
     private static PicoJetson.JsonOptions CreateDefault() => new()
