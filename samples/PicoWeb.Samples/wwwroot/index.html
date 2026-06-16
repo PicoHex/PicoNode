@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PicoWeb | Controller Patterns Demo</title>
+    <title>PicoWeb | Sample</title>
     <link rel="stylesheet" href="/assets/site.css">
 </head>
 <body>
@@ -12,29 +12,20 @@
         <div class="logo-mark">PW</div>
         <div>
             <h1 class="sys-title">PicoWeb Controller Patterns</h1>
-            <p class="sys-subtitle">Three discovery modes · AOT-ready · DI-first · Source-generated endpoints</p>
+            <p class="sys-subtitle">Three controller discovery modes · Inline MapXX · AOT-ready · DI First</p>
         </div>
         <div class="status-indicator"><span class="pulse"></span> LIVE</div>
     </header>
     <main class="dashboard">
-        <section class="panel" id="panel-health">
-            <div class="panel-header"><h2>Health Check</h2><span class="badge">GET /api/health</span></div>
-            <div class="panel-body">
-                <p>Inline <code>MapGet</code> — typed <code>WebRequestHandler</code> lambda, zero reflection.</p>
-                <button class="btn primary" id="btn-health">GET /api/health</button>
-                <div class="output-container">
-                    <div class="output-meta" id="meta-health">Waiting...</div>
-                    <pre class="code-block" id="out-health">// Result</pre>
-                </div>
-            </div>
-        </section>
+
+        <!-- ── Controller patterns ── -->
         <section class="panel" id="panel-convention">
-            <div class="panel-header"><h2>Pattern 1 · Convention</h2><span class="badge">Controllers/ + Get* prefix</span></div>
+            <div class="panel-header"><h2>Convention Pattern</h2><span class="badge">Controllers/ + Get*</span></div>
             <div class="panel-body">
-                <p><code>UsersController.GetUser(int id)</code> — <code>Controllers/</code> folder + <code>Get*</code> prefix → <code>/api/users/user/{id}</code></p>
+                <p><code>UsersController.GetUser(int id)</code> → <code>GET /api/users/user/{id}</code></p>
                 <div class="input-group">
-                    <input type="number" id="convention-id" value="42" class="text-input" style="width:80px">
-                    <button class="btn primary" id="btn-convention">GET /api/users/user/{id}</button>
+                    <input type="number" id="convention-id" value="42" style="width:80px" class="text-input">
+                    <button class="btn primary" id="btn-convention">Execute</button>
                 </div>
                 <div class="output-container">
                     <div class="output-meta" id="meta-convention">Waiting...</div>
@@ -42,13 +33,14 @@
                 </div>
             </div>
         </section>
+
         <section class="panel" id="panel-route-attr">
-            <div class="panel-header"><h2>Pattern 2 · Route Attribute</h2><span class="badge">[Route] + [HttpGet]</span></div>
+            <div class="panel-header"><h2>Route Attribute</h2><span class="badge">[Route] + [HttpGet]</span></div>
             <div class="panel-body">
-                <p><code>[Route("/api/v2/products")]</code> + <code>[HttpGet("{category}/{id}")]</code> override conventions.</p>
+                <p><code>[Route("/api/v2/products")]</code> → <code>GET /api/v2/products/{cat}/{id}</code></p>
                 <div class="input-group">
-                    <input type="text" id="route-category" value="electronics" class="text-input" style="width:120px">
-                    <input type="number" id="route-id" value="99" class="text-input" style="width:80px">
+                    <input type="text" id="route-category" value="electronics" style="width:110px" class="text-input">
+                    <input type="number" id="route-id" value="99" style="width:70px" class="text-input">
                     <button class="btn primary" id="btn-route-attr">Execute</button>
                 </div>
                 <div class="output-container">
@@ -57,16 +49,17 @@
                 </div>
             </div>
         </section>
+
         <section class="panel" id="panel-verb-attr">
-            <div class="panel-header"><h2>Pattern 3 · Verb Attributes</h2><span class="badge">[HttpDelete] [HttpPatch]</span></div>
+            <div class="panel-header"><h2>Verb Attributes</h2><span class="badge">[HttpDelete] [HttpPatch]</span></div>
             <div class="panel-body">
-                <p><code>[HttpDelete]</code> / <code>[HttpPatch]</code> on <code>PostsController</code> — route: <code>/api/posts/{id}</code></p>
+                <p><code>PostsController</code> — <code>DELETE</code> / <code>PATCH</code> <code>/api/posts/{id}</code></p>
                 <div class="btn-group">
                     <button class="btn secondary" id="btn-verb-delete">DELETE</button>
                     <button class="btn secondary" id="btn-verb-patch">PATCH</button>
                 </div>
                 <div class="input-group" style="margin-top:8px">
-                    <input type="number" id="verb-id" value="7" class="text-input" style="width:80px">
+                    <input type="number" id="verb-id" value="7" style="width:80px" class="text-input">
                 </div>
                 <div class="output-container">
                     <div class="output-meta" id="meta-verb-attr">Waiting...</div>
@@ -74,10 +67,85 @@
                 </div>
             </div>
         </section>
+
+        <section class="panel" id="panel-health">
+            <div class="panel-header"><h2>Health Check</h2><span class="badge">GET /api/health</span></div>
+            <div class="panel-body">
+                <p>Inline <code>MapGet</code> — typed <code>WebRequestHandler</code>, zero reflection.</p>
+                <button class="btn primary" id="btn-health">Execute</button>
+                <div class="output-container">
+                    <div class="output-meta" id="meta-health">Waiting...</div>
+                    <pre class="code-block" id="out-health">// Result</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── Showcase panels ── -->
+        <section class="panel" id="panel-api">
+            <div class="panel-header"><h2>Showcase API</h2><span class="badge">GET /api/showcase</span></div>
+            <div class="panel-body">
+                <p>Sample contract with enabled features and CORS policy.</p>
+                <button class="btn primary" id="btn-fetch-showcase">Execute</button>
+                <div class="output-container">
+                    <div class="output-meta" id="meta-showcase">Waiting...</div>
+                    <pre class="code-block" id="out-showcase">// Result</pre>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel" id="panel-content">
+            <div class="panel-header"><h2>Compression</h2><span class="badge">GET /api/content</span></div>
+            <div class="panel-body">
+                <p>Fetch compressed payload — check <code>Content-Encoding</code> header.</p>
+                <button class="btn primary" id="btn-fetch-content">Execute</button>
+                <div class="output-container">
+                    <div class="output-meta" id="meta-content">Waiting...</div>
+                    <pre class="code-block" id="out-content">// Result</pre>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel" id="panel-state">
+            <div class="panel-header"><h2>Themes & Cookies</h2><span class="badge">POST /api/preferences/{theme}</span></div>
+            <div class="panel-body">
+                <p>Set a theme cookie, read it back, and apply to the page.</p>
+                <div class="btn-group">
+                    <button class="btn secondary" data-theme-set="light">Light</button>
+                    <button class="btn secondary" data-theme-set="dark">Dark</button>
+                    <button class="btn" id="btn-check-prefs">Status</button>
+                </div>
+                <div class="output-container">
+                    <div class="output-meta" id="meta-state">Waiting...</div>
+                    <pre class="code-block" id="out-state">// Result</pre>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel span-2" id="panel-upload">
+            <div class="panel-header"><h2>Upload</h2><span class="badge">POST /api/uploads</span></div>
+            <div class="panel-body">
+                <p><code>multipart/form-data</code> — fields + files parsed server-side.</p>
+                <form id="upload-form" class="upload-zone" method="post" enctype="multipart/form-data">
+                    <div class="file-input-wrapper">
+                        <input type="file" id="file-input" name="file" multiple>
+                        <div class="file-input-ui">
+                            <span class="upload-icon">↑</span>
+                            <span class="upload-text">Select files</span>
+                        </div>
+                    </div>
+                    <input type="text" name="metadata" placeholder="Optional text" class="text-input">
+                    <button type="submit" class="btn primary full-width">Upload</button>
+                </form>
+                <div class="output-container mt-4">
+                    <div class="output-meta" id="meta-upload">Waiting...</div>
+                    <pre class="code-block" id="out-upload">// Result</pre>
+                </div>
+            </div>
+        </section>
     </main>
     <footer class="sys-footer">
         <div>PicoWeb · Samples</div>
-        <div>3 controller patterns · AOT-ready · DI-first</div>
+        <div>3 controller patterns · middleware pipeline · AOT-ready</div>
     </footer>
     <script src="/assets/site.js"></script>
 </body>

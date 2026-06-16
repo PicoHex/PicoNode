@@ -1,44 +1,96 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const formatError = (e) => e instanceof Error ? e.message : String(e);
-    const readResponse = async (r) => {
-        const ct = r.headers.get('content-type') || '';
-        return ct.includes('application/json') ? r.json() : r.text();
-    };
-    const out = (id, meta, content, err) => {
-        const m = document.getElementById(`meta-${id}`);
-        const o = document.getElementById(`out-${id}`);
+    const fe = (e) => e instanceof Error ? e.message : String(e);
+    const rr = async (r) => (r.headers.get('content-type') || '').includes('application/json') ? r.json() : r.text();
+    const out = (id, meta, c, err) => {
+        const m = document.getElementById(`meta-${id}`), o = document.getElementById(`out-${id}`);
         if (!m || !o) return;
-        m.textContent = meta;
-        m.style.backgroundColor = err ? 'var(--accent)' : 'var(--border-color)';
+        m.textContent = meta; m.style.backgroundColor = err ? 'var(--accent)' : 'var(--border-color)';
         o.style.color = err ? 'var(--accent)' : 'var(--fg-code)';
-        o.textContent = typeof content === 'object' ? JSON.stringify(content, null, 2) : content;
+        o.textContent = typeof c === 'object' ? JSON.stringify(c, null, 2) : c;
     };
     const fetch_ = async (id, url, opts) => {
-        try {
-            out(id, 'FETCHING...', '');
-            const start = performance.now();
-            const res = await fetch(url, opts);
-            const data = await readResponse(res);
-            out(id, `${res.status} | ${Math.round(performance.now() - start)}ms`, data);
-        } catch (e) { out(id, 'ERROR', formatError(e), true); }
+        try { out(id, 'FETCHING...', ''); const s = performance.now(), r = await fetch(url, opts), d = await rr(r); out(id, `${r.status} | ${Math.round(performance.now() - s)}ms`, d); }
+        catch (e) { out(id, 'ERROR', fe(e), true); }
     };
 
-    const byId = (id) => document.getElementById(id);
-    const val = (el) => el ? el.value : '';
+    const $ = (id) => document.getElementById(id);
+    const v = (e) => e ? e.value : '';
 
-    byId('btn-health')?.addEventListener('click', () => fetch_('health', '/api/health'));
+    // Controller patterns
+    $('btn-health')?.addEventListener('click', () => fetch_('health', '/api/health'));
 
-    const convBtn = byId('btn-convention');
-    const convId = byId('convention-id');
-    if (convBtn) convBtn.addEventListener('click', () => fetch_('convention', `/api/users/user/${val(convId) || 42}`));
+    const convBtn = $('btn-convention'), convId = $('convention-id');
+    if (convBtn) convBtn.addEventListener('click', () => fetch_('convention', `/api/users/user/${v(convId) || 42}`));
 
-    const raBtn = byId('btn-route-attr');
-    const raCat = byId('route-category');
-    const raId = byId('route-id');
-    if (raBtn) raBtn.addEventListener('click', () => fetch_('route-attr', `/api/v2/products/${val(raCat) || 'electronics'}/${val(raId) || 99}`));
+    const raBtn = $('btn-route-attr'), raCat = $('route-category'), raId = $('route-id');
+    if (raBtn) raBtn.addEventListener('click', () => fetch_('route-attr', `/api/v2/products/${v(raCat) || 'electronics'}/${v(raId) || 99}`));
 
-    const vId = byId('verb-id');
-    const vid = () => val(vId) || 7;
-    byId('btn-verb-delete')?.addEventListener('click', () => fetch_('verb-attr', `/api/posts/${vid()}`, { method: 'DELETE' }));
-    byId('btn-verb-patch')?.addEventListener('click', () => fetch_('verb-attr', `/api/posts/${vid()}`, { method: 'PATCH' }));
+    const vId = $('verb-id'), vid = () => v(vId) || 7;
+    $('btn-verb-delete')?.addEventListener('click', () => fetch_('verb-attr', `/api/posts/${vid()}`, { method: 'DELETE' }));
+    $('btn-verb-patch')?.addEventListener('click', () => fetch_('verb-attr', `/api/posts/${vid()}`, { method: 'PATCH' }));
+
+    // Showcase panels
+    $('btn-fetch-showcase')?.addEventListener('click', () => fetch_('showcase', '/api/showcase'));
+
+    $('btn-fetch-content')?.addEventListener('click', async () => {
+        try {
+            out('content', 'FETCHING...', '');
+            const s = performance.now(), r = await fetch('/api/content'), t = await r.text();
+            const enc = r.headers.get('content-encoding') || 'identity';
+            out('content', `${r.status} | ${enc} | ${Math.round(performance.now() - s)}ms`, t.substring(0, 500) + (t.length > 500 ? '\n...' : ''));
+        } catch (e) { out('content', 'ERROR', fe(e), true); }
+    });
+
+    const applyTheme = (t) => document.documentElement.setAttribute('data-theme', t);
+    document.querySelectorAll('[data-theme-set]').forEach(b => {
+        b.addEventListener('click', async (e) => {
+            const t = e.target.getAttribute('data-theme-set');
+            try {
+                out('state', 'SETTING...', '');
+                const r = await fetch(`/api/preferences/${t}`, { method: 'POST' });
+                const d = await rr(r);
+                if (r.ok) applyTheme(t);
+                out('state', `${r.status}`, d);
+            } catch (e) { out('state', 'ERROR', fe(e), true); }
+        });
+    });
+
+    $('btn-check-prefs')?.addEventListener('click', async () => {
+        try {
+            out('state', 'FETCHING...', '');
+            const r = await fetch('/api/preferences');
+            const d = await rr(r);
+            if (d && d.theme) applyTheme(d.theme);
+            out('state', `${r.status}`, d);
+        } catch (e) { out('state', 'ERROR', fe(e), true); }
+    });
+
+    // Initial theme
+    fetch('/api/preferences').then(r => r.json()).then(d => { if (d && d.theme) applyTheme(d.theme); }).catch(() => {});
+
+    // Upload
+    const fi = $('file-input'), dz = document.querySelector('.file-input-wrapper'), uf = $('upload-form');
+    if (dz && fi && uf) {
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(n => dz.addEventListener(n, e => { e.preventDefault(); e.stopPropagation(); }));
+        ['dragenter', 'dragover'].forEach(n => dz.addEventListener(n, () => dz.classList.add('dragover')));
+        ['dragleave'].forEach(n => dz.addEventListener(n, () => dz.classList.remove('dragover')));
+        dz.addEventListener('drop', e => {
+            dz.classList.remove('dragover');
+            const files = e.dataTransfer?.files;
+            if (files && files.length > 0) { const dt = new DataTransfer(); for (const f of files) dt.items.add(f); fi.files = dt.files; }
+        });
+        fi.addEventListener('change', () => {
+            const c = fi.files.length, t = document.querySelector('.upload-text');
+            if (t) t.textContent = c > 0 ? `[ ${c} FILE(S) ]` : 'Select files';
+        });
+        uf.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            try {
+                out('upload', 'UPLOADING...', '');
+                const s = performance.now(), r = await fetch('/api/uploads', { method: 'POST', body: new FormData(uf) });
+                const d = await rr(r);
+                out('upload', `${r.status} | ${Math.round(performance.now() - s)}ms`, d);
+            } catch (e) { out('upload', 'ERROR', fe(e), true); }
+        });
+    }
 });
