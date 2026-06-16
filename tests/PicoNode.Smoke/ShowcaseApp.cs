@@ -2,7 +2,7 @@ using System.Text;
 using PicoNode.Http;
 using PicoNode.Web;
 
-namespace PicoWeb.Samples;
+namespace PicoNode.Smoke;
 
 public static class ShowcaseApp
 {

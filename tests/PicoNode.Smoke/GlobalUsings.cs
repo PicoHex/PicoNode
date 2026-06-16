@@ -17,4 +17,3 @@ global using PicoLog.Abs;
 global using PicoNode.Abs;
 global using PicoNode.Http;
 global using PicoWeb;
-global using PicoWeb.Samples;
