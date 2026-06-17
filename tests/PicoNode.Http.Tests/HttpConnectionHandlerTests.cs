@@ -1105,4 +1105,36 @@ public sealed class HttpConnectionHandlerTests
         await Assert.That(state).IsNotNull();
         await Assert.That(state!.MaxRequestBodyBytes).IsEqualTo(12345);
     }
+
+    [Test]
+    public async Task ALPN_h2_settings_exchange_succeeds()
+    {
+        // ALPN h2 flow without PRI preface:
+        // 1. OnConnectedAsync → server sends SETTINGS
+        // 2. Client sends SETTINGS → server sends SETTINGS ACK
+
+        var conn = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
+        var handler = new HttpConnectionHandler(new()
+        {
+            RequestHandler = (req, ct) =>
+                ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+        });
+
+        // Step 1: OnConnectedAsync — verify SETTINGS sent
+        await handler.OnConnectedAsync(conn, CancellationToken.None);
+        await Assert.That(conn.AllSent.Count).IsEqualTo(1);
+        await Assert.That(conn.AllSent[0][3]).IsEqualTo((byte)Http2FrameType.Settings);
+
+        // Step 2: Client sends SETTINGS (no PRI preface, as in ALPN)
+        var prevSentCount = conn.AllSent.Count;
+        var clientSettings = Http2FrameCodec.EncodeSettings(
+            new Http2Setting(Http2SettingId.MaxConcurrentStreams, 100));
+        await handler.OnReceivedAsync(conn,
+            new ReadOnlySequence<byte>(clientSettings), CancellationToken.None);
+        // Server must respond with SETTINGS ACK
+        await Assert.That(conn.AllSent.Count).IsEqualTo(prevSentCount + 1);
+        var ack = conn.AllSent[conn.AllSent.Count - 1];
+        await Assert.That(ack[3]).IsEqualTo((byte)Http2FrameType.Settings);
+        await Assert.That((ack[4] & 0x01)).IsEqualTo(0x01); // ACK flag
+    }
 }
