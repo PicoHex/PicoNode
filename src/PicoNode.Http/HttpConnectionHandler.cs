@@ -64,14 +64,22 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         var state = connection.UserState as ConnectionRuntimeState;
         if (state is not null)
         {
-            // RFC 7540 §3.4: consume client PRI preface if present (ALPN path).
-            if (state.Protocol == ConnectionProtocol.Http2 && buffer.Length >= Http2FrameCodec.ClientPreface.Length)
+            if (state.Protocol == ConnectionProtocol.Http2)
             {
-                var check = new byte[Http2FrameCodec.ClientPreface.Length];
-                buffer.Slice(0, check.Length).CopyTo(check);
-                if (check.AsSpan().SequenceEqual(Http2FrameCodec.ClientPreface))
+                // RFC 7540 §3.4: browsers send PRI * HTTP/2.0 preface even over ALPN.
+                // If it starts with 'P', it could be the preface arriving in chunks;
+                // wait for the full 24 bytes before deciding.
+                var firstSpan = buffer.FirstSpan;
+                if (firstSpan.Length > 0 && firstSpan[0] == (byte)'P')
                 {
-                    buffer = buffer.Slice(Http2FrameCodec.ClientPreface.Length);
+                    if (buffer.Length < Http2FrameCodec.ClientPreface.Length)
+                        return ValueTask.FromResult(buffer.Start);
+                    var check = new byte[Http2FrameCodec.ClientPreface.Length];
+                    buffer.Slice(0, check.Length).CopyTo(check);
+                    if (check.AsSpan().SequenceEqual(Http2FrameCodec.ClientPreface))
+                    {
+                        buffer = buffer.Slice(Http2FrameCodec.ClientPreface.Length);
+                    }
                 }
             }
             return state.Protocol switch
