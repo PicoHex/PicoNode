@@ -1,5 +1,3 @@
-using System.Net;
-
 namespace PicoNode.Web.Tests;
 
 internal sealed class TestContainer : ISvcContainer

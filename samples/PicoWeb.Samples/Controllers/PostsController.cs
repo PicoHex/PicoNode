@@ -15,8 +15,6 @@
 // Note: When an HTTP verb attribute is present, the method name prefix is ignored
 //       for verb detection but still used for route derivation.
 
-using PicoJetson;
-
 namespace PicoWeb.Samples.Controllers;
 
 public class HttpPostAttribute : Attribute

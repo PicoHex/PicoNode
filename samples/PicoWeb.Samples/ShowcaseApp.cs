@@ -1,7 +1,3 @@
-using System.Text;
-using PicoNode.Http;
-using PicoNode.Web;
-
 namespace PicoWeb.Samples;
 
 public static class ShowcaseApp

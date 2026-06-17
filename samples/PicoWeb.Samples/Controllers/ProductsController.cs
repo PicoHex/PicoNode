@@ -14,8 +14,6 @@
 // The generator checks AttributeClass.Name, not namespace, so these minimal
 // class definitions are sufficient.
 
-using PicoJetson;
-
 namespace PicoWeb.Samples.Controllers;
 
 // Attribute stubs for Controllers.Gen (matched by class name, not namespace).

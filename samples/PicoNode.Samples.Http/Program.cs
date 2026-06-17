@@ -1,11 +1,3 @@
-using System.Buffers;
-using System.Net;
-using System.Text;
-using PicoDI;
-using PicoNode;
-using PicoNode.Http;
-using PicoNode.Web;
-
 // ────────────────────────────────────────────────────────────
 // PicoNode.Http samples
 // ────────────────────────────────────────────────────────────

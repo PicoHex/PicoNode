@@ -1,12 +1,3 @@
-using System.Buffers;
-using System.Net;
-using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
-using PicoDI;
-using PicoDI.Abs;
-using PicoNode.Http;
-using PicoWeb;
-
 var container = new SvcContainer();
 container.RegisterScoped<PicoWeb.Samples.Controllers.UsersController>();
 container.RegisterScoped<PicoWeb.Samples.Controllers.ProductsController>();
