@@ -1,5 +1,3 @@
-using PicoNode.Web;
-
 namespace PicoNode.Smoke;
 
 public static class ShowcaseApp

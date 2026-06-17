@@ -1,10 +1,3 @@
-using System.Net;
-using System.Net.Security;
-using System.Security.Authentication;
-using System.Security.Cryptography.X509Certificates;
-using PicoNode.Web;
-using PicoWeb;
-
 namespace PicoWeb.Integration.Tests;
 
 public sealed class Http2Tests
