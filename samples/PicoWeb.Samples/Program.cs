@@ -20,6 +20,8 @@ EndpointRegistrar.RegisterAll(app);
 app.MapGet("/api/health", static (WebContext ctx, CancellationToken _) =>
     ValueTask.FromResult(WebResults.Json(200, """{"status":"ok"}""", "OK")));
 
+//app.MapGet("/api/info", ...); // removed — PreAlloc/static lambda binding issue with this overload
+
 // Start
 var server = new WebServer(
     app,
