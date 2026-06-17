@@ -18,8 +18,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoCfg.Abs" Version="2026.6.7" />
-    <PackageReference Include="PicoLog.Abs" Version="2026.6.7" />
+    <PackageReference Include="PicoCfg.Abs" Version="2026.6.8" />
+    <PackageReference Include="PicoLog.Abs" Version="2026.6.8" />
     <PackageReference Update="Microsoft.SourceLink.GitHub" Version="10.0.300" />
   </ItemGroup>
 
