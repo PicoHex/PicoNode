@@ -160,6 +160,7 @@ internal static class Http2StreamHandler
         {
             Method = method,
             Target = path,
+            Path = path,
             Version = HttpVersion.Http2,
             HeaderFields = regularHeaders,
             Headers = headerDict,
