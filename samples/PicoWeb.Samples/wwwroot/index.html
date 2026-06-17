@@ -10,7 +10,7 @@
 <div class="blueprint-grid"></div>
 <header class="sys-header">
 <div class="logo-mark">PW</div>
-<div><h1>PicoWeb Sample</h1><p>Controller patterns · Middleware pipeline · AOT-ready</p></div>
+<div><h1>PicoWeb Sample</h1><p>Controller patterns · Middleware pipeline · WebSocket · AOT-ready</p></div>
 <div class="status-indicator"><span class="pulse"></span> LIVE</div>
 </header>
 <main class="dashboard">
@@ -30,20 +30,33 @@
 <div class="output-container"><div class="output-meta" id="meta-convention">Waiting...</div><pre class="code-block" id="out-convention"></pre></div></div></section>
 
 <section class="panel"><div class="panel-header"><h2>Route Attribute</h2><span class="badge">[Route] + [HttpGet]</span></div>
-<div class="panel-body"><p><code>ProductsController</code> → <code>/api/v2/products/{cat}/{id}</code></p>
+<div class="panel-body"><p><code>ProductsController</code></p>
 <input type="text" id="route-category" value="electronics" class="text-input" style="width:100px">
 <input type="number" id="route-id" value="99" class="text-input" style="width:70px">
 <button class="btn primary" id="btn-route-attr">Execute</button>
 <div class="output-container"><div class="output-meta" id="meta-route-attr">Waiting...</div><pre class="code-block" id="out-route-attr"></pre></div></div></section>
 
 <section class="panel"><div class="panel-header"><h2>Verb Attributes</h2><span class="badge">[HttpDelete] [HttpPatch]</span></div>
-<div class="panel-body"><p><code>PostsController</code> → <code>/api/posts/{id}</code></p>
+<div class="panel-body"><p><code>PostsController</code></p>
 <div class="btn-group">
 <button class="btn secondary" id="btn-verb-delete">DELETE</button>
-<button class="btn secondary" id="btn-verb-patch">PATCH</button>
-</div>
+<button class="btn secondary" id="btn-verb-patch">PATCH</button></div>
 <input type="number" id="verb-id" value="7" class="text-input" style="width:80px">
 <div class="output-container"><div class="output-meta" id="meta-verb-attr">Waiting...</div><pre class="code-block" id="out-verb-attr"></pre></div></div></section>
+
+<section class="panel"><div class="panel-header"><h2>WebSocket Echo</h2><span class="badge">ws://localhost:7004/ws/echo</span></div>
+<div class="panel-body">
+<p>Browser WebSocket → echo server. Open connection, send a message, receive echo.</p>
+<div class="btn-group">
+<button class="btn secondary" id="btn-ws-connect">Connect</button>
+<button class="btn secondary" id="btn-ws-close">Close</button>
+</div>
+<div class="input-group" style="margin-top:8px">
+<input type="text" id="ws-msg" value="Hello PicoWeb!" class="text-input" style="width:200px">
+<button class="btn primary" id="btn-ws-send" disabled>Send</button>
+</div>
+<div class="output-container"><div class="output-meta" id="meta-ws">Disconnected</div><pre class="code-block" id="out-ws">// Connect to see echo messages</pre></div>
+</div></section>
 
 <section class="panel"><div class="panel-header"><h2>Showcase</h2><span class="badge">GET /api/showcase</span></div>
 <div class="panel-body"><button class="btn primary" id="btn-fetch-showcase">Execute</button>
@@ -72,7 +85,7 @@
 <div class="output-container mt-4"><div class="output-meta" id="meta-upload">Waiting...</div><pre class="code-block" id="out-upload"></pre></div></div></section>
 
 </main>
-<footer class="sys-footer"><div>PicoWeb · Samples</div><div>All endpoints live — open browser console to test WebSocket at /ws/echo</div></footer>
+<footer class="sys-footer"><div>PicoWeb · Samples</div><div>Open console: <code>curl -i http://localhost:7004/api/info</code></div></footer>
 <script src="/assets/site.js"></script>
 </body>
 </html>
