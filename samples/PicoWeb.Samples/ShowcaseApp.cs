@@ -18,7 +18,9 @@ public static class ShowcaseApp
         MaxAge = 600,
     };
 
-    public static WebApp Create(PicoDI.Abs.ISvcContainer container, string? contentRoot = null, PicoCfg.Abs.ICfgRoot? config = null)
+    public static WebApp Create(PicoDI.Abs.ISvcContainer container, string? contentRoot = null,
+        PicoCfg.Abs.ICfgRoot? config = null,
+        PicoNode.Http.WebSocketMessageHandler? webSocketHandler = null)
     {
         var staticRoot = Path.Combine(contentRoot ?? AppContext.BaseDirectory, "wwwroot");
         var app = new WebApp(
@@ -27,6 +29,7 @@ public static class ShowcaseApp
             {
                 ServerHeader = "PicoWeb.Samples.Showcase",
                 MaxRequestBytes = 256 * 1024,
+                WebSocketMessageHandler = webSocketHandler,
             }
         );
 
