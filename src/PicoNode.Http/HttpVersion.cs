@@ -8,4 +8,7 @@ public enum HttpVersion
 
     /// <summary>HTTP/1.1 (default)</summary>
     Http11,
+
+    /// <summary>HTTP/2</summary>
+    Http2,
 }

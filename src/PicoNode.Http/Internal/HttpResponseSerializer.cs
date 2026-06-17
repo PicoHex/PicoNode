@@ -213,10 +213,11 @@ internal static class HttpResponseSerializer
         {
             HttpVersion.Http10 => "HTTP/1.0",
             HttpVersion.Http11 => "HTTP/1.1",
+            HttpVersion.Http2 => "HTTP/2",
             _ => "HTTP/1.1",
         };
 
-    private const int HttpVersionStringLength = 8; // "HTTP/1.0" or "HTTP/1.1"
+    private const int HttpVersionStringLength = 8; // longest: "HTTP/1.0" / "HTTP/1.1"
 
     private static void ValidateStatusLinePart(string value, string paramName)
     {

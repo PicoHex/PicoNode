@@ -36,7 +36,7 @@ public sealed class Http2StreamHandlerTests
         await Assert.That(capturedRequest).IsNotNull();
         await Assert.That(capturedRequest!.Method).IsEqualTo("GET");
         await Assert.That(capturedRequest.Target).IsEqualTo("/foo");
-        await Assert.That(capturedRequest.Version).IsEqualTo(PicoNode.Http.HttpVersion.Http11);
+        await Assert.That(capturedRequest.Version).IsEqualTo(PicoNode.Http.HttpVersion.Http2);
 
         await Assert.That(connection.SentFrames.Count).IsEqualTo(1);
 

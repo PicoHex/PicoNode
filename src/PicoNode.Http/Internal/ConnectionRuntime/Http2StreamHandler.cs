@@ -160,7 +160,7 @@ internal static class Http2StreamHandler
         {
             Method = method,
             Target = path,
-            Version = HttpVersion.Http11,
+            Version = HttpVersion.Http2,
             HeaderFields = regularHeaders,
             Headers = headerDict,
         };
@@ -766,7 +766,7 @@ internal static class Http2StreamHandler
                 Method = state.DecodedMethod ?? "GET",
                 Target = state.DecodedPath ?? "/",
                 Path = state.DecodedPath ?? "/",
-                Version = PicoNode.Http.HttpVersion.Http11,
+                Version = PicoNode.Http.HttpVersion.Http2,
                 HeaderFields = state.DecodedHeaderFields ?? [],
                 Headers =
                     state.DecodedHeadersDict

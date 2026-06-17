@@ -12,7 +12,7 @@ public sealed class PicoWebShowcaseSmokeTests
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
         await Assert.That(response.Content.Headers.ContentType?.MediaType).IsEqualTo("text/html");
-        await Assert.That(body).Contains("PicoWeb Controller Patterns");
+        await Assert.That(body).Contains("PicoWeb Sample");
     }
 
     [Test]
