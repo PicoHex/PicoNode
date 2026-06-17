@@ -38,7 +38,7 @@ if (cert is not null)
     sslOptions = new()
     {
         ServerCertificate = cert,
-        ApplicationProtocols = [ SslApplicationProtocol.Http2, SslApplicationProtocol.Http11 ],
+        ApplicationProtocols = [ SslApplicationProtocol.Http11 ],
     };
     scheme = "https";
     Console.Error.WriteLine("Using dev certificate for HTTPS");
