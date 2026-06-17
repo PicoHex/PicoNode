@@ -149,6 +149,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
                 [
                     new(Http2SettingId.MaxConcurrentStreams, 100),
                     new(Http2SettingId.InitialWindowSize, 65535),
+                    new(Http2SettingId.HeaderTableSize, 4096),
                 ];
         var size = Http2FrameCodec.FrameHeaderSize + settings.Length * 6;
         var rented = ArrayPool<byte>.Shared.Rent(size);
