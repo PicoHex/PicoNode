@@ -64,6 +64,16 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         var state = connection.UserState as ConnectionRuntimeState;
         if (state is not null)
         {
+            // RFC 7540 §3.4: consume client PRI preface if present (ALPN path).
+            if (state.Protocol == ConnectionProtocol.Http2 && buffer.Length >= Http2FrameCodec.ClientPreface.Length)
+            {
+                var check = new byte[Http2FrameCodec.ClientPreface.Length];
+                buffer.Slice(0, check.Length).CopyTo(check);
+                if (check.AsSpan().SequenceEqual(Http2FrameCodec.ClientPreface))
+                {
+                    buffer = buffer.Slice(Http2FrameCodec.ClientPreface.Length);
+                }
+            }
             return state.Protocol switch
             {
                 ConnectionProtocol.WebSocket => ProcessWebSocketFrameAsync(
