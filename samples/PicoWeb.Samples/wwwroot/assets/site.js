@@ -8,6 +8,9 @@ document.addEventListener('DOMContentLoaded', () => {
         o.style.color = err ? 'var(--accent)' : 'var(--fg-code)';
         o.textContent = typeof c === 'object' ? JSON.stringify(c, null, 2) : c;
     };
+    $('btn-info')?.addEventListener('click', () => fetch_('info', '/api/info'));
+    $('btn-health')?.addEventListener('click', () => fetch_('health', '/api/health'));
+
     const fetch_ = async (id, url, opts) => {
         try { out(id, 'FETCHING...', ''); const s = performance.now(), r = await fetch(url, opts), d = await rr(r); out(id, `${r.status} | ${Math.round(performance.now() - s)}ms`, d); }
         catch (e) { out(id, 'ERROR', fe(e), true); }
