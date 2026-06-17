@@ -14,6 +14,20 @@ internal static class Http2ConnectionProcessor
         var remaining = buffer;
         var consumed = buffer.Start;
 
+        // RFC 7540 §3.4: client connection preface (PRI * HTTP/2.0...).
+        // For ALPN, the preface is also sent by browsers (optional per spec but common).
+        var prefaceLen = Http2FrameCodec.ClientPreface.Length;
+        if (buffer.Length >= prefaceLen)
+        {
+            Span<byte> preface = stackalloc byte[prefaceLen];
+            buffer.Slice(0, prefaceLen).CopyTo(preface);
+            if (preface.SequenceEqual(Http2FrameCodec.ClientPreface))
+            {
+                buffer = buffer.Slice(prefaceLen);
+                consumed = buffer.Start;
+            }
+        }
+
         if (sendInitialSettings)
         {
             var settings =
