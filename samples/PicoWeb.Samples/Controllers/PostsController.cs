@@ -21,19 +21,31 @@ namespace PicoWeb.Samples.Controllers;
 
 public class HttpPostAttribute : Attribute
 {
-    public HttpPostAttribute(string? path = null) { Path = path; }
+    public HttpPostAttribute(string? path = null)
+    {
+        Path = path;
+    }
+
     public string? Path { get; }
 }
 
 public class HttpDeleteAttribute : Attribute
 {
-    public HttpDeleteAttribute(string? path = null) { Path = path; }
+    public HttpDeleteAttribute(string? path = null)
+    {
+        Path = path;
+    }
+
     public string? Path { get; }
 }
 
 public class HttpPatchAttribute : Attribute
 {
-    public HttpPatchAttribute(string? path = null) { Path = path; }
+    public HttpPatchAttribute(string? path = null)
+    {
+        Path = path;
+    }
+
     public string? Path { get; }
 }
 

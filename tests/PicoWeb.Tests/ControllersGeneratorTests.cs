@@ -1,6 +1,6 @@
+using Controllers.Gen;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Controllers.Gen;
 
 namespace PicoWeb.Tests;
 
@@ -339,15 +339,21 @@ public sealed class ControllersGeneratorTests
 
     private static string RunGenerator(string source, string fileName)
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(source,
+        var syntaxTree = CSharpSyntaxTree.ParseText(
+            source,
             CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest),
-            path: fileName);
+            path: fileName
+        );
 
         var references = new[]
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.Collections.Generic.List<>).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(PicoJetson.PicoJsonSerializableAttribute).Assembly.Location),
+            MetadataReference.CreateFromFile(
+                typeof(System.Collections.Generic.List<>).Assembly.Location
+            ),
+            MetadataReference.CreateFromFile(
+                typeof(PicoJetson.PicoJsonSerializableAttribute).Assembly.Location
+            ),
             MetadataReference.CreateFromFile(typeof(PicoJetson.JsonSerializer).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(PicoNode.Web.WebApp).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(PicoNode.Web.WebContext).Assembly.Location),
@@ -355,10 +361,12 @@ public sealed class ControllersGeneratorTests
             MetadataReference.CreateFromFile(typeof(PicoWeb.Results).Assembly.Location),
         };
 
-        var compilation = CSharpCompilation.Create("TestAssembly",
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
             new[] { syntaxTree },
             references,
-            new CSharpCompilationOptions(OutputKind.ConsoleApplication));
+            new CSharpCompilationOptions(OutputKind.ConsoleApplication)
+        );
 
         var generator = new ControllersGenerator();
 

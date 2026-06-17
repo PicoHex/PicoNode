@@ -3,7 +3,11 @@ namespace PicoWeb;
 public static class Results
 {
     /// <summary>Creates a JSON response with pre-serialized body bytes.</summary>
-    public static HttpResponse Json(int statusCode, ReadOnlyMemory<byte> jsonBody, string? reasonPhrase = null)
+    public static HttpResponse Json(
+        int statusCode,
+        ReadOnlyMemory<byte> jsonBody,
+        string? reasonPhrase = null
+    )
     {
         return new HttpResponse
         {
@@ -13,7 +17,8 @@ public static class Results
             [
                 new KeyValuePair<string, string>(
                     HttpHeaderNames.ContentType,
-                    "application/json; charset=utf-8"),
+                    "application/json; charset=utf-8"
+                ),
             ],
             Body = jsonBody,
         };
@@ -28,16 +33,17 @@ public static class Results
     public static HttpResponse Redirect(string location, bool permanent = false) =>
         WebResults.Redirect(location, permanent);
 
-    private static string GetDefaultReason(int code) => code switch
-    {
-        200 => "OK",
-        201 => "Created",
-        204 => "No Content",
-        400 => "Bad Request",
-        404 => "Not Found",
-        500 => "Internal Server Error",
-        _ => "",
-    };
+    private static string GetDefaultReason(int code) =>
+        code switch
+        {
+            200 => "OK",
+            201 => "Created",
+            204 => "No Content",
+            400 => "Bad Request",
+            404 => "Not Found",
+            500 => "Internal Server Error",
+            _ => "",
+        };
 }
 
 internal static class AppSerializationOptions
@@ -50,22 +56,21 @@ internal static class AppSerializationOptions
         set => _default = Clone(value ?? CreateDefault());
     }
 
-    private static PicoJetson.JsonOptions CreateDefault() => new()
-    {
-        PropertyNamingPolicy = PicoJetson.JsonNamingPolicy.CamelCase,
-    };
+    private static PicoJetson.JsonOptions CreateDefault() =>
+        new() { PropertyNamingPolicy = PicoJetson.JsonNamingPolicy.CamelCase };
 
-    private static PicoJetson.JsonOptions Clone(PicoJetson.JsonOptions source) => new()
-    {
-        PropertyNamingPolicy = source.PropertyNamingPolicy,
-        Indented = source.Indented,
-        MaxDepth = source.MaxDepth,
-        DefaultIgnoreCondition = source.DefaultIgnoreCondition,
-        IncludeFields = source.IncludeFields,
-        NumberHandling = source.NumberHandling,
-        PropertyNameCaseInsensitive = source.PropertyNameCaseInsensitive,
-        AllowTrailingCommas = source.AllowTrailingCommas,
-        ReadCommentHandling = source.ReadCommentHandling,
-        UnmappedMemberHandling = source.UnmappedMemberHandling,
-    };
+    private static PicoJetson.JsonOptions Clone(PicoJetson.JsonOptions source) =>
+        new()
+        {
+            PropertyNamingPolicy = source.PropertyNamingPolicy,
+            Indented = source.Indented,
+            MaxDepth = source.MaxDepth,
+            DefaultIgnoreCondition = source.DefaultIgnoreCondition,
+            IncludeFields = source.IncludeFields,
+            NumberHandling = source.NumberHandling,
+            PropertyNameCaseInsensitive = source.PropertyNameCaseInsensitive,
+            AllowTrailingCommas = source.AllowTrailingCommas,
+            ReadCommentHandling = source.ReadCommentHandling,
+            UnmappedMemberHandling = source.UnmappedMemberHandling,
+        };
 }

@@ -49,21 +49,27 @@ public sealed class MapMethodGeneratorTests
 
     private static string RunGenerator(string source, string fileName)
     {
-        var syntaxTree = CSharpSyntaxTree.ParseText(source,
+        var syntaxTree = CSharpSyntaxTree.ParseText(
+            source,
             CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest),
-            path: fileName);
+            path: fileName
+        );
 
         var references = new[]
         {
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(PicoJetson.PicoJsonSerializableAttribute).Assembly.Location),
+            MetadataReference.CreateFromFile(
+                typeof(PicoJetson.PicoJsonSerializableAttribute).Assembly.Location
+            ),
             MetadataReference.CreateFromFile(typeof(PicoJetson.JsonSerializer).Assembly.Location),
         };
 
-        var compilation = CSharpCompilation.Create("TestAssembly",
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
             new[] { syntaxTree },
             references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+        );
 
         var generator = new MapMethodGenerator();
         var driver = CSharpGeneratorDriver.Create(generator);

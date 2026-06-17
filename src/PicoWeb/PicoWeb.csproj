@@ -36,13 +36,28 @@
 
   <!-- Pack analyzers into NuGet package for transitive consumption -->
   <ItemGroup>
-    <None Include="..\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll" Pack="true" PackagePath="analyzers\dotnet\cs\" Visible="false" />
-    <None Include="..\Analyzers\PicoWeb.Gen\bin\Release\netstandard2.0\PicoWeb.Gen.dll" Pack="true" PackagePath="analyzers\dotnet\cs\" Visible="false" />
+    <None
+      Include="..\Analyzers\Controllers.Gen\bin\Release\netstandard2.0\Controllers.Gen.dll"
+      Pack="true"
+      PackagePath="analyzers\dotnet\cs\"
+      Visible="false"
+    />
+    <None
+      Include="..\Analyzers\PicoWeb.Gen\bin\Release\netstandard2.0\PicoWeb.Gen.dll"
+      Pack="true"
+      PackagePath="analyzers\dotnet\cs\"
+      Visible="false"
+    />
   </ItemGroup>
 
   <!-- Pack buildTransitive .props for transitive analyzer registration -->
   <ItemGroup>
-    <None Include="buildTransitive\PicoWeb.props" Pack="true" PackagePath="buildTransitive\" Visible="false" />
+    <None
+      Include="buildTransitive\PicoWeb.props"
+      Pack="true"
+      PackagePath="buildTransitive\"
+      Visible="false"
+    />
   </ItemGroup>
 
   <ItemGroup>

@@ -33,5 +33,4 @@
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.*" PrivateAssets="all" />
   </ItemGroup>
-
 </Project>

@@ -1,11 +1,7 @@
+using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading;
 
 namespace Controllers.Gen;
 
@@ -14,9 +10,11 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var controllerClasses = context.SyntaxProvider.CreateSyntaxProvider(
-            predicate: static (node, _) => node is ClassDeclarationSyntax,
-            transform: static (ctx, ct) => GetClassModel(ctx, ct))
+        var controllerClasses = context
+            .SyntaxProvider.CreateSyntaxProvider(
+                predicate: static (node, _) => node is ClassDeclarationSyntax,
+                transform: static (ctx, ct) => GetClassModel(ctx, ct)
+            )
             .Where(static m => m is not null)
             .Select(static (m, _) => m!);
 
@@ -74,7 +72,9 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             return null;
 
         var controllerName = classSymbol.Name;
-        var controllerFullName = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var controllerFullName = classSymbol.ToDisplayString(
+            SymbolDisplayFormat.FullyQualifiedFormat
+        );
         var routePrefix = GetRoutePrefix(classDecl, classSymbol);
 
         return new ControllerModel(controllerName, controllerFullName, routePrefix, methods);
@@ -88,28 +88,36 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             var name = attr.AttributeClass?.Name;
             switch (name)
             {
-                case "HttpGetAttribute": return "GET";
-                case "HttpPostAttribute": return "POST";
-                case "HttpPutAttribute": return "PUT";
-                case "HttpDeleteAttribute": return "DELETE";
-                case "HttpPatchAttribute": return "PATCH";
+                case "HttpGetAttribute":
+                    return "GET";
+                case "HttpPostAttribute":
+                    return "POST";
+                case "HttpPutAttribute":
+                    return "PUT";
+                case "HttpDeleteAttribute":
+                    return "DELETE";
+                case "HttpPatchAttribute":
+                    return "PATCH";
             }
         }
 
         // Convention: method name prefix
         var methodName = methodSymbol.Name;
-        if (methodName.StartsWith("Get")) return "GET";
-        if (methodName.StartsWith("Post")) return "POST";
-        if (methodName.StartsWith("Put")) return "PUT";
-        if (methodName.StartsWith("Delete")) return "DELETE";
-        if (methodName.StartsWith("Patch")) return "PATCH";
+        if (methodName.StartsWith("Get"))
+            return "GET";
+        if (methodName.StartsWith("Post"))
+            return "POST";
+        if (methodName.StartsWith("Put"))
+            return "PUT";
+        if (methodName.StartsWith("Delete"))
+            return "DELETE";
+        if (methodName.StartsWith("Patch"))
+            return "PATCH";
 
         return null;
     }
 
-    private static string GetRoute(
-        MethodDeclarationSyntax method,
-        IMethodSymbol methodSymbol)
+    private static string GetRoute(MethodDeclarationSyntax method, IMethodSymbol methodSymbol)
     {
         // Check for [HttpGet("{id}")] attribute override
         foreach (var attrList in method.AttributeLists)
@@ -150,7 +158,10 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
         // Strip trailing parameter name from method name if present
         var lastParam = methodSymbol.Parameters.LastOrDefault();
-        if (lastParam != null && methodName.IndexOf(lastParam.Name, StringComparison.OrdinalIgnoreCase) >= 0)
+        if (
+            lastParam != null
+            && methodName.IndexOf(lastParam.Name, StringComparison.OrdinalIgnoreCase) >= 0
+        )
         {
             methodName = methodName.Substring(0, methodName.Length - lastParam.Name.Length);
         }
@@ -164,7 +175,8 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
     private static string GetRoutePrefix(
         ClassDeclarationSyntax classDecl,
-        INamedTypeSymbol classSymbol)
+        INamedTypeSymbol classSymbol
+    )
     {
         // Check for [Route("api/v2/users")] attribute
         foreach (var attr in classSymbol.GetAttributes())
@@ -207,7 +219,10 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         return sb.ToString();
     }
 
-    private static void GenerateSources(SourceProductionContext context, System.Collections.Immutable.ImmutableArray<ControllerModel> controllers)
+    private static void GenerateSources(
+        SourceProductionContext context,
+        System.Collections.Immutable.ImmutableArray<ControllerModel> controllers
+    )
     {
         var registrarCode = new StringBuilder();
 
@@ -243,12 +258,13 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
             endpointsCode.AppendLine($"    public static class {stubClassName}");
             endpointsCode.AppendLine("    {");
-            endpointsCode.AppendLine($"        public static void Register(PicoNode.Web.WebApp app)");
+            endpointsCode.AppendLine(
+                $"        public static void Register(PicoNode.Web.WebApp app)"
+            );
             endpointsCode.AppendLine("        {");
 
             foreach (var method in controller.Methods)
             {
-
                 var mapMethod = method.HttpMethod switch
                 {
                     "GET" => "MapGet",
@@ -264,46 +280,66 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 var fullRoute = methodRoute.StartsWith("/")
                     ? controller.RoutePrefix + methodRoute
                     : controller.RoutePrefix + "/" + methodRoute;
-                endpointsCode.AppendLine($"            app.{mapMethod}(\"{fullRoute}\", (WebContext ctx, CancellationToken _) =>");
+                endpointsCode.AppendLine(
+                    $"            app.{mapMethod}(\"{fullRoute}\", (WebContext ctx, CancellationToken _) =>"
+                );
                 endpointsCode.AppendLine("            {");
 
                 // Bind route parameters and DI services
                 var callArgs = new List<string>();
                 foreach (var param in method.Symbol.Parameters)
                 {
-                    var typeName = param.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    var typeName = param.Type.ToDisplayString(
+                        SymbolDisplayFormat.FullyQualifiedFormat
+                    );
                     var paramName = param.Name;
 
                     if (!IsComplexType(param.Type))
                     {
                         // Simple type — bind from route values (AOT-safe: no Convert.ChangeType)
                         if (typeName == "int" || typeName == "global::System.Int32")
-                            endpointsCode.AppendLine($"                var __{paramName} = int.Parse(ctx.RouteValues[\"{paramName}\"]);");
+                            endpointsCode.AppendLine(
+                                $"                var __{paramName} = int.Parse(ctx.RouteValues[\"{paramName}\"]);"
+                            );
                         else if (typeName == "string" || typeName == "global::System.String")
-                            endpointsCode.AppendLine($"                var __{paramName} = ctx.RouteValues[\"{paramName}\"];");
+                            endpointsCode.AppendLine(
+                                $"                var __{paramName} = ctx.RouteValues[\"{paramName}\"];"
+                            );
                         else if (typeName == "long" || typeName == "global::System.Int64")
-                            endpointsCode.AppendLine($"                var __{paramName} = long.Parse(ctx.RouteValues[\"{paramName}\"]);");
+                            endpointsCode.AppendLine(
+                                $"                var __{paramName} = long.Parse(ctx.RouteValues[\"{paramName}\"]);"
+                            );
                         else if (typeName == "double" || typeName == "global::System.Double")
-                            endpointsCode.AppendLine($"                var __{paramName} = double.Parse(ctx.RouteValues[\"{paramName}\"]);");
+                            endpointsCode.AppendLine(
+                                $"                var __{paramName} = double.Parse(ctx.RouteValues[\"{paramName}\"]);"
+                            );
                         else
-                            endpointsCode.AppendLine($"                var __{paramName} = ({typeName})System.Convert.ChangeType(ctx.RouteValues[\"{paramName}\"], typeof({typeName}));");
+                            endpointsCode.AppendLine(
+                                $"                var __{paramName} = ({typeName})System.Convert.ChangeType(ctx.RouteValues[\"{paramName}\"], typeof({typeName}));"
+                            );
                     }
                     else
                     {
                         // Complex type — resolve from DI
-                        endpointsCode.AppendLine($"                var __{paramName} = ctx.Services.GetService(typeof({typeName}));");
+                        endpointsCode.AppendLine(
+                            $"                var __{paramName} = ctx.Services.GetService(typeof({typeName}));"
+                        );
                     }
                     callArgs.Add($"__{paramName}");
                 }
 
                 // Collect and resolve the controller
-                endpointsCode.AppendLine($"                var __controller = ctx.Services.GetService(typeof({controller.FullName}))!;");
+                endpointsCode.AppendLine(
+                    $"                var __controller = ctx.Services.GetService(typeof({controller.FullName}))!;"
+                );
 
                 // Call the original method
                 var retType = method.Symbol.ReturnType;
                 var isVoid = retType.SpecialType == SpecialType.System_Void;
                 var isAsync = false;
-                var resultTypeName = retType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                var resultTypeName = retType.ToDisplayString(
+                    SymbolDisplayFormat.FullyQualifiedFormat
+                );
 
                 if (retType is INamedTypeSymbol namedRet && namedRet.TypeArguments.Length == 1)
                 {
@@ -311,7 +347,9 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                     if (name is "Task" or "ValueTask")
                     {
                         isAsync = true;
-                        resultTypeName = namedRet.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                        resultTypeName = namedRet
+                            .TypeArguments[0]
+                            .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
                     }
                 }
 
@@ -319,14 +357,24 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
                 if (isVoid)
                 {
-                    endpointsCode.AppendLine($"                {awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});");
-                    endpointsCode.AppendLine($"                return ValueTask.FromResult(PicoWeb.Results.Empty(204));");
+                    endpointsCode.AppendLine(
+                        $"                {awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});"
+                    );
+                    endpointsCode.AppendLine(
+                        $"                return ValueTask.FromResult(PicoWeb.Results.Empty(204));"
+                    );
                 }
                 else
                 {
-                    endpointsCode.AppendLine($"                var __result = ({resultTypeName}){awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});");
-                    endpointsCode.AppendLine($"                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);");
-                    endpointsCode.AppendLine($"                return ValueTask.FromResult(PicoWeb.Results.Json(200, __bytes));");
+                    endpointsCode.AppendLine(
+                        $"                var __result = ({resultTypeName}){awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});"
+                    );
+                    endpointsCode.AppendLine(
+                        $"                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);"
+                    );
+                    endpointsCode.AppendLine(
+                        $"                return ValueTask.FromResult(PicoWeb.Results.Json(200, __bytes));"
+                    );
                 }
 
                 endpointsCode.AppendLine("            });");
@@ -348,7 +396,8 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         // Add sources
         if (endpointsCode.Length > 0)
         {
-            var endpointSource = "using PicoNode.Web;\nusing PicoJetson;\n\n" + endpointsCode.ToString();
+            var endpointSource =
+                "using PicoNode.Web;\nusing PicoJetson;\n\n" + endpointsCode.ToString();
             context.AddSource("Controllers_Endpoints.g.cs", endpointSource);
         }
 
@@ -362,9 +411,29 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         if (type.TypeKind == TypeKind.Enum)
             return false;
         var name = type.ToDisplayString();
-        if (name is "string" or "bool" or "int" or "long" or "double" or "float" or "decimal"
-            or "char" or "byte" or "short" or "uint" or "ulong" or "ushort" or "sbyte"
-            or "Guid" or "DateTime" or "DateTimeOffset" or "DateOnly" or "TimeOnly" or "TimeSpan")
+        if (
+            name
+            is "string"
+                or "bool"
+                or "int"
+                or "long"
+                or "double"
+                or "float"
+                or "decimal"
+                or "char"
+                or "byte"
+                or "short"
+                or "uint"
+                or "ulong"
+                or "ushort"
+                or "sbyte"
+                or "Guid"
+                or "DateTime"
+                or "DateTimeOffset"
+                or "DateOnly"
+                or "TimeOnly"
+                or "TimeSpan"
+        )
             return false;
         return true;
     }
@@ -377,7 +446,12 @@ internal sealed class ControllerModel
     public string RoutePrefix { get; }
     public List<MethodModel> Methods { get; }
 
-    public ControllerModel(string name, string fullName, string routePrefix, List<MethodModel> methods)
+    public ControllerModel(
+        string name,
+        string fullName,
+        string routePrefix,
+        List<MethodModel> methods
+    )
     {
         Name = name;
         FullName = fullName;

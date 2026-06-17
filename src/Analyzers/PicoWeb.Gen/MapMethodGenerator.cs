@@ -1,11 +1,7 @@
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.Collections.Generic;
-using System.Collections.Immutable;
-using System.Linq;
-using System.Text;
-using System.Threading;
 
 namespace PicoWeb.Gen;
 
@@ -14,9 +10,11 @@ public sealed class MapMethodGenerator : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var mapCalls = context.SyntaxProvider.CreateSyntaxProvider(
-            predicate: static (node, _) => IsInvocationCandidate(node),
-            transform: static (ctx, ct) => GetReturnType(ctx, ct))
+        var mapCalls = context
+            .SyntaxProvider.CreateSyntaxProvider(
+                predicate: static (node, _) => IsInvocationCandidate(node),
+                transform: static (ctx, ct) => GetReturnType(ctx, ct)
+            )
             .Where(static t => t is not null)
             .Select(static (t, _) => t!);
 
@@ -27,12 +25,16 @@ public sealed class MapMethodGenerator : IIncrementalGenerator
 
     private static bool IsInvocationCandidate(SyntaxNode node)
     {
-        if (node is InvocationExpressionSyntax invocation &&
-            invocation.Expression is MemberAccessExpressionSyntax memberAccess &&
-            (memberAccess.Name.Identifier.Text == "MapGet" ||
-             memberAccess.Name.Identifier.Text == "MapPost" ||
-             memberAccess.Name.Identifier.Text == "MapPut" ||
-             memberAccess.Name.Identifier.Text == "MapDelete"))
+        if (
+            node is InvocationExpressionSyntax invocation
+            && invocation.Expression is MemberAccessExpressionSyntax memberAccess
+            && (
+                memberAccess.Name.Identifier.Text == "MapGet"
+                || memberAccess.Name.Identifier.Text == "MapPost"
+                || memberAccess.Name.Identifier.Text == "MapPut"
+                || memberAccess.Name.Identifier.Text == "MapDelete"
+            )
+        )
         {
             return true;
         }
@@ -103,7 +105,10 @@ public sealed class MapMethodGenerator : IIncrementalGenerator
         return null;
     }
 
-    private static void GenerateSource(SourceProductionContext context, ImmutableArray<string> types)
+    private static void GenerateSource(
+        SourceProductionContext context,
+        ImmutableArray<string> types
+    )
     {
         // PicoWeb.Gen's serializable registration has been removed because
         // source generators cannot rely on other generators' output.

@@ -1,12 +1,10 @@
 using System.Buffers;
 using System.Net;
 using System.Net.Security;
-using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using PicoDI;
 using PicoDI.Abs;
 using PicoNode.Http;
-using PicoNode.Web;
 using PicoWeb;
 
 var container = new SvcContainer();
@@ -18,7 +16,8 @@ container.Build();
 // WebSocket echo handler
 WebSocketMessageHandler wsEcho = static async (msg, conn, ct) =>
 {
-    if (msg.OpCode == WebSocketOpCode.Close) return;
+    if (msg.OpCode == WebSocketOpCode.Close)
+        return;
     var size = WebSocketFrameCodec.MeasureFrameSize(msg.Payload.Length, mask: false);
     var buf = new byte[size];
     WebSocketFrameCodec.WriteFrame(buf, msg.OpCode, msg.Payload.Span);
@@ -39,8 +38,10 @@ if (cert is not null)
     sslOptions = new()
     {
         ServerCertificate = cert,
-        EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13,
-        ApplicationProtocols = [ SslApplicationProtocol.Http2, SslApplicationProtocol.Http11 ],
+        EnabledSslProtocols =
+            System.Security.Authentication.SslProtocols.Tls12
+            | System.Security.Authentication.SslProtocols.Tls13,
+        ApplicationProtocols = [SslApplicationProtocol.Http2, SslApplicationProtocol.Http11],
     };
     scheme = "https";
     Console.Error.WriteLine("Using dev certificate for HTTPS");
@@ -51,11 +52,14 @@ else
     Console.Error.WriteLine("  dotnet dev-certs https --trust");
 }
 
-var server = new WebServer(app, new WebServerOptions
-{
-    Endpoint = new IPEndPoint(IPAddress.Loopback, port),
-    SslOptions = sslOptions,
-});
+var server = new WebServer(
+    app,
+    new WebServerOptions
+    {
+        Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+        SslOptions = sslOptions,
+    }
+);
 await server.StartAsync();
 Console.WriteLine($"Listening on {scheme}://localhost:{port}/");
 Console.WriteLine("Open in your browser");
@@ -69,7 +73,11 @@ static X509Certificate2? LoadDevCert()
         using var store = new X509Store("My", StoreLocation.CurrentUser);
         store.Open(OpenFlags.ReadOnly);
         // ASP.NET Core dev cert has subject "CN=localhost"
-        var certs = store.Certificates.Find(X509FindType.FindBySubjectName, "localhost", validOnly: false);
+        var certs = store.Certificates.Find(
+            X509FindType.FindBySubjectName,
+            "localhost",
+            validOnly: false
+        );
         foreach (var c in certs)
         {
             // Dev certs have a friendly name starting with "ASP.NET Core"

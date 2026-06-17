@@ -18,7 +18,10 @@
 
   <!-- Source generators -->
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Analyzers\Controllers.Gen\Controllers.Gen.csproj"
-                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference
+      Include="..\..\src\Analyzers\Controllers.Gen\Controllers.Gen.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+    />
   </ItemGroup>
 </Project>

@@ -18,9 +18,12 @@ public static class ShowcaseApp
         MaxAge = 600,
     };
 
-    public static WebApp Create(PicoDI.Abs.ISvcContainer container, string? contentRoot = null,
+    public static WebApp Create(
+        PicoDI.Abs.ISvcContainer container,
+        string? contentRoot = null,
         PicoCfg.Abs.ICfgRoot? config = null,
-        PicoNode.Http.WebSocketMessageHandler? webSocketHandler = null)
+        PicoNode.Http.WebSocketMessageHandler? webSocketHandler = null
+    )
     {
         var staticRoot = Path.Combine(contentRoot ?? AppContext.BaseDirectory, "wwwroot");
         var app = new WebApp(
@@ -44,29 +47,44 @@ public static class ShowcaseApp
         app.Use(staticFiles.InvokeAsync);
 
         // Health check
-        app.MapGet("/api/health", static (WebContext ctx, CancellationToken _) =>
-            ValueTask.FromResult(PicoNode.Web.WebResults.Json(200, """{"status":"ok"}""", "OK")));
+        app.MapGet(
+            "/api/health",
+            static (WebContext ctx, CancellationToken _) =>
+                ValueTask.FromResult(PicoNode.Web.WebResults.Json(200, """{"status":"ok"}""", "OK"))
+        );
 
         // Server info
-        app.MapGet("/api/info", static (WebContext ctx, CancellationToken _) =>
-        {
-            var ver = ctx.Request.Version switch
+        app.MapGet(
+            "/api/info",
+            static (WebContext ctx, CancellationToken _) =>
             {
-                PicoNode.Http.HttpVersion.Http10 => "HTTP/1.0",
-                PicoNode.Http.HttpVersion.Http11 => "HTTP/1.1",
-                _ => "unknown",
-            };
-            return ValueTask.FromResult(PicoNode.Web.WebResults.Json(200,
-                "{\"server\":\"PicoWeb\",\"http\":\"" + ver + "\"}", "OK"));
-        });
+                var ver = ctx.Request.Version switch
+                {
+                    PicoNode.Http.HttpVersion.Http10 => "HTTP/1.0",
+                    PicoNode.Http.HttpVersion.Http11 => "HTTP/1.1",
+                    _ => "unknown",
+                };
+                return ValueTask.FromResult(
+                    PicoNode.Web.WebResults.Json(
+                        200,
+                        "{\"server\":\"PicoWeb\",\"http\":\"" + ver + "\"}",
+                        "OK"
+                    )
+                );
+            }
+        );
 
         // WebSocket echo
-        app.MapGet("/ws/echo", static (WebContext ctx, CancellationToken _) =>
-        {
-            var upgrade = PicoNode.Http.WebSocketUpgrade.TryUpgrade(ctx.Request);
-            return ValueTask.FromResult(upgrade ??
-                PicoNode.Web.WebResults.Text(400, "WebSocket upgrade failed"));
-        });
+        app.MapGet(
+            "/ws/echo",
+            static (WebContext ctx, CancellationToken _) =>
+            {
+                var upgrade = PicoNode.Http.WebSocketUpgrade.TryUpgrade(ctx.Request);
+                return ValueTask.FromResult(
+                    upgrade ?? PicoNode.Web.WebResults.Text(400, "WebSocket upgrade failed")
+                );
+            }
+        );
 
         app.MapGet(
             "/api/showcase",

@@ -33,20 +33,30 @@ public sealed class WebApp
     public WebApp Map(string method, string pattern, WebRequestHandler handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        _routes.Add(new()
-        {
-            Method = method,
-            Pattern = pattern,
-            Handler = handler,
-        });
+        _routes.Add(
+            new()
+            {
+                Method = method,
+                Pattern = pattern,
+                Handler = handler,
+            }
+        );
         return this;
     }
 
     public WebApp MapGet(string pattern, WebRequestHandler handler) => Map("GET", pattern, handler);
-    public WebApp MapPost(string pattern, WebRequestHandler handler) => Map("POST", pattern, handler);
+
+    public WebApp MapPost(string pattern, WebRequestHandler handler) =>
+        Map("POST", pattern, handler);
+
     public WebApp MapPut(string pattern, WebRequestHandler handler) => Map("PUT", pattern, handler);
-    public WebApp MapDelete(string pattern, WebRequestHandler handler) => Map("DELETE", pattern, handler);
-    public WebApp MapPatch(string pattern, WebRequestHandler handler) => Map("PATCH", pattern, handler);
+
+    public WebApp MapDelete(string pattern, WebRequestHandler handler) =>
+        Map("DELETE", pattern, handler);
+
+    public WebApp MapPatch(string pattern, WebRequestHandler handler) =>
+        Map("PATCH", pattern, handler);
+
     public WebApp MapFallback(WebRequestHandler handler)
     {
         ArgumentNullException.ThrowIfNull(handler);

@@ -19,12 +19,16 @@
       This is the standard pattern — see PicoJetson's sample for the same approach.
       NuGet consumers get analyzers automatically via buildTransitive/PicoWeb.props.
     -->
-    <ProjectReference Include="..\..\src\Analyzers\Controllers.Gen\Controllers.Gen.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\..\src\Analyzers\PicoWeb.Gen\PicoWeb.Gen.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference
+      Include="..\..\src\Analyzers\Controllers.Gen\Controllers.Gen.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+    />
+    <ProjectReference
+      Include="..\..\src\Analyzers\PicoWeb.Gen\PicoWeb.Gen.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+    />
   </ItemGroup>
 
   <ItemGroup>

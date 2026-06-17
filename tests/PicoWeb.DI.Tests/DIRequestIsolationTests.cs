@@ -44,8 +44,7 @@ public sealed class DIRequestIsolationTests
             "/",
             (WebContext ctx, CancellationToken _) =>
             {
-                var counter =
-                    ctx.Services.GetService(typeof(SingletonCounter)) as SingletonCounter;
+                var counter = ctx.Services.GetService(typeof(SingletonCounter)) as SingletonCounter;
                 return ValueTask.FromResult(WebResults.Text(200, counter!.Increment().ToString()));
             }
         );

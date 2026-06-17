@@ -22,13 +22,21 @@ namespace PicoWeb.Samples.Controllers;
 // The generator checks AttributeClass.Name, so class name is all that matters.
 public class RouteAttribute : Attribute
 {
-    public RouteAttribute(string path) { Path = path; }
+    public RouteAttribute(string path)
+    {
+        Path = path;
+    }
+
     public string Path { get; }
 }
 
 public class HttpGetAttribute : Attribute
 {
-    public HttpGetAttribute(string path) { Path = path; }
+    public HttpGetAttribute(string path)
+    {
+        Path = path;
+    }
+
     public string Path { get; }
 }
 
@@ -37,7 +45,12 @@ public class ProductsController
 {
     [HttpGet("{category}/{id}")]
     public ProductDto GetProduct(string category, int id) =>
-        new ProductDto { Id = id, Category = category, Name = $"{category} #{id}" };
+        new ProductDto
+        {
+            Id = id,
+            Category = category,
+            Name = $"{category} #{id}",
+        };
 }
 
 [PicoJsonSerializable]

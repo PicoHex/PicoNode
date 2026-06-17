@@ -112,28 +112,6 @@ public static class MultipartFormDataParser
     }
 
     private static MultipartFormData ParseBody(
-        Stream bodyStream,
-        byte[] boundary,
-        ILogger? logger = null
-    )
-    {
-        using var ms = new MemoryStream();
-        try
-        {
-            bodyStream.CopyTo(ms);
-        }
-        catch
-        {
-            // If stream reading fails (e.g. ReadOnlySequenceStream consumed),
-            // return empty result instead of crashing.
-            return new MultipartFormData([], []);
-        }
-        return ms.Length > 0
-            ? ParseBody(ms.ToArray(), boundary, logger)
-            : new MultipartFormData([], []);
-    }
-
-    private static MultipartFormData ParseBody(
         ReadOnlyMemory<byte> body,
         byte[] boundary,
         ILogger? logger = null

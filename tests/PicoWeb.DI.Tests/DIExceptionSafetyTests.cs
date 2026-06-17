@@ -6,7 +6,13 @@ public sealed class DIExceptionSafetyTests
     public async Task Scope_disposed_when_handler_throws()
     {
         var app = new WebApp(new TestServiceProvider());
-        app.MapGet("/", (WebContext _, CancellationToken _) => { throw new InvalidOperationException("boom"); });
+        app.MapGet(
+            "/",
+            (WebContext _, CancellationToken _) =>
+            {
+                throw new InvalidOperationException("boom");
+            }
+        );
 
         await using var host = await TestWebHost.StartAsync(app);
         using var client = new HttpClient
@@ -23,7 +29,10 @@ public sealed class DIExceptionSafetyTests
     public async Task Request_without_errors_returns_ok()
     {
         var app = new WebApp(new TestServiceProvider());
-        app.MapGet("/", (WebContext _, CancellationToken _) => ValueTask.FromResult(WebResults.Text(200, "ok")));
+        app.MapGet(
+            "/",
+            (WebContext _, CancellationToken _) => ValueTask.FromResult(WebResults.Text(200, "ok"))
+        );
 
         await using var host = await TestWebHost.StartAsync(app);
         using var client = new HttpClient

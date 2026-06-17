@@ -1114,11 +1114,13 @@ public sealed class HttpConnectionHandlerTests
         // 2. Client sends SETTINGS → server sends SETTINGS ACK
 
         var conn = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
-        var handler = new HttpConnectionHandler(new()
-        {
-            RequestHandler = (req, ct) =>
-                ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-        });
+        var handler = new HttpConnectionHandler(
+            new()
+            {
+                RequestHandler = (req, ct) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            }
+        );
 
         // Step 1: OnConnectedAsync — verify SETTINGS sent
         await handler.OnConnectedAsync(conn, CancellationToken.None);
@@ -1128,9 +1130,13 @@ public sealed class HttpConnectionHandlerTests
         // Step 2: Client sends SETTINGS (no PRI preface, as in ALPN)
         var prevSentCount = conn.AllSent.Count;
         var clientSettings = Http2FrameCodec.EncodeSettings(
-            new Http2Setting(Http2SettingId.MaxConcurrentStreams, 100));
-        await handler.OnReceivedAsync(conn,
-            new ReadOnlySequence<byte>(clientSettings), CancellationToken.None);
+            new Http2Setting(Http2SettingId.MaxConcurrentStreams, 100)
+        );
+        await handler.OnReceivedAsync(
+            conn,
+            new ReadOnlySequence<byte>(clientSettings),
+            CancellationToken.None
+        );
         // Server must respond with SETTINGS ACK
         await Assert.That(conn.AllSent.Count).IsEqualTo(prevSentCount + 1);
         var ack = conn.AllSent[conn.AllSent.Count - 1];
@@ -1143,11 +1149,13 @@ public sealed class HttpConnectionHandlerTests
     {
         // Simulate browser ALPN h2: sends PRI preface + SETTINGS in one shot.
         var conn = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
-        var handler = new HttpConnectionHandler(new()
-        {
-            RequestHandler = (req, ct) =>
-                ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-        });
+        var handler = new HttpConnectionHandler(
+            new()
+            {
+                RequestHandler = (req, ct) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            }
+        );
 
         await handler.OnConnectedAsync(conn, CancellationToken.None);
         // Verify state was set to Http2
@@ -1159,11 +1167,17 @@ public sealed class HttpConnectionHandlerTests
         // Build client data: PRI preface + SETTINGS frame
         var clientData = new List<byte>();
         clientData.AddRange(Http2FrameCodec.ClientPreface.ToArray());
-        clientData.AddRange(Http2FrameCodec.EncodeSettings(
-            new Http2Setting(Http2SettingId.MaxConcurrentStreams, 100)));
+        clientData.AddRange(
+            Http2FrameCodec.EncodeSettings(
+                new Http2Setting(Http2SettingId.MaxConcurrentStreams, 100)
+            )
+        );
 
-        var result = await handler.OnReceivedAsync(conn,
-            new ReadOnlySequence<byte>([.. clientData]), CancellationToken.None);
+        var result = await handler.OnReceivedAsync(
+            conn,
+            new ReadOnlySequence<byte>([.. clientData]),
+            CancellationToken.None
+        );
         // Server must respond with SETTINGS ACK
         await Assert.That(conn.AllSent.Count).IsEqualTo(1);
         var ack = conn.AllSent[0];
@@ -1177,10 +1191,13 @@ public sealed class HttpConnectionHandlerTests
         // Preface arrives in two chunks. First chunk is too small → wait.
         // Second chunk completes the preface + SETTINGS → process correctly.
         var conn = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
-        var handler = new HttpConnectionHandler(new()
-        {
-            RequestHandler = (req, ct) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 })
-        });
+        var handler = new HttpConnectionHandler(
+            new()
+            {
+                RequestHandler = (req, ct) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            }
+        );
 
         await handler.OnConnectedAsync(conn, CancellationToken.None);
         conn.AllSent.Clear();

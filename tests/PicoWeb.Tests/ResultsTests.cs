@@ -2,7 +2,8 @@ namespace PicoWeb.Tests;
 
 public sealed class ResultsTests
 {
-    private static readonly byte[] SampleJson = """
+    private static readonly byte[] SampleJson =
+        """
         {"name":"Alice"}
         """u8.ToArray();
 

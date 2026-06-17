@@ -66,7 +66,5 @@ public sealed class WebServer : IAsyncDisposable
             await _node.DisposeAsync();
             _node = null;
         }
-
-
     }
 }

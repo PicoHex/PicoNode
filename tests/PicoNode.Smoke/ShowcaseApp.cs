@@ -1,5 +1,3 @@
-using System.Text;
-using PicoNode.Http;
 using PicoNode.Web;
 
 namespace PicoNode.Smoke;
@@ -18,7 +16,11 @@ public static class ShowcaseApp
         MaxAge = 600,
     };
 
-    public static WebApp Create(PicoDI.Abs.ISvcContainer container, string? contentRoot = null, PicoCfg.Abs.ICfgRoot? config = null)
+    public static WebApp Create(
+        PicoDI.Abs.ISvcContainer container,
+        string? contentRoot = null,
+        PicoCfg.Abs.ICfgRoot? config = null
+    )
     {
         var staticRoot = Path.Combine(contentRoot ?? AppContext.BaseDirectory, "wwwroot");
         var app = new WebApp(

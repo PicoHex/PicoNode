@@ -4,7 +4,6 @@ global using System.IO.Pipelines;
 global using System.Net;
 global using System.Net.Security;
 global using System.Net.Sockets;
-global using System.Runtime.CompilerServices;
 global using System.Runtime.InteropServices;
 global using System.Threading.Channels;
 global using System.Threading.Tasks.Sources;

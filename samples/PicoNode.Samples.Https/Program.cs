@@ -2,11 +2,9 @@ using System.Net;
 using System.Net.Security;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
-using PicoNode;
-using PicoNode.Http;
-using PicoNode.Web;
 using PicoDI;
-using PicoWeb;
+using PicoNode;
+using PicoNode.Web;
 
 // ────────────────────────────────────────────────────────────
 // PicoNode HTTPS sample
