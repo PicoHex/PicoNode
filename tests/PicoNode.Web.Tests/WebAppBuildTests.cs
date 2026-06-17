@@ -168,4 +168,45 @@ public sealed class WebAppBuildTests
         public override void Write(byte[] buffer, int offset, int count) =>
             throw new NotSupportedException();
     }
+
+    [Test]
+    public async Task Multiple_exact_routes_all_match()
+    {
+        // Regression: verify multiple inline WebRequestHandler routes match.
+        // This catches the case where /api/health works but /api/test doesn't.
+        var app = new WebApp(new TestContainer());
+
+        var healthCalled = false;
+        var testCalled = false;
+
+        app.MapGet("/api/health", (WebContext ctx, CancellationToken _) =>
+        {
+            healthCalled = true;
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        });
+
+        app.MapGet("/api/test", (WebContext ctx, CancellationToken _) =>
+        {
+            testCalled = true;
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        });
+
+        var handler = app.Build();
+
+        // Send request to /api/health
+        var bytes1 = Encoding.ASCII.GetBytes("GET /api/health HTTP/1.1\r\nHost: example.com\r\n\r\n");
+        await handler.OnReceivedAsync(
+            new RecordingConnectionContext(),
+            new ReadOnlySequence<byte>(bytes1),
+            CancellationToken.None);
+        await Assert.That(healthCalled).IsTrue();
+
+        // Send request to /api/test
+        var bytes2 = Encoding.ASCII.GetBytes("GET /api/test HTTP/1.1\r\nHost: example.com\r\n\r\n");
+        await handler.OnReceivedAsync(
+            new RecordingConnectionContext(),
+            new ReadOnlySequence<byte>(bytes2),
+            CancellationToken.None);
+        await Assert.That(testCalled).IsTrue();
+    }
 }
