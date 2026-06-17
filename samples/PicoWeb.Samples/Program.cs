@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Net;
 using System.Net.Security;
+using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
 using PicoDI;
 using PicoDI.Abs;
@@ -38,7 +39,8 @@ if (cert is not null)
     sslOptions = new()
     {
         ServerCertificate = cert,
-        ApplicationProtocols = [ SslApplicationProtocol.Http11 ],
+        EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13,
+        ApplicationProtocols = [ SslApplicationProtocol.Http2, SslApplicationProtocol.Http11 ],
     };
     scheme = "https";
     Console.Error.WriteLine("Using dev certificate for HTTPS");
