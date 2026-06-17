@@ -26,10 +26,40 @@ public sealed class HttpRequest
     /// <summary>
     /// In-memory request body. For large payloads, use <see cref="BodyStream"/> instead
     /// to avoid buffering the entire body.
+    /// Lazily allocated from <see cref="BodyStream"/> or <c>_bodySequence</c> on first access.
     /// </summary>
-    public ReadOnlyMemory<byte> Body { get; init; } = ReadOnlyMemory<byte>.Empty;
+    public ReadOnlyMemory<byte> Body
+    {
+        get
+        {
+            if (!_bodyInitialized)
+            {
+                if (_bodySequence.HasValue)
+                {
+                    _body = _bodySequence.Value.ToArray();
+                }
+                _bodyInitialized = true;
+            }
+            return _body;
+        }
+        init
+        {
+            _body = value;
+            _bodyInitialized = true;
+        }
+    }
+
+    /// <summary>Slice of the pipe buffer backing <see cref="BodyStream"/>, used for lazy <see cref="Body"/> allocation.</summary>
+    internal ReadOnlySequence<byte>? _bodySequence;
+    private ReadOnlyMemory<byte> _body;
+    private bool _bodyInitialized;
 
     /// <summary>Creates a stream over the request body. Prefer <see cref="BodyStream"/>.</summary>
-    public Stream CreateBodyStream() =>
-        BodyStream != Stream.Null ? BodyStream : new MemoryStream(Body.ToArray(), writable: false);
+    public Stream CreateBodyStream()
+    {
+        if (BodyStream != Stream.Null)
+            return BodyStream;
+        var body = Body;
+        return body.Length > 0 ? new MemoryStream(body.ToArray(), writable: false) : Stream.Null;
+    }
 }

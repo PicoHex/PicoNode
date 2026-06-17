@@ -47,7 +47,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             connection.UserState = new ConnectionRuntimeState
             {
                 Protocol = ConnectionProtocol.Http2,
-                MaxRequestBodyBytes = _options.MaxRequestBytes,
+                MaxRequestBodyBytes = _options.MaxRequestBodySize,
             };
             return SendInitialSettingsAsync(connection, cancellationToken);
         }
@@ -153,7 +153,7 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         connection.UserState = new ConnectionRuntimeState
         {
             Protocol = protocol,
-            MaxRequestBodyBytes = _options.MaxRequestBytes,
+            MaxRequestBodyBytes = _options.MaxRequestBodySize,
         };
     }
 
@@ -191,25 +191,14 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     )
     {
-        if (state.WebSocketHandshakeComplete)
-        {
-            state.WebSocketMessageState ??= new WebSocketMessageProcessorState();
-            return await WebSocketMessageProcessor.ProcessAsync(
-                connection,
-                buffer,
-                _options.WebSocketMessageHandler,
-                cancellationToken,
-                state.WebSocketMessageState
-            );
-        }
-
-        var consumed = await WebSocketConnectionProcessor.ProcessAsync(
+        state.WebSocketMessageState ??= new WebSocketMessageProcessorState();
+        return await WebSocketMessageProcessor.ProcessAsync(
             connection,
             buffer,
-            cancellationToken
+            _options.WebSocketMessageHandler,
+            cancellationToken,
+            state.WebSocketMessageState
         );
-        state.WebSocketHandshakeComplete = true;
-        return consumed;
     }
 
     private static ProtocolDecision DetectProtocol(ReadOnlySequence<byte> buffer)

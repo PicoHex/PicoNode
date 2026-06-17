@@ -13,11 +13,24 @@ public sealed class TcpNode : INode, IAsyncDisposable
     private readonly Socket _listener;
     private readonly SocketIoEventArgsPool _eventArgsPool;
     private readonly CancellationTokenSource _cts = new();
+
+    /// <summary>
+    /// Cancellation token source for the config reload loop.
+    /// NOT cancelled during <see cref="StopAsync"/> — the config loop survives
+    /// until <see cref="DisposeAsync"/> cancels it. This allows the last config
+    /// reload to complete during the stop→dispose window.
+    /// </summary>
     private readonly CancellationTokenSource _configCts = new();
     private readonly ConcurrentDictionary<long, TcpConnection> _connections = new();
     private readonly Lock _stateLock = new();
     private Task? _acceptTask;
     private Task? _idleMonitorTask;
+
+    /// <summary>
+    /// Background task for configuration hot-reload. Started in <see cref="StartAsync"/>
+    /// and survives <see cref="StopAsync"/>. Only cancelled in <see cref="DisposeAsync"/>
+    /// to ensure in-flight reloads complete gracefully.
+    /// </summary>
     private Task? _configReloadTask;
     private TaskCompletionSource<bool>? _drained;
     private volatile NodeState _state;
@@ -27,6 +40,10 @@ public sealed class TcpNode : INode, IAsyncDisposable
     private long _totalClosed;
     private long _totalBytesSent;
     private long _totalBytesReceived;
+    private long _prevAccepted;
+    private long _prevSent;
+    private long _prevReceived;
+    private DateTime _metricsTime = DateTime.UtcNow;
 
     public TcpNode(TcpNodeOptions options)
     {
@@ -79,15 +96,36 @@ public sealed class TcpNode : INode, IAsyncDisposable
 
     public NodeState State => _state;
 
-    public TcpNodeMetrics GetMetrics() =>
-        new(
-            Interlocked.Read(ref _totalAccepted),
+    public TcpNodeMetrics GetMetrics()
+    {
+        var now = DateTime.UtcNow;
+        var elapsed = (now - _metricsTime).TotalSeconds;
+
+        var accepted = Interlocked.Read(ref _totalAccepted);
+        var sent = Interlocked.Read(ref _totalBytesSent);
+        var received = Interlocked.Read(ref _totalBytesReceived);
+
+        var acceptRate = elapsed > 0 ? (accepted - _prevAccepted) / elapsed : 0;
+        var sentRate = elapsed > 0 ? (sent - _prevSent) / elapsed : 0;
+        var recvRate = elapsed > 0 ? (received - _prevReceived) / elapsed : 0;
+
+        _prevAccepted = accepted;
+        _prevSent = sent;
+        _prevReceived = received;
+        _metricsTime = now;
+
+        return new TcpNodeMetrics(
+            accepted,
             Interlocked.Read(ref _totalRejected),
             Interlocked.Read(ref _totalClosed),
             _connections.Count,
-            Interlocked.Read(ref _totalBytesSent),
-            Interlocked.Read(ref _totalBytesReceived)
+            sent,
+            received,
+            acceptRate,
+            sentRate,
+            recvRate
         );
+    }
 
     internal void RecordBytesSent(long count) => Interlocked.Add(ref _totalBytesSent, count);
 
@@ -468,6 +506,13 @@ public sealed class TcpNode : INode, IAsyncDisposable
     internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null) =>
         NodeHelper.ReportFault(Options.Logger, code, operation, exception);
 
+    /// <summary>
+    /// Background loop for configuration hot-reload.
+    /// Survives <see cref="StopAsync"/> and is only stopped by
+    /// <see cref="DisposeAsync"/> cancelling <see cref="_configCts"/>.
+    /// This ensures the last reload can complete during the stop→dispose
+    /// window without blocking shutdown.
+    /// </summary>
     private async Task ConfigReloadLoopAsync(ICfgRoot config, TcpNodeOptions options)
     {
         try

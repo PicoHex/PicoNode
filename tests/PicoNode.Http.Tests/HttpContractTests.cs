@@ -28,6 +28,13 @@ public sealed class HttpContractTests
         await Assert
             .That(
                 type.GetProperty(
+                    nameof(HttpConnectionHandlerOptions.MaxRequestBodySize)
+                )?.PropertyType
+            )
+            .IsEqualTo(typeof(int));
+        await Assert
+            .That(
+                type.GetProperty(
                     nameof(HttpConnectionHandlerOptions.StreamingResponseBufferSize)
                 )?.PropertyType
             )
@@ -45,6 +52,7 @@ public sealed class HttpContractTests
                 nameof(HttpConnectionHandlerOptions.RequestTimeout),
                 nameof(HttpConnectionHandlerOptions.ServerHeader),
                 nameof(HttpConnectionHandlerOptions.StreamingResponseBufferSize),
+                nameof(HttpConnectionHandlerOptions.MaxRequestBodySize),
                 nameof(HttpConnectionHandlerOptions.WebSocketMessageHandler),
                 nameof(HttpConnectionHandlerOptions.Logger),
             ]);

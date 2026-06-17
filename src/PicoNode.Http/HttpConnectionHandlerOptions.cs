@@ -11,6 +11,8 @@ public sealed class HttpConnectionHandlerOptions
 
     public int MaxRequestBytes { get; init; } = 8192;
 
+    public int MaxRequestBodySize { get; init; } = 64 * 1024 * 1024;
+
     public int StreamingResponseBufferSize { get; init; } = DefaultStreamingResponseBufferSize;
 
     public TimeSpan RequestTimeout { get; init; } =

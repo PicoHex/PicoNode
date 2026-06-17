@@ -1095,7 +1095,7 @@ public sealed class HttpConnectionHandlerTests
             {
                 RequestHandler = (req, ct) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-                MaxRequestBytes = 12345,
+                MaxRequestBodySize = 12345,
             }
         );
         var connection = new RecordingConnectionContext { NegotiatedProtocol = "h2" };

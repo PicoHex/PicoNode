@@ -159,7 +159,10 @@ public sealed class TcpNodeMetricsTests
         await Assert
             .That(properties)
             .IsEquivalentTo([
+                nameof(TcpNodeMetrics.AcceptRatePerSecond),
                 nameof(TcpNodeMetrics.ActiveConnections),
+                nameof(TcpNodeMetrics.BytesReceivedPerSecond),
+                nameof(TcpNodeMetrics.BytesSentPerSecond),
                 nameof(TcpNodeMetrics.TotalAccepted),
                 nameof(TcpNodeMetrics.TotalBytesSent),
                 nameof(TcpNodeMetrics.TotalBytesReceived),

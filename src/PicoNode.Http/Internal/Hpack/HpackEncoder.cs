@@ -44,21 +44,31 @@ internal sealed class HpackEncoder
     /// </summary>
     public byte[] Encode(IReadOnlyList<(string Name, string Value)> headers)
     {
-        using var ms = new MemoryStream();
+        var writer = new ArrayBufferWriter<byte>();
+        Encode(writer, headers);
+        return writer.WrittenMemory.ToArray();
+    }
 
+    /// <summary>
+    /// Encodes headers into the provided <see cref="IBufferWriter{T}"/>.
+    /// Eliminates the intermediate <c>byte[]</c> allocation from <see cref="Encode(IReadOnlyList{(string, string)})"/>.
+    /// </summary>
+    public void Encode(
+        IBufferWriter<byte> writer,
+        IReadOnlyList<(string Name, string Value)> headers
+    )
+    {
         foreach (var (name, value) in headers)
         {
-            if (!TryEncodeIndexed(ms, name, value))
+            if (!TryEncodeIndexed(writer, name, value))
             {
-                EncodeLiteral(ms, name, value);
+                EncodeLiteral(writer, name, value);
             }
         }
-
-        return ms.ToArray();
     }
 
     /// <summary>Tries to encode a header using static or dynamic table index.</summary>
-    private bool TryEncodeIndexed(MemoryStream ms, string name, string value)
+    private bool TryEncodeIndexed(IBufferWriter<byte> writer, string name, string value)
     {
         // Check static table via dictionary index (O(1))
         if (StaticTableIndex.TryGetValue(name, out var entries))
@@ -68,7 +78,7 @@ internal sealed class HpackEncoder
             {
                 if (val is not null && val == value)
                 {
-                    EncodeIntegerWithPrefix(ms, idx, 7, 0x80);
+                    EncodeIntegerWithPrefix(writer, idx, 7, 0x80);
                     return true;
                 }
             }
@@ -79,8 +89,8 @@ internal sealed class HpackEncoder
             {
                 if (val is null)
                 {
-                    EncodeIntegerWithPrefix(ms, idx, 6, 0x40);
-                    EncodeString(ms, value);
+                    EncodeIntegerWithPrefix(writer, idx, 6, 0x40);
+                    EncodeString(writer, value);
                     _dynamicTable.Add(name, value);
                     return true;
                 }
@@ -89,8 +99,8 @@ internal sealed class HpackEncoder
             // 3) Every entry for this name has a non-null value, none matched.
             //    Use the first entry's name index for literal-with-indexing.
             var (firstIdx, _) = entries[0];
-            EncodeIntegerWithPrefix(ms, firstIdx, 6, 0x40);
-            EncodeString(ms, value);
+            EncodeIntegerWithPrefix(writer, firstIdx, 6, 0x40);
+            EncodeString(writer, value);
             _dynamicTable.Add(name, value);
             return true;
         }
@@ -106,7 +116,7 @@ internal sealed class HpackEncoder
             )
             {
                 var dynamicIndex = StaticTable.EntryCount + idx;
-                EncodeIntegerWithPrefix(ms, dynamicIndex, 7, 0x80);
+                EncodeIntegerWithPrefix(writer, dynamicIndex, 7, 0x80);
                 return true;
             }
         }
@@ -115,38 +125,46 @@ internal sealed class HpackEncoder
     }
 
     /// <summary>Encodes a literal header (new name and value).</summary>
-    private void EncodeLiteral(MemoryStream ms, string name, string value)
+    private void EncodeLiteral(IBufferWriter<byte> writer, string name, string value)
     {
         // Literal with incremental indexing (RFC 7541 §6.2.1)
         // Name index = 0 (new name follows) with 6-bit prefix
-        EncodeIntegerWithPrefix(ms, 0, 6, 0x40);
-        EncodeString(ms, name);
-        EncodeString(ms, value);
+        EncodeIntegerWithPrefix(writer, 0, 6, 0x40);
+        EncodeString(writer, name);
+        EncodeString(writer, value);
         _dynamicTable.Add(name, value);
     }
 
-    private static void EncodeInteger(MemoryStream ms, int value, int prefixBits)
+    private static void EncodeInteger(IBufferWriter<byte> writer, int value, int prefixBits)
     {
         var prefixMax = (1 << prefixBits) - 1;
         if (value < prefixMax)
         {
-            ms.WriteByte((byte)value);
+            var span = writer.GetSpan(1);
+            span[0] = (byte)value;
+            writer.Advance(1);
         }
         else
         {
-            ms.WriteByte((byte)prefixMax);
+            var span = writer.GetSpan(1);
+            span[0] = (byte)prefixMax;
+            writer.Advance(1);
             value -= prefixMax;
             while (value >= 128)
             {
-                ms.WriteByte((byte)((value & 0x7F) | 0x80));
+                span = writer.GetSpan(1);
+                span[0] = (byte)((value & 0x7F) | 0x80);
+                writer.Advance(1);
                 value >>= 7;
             }
-            ms.WriteByte((byte)value);
+            span = writer.GetSpan(1);
+            span[0] = (byte)value;
+            writer.Advance(1);
         }
     }
 
     private static void EncodeIntegerWithPrefix(
-        MemoryStream ms,
+        IBufferWriter<byte> writer,
         int value,
         int prefixBits,
         byte prefixBitsValue
@@ -155,22 +173,30 @@ internal sealed class HpackEncoder
         var prefixMax = (1 << prefixBits) - 1;
         if (value < prefixMax)
         {
-            ms.WriteByte((byte)(prefixBitsValue | value));
+            var span = writer.GetSpan(1);
+            span[0] = (byte)(prefixBitsValue | value);
+            writer.Advance(1);
         }
         else
         {
-            ms.WriteByte((byte)(prefixBitsValue | prefixMax));
+            var span = writer.GetSpan(1);
+            span[0] = (byte)(prefixBitsValue | prefixMax);
+            writer.Advance(1);
             value -= prefixMax;
             while (value >= 128)
             {
-                ms.WriteByte((byte)((value & 0x7F) | 0x80));
+                span = writer.GetSpan(1);
+                span[0] = (byte)((value & 0x7F) | 0x80);
+                writer.Advance(1);
                 value >>= 7;
             }
-            ms.WriteByte((byte)value);
+            span = writer.GetSpan(1);
+            span[0] = (byte)value;
+            writer.Advance(1);
         }
     }
 
-    private static void EncodeString(MemoryStream ms, string value)
+    private static void EncodeString(IBufferWriter<byte> writer, string value)
     {
         var bytes = DefaultEncoder.GetBytes(value);
         var huffBytes = HuffmanCodec.Encode(bytes);
@@ -179,14 +205,14 @@ internal sealed class HpackEncoder
         if (huffBytes.Length < bytes.Length)
         {
             // Huffman string (bit 7 = 1)
-            EncodeIntegerWithPrefix(ms, huffBytes.Length, 7, 0x80);
-            ms.Write(huffBytes);
+            EncodeIntegerWithPrefix(writer, huffBytes.Length, 7, 0x80);
+            writer.Write(huffBytes);
         }
         else
         {
             // Non-Huffman string (bit 7 = 0)
-            EncodeInteger(ms, bytes.Length, 7);
-            ms.Write(bytes);
+            EncodeInteger(writer, bytes.Length, 7);
+            writer.Write(bytes);
         }
     }
 }

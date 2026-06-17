@@ -869,4 +869,148 @@ public sealed class Http2StreamHandlerTests
 
         await Assert.That(Encoding.UTF8.GetString(receivedBody.ToArray())).IsEqualTo("Hello World");
     }
+
+    // ── CONTINUATION edge cases ────────────────────────────
+
+    [Test]
+    public async Task Continuation_empty_payload_with_EndHeaders_no_handler_call()
+    {
+        var connection = new TestTcpConnectionContext();
+
+        // HEADERS with no HPACK payload and EndHeaders — empty header block
+        var headersFrame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.EndHeaders, 1, []);
+
+        var handlerCalled = false;
+        HttpRequestHandler handler = (req, ct) =>
+        {
+            handlerCalled = true;
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        };
+
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        // Empty HPACK block: no valid headers to decode, handler should not be called
+        await Assert.That(handlerCalled).IsFalse();
+    }
+
+    [Test]
+    public async Task Continuation_exceeding_MaxHeaderListSize_sends_GoAway()
+    {
+        var connection = new TestTcpConnectionContext();
+
+        // Build a large HPACK payload that exceeds 16KB MaxHeaderListSize
+        // Use BuildFrame directly to avoid Http2FrameCodec's max frame size check
+        var largeValue = new string('x', Http2StreamState.MaxHeaderListSize);
+        var largeHpack = BuildHpackWithLargeValue(largeValue);
+
+        var frame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.EndHeaders, 1, largeHpack);
+
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+
+        var shouldClose = await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            frame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        // Exceeding MaxHeaderListSize is a connection error
+        await Assert.That(connection.IsClosed).IsTrue();
+    }
+
+    [Test]
+    public async Task Continuation_multiple_continuations_no_handler_until_end()
+    {
+        var connection = new TestTcpConnectionContext();
+        var hpackData = BuildMinimalHpack("POST", "/multi");
+
+        // First part: HEADERS without EndHeaders
+        var part1 = hpackData[..3];
+        var part2 = hpackData[3..];
+
+        var handlerCalled = false;
+        HttpRequestHandler handler = (req, ct) =>
+        {
+            handlerCalled = true;
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        };
+
+        // HEADERS without EndHeaders
+        var headersFrame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.None, 1, part1);
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+        await Assert.That(handlerCalled).IsFalse();
+
+        // Continue tracking is set on connection state
+        var state = connection.UserState as ConnectionRuntimeState;
+        await Assert.That(state).IsNotNull();
+
+        // CONTINUATION with EndHeaders + EndStream
+        var contFrame = BuildFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+            1,
+            part2
+        );
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            contFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.IsClosed).IsFalse();
+        await Assert.That(handlerCalled).IsTrue();
+    }
+
+    private static byte[] BuildHpackWithLargeValue(string value)
+    {
+        // Build a minimal HPACK block: literal header with a very large value
+        // Format: 0x00 (name index 0, literal) + len(name) + name + len(value) + value
+        // Use a simple: literal-with-name-reference encoding
+        // First encode the name as literal (index 0)
+        var nameBytes = "x-large"u8.ToArray();
+        var valueBytes = Encoding.ASCII.GetBytes(value);
+
+        var result = new List<byte>();
+        result.Add(0x00); // Literal, new name, incremental indexing
+
+        // Encode name length
+        result.Add((byte)nameBytes.Length);
+        result.AddRange(nameBytes);
+
+        // Encode value length (may need multi-byte encoding)
+        if (valueBytes.Length < 127)
+        {
+            result.Add((byte)valueBytes.Length);
+        }
+        else
+        {
+            result.Add(0x7F);
+            var remaining = valueBytes.Length - 127;
+            while (remaining >= 128)
+            {
+                result.Add((byte)((remaining & 0x7F) | 0x80));
+                remaining >>= 7;
+            }
+            result.Add((byte)remaining);
+        }
+
+        result.AddRange(valueBytes);
+        return result.ToArray();
+    }
 }

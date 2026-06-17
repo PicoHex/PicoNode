@@ -53,26 +53,22 @@ internal static class HttpBodyParser
         var bodySlice = bodyBytes.Slice(0, contentLength);
         reader.Advance(contentLength);
 
-        // Body is populated from the stream data so both paths work.
-        // Streaming consumers use BodyStream to avoid the extra allocation once
-        // the non-streaming API is fully migrated.
-        var bodyArray = bodySlice.ToArray();
+        // Body is NOT populated eagerly — it's lazily allocated from _bodySequence
+        // on first access. Consumers that prefer zero-copy reads should use BodyStream.
+        var request = new HttpRequest
+        {
+            Method = method,
+            Target = target,
+            Path = path,
+            QueryString = queryString,
+            Version = version,
+            HeaderFields = headerFields,
+            Headers = headers,
+            BodyStream = new ReadOnlySequenceStream(bodySlice),
+        };
+        request._bodySequence = bodySlice;
 
-        return HttpRequestParseResult.Success(
-            new HttpRequest
-            {
-                Method = method,
-                Target = target,
-                Path = path,
-                QueryString = queryString,
-                Version = version,
-                HeaderFields = headerFields,
-                Headers = headers,
-                BodyStream = new ReadOnlySequenceStream(bodySlice),
-                Body = bodyArray,
-            },
-            reader.Position
-        );
+        return HttpRequestParseResult.Success(request, reader.Position);
     }
 
     public static HttpRequestParseResult ParseChunkedBody(

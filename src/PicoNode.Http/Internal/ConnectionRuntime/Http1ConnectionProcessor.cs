@@ -87,6 +87,12 @@ internal static class Http1ConnectionProcessor
         return state;
     }
 
+    private static Http1ConnectionState GetHttp1State(ConnectionRuntimeState state)
+    {
+        state.Http1State ??= new Http1ConnectionState();
+        return state.Http1State;
+    }
+
     private static ValueTask<SequencePosition> CheckRequestTimeoutAsync(
         ITcpConnectionContext connection,
         ConnectionRuntimeState state,
@@ -95,16 +101,17 @@ internal static class Http1ConnectionProcessor
         CancellationToken _
     )
     {
+        var http1 = GetHttp1State(state);
         var now = DateTime.UtcNow;
-        if (state.RequestParsingStartedAtUtc == default)
+        if (http1.RequestParsingStartedAtUtc == default)
         {
-            state.RequestParsingStartedAtUtc = now;
+            http1.RequestParsingStartedAtUtc = now;
             return ValueTask.FromResult(consumed);
         }
 
         if (
             options.RequestTimeout <= TimeSpan.Zero
-            || now - state.RequestParsingStartedAtUtc < options.RequestTimeout
+            || now - http1.RequestParsingStartedAtUtc < options.RequestTimeout
         )
         {
             return ValueTask.FromResult(consumed);
@@ -121,9 +128,10 @@ internal static class Http1ConnectionProcessor
     )
     {
         var state = GetOrCreateConnectionState(connection, ConnectionProtocol.Http1);
-        if (!state.ContinueSent)
+        var http1 = GetHttp1State(state);
+        if (!http1.ContinueSent)
         {
-            state.ContinueSent = true;
+            http1.ContinueSent = true;
             await connection.SendAsync(
                 new ReadOnlySequence<byte>(ContinueResponse),
                 cancellationToken
@@ -143,8 +151,9 @@ internal static class Http1ConnectionProcessor
     )
     {
         var state = GetOrCreateConnectionState(connection, ConnectionProtocol.Http1);
-        state.ContinueSent = false;
-        state.RequestParsingStartedAtUtc = default;
+        var http1 = GetHttp1State(state);
+        http1.ContinueSent = false;
+        http1.RequestParsingStartedAtUtc = default;
 
         // Check for HTTP/1.1 Upgrade to h2c
         if (IsH2cUpgradeRequest(request))

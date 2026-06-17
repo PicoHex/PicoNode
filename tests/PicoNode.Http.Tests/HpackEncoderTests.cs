@@ -168,4 +168,24 @@ public sealed class HpackEncoderTests
         // Second encoding should be smaller (references dynamic table)
         await Assert.That(encoded2.Length).IsLessThan(encoded1.Length);
     }
+
+    [Test]
+    public async Task Encode_into_IBufferWriter_produces_same_result()
+    {
+        var encoder = new HpackEncoder();
+        var headers = new List<(string, string)>
+        {
+            (":status", "200"),
+            ("content-type", "text/plain; charset=utf-8"),
+            ("cache-control", "no-cache"),
+        };
+
+        var baseline = encoder.Encode(headers);
+
+        var writer = new ArrayBufferWriter<byte>();
+        encoder.Encode(writer, headers);
+        var fromWriter = writer.WrittenMemory.ToArray();
+
+        await Assert.That(fromWriter).IsEquivalentTo(baseline);
+    }
 }

@@ -4,9 +4,8 @@ internal sealed class ConnectionRuntimeState
 {
     public ConnectionProtocol Protocol { get; set; }
 
-    public bool ContinueSent { get; set; }
-
-    public DateTime RequestParsingStartedAtUtc { get; set; }
+    /// <summary>HTTP/1.1-specific state, allocated on first use to avoid waste on HTTP/2 connections.</summary>
+    public Http1ConnectionState? Http1State { get; set; }
 
     public bool WebSocketHandshakeComplete { get; set; }
 

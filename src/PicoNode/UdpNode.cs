@@ -13,11 +13,23 @@ public sealed class UdpNode : INode, IAsyncDisposable
 
     private readonly Socket _socket;
     private readonly CancellationTokenSource _receiveCts = new();
+
+    /// <summary>
+    /// Cancellation token source for the config reload loop.
+    /// NOT cancelled during <see cref="StopAsync"/> — the config loop survives
+    /// until <see cref="DisposeAsync"/> cancels it, allowing the last reload to
+    /// complete during the stop→dispose window.
+    /// </summary>
     private readonly CancellationTokenSource _configCts = new();
     private readonly Channel<UdpDatagramLease>[] _queues;
     private readonly Task[] _workers;
     private readonly Lock _stateLock = new();
     private Task? _receiveTask;
+
+    /// <summary>
+    /// Background task for configuration hot-reload. Started in <see cref="StartAsync"/>
+    /// and survives <see cref="StopAsync"/>. Only cancelled in <see cref="DisposeAsync"/>.
+    /// </summary>
     private Task? _configReloadTask;
     private volatile NodeState _state;
     private int _disposed;
@@ -398,6 +410,11 @@ public sealed class UdpNode : INode, IAsyncDisposable
     internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null) =>
         NodeHelper.ReportFault(Options.Logger, code, operation, exception);
 
+    /// <summary>
+    /// Background loop for configuration hot-reload.
+    /// Survives <see cref="StopAsync"/> and is only stopped by
+    /// <see cref="DisposeAsync"/> cancelling <see cref="_configCts"/>.
+    /// </summary>
     private async Task ConfigReloadLoopAsync(ICfgRoot config, UdpNodeOptions options)
     {
         try
