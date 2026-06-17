@@ -40,7 +40,7 @@ if (cert is not null)
     {
         ServerCertificate = cert,
         EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13,
-        ApplicationProtocols = [ SslApplicationProtocol.Http2, SslApplicationProtocol.Http11 ],
+        ApplicationProtocols = [ SslApplicationProtocol.Http11 ],
     };
     scheme = "https";
     Console.Error.WriteLine("Using dev certificate for HTTPS");
