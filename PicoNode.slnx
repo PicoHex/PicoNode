@@ -13,6 +13,8 @@
     <Project Path="src/PicoNode.Web/PicoNode.Web.csproj" />
     <Project Path="src/PicoNode/PicoNode.csproj" />
     <Project Path="src/PicoWeb/PicoWeb.csproj" />
+    <Project Path="src/Analyzers/Controllers.Gen/Controllers.Gen.csproj" />
+    <Project Path="src/Analyzers/PicoWeb.Gen/PicoWeb.Gen.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests\README.md" />
@@ -23,6 +25,7 @@
     <Project Path="tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj" />
     <Project Path="tests/PicoWeb.DI.Tests/PicoWeb.DI.Tests.csproj" />
     <Project Path="tests/PicoWeb.Tests/PicoWeb.Tests.csproj" />
+    <Project Path="tests/PicoWeb.Integration.Tests/PicoWeb.Integration.Tests.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <File Path="benchmarks\README.md" />
