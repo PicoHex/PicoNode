@@ -21,11 +21,12 @@ WebSocketMessageHandler wsEcho = static async (msg, conn, ct) =>
 var app = PicoWeb.Samples.ShowcaseApp.Create(container, webSocketHandler: wsEcho);
 EndpointRegistrar.RegisterAll(app);
 
-// Use --http to force plain HTTP (bypass browser certificate issues)
+// Use --http to force plain HTTP, --fresh-cert to create a new runtime cert
 var useHttp = args.Contains("--http");
+var useFreshCert = args.Contains("--fresh-cert");
 
 // Try to load ASP.NET Core dev cert for HTTPS (enables HTTP/2 via ALPN)
-var cert = useHttp ? null : LoadDevCert();
+var cert = useHttp ? null : (useFreshCert ? CreateFreshCert() : LoadDevCert());
 var port = 7004;
 var scheme = "http";
 SslServerAuthenticationOptions? sslOptions = null;
@@ -41,12 +42,12 @@ if (cert is not null)
         ApplicationProtocols = [SslApplicationProtocol.Http2, SslApplicationProtocol.Http11],
     };
     scheme = "https";
-    Console.Error.WriteLine("Using dev certificate for HTTPS");
+    Console.Error.WriteLine($"Using {(useFreshCert ? "fresh runtime" : "dev")} certificate for HTTPS");
 }
 else
 {
     var hint = useHttp ? "via --http" : "To enable HTTPS/HTTP2:  dotnet dev-certs https --trust";
-    Console.Error.WriteLine($"No dev certificate found — using HTTP ({hint})");
+    Console.Error.WriteLine($"No certificate found — using HTTP ({hint})");
 }
 
 await using var factory = new LoggerFactory(
@@ -76,6 +77,36 @@ Console.WriteLine($"Listening on {scheme}://localhost:{port}/");
 Console.WriteLine("Open in your browser");
 await Task.Delay(Timeout.Infinite);
 await server.DisposeAsync();
+
+static X509Certificate2 CreateFreshCert()
+{
+    var rsa = System.Security.Cryptography.RSA.Create(2048);
+    var req = new System.Security.Cryptography.X509Certificates.CertificateRequest(
+        "CN=localhost",
+        rsa,
+        System.Security.Cryptography.HashAlgorithmName.SHA256,
+        System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+    req.CertificateExtensions.Add(
+        new System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension(
+            certificateAuthority: false, hasPathLengthConstraint: false, pathLengthConstraint: 0, critical: true));
+    req.CertificateExtensions.Add(
+        new System.Security.Cryptography.X509Certificates.X509KeyUsageExtension(
+            System.Security.Cryptography.X509Certificates.X509KeyUsageFlags.DigitalSignature
+                | System.Security.Cryptography.X509Certificates.X509KeyUsageFlags.KeyEncipherment,
+            critical: true));
+    req.CertificateExtensions.Add(
+        new System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension(
+            [new System.Security.Cryptography.Oid("1.3.6.1.5.5.7.3.1")], critical: true));
+    var san = new System.Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder();
+    san.AddDnsName("localhost");
+    req.CertificateExtensions.Add(san.Build());
+
+    // Keep the RSA alive until the cert is used to ensure the key remains accessible.
+    // No PFX round-trip — SslStream/Schannel can use the ephemeral key directly
+    // on Windows when the cert is loaded from the same process that created it.
+    GC.KeepAlive(rsa);
+    return req.CreateSelfSigned(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddYears(1));
+}
 
 static X509Certificate2? LoadDevCert()
 {
