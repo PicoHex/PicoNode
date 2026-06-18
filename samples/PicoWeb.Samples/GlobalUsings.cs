@@ -9,4 +9,3 @@ global using PicoJetson;
 global using PicoNode.Http;
 global using PicoNode.Web;
 global using PicoWeb;
-global using PicoWeb.Samples;

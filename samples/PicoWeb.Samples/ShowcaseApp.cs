@@ -18,8 +18,7 @@ public static class ShowcaseApp
         PicoDI.Abs.ISvcContainer container,
         string? contentRoot = null,
         PicoCfg.Abs.ICfgRoot? config = null,
-        PicoNode.Http.WebSocketMessageHandler? webSocketHandler = null,
-        PicoLog.Abs.ILogger? logger = null
+        PicoNode.Http.WebSocketMessageHandler? webSocketHandler = null
     )
     {
         var staticRoot = Path.Combine(contentRoot ?? AppContext.BaseDirectory, "wwwroot");
@@ -30,7 +29,6 @@ public static class ShowcaseApp
                 ServerHeader = "PicoWeb.Samples.Showcase",
                 MaxRequestBytes = 256 * 1024,
                 WebSocketMessageHandler = webSocketHandler,
-                Logger = logger,
             }
         );
 

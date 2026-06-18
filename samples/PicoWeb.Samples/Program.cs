@@ -1,3 +1,6 @@
+using PicoLog;
+using PicoLog.Abs;
+
 var container = new SvcContainer();
 container.RegisterScoped<PicoWeb.Samples.Controllers.UsersController>();
 container.RegisterScoped<PicoWeb.Samples.Controllers.ProductsController>();
@@ -15,9 +18,7 @@ WebSocketMessageHandler wsEcho = static async (msg, conn, ct) =>
     await conn.SendAsync(new ReadOnlySequence<byte>(buf), ct);
 };
 
-var logger = new ConsoleLogger();
-
-var app = PicoWeb.Samples.ShowcaseApp.Create(container, webSocketHandler: wsEcho, logger: logger);
+var app = PicoWeb.Samples.ShowcaseApp.Create(container, webSocketHandler: wsEcho);
 EndpointRegistrar.RegisterAll(app);
 
 // Try to load ASP.NET Core dev cert for HTTPS (enables HTTP/2 via ALPN)
@@ -45,6 +46,19 @@ else
     Console.Error.WriteLine("  dotnet dev-certs https --trust");
 }
 
+await using var factory = new LoggerFactory(
+    sinks: [new ColoredConsoleSink(new ConsoleFormatter())],
+    options: new LoggerFactoryOptions
+    {
+        MinLevel = LogLevel.Warning,
+        QueueCapacity = 65535,
+        QueueFullMode = LogQueueFullMode.DropOldest,
+        SyncWriteTimeout = TimeSpan.FromMilliseconds(250),
+        ShutdownTimeout = TimeSpan.FromSeconds(5),
+    }
+);
+var logger = factory.CreateLogger("PicoWeb.Sample");
+
 var server = new WebServer(
     app,
     new WebServerOptions
@@ -66,8 +80,6 @@ static X509Certificate2? LoadDevCert()
     {
         using var store = new X509Store("My", StoreLocation.CurrentUser);
         store.Open(OpenFlags.ReadOnly);
-        // ASP.NET Core dev cert has subject "CN=localhost"
-        // Multiple dev certs may exist; pick the newest valid one.
         var certs = store.Certificates.Find(
             X509FindType.FindBySubjectName,
             "localhost",
