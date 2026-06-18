@@ -34,7 +34,14 @@ public sealed class NodeFaultLogLevelMapperTests
         foreach (var code in codes)
         {
             var level = NodeFaultLogLevelMapper.GetLevel(code);
-            await Assert.That(level == LogLevel.Error || level == LogLevel.Warning).IsTrue();
+            await Assert.That(level).IsNotEqualTo(LogLevel.None);
         }
+    }
+
+    [Test]
+    public async Task Verify_TlsFailed_Maps_To_Debug()
+    {
+        var level = NodeFaultLogLevelMapper.GetLevel(NodeFaultCode.TlsFailed);
+        await Assert.That(level).IsEqualTo(LogLevel.Debug);
     }
 }
