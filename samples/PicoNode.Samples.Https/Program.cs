@@ -31,7 +31,17 @@ if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         "localhost",
         validOnly: false
     );
-    certificate = certs.FirstOrDefault();
+    // Multiple dev certs may exist; pick the newest valid one.
+    foreach (var c in certs)
+    {
+        if (
+            c.NotAfter > DateTime.UtcNow
+            && (certificate is null || c.NotAfter > certificate.NotAfter)
+        )
+        {
+            certificate = c;
+        }
+    }
     store.Close();
 }
 else

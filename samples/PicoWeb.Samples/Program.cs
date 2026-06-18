@@ -64,17 +64,25 @@ static X509Certificate2? LoadDevCert()
         using var store = new X509Store("My", StoreLocation.CurrentUser);
         store.Open(OpenFlags.ReadOnly);
         // ASP.NET Core dev cert has subject "CN=localhost"
+        // Multiple dev certs may exist; pick the newest valid one.
         var certs = store.Certificates.Find(
             X509FindType.FindBySubjectName,
             "localhost",
             validOnly: false
         );
+        X509Certificate2? best = null;
         foreach (var c in certs)
         {
-            // Dev certs have a friendly name starting with "ASP.NET Core"
-            if (c.FriendlyName?.Contains("ASP.NET", StringComparison.OrdinalIgnoreCase) == true)
-                return c;
+            if (
+                c.FriendlyName?.Contains("ASP.NET", StringComparison.OrdinalIgnoreCase) == true
+                && c.NotAfter > DateTime.UtcNow
+                && (best is null || c.NotAfter > best.NotAfter)
+            )
+            {
+                best = c;
+            }
         }
+        return best;
     }
     catch { }
     return null;
