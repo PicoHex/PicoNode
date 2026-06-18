@@ -67,7 +67,9 @@ var server = new WebServer(
     app,
     new WebServerOptions
     {
-        Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+        // Use IPv6Any with DualMode so the socket accepts both IPv4 and IPv6 connections.
+        // Modern browsers prefer IPv6 for localhost; without this they fail with ERR_CONNECTION_CLOSED.
+        Endpoint = new IPEndPoint(IPAddress.IPv6Any, port),
         SslOptions = sslOptions,
         Logger = logger,
     }

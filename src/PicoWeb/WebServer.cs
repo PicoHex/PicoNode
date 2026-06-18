@@ -35,6 +35,7 @@ public sealed class WebServer : IAsyncDisposable
                 ConnectionHandler = handler,
                 Logger = _options.Logger,
                 SslOptions = _options.SslOptions,
+                EnableDualMode = _options.EnableDualMode,
             }
         );
 
