@@ -41,7 +41,8 @@ internal static class HpackDecoder
             }
             else if ((first & 0xE0) == 0x20)
             {
-                DecodeInteger(block, ref offset, 5);
+                var newSize = DecodeInteger(block, ref offset, 5);
+                dynamicTable?.Resize(newSize);
             }
             else
             {

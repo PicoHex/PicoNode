@@ -44,10 +44,12 @@ public static class Http2FrameCodec
         var streamId =
             ((header[5] & 0x7F) << 24) | (header[6] << 16) | (header[7] << 8) | header[8];
 
-        var payload = new byte[length];
+        byte[]? rentedBuffer = null;
+        var usePool = Http2Frame.ShouldPool(length);
+        var payload = usePool ? ArrayPool<byte>.Shared.Rent(length) : new byte[Math.Max(length, 1)];
         if (length > 0)
         {
-            buffer.Slice(FrameHeaderSize, length).CopyTo(payload);
+            buffer.Slice(FrameHeaderSize, length).CopyTo(payload.AsSpan(0, length));
         }
 
         frame = new Http2Frame
@@ -56,8 +58,12 @@ public static class Http2FrameCodec
             Type = type,
             Flags = flags,
             StreamId = streamId,
-            Payload = payload,
+            Payload = payload.AsMemory(0, length),
         };
+        if (usePool)
+        {
+            frame.SetPooledBuffer(payload);
+        }
 
         consumed = totalSize;
         return true;

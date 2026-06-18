@@ -11,23 +11,37 @@ internal sealed class HpackEncoder
         encoderShouldEmitUTF8Identifier: false
     );
 
-    // Static table: name_lower -> list of (index, value_or_null)
-    private static readonly Dictionary<string, List<(int Index, string? Value)>> StaticTableIndex;
+    // Pre-separated static table indices:
+    // - ExactMatchIndex: name → list of (index, value) for entries with non-empty values
+    // - NameOnlyIndex: name → first name-only entry index (for literal-with-indexing)
+    private static readonly Dictionary<string, List<(int Index, string Value)>> ExactMatchIndex;
+    private static readonly Dictionary<string, int> NameOnlyIndex;
 
     static HpackEncoder()
     {
-        StaticTableIndex = new Dictionary<string, List<(int, string?)>>(
+        ExactMatchIndex = new Dictionary<string, List<(int, string)>>(
             StringComparer.OrdinalIgnoreCase
         );
+        NameOnlyIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
         for (int i = 1; i <= StaticTable.EntryCount; i++)
         {
             var entry = StaticTable.Entries[i];
-            if (!StaticTableIndex.TryGetValue(entry.Name, out var list))
+            if (string.IsNullOrEmpty(entry.Value))
             {
-                list = new List<(int, string?)>(capacity: 2);
-                StaticTableIndex[entry.Name] = list;
+                // Name-only entry — keep only the first occurrence
+                NameOnlyIndex.TryAdd(entry.Name, i);
             }
-            list.Add((i, string.IsNullOrEmpty(entry.Value) ? null : entry.Value));
+            else
+            {
+                // Exact value entry
+                if (!ExactMatchIndex.TryGetValue(entry.Name, out var list))
+                {
+                    list = new List<(int, string)>(capacity: 2);
+                    ExactMatchIndex[entry.Name] = list;
+                }
+                list.Add((i, entry.Value));
+            }
         }
     }
 
@@ -70,55 +84,46 @@ internal sealed class HpackEncoder
     /// <summary>Tries to encode a header using static or dynamic table index.</summary>
     private bool TryEncodeIndexed(IBufferWriter<byte> writer, string name, string value)
     {
-        // Check static table via dictionary index (O(1))
-        if (StaticTableIndex.TryGetValue(name, out var entries))
+        // 1) Try exact value match from pre-separated index (O(1) + scan 0-2 entries)
+        if (ExactMatchIndex.TryGetValue(name, out var exactEntries))
         {
-            // 1) Try exact value match first (indexed representation, 1 byte).
-            foreach (var (idx, val) in entries)
+            foreach (var (idx, val) in exactEntries)
             {
-                if (val is not null && val == value)
+                if (val == value)
                 {
                     EncodeIntegerWithPrefix(writer, idx, 7, 0x80);
                     return true;
                 }
             }
+        }
 
-            // 2) No exact match — use the first name-only entry (val is null)
-            //    for literal-with-indexing (name reference + string value).
-            foreach (var (idx, val) in entries)
-            {
-                if (val is null)
-                {
-                    EncodeIntegerWithPrefix(writer, idx, 6, 0x40);
-                    EncodeString(writer, value);
-                    _dynamicTable.Add(name, value);
-                    return true;
-                }
-            }
+        // 2) Try name-only match (O(1))
+        if (NameOnlyIndex.TryGetValue(name, out var nameIdx))
+        {
+            EncodeIntegerWithPrefix(writer, nameIdx, 6, 0x40);
+            EncodeString(writer, value);
+            _dynamicTable.Add(name, value);
+            return true;
+        }
 
-            // 3) Every entry for this name has a non-null value, none matched.
-            //    Use the first entry's name index for literal-with-indexing.
-            var (firstIdx, _) = entries[0];
+        // 3) All entries for this name have non-empty values, none matched.
+        //    Use the first exact entry's index for literal-with-indexing.
+        if (exactEntries is not null && exactEntries.Count > 0)
+        {
+            var (firstIdx, _) = exactEntries[0];
             EncodeIntegerWithPrefix(writer, firstIdx, 6, 0x40);
             EncodeString(writer, value);
             _dynamicTable.Add(name, value);
             return true;
         }
 
-        // Check dynamic table for exact match
-        for (int idx = 1; idx <= _dynamicTable.Count; idx++)
+        // Check dynamic table for exact match via single-pass O(n) traversal
+        var foundIdx = _dynamicTable.FindIndexOf(name, value);
+        if (foundIdx.HasValue)
         {
-            var dynEntry = _dynamicTable.GetEntry(idx);
-            if (
-                dynEntry is not null
-                && dynEntry.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
-                && dynEntry.Value == value
-            )
-            {
-                var dynamicIndex = StaticTable.EntryCount + idx;
-                EncodeIntegerWithPrefix(writer, dynamicIndex, 7, 0x80);
-                return true;
-            }
+            var dynamicIndex = StaticTable.EntryCount + foundIdx.Value;
+            EncodeIntegerWithPrefix(writer, dynamicIndex, 7, 0x80);
+            return true;
         }
 
         return false; // Fall through to literal encoding

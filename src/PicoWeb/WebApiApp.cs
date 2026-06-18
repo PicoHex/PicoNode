@@ -39,14 +39,41 @@ public sealed class WebApiApp : IAsyncDisposable
         var ep = ParseEndpoint(uri);
         _server = new WebServer(_app, new WebServerOptions { Endpoint = ep });
         await _server.StartAsync(ct);
+
+        // Register process exit signals for graceful shutdown
+        using var shutdownCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var shutdownTcs = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        ConsoleCancelEventHandler cancelHandler = (sender, e) =>
+        {
+            e.Cancel = true;
+            shutdownTcs.TrySetResult();
+        };
+        EventHandler processExitHandler = (sender, e) =>
+        {
+            shutdownTcs.TrySetResult();
+        };
+
+        Console.CancelKeyPress += cancelHandler;
+        AppDomain.CurrentDomain.ProcessExit += processExitHandler;
+
         try
         {
-            await Task.Delay(Timeout.Infinite, ct);
+            await Task.WhenAny(Task.Delay(Timeout.Infinite, shutdownCts.Token), shutdownTcs.Task);
         }
         catch (OperationCanceledException)
         {
-            // graceful shutdown
+            // graceful shutdown via cancellation token
         }
+        finally
+        {
+            Console.CancelKeyPress -= cancelHandler;
+            AppDomain.CurrentDomain.ProcessExit -= processExitHandler;
+        }
+
+        await _server.StopAsync(CancellationToken.None);
     }
 
     public async ValueTask DisposeAsync()

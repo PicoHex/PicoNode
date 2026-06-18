@@ -59,6 +59,27 @@ internal sealed class HpackDynamicTable
         _currentSize += entrySize;
     }
 
+    /// <summary>Finds an exact (name, value) match in the dynamic table via single-pass traversal.
+    /// Returns the 1-based index (1 = newest entry), or null if not found.</summary>
+    public int? FindIndexOf(string name, string value)
+    {
+        int idx = 1;
+        var current = _entries.First;
+        while (current is not null)
+        {
+            if (
+                current.Value.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+                && current.Value.Value == value
+            )
+            {
+                return idx;
+            }
+            current = current.Next;
+            idx++;
+        }
+        return null;
+    }
+
     /// <summary>Updates the dynamic table capacity. Evicts entries if needed.</summary>
     public void Resize(int newCapacity)
     {

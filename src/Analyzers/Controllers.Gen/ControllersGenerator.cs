@@ -33,14 +33,25 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         var classDecl = (ClassDeclarationSyntax)ctx.Node;
         var filePath = classDecl.SyntaxTree.FilePath;
 
-        // Match Controllers/ folder as a directory segment (not just any path with "Controllers")
+        // Match Controllers/ folder as a directory segment
         var normalized = filePath.Replace('\\', '/');
-        var idx = normalized.IndexOf("/Controllers/", StringComparison.Ordinal);
-        if (idx < 0 && !normalized.StartsWith("Controllers/", StringComparison.Ordinal))
-            return null;
+        var inControllersFolder =
+            normalized.IndexOf("/Controllers/", StringComparison.Ordinal) >= 0
+            || normalized.StartsWith("Controllers/", StringComparison.Ordinal);
 
         var semanticModel = ctx.SemanticModel;
         var classSymbol = semanticModel.GetDeclaredSymbol(classDecl, ct) as INamedTypeSymbol;
+        if (classSymbol is null)
+            return null;
+
+        // Also accept classes decorated with [ApiController] (or custom [ApiControllerAttribute])
+        // regardless of their folder location
+        var hasApiControllerAttr = classSymbol
+            .GetAttributes()
+            .Any(a => a.AttributeClass?.Name == "ApiControllerAttribute");
+
+        if (!inControllersFolder && !hasApiControllerAttr)
+            return null;
         if (classSymbol is null)
             return null;
 

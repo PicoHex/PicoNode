@@ -381,6 +381,12 @@ public sealed class UdpNode : INode, IAsyncDisposable
                         catch (OperationCanceledException)
                             when (handlerCancellationToken.IsCancellationRequested)
                         {
+                            // Drain remaining datagrams from channel to return
+                            // ArrayPool buffers before shutdown.
+                            while (reader.TryRead(out var remainingLease))
+                            {
+                                remainingLease.Dispose();
+                            }
                             return;
                         }
                         catch (Exception ex)

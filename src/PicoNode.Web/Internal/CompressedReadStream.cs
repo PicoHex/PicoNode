@@ -41,6 +41,11 @@ internal sealed class CompressedReadStream : Stream
 
     public override void Flush() { }
 
+    /// <summary>
+    /// Synchronous read. Prefer <see cref="ReadAsync"/> in async contexts.
+    /// This implementation uses sync-over-async via <see cref="Task.Run"/>
+    /// to avoid deadlocks, at the cost of a thread pool thread.
+    /// </summary>
     public override int Read(byte[] buffer, int offset, int count)
     {
         ArgumentNullException.ThrowIfNull(buffer);

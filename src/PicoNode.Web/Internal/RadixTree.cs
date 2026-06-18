@@ -19,6 +19,13 @@ internal sealed class RadixTree<T>
             if (IsParameter(segment, out var paramName))
             {
                 node.ParamChild ??= new Node();
+                if (node.ParamName is not null && node.ParamName != paramName)
+                {
+                    throw new InvalidOperationException(
+                        $"Parameter name conflict: cannot register '{{{paramName}}}' "
+                            + $"at path segment that already has '{{{node.ParamName}}}'."
+                    );
+                }
                 node.ParamName ??= paramName;
                 node = node.ParamChild;
             }
