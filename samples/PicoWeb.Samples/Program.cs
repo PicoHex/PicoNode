@@ -81,14 +81,30 @@ Console.WriteLine("Press Ctrl+C to stop");
 
 // Wait for Ctrl+C or process exit to properly close the listening socket.
 var shutdownTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-Console.CancelKeyPress += (sender, e) =>
+
+ConsoleCancelEventHandler cancelHandler = (sender, e) =>
 {
+    // First Ctrl+C: graceful shutdown; second Ctrl+C: force kill
+    if (shutdownTcs.Task.IsCompleted)
+        return;
     e.Cancel = true;
     shutdownTcs.TrySetResult();
 };
-AppDomain.CurrentDomain.ProcessExit += (sender, e) => shutdownTcs.TrySetResult();
+EventHandler processExitHandler = (sender, e) => shutdownTcs.TrySetResult();
 
-await Task.WhenAny(Task.Delay(Timeout.Infinite), shutdownTcs.Task);
+Console.CancelKeyPress += cancelHandler;
+AppDomain.CurrentDomain.ProcessExit += processExitHandler;
+
+try
+{
+    await Task.WhenAny(Task.Delay(Timeout.Infinite), shutdownTcs.Task);
+}
+finally
+{
+    Console.CancelKeyPress -= cancelHandler;
+    AppDomain.CurrentDomain.ProcessExit -= processExitHandler;
+}
+
 Console.WriteLine("Shutting down...");
 await server.DisposeAsync();
 
