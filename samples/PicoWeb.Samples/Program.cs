@@ -77,7 +77,19 @@ var server = new WebServer(
 await server.StartAsync();
 Console.WriteLine($"Listening on {scheme}://localhost:{port}/");
 Console.WriteLine("Open in your browser");
-await Task.Delay(Timeout.Infinite);
+Console.WriteLine("Press Ctrl+C to stop");
+
+// Wait for Ctrl+C or process exit to properly close the listening socket.
+var shutdownTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+Console.CancelKeyPress += (sender, e) =>
+{
+    e.Cancel = true;
+    shutdownTcs.TrySetResult();
+};
+AppDomain.CurrentDomain.ProcessExit += (sender, e) => shutdownTcs.TrySetResult();
+
+await Task.WhenAny(Task.Delay(Timeout.Infinite), shutdownTcs.Task);
+Console.WriteLine("Shutting down...");
 await server.DisposeAsync();
 
 static X509Certificate2 CreateFreshCert()
