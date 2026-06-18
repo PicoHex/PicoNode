@@ -15,7 +15,9 @@ WebSocketMessageHandler wsEcho = static async (msg, conn, ct) =>
     await conn.SendAsync(new ReadOnlySequence<byte>(buf), ct);
 };
 
-var app = PicoWeb.Samples.ShowcaseApp.Create(container, webSocketHandler: wsEcho);
+var logger = new ConsoleLogger();
+
+var app = PicoWeb.Samples.ShowcaseApp.Create(container, webSocketHandler: wsEcho, logger: logger);
 EndpointRegistrar.RegisterAll(app);
 
 // Try to load ASP.NET Core dev cert for HTTPS (enables HTTP/2 via ALPN)
@@ -49,6 +51,7 @@ var server = new WebServer(
     {
         Endpoint = new IPEndPoint(IPAddress.Loopback, port),
         SslOptions = sslOptions,
+        Logger = logger,
     }
 );
 await server.StartAsync();
