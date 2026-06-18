@@ -14,8 +14,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoCfg.Abs" Version="2026.6.9" />
-    <PackageReference Include="PicoDI" Version="2026.6.9" />
+    <PackageReference Include="PicoCfg.Abs" Version="2026.6.10" />
+    <PackageReference Include="PicoDI" Version="2026.6.10" />
     <PackageReference Include="PicoJetson" Version="2026.2.1" />
     <PackageReference Update="Microsoft.SourceLink.GitHub" Version="10.0.300" />
   </ItemGroup>

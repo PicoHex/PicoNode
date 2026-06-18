@@ -24,10 +24,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoCfg" Version="2026.6.9" />
-    <PackageReference Include="PicoDI" Version="2026.6.9" />
-    <PackageReference Include="PicoLog.Abs" Version="2026.6.9" />
-    <PackageReference Include="PicoLog" Version="2026.6.9" />
+    <PackageReference Include="PicoCfg" Version="2026.6.10" />
+    <PackageReference Include="PicoDI" Version="2026.6.10" />
+    <PackageReference Include="PicoLog.Abs" Version="2026.6.10" />
+    <PackageReference Include="PicoLog" Version="2026.6.10" />
   </ItemGroup>
 
   <ItemGroup>
