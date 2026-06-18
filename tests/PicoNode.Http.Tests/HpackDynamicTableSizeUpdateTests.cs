@@ -34,8 +34,8 @@ public sealed class HpackDynamicTableSizeUpdateTests
     {
         // Size update to 4096 (same as default) — should be a no-op
         // Value 4096: prefix max=31, remaining=4096-31=4065
-        // 4065 & 0x7F = 33 (0x21), 0xA1; 4065>>7=31, 31<128 → 0x1F
-        var block = new byte[] { 0x3F, 0xA1, 0x1F };
+        // 4065 & 0x7F = 97 (0x61), with 0x80 = 0xE1; 4065>>7=31 <128 → 0x1F
+        var block = new byte[] { 0x3F, 0xE1, 0x1F };
         var table = new HpackDynamicTable();
 
         var success = HpackDecoder.TryDecode(block, out var headers, table);
