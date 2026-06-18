@@ -15,6 +15,6 @@ public static class NodeFaultLogLevelMapper
             NodeFaultCode.DatagramReceiveFailed => LogLevel.Error,
             NodeFaultCode.DatagramDropped => LogLevel.Warning,
             NodeFaultCode.DatagramHandlerFailed => LogLevel.Error,
-            NodeFaultCode.TlsFailed => LogLevel.Error,
+            NodeFaultCode.TlsFailed => LogLevel.Debug,
         };
 }

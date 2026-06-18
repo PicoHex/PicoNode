@@ -42,7 +42,9 @@ if (cert is not null)
         ApplicationProtocols = [SslApplicationProtocol.Http2, SslApplicationProtocol.Http11],
     };
     scheme = "https";
-    Console.Error.WriteLine($"Using {(useFreshCert ? "fresh runtime" : "dev")} certificate for HTTPS");
+    Console.Error.WriteLine(
+        $"Using {(useFreshCert ? "fresh runtime" : "dev")} certificate for HTTPS"
+    );
 }
 else
 {
@@ -107,6 +109,7 @@ finally
 
 Console.WriteLine("Shutting down...");
 await server.DisposeAsync();
+Console.WriteLine("Server stopped. Port should be released.");
 
 static X509Certificate2 CreateFreshCert()
 {
@@ -115,18 +118,29 @@ static X509Certificate2 CreateFreshCert()
         "CN=localhost",
         rsa,
         System.Security.Cryptography.HashAlgorithmName.SHA256,
-        System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+        System.Security.Cryptography.RSASignaturePadding.Pkcs1
+    );
     req.CertificateExtensions.Add(
         new System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension(
-            certificateAuthority: false, hasPathLengthConstraint: false, pathLengthConstraint: 0, critical: true));
+            certificateAuthority: false,
+            hasPathLengthConstraint: false,
+            pathLengthConstraint: 0,
+            critical: true
+        )
+    );
     req.CertificateExtensions.Add(
         new System.Security.Cryptography.X509Certificates.X509KeyUsageExtension(
             System.Security.Cryptography.X509Certificates.X509KeyUsageFlags.DigitalSignature
                 | System.Security.Cryptography.X509Certificates.X509KeyUsageFlags.KeyEncipherment,
-            critical: true));
+            critical: true
+        )
+    );
     req.CertificateExtensions.Add(
         new System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension(
-            [new System.Security.Cryptography.Oid("1.3.6.1.5.5.7.3.1")], critical: true));
+            [new System.Security.Cryptography.Oid("1.3.6.1.5.5.7.3.1")],
+            critical: true
+        )
+    );
     var san = new System.Security.Cryptography.X509Certificates.SubjectAlternativeNameBuilder();
     san.AddDnsName("localhost");
     req.CertificateExtensions.Add(san.Build());
