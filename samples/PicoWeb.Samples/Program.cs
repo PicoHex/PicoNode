@@ -21,8 +21,11 @@ WebSocketMessageHandler wsEcho = static async (msg, conn, ct) =>
 var app = PicoWeb.Samples.ShowcaseApp.Create(container, webSocketHandler: wsEcho);
 EndpointRegistrar.RegisterAll(app);
 
+// Use --http to force plain HTTP (bypass browser certificate issues)
+var useHttp = args.Contains("--http");
+
 // Try to load ASP.NET Core dev cert for HTTPS (enables HTTP/2 via ALPN)
-var cert = LoadDevCert();
+var cert = useHttp ? null : LoadDevCert();
 var port = 7004;
 var scheme = "http";
 SslServerAuthenticationOptions? sslOptions = null;
@@ -42,8 +45,8 @@ if (cert is not null)
 }
 else
 {
-    Console.Error.WriteLine("No dev certificate found — using HTTP. To enable HTTPS/HTTP2:");
-    Console.Error.WriteLine("  dotnet dev-certs https --trust");
+    var hint = useHttp ? "via --http" : "To enable HTTPS/HTTP2:  dotnet dev-certs https --trust";
+    Console.Error.WriteLine($"No dev certificate found — using HTTP ({hint})");
 }
 
 await using var factory = new LoggerFactory(
