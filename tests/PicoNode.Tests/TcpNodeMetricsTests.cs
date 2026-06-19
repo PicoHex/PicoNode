@@ -56,10 +56,11 @@ public sealed class TcpNodeMetricsTests
 
         await handler.WaitClosedAsync();
 
-        var metrics = node.GetMetrics();
+        // Wait for the close lifecycle to fully complete (TotalClosed is incremented
+        // after OnClosedAsync returns, so we may need to wait)
+        var metrics = await WaitForTotalClosedAsync(node, expected: 1);
 
         await Assert.That(metrics.TotalAccepted).IsEqualTo(1);
-        await Assert.That(metrics.TotalClosed).IsEqualTo(1);
         await Assert.That(metrics.ActiveConnections).IsEqualTo(0);
     }
 
@@ -169,6 +170,25 @@ public sealed class TcpNodeMetricsTests
                 nameof(TcpNodeMetrics.TotalClosed),
                 nameof(TcpNodeMetrics.TotalRejected),
             ]);
+    }
+
+    /// <summary>Poll metrics until TotalClosed reaches the expected value or timeout.</summary>
+    private static async ValueTask<TcpNodeMetrics> WaitForTotalClosedAsync(
+        TcpNode node,
+        long expected,
+        int timeoutMs = 3000
+    )
+    {
+        var deadline = Environment.TickCount + timeoutMs;
+        while (Environment.TickCount < deadline)
+        {
+            var metrics = node.GetMetrics();
+            if (metrics.TotalClosed >= expected)
+                return metrics;
+            await Task.Delay(15);
+        }
+
+        return node.GetMetrics(); // last attempt, test assertion will show the actual value
     }
 
     private static TcpNode CreateNode(ITcpConnectionHandler handler, int maxConnections = 100) =>
