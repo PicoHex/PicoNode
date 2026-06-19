@@ -1,5 +1,14 @@
 namespace PicoWeb;
 
+/// <summary>
+/// Higher-level convenience factory for <see cref="HttpResponse"/> instances.
+/// Provides JSON integration (pre-serialized body bytes), status-code helpers
+/// (<see cref="Ok"/>, <see cref="BadRequest"/>, <see cref="NotFound"/>),
+/// and delegates to <see cref="PicoNode.Web.WebResults"/> for common formats.
+/// <para>
+/// For direct body construction (string, byte[], JSON string) see <see cref="PicoNode.Web.WebResults"/>.
+/// </para>
+/// </summary>
 public static class Results
 {
     /// <summary>Creates a JSON response with pre-serialized body bytes.</summary>

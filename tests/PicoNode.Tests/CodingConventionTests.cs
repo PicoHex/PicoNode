@@ -223,6 +223,43 @@ public sealed class CodingConventionTests
     }
 
     [Test]
+    public async Task MultipartFormDataParser_class_documents_Body_vs_BodyStream_strategy()
+    {
+        var content = await File.ReadAllTextAsync(
+            Path.Combine(SrcPath, "PicoNode.Web", "MultipartFormDataParser.cs")
+        );
+        // Must have a summary comment on the class that explains Body vs BodyStream
+        await Assert.That(content).Contains("/// <summary>");
+        await Assert.That(content).Contains("Body");
+        await Assert.That(content).Contains("BodyStream");
+        // The summary must be before the class declaration, not inside a method
+        var classIndex = content.IndexOf("public static class MultipartFormDataParser");
+        var summaryIndex = content.IndexOf("/// <summary>");
+        await Assert.That(summaryIndex).IsLessThan(classIndex);
+    }
+
+    [Test]
+    public async Task AGENTS_md_documents_routing_architecture()
+    {
+        var content = await File.ReadAllTextAsync(
+            Path.GetFullPath(Path.Combine(SrcPath, "..", "AGENTS.md"))
+        );
+        await Assert.That(content).Contains("RouteTable");
+        await Assert.That(content).Contains("RadixTree");
+        await Assert.That(content).Contains("HttpRouter");
+        await Assert.That(content).Contains("WebRouter");
+    }
+
+    [Test]
+    public async Task WebResults_class_has_XML_doc_explaining_relationship_to_Results()
+    {
+        var content = await File.ReadAllTextAsync(
+            Path.Combine(SrcPath, "PicoNode.Web", "WebResults.cs")
+        );
+        await Assert.That(content).Contains("/// <summary>");
+    }
+
+    [Test]
     public async Task Analyzer_pack_paths_use_Configuration_variable_not_hardcoded_Release()
     {
         var content = await File.ReadAllTextAsync(

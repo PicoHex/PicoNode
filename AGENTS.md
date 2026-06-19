@@ -8,8 +8,18 @@ Scope
 Architecture (read this order)
 - `src/PicoNode.Abs/` — core contracts: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, `NodeFaultCode`.
 - `src/PicoNode/` — transports: `TcpNode`, `TcpConnection`, `UdpNode` (lifecycle, backpressure, pooling, metrics).
-- `src/PicoNode.Http/` — HTTP framing over TCP: `HttpConnectionHandler`, `HttpRouter`.
+- `src/PicoNode.Http/` — HTTP framing over TCP: `HttpConnectionHandler`, `HttpRouter`, `RouteTable<T>`.
 - `src/PicoNode.Web/` + `src/PicoWeb/` — higher-level web app model and host (`WebApp`, middleware, `WebServer`).
+
+Routing architecture
+- `RouteTable<T>` (PicoNode.Http/Internal) — shared exact-path dictionary used by both HttpRouter and WebRouter.
+  Precomputes Allow headers for 405 responses.
+- `HttpRouter` (PicoNode.Http) — wraps RouteTable<HttpRequestHandler>. Exact-path matching only.
+  Used directly by HttpConnectionHandler for protocol-level routing.
+- `RadixTree<T>` (PicoNode.Web/Internal) — parameterized path tree for routes with segments
+  like `/users/{id}`. Supports wildcard segments.
+- `WebRouter` (PicoNode.Web) — combines RouteTable<WebRequestHandler> (exact paths) +
+  RadixTree (parameterized paths). Used by WebApp for middleware-based web routing.
 
 Critical data flows & invariants
 - TCP: socket -> `Pipe` -> `TcpConnection` -> handler `OnReceivedAsync` must return the consumed `SequencePosition`.

@@ -1,5 +1,13 @@
 namespace PicoNode.Web;
 
+/// <summary>
+/// Parses multipart/form-data request bodies.
+/// <para>
+/// Strategy: if <c>request.Body</c> has data (in-memory buffer), parses directly.
+/// Otherwise, delegates to <see cref="Internal.StreamingMultipartParser"/> for
+/// streaming reads from <c>request.BodyStream</c> (large payloads without buffering).
+/// </para>
+/// </summary>
 public static class MultipartFormDataParser
 {
     private static readonly UTF8Encoding StrictUtf8 = new(

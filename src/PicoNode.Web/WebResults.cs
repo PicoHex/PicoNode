@@ -1,5 +1,13 @@
 namespace PicoNode.Web;
 
+/// <summary>
+/// Low-level factory for <see cref="HttpResponse"/> instances.
+/// Used by middleware and handlers in the PicoNode.Web layer.
+/// <para>
+/// For higher-level convenience methods (JSON integration, status-code helpers)
+/// see <see cref="PicoWeb.Results"/>.
+/// </para>
+/// </summary>
 public static class WebResults
 {
     public static HttpResponse Text(int statusCode, string body, string reasonPhrase = "") =>
