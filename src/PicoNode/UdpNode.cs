@@ -41,6 +41,16 @@ public sealed class UdpNode : INode, IAsyncDisposable
     private long _totalBytesSent;
     private long _totalDropped;
 
+    /// <summary>Returns a snapshot of cumulative UDP metrics.</summary>
+    public UdpNodeMetrics GetMetrics() =>
+        new(
+            TotalDatagramsSent: Interlocked.Read(ref _totalDatagramsSent),
+            TotalDatagramsReceived: Interlocked.Read(ref _totalDatagramsReceived),
+            TotalDatagramsDropped: Interlocked.Read(ref _totalDropped),
+            TotalBytesSent: Interlocked.Read(ref _totalBytesSent),
+            TotalBytesReceived: Interlocked.Read(ref _totalBytesReceived)
+        );
+
     public UdpNode(UdpNodeOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
