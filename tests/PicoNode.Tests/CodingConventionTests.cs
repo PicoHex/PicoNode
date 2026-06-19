@@ -239,15 +239,44 @@ public sealed class CodingConventionTests
     }
 
     [Test]
-    public async Task AGENTS_md_documents_routing_architecture()
+    public async Task RouteTable_class_documents_shared_role()
     {
         var content = await File.ReadAllTextAsync(
-            Path.GetFullPath(Path.Combine(SrcPath, "..", "AGENTS.md"))
+            Path.Combine(SrcPath, "PicoNode.Http", "Internal", "RouteTable.cs")
         );
+        await Assert.That(content).Contains("/// <summary>");
+        await Assert.That(content).Contains("RouteTable");
+    }
+
+    [Test]
+    public async Task HttpRouter_class_documents_exact_path_matching()
+    {
+        var content = await File.ReadAllTextAsync(
+            Path.Combine(SrcPath, "PicoNode.Http", "HttpRouter.cs")
+        );
+        await Assert.That(content).Contains("/// <summary>");
+        await Assert.That(content).Contains("Exact");
+    }
+
+    [Test]
+    public async Task RadixTree_class_documents_parameterized_routing()
+    {
+        var content = await File.ReadAllTextAsync(
+            Path.Combine(SrcPath, "PicoNode.Web", "Internal", "RadixTree.cs")
+        );
+        await Assert.That(content).Contains("/// <summary>");
+        await Assert.That(content).Contains("parameterized");
+    }
+
+    [Test]
+    public async Task WebRouter_class_documents_exact_and_parameterized()
+    {
+        var content = await File.ReadAllTextAsync(
+            Path.Combine(SrcPath, "PicoNode.Web", "WebRouter.cs")
+        );
+        await Assert.That(content).Contains("/// <summary>");
         await Assert.That(content).Contains("RouteTable");
         await Assert.That(content).Contains("RadixTree");
-        await Assert.That(content).Contains("HttpRouter");
-        await Assert.That(content).Contains("WebRouter");
     }
 
     [Test]

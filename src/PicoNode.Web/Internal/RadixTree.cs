@@ -1,5 +1,10 @@
 namespace PicoNode.Web.Internal;
 
+/// <summary>
+/// Parameterized path tree for routes with segments like <c>{id}</c>, <c>{name}</c>.
+/// Also supports wildcard segments. Used by <see cref="WebRouter"/> alongside
+/// <see cref="RouteTable{T}"/> for combined exact + parameterized routing.
+/// </summary>
 internal sealed class RadixTree<T>
 {
     private readonly Node _root = new();

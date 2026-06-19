@@ -1,5 +1,15 @@
 namespace PicoNode.Web;
 
+/// <summary>
+/// Combined router that uses <see cref="RouteTable{T}"/> for exact path matching
+/// and <see cref="RadixTree{T}"/> for parameterized path matching (e.g.
+/// <c>/users/{id}</c>). Used by <see cref="WebApp"/> to route incoming HTTP
+/// requests through the middleware pipeline.
+/// <para>
+/// For protocol-level exact-path-only routing (used by
+/// <see cref="HttpConnectionHandler"/>), see <see cref="HttpRouter"/>.
+/// </para>
+/// </summary>
 internal sealed class WebRouter
 {
     private readonly RouteTable<WebRequestHandler> _exactRouteTable;

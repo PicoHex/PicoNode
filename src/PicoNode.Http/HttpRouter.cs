@@ -1,5 +1,15 @@
 namespace PicoNode.Http;
 
+/// <summary>
+/// Exact-path HTTP request router. Uses <see cref="RouteTable{T}"/> for
+/// dictionary-based exact matching only (no parameterized segments).
+/// Used by <see cref="HttpConnectionHandler"/> for protocol-level routing.
+/// <para>
+/// For parameterized routes (e.g. <c>/users/{id}</c>) see
+/// <see cref="PicoNode.Web.WebRouter"/> which combines RouteTable for
+/// exact paths with RadixTree for parameterized paths.
+/// </para>
+/// </summary>
 public sealed class HttpRouter
 {
     private readonly RouteTable<HttpRequestHandler> _routes;
