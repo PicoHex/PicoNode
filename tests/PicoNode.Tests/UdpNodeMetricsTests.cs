@@ -16,15 +16,20 @@ public sealed class UdpNodeMetricsTests
     public async Task UdpNodeMetrics_exposes_cumulative_counters()
     {
         var type = typeof(UdpNodeMetrics);
-        await Assert.That(type.GetProperty(nameof(UdpNodeMetrics.TotalDatagramsSent))!.PropertyType)
+        await Assert
+            .That(type.GetProperty(nameof(UdpNodeMetrics.TotalDatagramsSent))!.PropertyType)
             .IsEqualTo(typeof(long));
-        await Assert.That(type.GetProperty(nameof(UdpNodeMetrics.TotalDatagramsReceived))!.PropertyType)
+        await Assert
+            .That(type.GetProperty(nameof(UdpNodeMetrics.TotalDatagramsReceived))!.PropertyType)
             .IsEqualTo(typeof(long));
-        await Assert.That(type.GetProperty(nameof(UdpNodeMetrics.TotalDatagramsDropped))!.PropertyType)
+        await Assert
+            .That(type.GetProperty(nameof(UdpNodeMetrics.TotalDatagramsDropped))!.PropertyType)
             .IsEqualTo(typeof(long));
-        await Assert.That(type.GetProperty(nameof(UdpNodeMetrics.TotalBytesSent))!.PropertyType)
+        await Assert
+            .That(type.GetProperty(nameof(UdpNodeMetrics.TotalBytesSent))!.PropertyType)
             .IsEqualTo(typeof(long));
-        await Assert.That(type.GetProperty(nameof(UdpNodeMetrics.TotalBytesReceived))!.PropertyType)
+        await Assert
+            .That(type.GetProperty(nameof(UdpNodeMetrics.TotalBytesReceived))!.PropertyType)
             .IsEqualTo(typeof(long));
     }
 
@@ -40,13 +45,15 @@ public sealed class UdpNodeMetricsTests
     public async Task GetMetrics_returns_zero_when_no_activity()
     {
         var endpoint = new IPEndPoint(IPAddress.Loopback, 0);
-        await using var node = new UdpNode(new UdpNodeOptions
-        {
-            Endpoint = endpoint,
-            DatagramHandler = new NoOpUdpHandler(),
-            DispatchWorkerCount = 1,
-            DatagramQueueCapacity = 16,
-        });
+        await using var node = new UdpNode(
+            new UdpNodeOptions
+            {
+                Endpoint = endpoint,
+                DatagramHandler = new NoOpUdpHandler(),
+                DispatchWorkerCount = 1,
+                DatagramQueueCapacity = 16,
+            }
+        );
         await node.StartAsync();
         try
         {

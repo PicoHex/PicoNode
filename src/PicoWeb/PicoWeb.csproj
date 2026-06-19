@@ -36,10 +36,14 @@
 
   <!-- Ensure analyzers are built before packing (not needed as Analyzer items for PicoWeb itself) -->
   <ItemGroup>
-    <ProjectReference Include="..\Analyzers\Controllers.Gen\Controllers.Gen.csproj"
-                      ReferenceOutputAssembly="false" />
-    <ProjectReference Include="..\Analyzers\PicoWeb.Gen\PicoWeb.Gen.csproj"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference
+      Include="..\Analyzers\Controllers.Gen\Controllers.Gen.csproj"
+      ReferenceOutputAssembly="false"
+    />
+    <ProjectReference
+      Include="..\Analyzers\PicoWeb.Gen\PicoWeb.Gen.csproj"
+      ReferenceOutputAssembly="false"
+    />
   </ItemGroup>
 
   <!-- Pack analyzers into NuGet package for transitive consumption -->
