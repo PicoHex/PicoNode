@@ -139,7 +139,7 @@ public sealed partial class HttpPipelineGetComparisonBenchmarks
     {
         public long ConnectionId { get; init; } = 1;
 
-        public IPEndPoint RemoteEndPoint { get; init; } = new(IPAddress.Loopback, 8081);
+        public EndPoint RemoteEndPoint { get; init; } = new IPEndPoint(IPAddress.Loopback, 8081);
 
         public DateTimeOffset ConnectedAtUtc { get; init; } = DateTimeOffset.UnixEpoch;
 

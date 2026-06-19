@@ -275,9 +275,9 @@ public sealed class UdpNodeDatagramFlowTests
             _reply = reply;
         }
 
-        public async Task OnDatagramAsync(
+        public async ValueTask OnDatagramAsync(
             IUdpDatagramContext context,
-            ArraySegment<byte> datagram,
+            ReadOnlyMemory<byte> datagram,
             CancellationToken cancellationToken
         )
         {
@@ -296,15 +296,15 @@ public sealed class UdpNodeDatagramFlowTests
         public TaskCompletionSource<Exception> ExceptionObserved { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Task OnDatagramAsync(
+        public ValueTask OnDatagramAsync(
             IUdpDatagramContext context,
-            ArraySegment<byte> datagram,
+            ReadOnlyMemory<byte> datagram,
             CancellationToken cancellationToken
         )
         {
             var exception = new InvalidOperationException("handler boom");
             ExceptionObserved.TrySetResult(exception);
-            return Task.FromException(exception);
+            return new ValueTask(Task.FromException(exception));
         }
     }
 
@@ -313,13 +313,12 @@ public sealed class UdpNodeDatagramFlowTests
         private readonly TaskCompletionSource _release = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
-
         public TaskCompletionSource FirstInvocationStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public async Task OnDatagramAsync(
+        public async ValueTask OnDatagramAsync(
             IUdpDatagramContext context,
-            ArraySegment<byte> datagram,
+            ReadOnlyMemory<byte> datagram,
             CancellationToken cancellationToken
         )
         {
@@ -334,7 +333,7 @@ public sealed class UdpNodeDatagramFlowTests
     }
 
     private sealed record ReceivedUdpDatagram(
-        IPEndPoint RemoteEndPoint,
+        EndPoint RemoteEndPoint,
         byte[] Datagram,
         IUdpDatagramContext Context
     );

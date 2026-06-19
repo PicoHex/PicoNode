@@ -439,11 +439,11 @@ file sealed class TcpEchoHandler : ITcpConnectionHandler
 
 file sealed class UdpEchoHandler : IUdpDatagramHandler
 {
-    public Task OnDatagramAsync(
+    public ValueTask OnDatagramAsync(
         IUdpDatagramContext context,
-        ArraySegment<byte> datagram,
+        ReadOnlyMemory<byte> datagram,
         CancellationToken cancellationToken
-    ) => context.SendAsync(datagram, cancellationToken);
+    ) => new ValueTask(context.SendAsync(datagram, cancellationToken));
 }
 
 readonly record struct PerfMetrics(double OpsPerSecond, double MiBPerSecond);

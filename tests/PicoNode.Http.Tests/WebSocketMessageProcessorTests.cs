@@ -562,7 +562,7 @@ public sealed class WebSocketMessageProcessorTests
     {
         public long ConnectionId => 1;
 
-        public IPEndPoint RemoteEndPoint => new(IPAddress.Loopback, 12345);
+        public EndPoint RemoteEndPoint => new IPEndPoint(IPAddress.Loopback, 12345);
 
         public DateTimeOffset ConnectedAtUtc => DateTimeOffset.UnixEpoch;
 

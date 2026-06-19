@@ -1,4 +1,4 @@
-namespace PicoNode.Abs;
+namespace PicoNode.Http;
 
 /// <summary>
 /// Centralized HTTP header name constants to avoid string duplication across projects.

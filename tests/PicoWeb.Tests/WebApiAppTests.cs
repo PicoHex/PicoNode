@@ -31,7 +31,7 @@ public sealed class WebApiAppTests
 internal sealed class RecordingConnectionContext : ITcpConnectionContext
 {
     public long ConnectionId => 1;
-    public IPEndPoint RemoteEndPoint => new(IPAddress.Loopback, 9999);
+    public EndPoint RemoteEndPoint => new IPEndPoint(IPAddress.Loopback, 9999);
     public DateTimeOffset ConnectedAtUtc => DateTimeOffset.UtcNow;
     public DateTimeOffset LastActivityUtc => DateTimeOffset.UtcNow;
     public object? UserState { get; set; }

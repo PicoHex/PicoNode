@@ -53,9 +53,9 @@ file sealed class EchoTcpHandler : ITcpConnectionHandler
 
 file sealed class EchoUdpHandler : IUdpDatagramHandler
 {
-    public Task OnDatagramAsync(
+    public ValueTask OnDatagramAsync(
         IUdpDatagramContext context,
-        ArraySegment<byte> datagram,
+        ReadOnlyMemory<byte> datagram,
         CancellationToken cancellationToken
-    ) => context.SendAsync(datagram, cancellationToken);
+    ) => new ValueTask(context.SendAsync(datagram, cancellationToken));
 }

@@ -100,13 +100,13 @@ internal sealed class TcpConnectionLifecycle
         catch (IOException ex)
         {
             error = ex;
-            reason = TcpCloseReason.ReceiveFault;
+            reason = TcpCloseReason.ReceiveFailed;
             _node.ReportFault(NodeFaultCode.ReceiveFailed, OperationReceive, ex);
         }
         catch (Exception ex)
         {
             error = ex;
-            reason = TcpCloseReason.HandlerFault;
+            reason = TcpCloseReason.HandlerFailed;
             _node.ReportFault(NodeFaultCode.HandlerFailed, OperationHandler, ex);
         }
         finally
@@ -235,9 +235,9 @@ internal sealed class TcpConnectionLifecycle
 
         return currentReason == TcpCloseReason.LocalClose
             ? currentReason
-            : TcpCloseReason.ReceiveFault;
+            : TcpCloseReason.ReceiveFailed;
     }
 
     private static bool ShouldReportReceiveFault(TcpCloseReason reason) =>
-        reason is TcpCloseReason.RemoteClosed or TcpCloseReason.ReceiveFault;
+        reason is TcpCloseReason.RemoteClosed or TcpCloseReason.ReceiveFailed;
 }

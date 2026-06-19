@@ -1310,11 +1310,11 @@ file sealed class BlockingCloseHandler : ITcpConnectionHandler
 
 file sealed class UdpEchoHandler : IUdpDatagramHandler
 {
-    public Task OnDatagramAsync(
+    public ValueTask OnDatagramAsync(
         IUdpDatagramContext context,
-        ArraySegment<byte> datagram,
+        ReadOnlyMemory<byte> datagram,
         CancellationToken cancellationToken
-    ) => context.SendAsync(datagram, cancellationToken);
+    ) => new ValueTask(context.SendAsync(datagram, cancellationToken));
 }
 
 file sealed class BlockingUdpHandler : IUdpDatagramHandler
@@ -1333,9 +1333,9 @@ file sealed class BlockingUdpHandler : IUdpDatagramHandler
 
     public Task Completed => _completed.Task;
 
-    public async Task OnDatagramAsync(
+    public async ValueTask OnDatagramAsync(
         IUdpDatagramContext context,
-        ArraySegment<byte> datagram,
+        ReadOnlyMemory<byte> datagram,
         CancellationToken cancellationToken
     )
     {
@@ -1490,9 +1490,9 @@ file sealed class ThrowOnceThenEchoUdpHandler : IUdpDatagramHandler
 {
     private int _failed;
 
-    public Task OnDatagramAsync(
+    public ValueTask OnDatagramAsync(
         IUdpDatagramContext context,
-        ArraySegment<byte> datagram,
+        ReadOnlyMemory<byte> datagram,
         CancellationToken cancellationToken
     )
     {
@@ -1501,6 +1501,6 @@ file sealed class ThrowOnceThenEchoUdpHandler : IUdpDatagramHandler
             throw new InvalidOperationException("boom");
         }
 
-        return context.SendAsync(datagram, cancellationToken);
+        return new ValueTask(context.SendAsync(datagram, cancellationToken));
     }
 }

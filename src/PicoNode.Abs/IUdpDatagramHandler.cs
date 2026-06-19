@@ -4,9 +4,9 @@
 public interface IUdpDatagramHandler
 {
     /// <summary>Called when a datagram is received. The <paramref name="datagram"/> buffer is valid only during this call; copy data if it must outlive the method.</summary>
-    Task OnDatagramAsync(
+    ValueTask OnDatagramAsync(
         IUdpDatagramContext context,
-        ArraySegment<byte> datagram,
+        ReadOnlyMemory<byte> datagram,
         CancellationToken cancellationToken
     );
 }

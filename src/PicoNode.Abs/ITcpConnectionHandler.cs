@@ -9,7 +9,7 @@ public interface ITcpConnectionHandler
     /// <summary>
     /// Called when data is available to read from the connection.
     /// Returns the consumed <see cref="SequencePosition"/> — the caller advances the read buffer past this position.
-    /// Return <c>buffer.End</c> to consume all data, or a earlier position to leave data for the next call.
+    /// Return <c>buffer.End</c> to consume all data, or an earlier position to leave data for the next call.
     /// </summary>
     ValueTask<SequencePosition> OnReceivedAsync(
         ITcpConnectionContext connection,

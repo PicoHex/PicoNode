@@ -1052,7 +1052,7 @@ public sealed class HttpConnectionHandlerTests
 
         public long ConnectionId { get; init; } = 1;
 
-        public IPEndPoint RemoteEndPoint { get; init; } = new(IPAddress.Loopback, 12345);
+        public EndPoint RemoteEndPoint { get; init; } = new IPEndPoint(IPAddress.Loopback, 12345);
 
         public DateTimeOffset ConnectedAtUtc { get; init; } = DateTimeOffset.UnixEpoch;
 

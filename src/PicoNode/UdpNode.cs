@@ -8,6 +8,7 @@ public sealed class UdpNode : INode, IAsyncDisposable
     private const string OperationReceive = "udp.receive";
     private const string OperationQueueDrop = "udp.queue.drop";
     private const string OperationDatagramHandler = "udp.datagram.handler";
+    private const long UdpConnectionIdTag = 2L << 56;
     private const string OperationMulticast = "udp.multicast";
     private const int MaxUdpDatagramSize = 65527;
 
@@ -365,7 +366,11 @@ public sealed class UdpNode : INode, IAsyncDisposable
                         {
                             var context = new UdpDatagramContext(
                                 this,
-                                Interlocked.Increment(ref _nextConnectionId),
+                                UdpConnectionIdTag
+                                    | (
+                                        Interlocked.Increment(ref _nextConnectionId)
+                                        & 0x00FFFFFFFFFFFFFFL
+                                    ),
                                 lease.RemoteEndPoint
                             );
                             var handleTask = Options.DatagramHandler.OnDatagramAsync(
@@ -413,8 +418,14 @@ public sealed class UdpNode : INode, IAsyncDisposable
         return hash % _queues.Length;
     }
 
-    internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null) =>
+    public event Action<NodeFault>? OnFault;
+
+    internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null)
+    {
+        var fault = new NodeFault(code, operation, exception);
         NodeHelper.ReportFault(Options.Logger, code, operation, exception);
+        OnFault?.Invoke(fault);
+    }
 
     /// <summary>
     /// Background loop for configuration hot-reload.

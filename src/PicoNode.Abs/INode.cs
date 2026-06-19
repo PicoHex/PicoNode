@@ -14,4 +14,7 @@ public interface INode
 
     /// <summary>Gracefully stops the node, draining in-flight work up to the configured drain timeout.</summary>
     Task StopAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Raised when a non-fatal operational fault occurs.</summary>
+    event Action<NodeFault>? OnFault;
 }

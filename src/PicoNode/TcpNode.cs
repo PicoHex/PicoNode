@@ -503,8 +503,14 @@ public sealed class TcpNode : INode, IAsyncDisposable
         }
     }
 
-    internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null) =>
+    public event Action<NodeFault>? OnFault;
+
+    internal void ReportFault(NodeFaultCode code, string operation, Exception? exception = null)
+    {
+        var fault = new NodeFault(code, operation, exception);
         NodeHelper.ReportFault(Options.Logger, code, operation, exception);
+        OnFault?.Invoke(fault);
+    }
 
     /// <summary>
     /// Background loop for configuration hot-reload.

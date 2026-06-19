@@ -240,10 +240,10 @@ public sealed class UdpNodeBranchTests
 
     private sealed class NoOpUdpHandler : IUdpDatagramHandler
     {
-        public Task OnDatagramAsync(
+        public ValueTask OnDatagramAsync(
             IUdpDatagramContext context,
-            ArraySegment<byte> datagram,
+            ReadOnlyMemory<byte> datagram,
             CancellationToken cancellationToken
-        ) => Task.CompletedTask;
+        ) => ValueTask.CompletedTask;
     }
 }

@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace PicoNode.Tests;
 
 public sealed class UdpDatagramLeaseTests
@@ -16,9 +18,10 @@ public sealed class UdpDatagramLeaseTests
 
         await Assert.That(lease.Count).IsEqualTo(3);
         await Assert.That(lease.RemoteEndPoint).IsEqualTo(new IPEndPoint(IPAddress.Loopback, 4567));
-        await Assert.That(lease.Datagram.Array).IsSameReferenceAs(buffer);
-        await Assert.That(lease.Datagram.Offset).IsEqualTo(0);
-        await Assert.That(lease.Datagram.Count).IsEqualTo(3);
+        await Assert.That(MemoryMarshal.TryGetArray(lease.Datagram, out var segment)).IsTrue();
+        await Assert.That(segment.Array).IsSameReferenceAs(buffer);
+        await Assert.That(segment.Offset).IsEqualTo(0);
+        await Assert.That(segment.Count).IsEqualTo(3);
         await Assert.That(lease.Datagram.ToArray()).IsEquivalentTo(new byte[] { 1, 2, 3 });
     }
 
@@ -35,7 +38,7 @@ public sealed class UdpDatagramLeaseTests
         lease.Dispose();
         lease.Dispose();
 
-        await Assert.That(lease.Datagram.Count).IsEqualTo(2);
+        await Assert.That(lease.Datagram.Length).IsEqualTo(2);
     }
 
     [Test]
@@ -54,8 +57,11 @@ public sealed class UdpDatagramLeaseTests
         lease.Dispose();
         lease.Dispose();
 
-        await Assert.That(datagramBeforeDispose.Array).IsSameReferenceAs(buffer);
-        await Assert.That(datagramBeforeDispose.Offset).IsEqualTo(0);
-        await Assert.That(datagramBeforeDispose.Count).IsEqualTo(3);
+        await Assert
+            .That(MemoryMarshal.TryGetArray(datagramBeforeDispose, out var beforeSegment))
+            .IsTrue();
+        await Assert.That(beforeSegment.Array).IsSameReferenceAs(buffer);
+        await Assert.That(beforeSegment.Offset).IsEqualTo(0);
+        await Assert.That(beforeSegment.Count).IsEqualTo(3);
     }
 }

@@ -11,7 +11,7 @@ public sealed class TcpConnectionContext : ITcpConnectionContext
 
     public long ConnectionId => _connection.Id;
 
-    public IPEndPoint RemoteEndPoint => _connection.RemoteEndPoint;
+    public EndPoint RemoteEndPoint => _connection.RemoteEndPoint;
 
     public DateTimeOffset ConnectedAtUtc => _connection.ConnectedAtUtc;
 

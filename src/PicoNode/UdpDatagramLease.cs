@@ -1,6 +1,6 @@
 namespace PicoNode;
 
-internal sealed class UdpDatagramLease(byte[] buffer, int count, IPEndPoint remoteEndPoint)
+internal sealed class UdpDatagramLease(byte[] buffer, int count, EndPoint remoteEndPoint)
     : IDisposable
 {
     private int _disposed;
@@ -9,9 +9,9 @@ internal sealed class UdpDatagramLease(byte[] buffer, int count, IPEndPoint remo
 
     public int Count { get; } = count;
 
-    public IPEndPoint RemoteEndPoint { get; } = remoteEndPoint;
+    public EndPoint RemoteEndPoint { get; } = remoteEndPoint;
 
-    public ArraySegment<byte> Datagram { get; } = new(buffer, 0, count);
+    public ReadOnlyMemory<byte> Datagram => new ReadOnlyMemory<byte>(Buffer, 0, Count);
 
     public void Dispose()
     {

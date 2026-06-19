@@ -119,7 +119,7 @@ public sealed class TcpConnectionFaultTests
             var closed = await handler.CloseReason.Task.WaitAsync(TimeSpan.FromSeconds(3));
             await runTask.WaitAsync(TimeSpan.FromSeconds(3));
 
-            await Assert.That(closed).IsEqualTo(TcpCloseReason.HandlerFault);
+            await Assert.That(closed).IsEqualTo(TcpCloseReason.HandlerFailed);
         }
         finally
         {

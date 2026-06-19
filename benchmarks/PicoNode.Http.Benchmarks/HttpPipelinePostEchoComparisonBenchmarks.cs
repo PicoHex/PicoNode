@@ -162,7 +162,7 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
     {
         public long ConnectionId { get; init; } = 1;
 
-        public IPEndPoint RemoteEndPoint { get; init; } = new(IPAddress.Loopback, 8082);
+        public EndPoint RemoteEndPoint { get; init; } = new IPEndPoint(IPAddress.Loopback, 8082);
 
         public DateTimeOffset ConnectedAtUtc { get; init; } = DateTimeOffset.UnixEpoch;
 

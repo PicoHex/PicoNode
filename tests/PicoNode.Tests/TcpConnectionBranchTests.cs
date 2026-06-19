@@ -62,7 +62,7 @@ public sealed class TcpConnectionBranchTests
             await Assert.That(call!.Level).IsEqualTo(LogLevel.Error);
             await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.HandlerFailed);
             await Assert.That(call.Exception).IsSameReferenceAs(handlerException);
-            await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.HandlerFault);
+            await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.HandlerFailed);
             await Assert.That(closed.Error).IsSameReferenceAs(handlerException);
         }
         finally
@@ -147,7 +147,7 @@ public sealed class TcpConnectionBranchTests
             await Assert.That(call!.Level).IsEqualTo(LogLevel.Error);
             await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.ReceiveFailed);
             await Assert.That(call.Exception).IsSameReferenceAs(exception);
-            await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.ReceiveFault);
+            await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.ReceiveFailed);
             await Assert.That(closed.Error).IsSameReferenceAs(exception);
         }
         finally
@@ -567,7 +567,7 @@ public sealed class TcpConnectionBranchTests
                 TcpCloseReason.RemoteClosed
             );
 
-            await Assert.That(result).IsEqualTo(TcpCloseReason.ReceiveFault);
+            await Assert.That(result).IsEqualTo(TcpCloseReason.ReceiveFailed);
             await connection.DisposeAsync();
         }
         finally
@@ -604,7 +604,7 @@ public sealed class TcpConnectionBranchTests
     public async Task ShouldReportReceiveFault_returns_true_for_remote_closed_and_receive_fault()
     {
         await Assert.That(InvokeShouldReportReceiveFault(TcpCloseReason.RemoteClosed)).IsTrue();
-        await Assert.That(InvokeShouldReportReceiveFault(TcpCloseReason.ReceiveFault)).IsTrue();
+        await Assert.That(InvokeShouldReportReceiveFault(TcpCloseReason.ReceiveFailed)).IsTrue();
         await Assert.That(InvokeShouldReportReceiveFault(TcpCloseReason.LocalClose)).IsFalse();
     }
 
@@ -1093,7 +1093,7 @@ public sealed class TcpConnectionBranchTests
         ) => ValueTask.CompletedTask;
     }
 
-    private sealed record ConnectedTcpConnection(long ConnectionId, IPEndPoint RemoteEndPoint);
+    private sealed record ConnectedTcpConnection(long ConnectionId, EndPoint RemoteEndPoint);
 
     private sealed record ClosedTcpConnection(TcpCloseReason Reason, Exception? Error);
 }

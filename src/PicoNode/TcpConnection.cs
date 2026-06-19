@@ -4,6 +4,7 @@ internal sealed class TcpConnection : IAsyncDisposable
 {
     private const string OperationSend = "tcp.send";
     private const int MinimumReceiveBufferSize = 512;
+    private const long TcpConnectionIdTag = 1L << 56;
 
     private readonly TcpNode _node;
     private readonly Pipe _pipe;
@@ -52,7 +53,7 @@ internal sealed class TcpConnection : IAsyncDisposable
             _receiveLoop,
             onClosed: () => _node.OnConnectionClosed(this)
         );
-        Id = Interlocked.Increment(ref _nextId);
+        Id = TcpConnectionIdTag | (Interlocked.Increment(ref _nextId) & 0x00FFFFFFFFFFFFFFL);
         RemoteEndPoint = (IPEndPoint)socket.RemoteEndPoint!;
         ConnectedAtUtc = DateTimeOffset.UtcNow;
         _lastActivityTicks = ConnectedAtUtc.UtcTicks;
@@ -63,7 +64,7 @@ internal sealed class TcpConnection : IAsyncDisposable
 
     public long Id { get; }
 
-    public IPEndPoint RemoteEndPoint { get; }
+    public EndPoint RemoteEndPoint { get; }
 
     public DateTimeOffset ConnectedAtUtc { get; }
 
@@ -116,13 +117,21 @@ internal sealed class TcpConnection : IAsyncDisposable
         catch (SocketException ex)
         {
             _node.ReportFault(NodeFaultCode.SendFailed, OperationSend, ex);
-            _lifecycle.ScheduleClose(TcpCloseReason.SendFault, ex, _node.Options.ConnectionHandler);
+            _lifecycle.ScheduleClose(
+                TcpCloseReason.SendFailed,
+                ex,
+                _node.Options.ConnectionHandler
+            );
             throw;
         }
         catch (IOException ex)
         {
             _node.ReportFault(NodeFaultCode.SendFailed, OperationSend, ex);
-            _lifecycle.ScheduleClose(TcpCloseReason.SendFault, ex, _node.Options.ConnectionHandler);
+            _lifecycle.ScheduleClose(
+                TcpCloseReason.SendFailed,
+                ex,
+                _node.Options.ConnectionHandler
+            );
             throw;
         }
         catch (ObjectDisposedException) when (_lifecycle.IsCloseInitiated)

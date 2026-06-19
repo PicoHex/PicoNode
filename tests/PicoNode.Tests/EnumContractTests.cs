@@ -52,9 +52,9 @@ public sealed class EnumContractTests
                 TcpCloseReason.LocalClose,
                 TcpCloseReason.RemoteClosed,
                 TcpCloseReason.IdleTimeout,
-                TcpCloseReason.HandlerFault,
-                TcpCloseReason.ReceiveFault,
-                TcpCloseReason.SendFault,
+                TcpCloseReason.HandlerFailed,
+                TcpCloseReason.ReceiveFailed,
+                TcpCloseReason.SendFailed,
                 TcpCloseReason.NodeStopping,
                 TcpCloseReason.Rejected,
             ]);

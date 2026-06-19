@@ -733,7 +733,7 @@ public sealed class TcpNodeBranchTests
         ) => ValueTask.CompletedTask;
     }
 
-    private sealed record ConnectedTcpConnection(long ConnectionId, IPEndPoint RemoteEndPoint);
+    private sealed record ConnectedTcpConnection(long ConnectionId, EndPoint RemoteEndPoint);
 
     private sealed record ClosedTcpConnection(TcpCloseReason Reason, Exception? Error);
 }

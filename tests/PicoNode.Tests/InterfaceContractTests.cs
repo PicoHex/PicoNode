@@ -35,7 +35,7 @@ public sealed class InterfaceContractTests
             .IsEqualTo(typeof(long));
         await Assert
             .That(type.GetProperty(nameof(ITcpConnectionContext.RemoteEndPoint))?.PropertyType)
-            .IsEqualTo(typeof(IPEndPoint));
+            .IsEqualTo(typeof(EndPoint));
         await Assert
             .That(type.GetProperty(nameof(ITcpConnectionContext.ConnectedAtUtc))?.PropertyType)
             .IsEqualTo(typeof(DateTimeOffset));
@@ -73,7 +73,7 @@ public sealed class InterfaceContractTests
 
         await Assert
             .That(type.GetProperty(nameof(IUdpDatagramContext.RemoteEndPoint))?.PropertyType)
-            .IsEqualTo(typeof(IPEndPoint));
+            .IsEqualTo(typeof(EndPoint));
         await Assert
             .That(type.GetMethod(nameof(IUdpDatagramContext.SendAsync))?.ReturnType)
             .IsEqualTo(typeof(Task));
@@ -86,6 +86,6 @@ public sealed class InterfaceContractTests
 
         await Assert
             .That(type.GetMethod(nameof(IUdpDatagramHandler.OnDatagramAsync))?.ReturnType)
-            .IsEqualTo(typeof(Task));
+            .IsEqualTo(typeof(ValueTask));
     }
 }
