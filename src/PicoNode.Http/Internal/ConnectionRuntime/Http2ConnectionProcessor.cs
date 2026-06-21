@@ -39,12 +39,23 @@ internal static class Http2ConnectionProcessor
             }
         }
 
+        logger?.Log(
+            LogLevel.Debug,
+            $"[H2] Parsing frames, sendInitialSettings={sendInitialSettings}, bufferLen={buffer.Length}",
+            null
+        );
+
         while (remaining.Length > 0)
         {
             if (!Http2FrameCodec.TryReadFrame(remaining, out var frame, out var frameConsumed))
             {
                 if (Http2FrameCodec.IsFrameTooLarge(remaining))
                 {
+                    logger?.Log(
+                        LogLevel.Debug,
+                        "[H2] Frame too large, sending GOAWAY FRAME_SIZE_ERROR",
+                        null
+                    );
                     await SendGoAwayAndCloseAsync(
                         connection,
                         Http2ErrorCode.FrameSizeError,
@@ -59,6 +70,12 @@ internal static class Http2ConnectionProcessor
             consumed = remaining.GetPosition(frameConsumed);
             remaining = remaining.Slice(frameConsumed);
 
+            logger?.Log(
+                LogLevel.Debug,
+                $"[H2] <- frame Type={frame!.Type} StreamId={frame.StreamId} Length={frame.Length} Flags={frame.Flags}",
+                null
+            );
+
             try
             {
                 // RFC 7540 §3.5: first frame after connection preface must be SETTINGS.
@@ -68,6 +85,11 @@ internal static class Http2ConnectionProcessor
                     connState.ReceivedPostPrefaceFrame = true;
                     if (frame!.Type != Http2FrameType.Settings)
                     {
+                        logger?.Log(
+                            LogLevel.Debug,
+                            $"[H2] Expected SETTINGS as first post-preface frame, got {frame.Type}, sending GOAWAY PROTOCOL_ERROR",
+                            null
+                        );
                         await SendGoAwayAndCloseAsync(
                             connection,
                             Http2ErrorCode.ProtocolError,
@@ -112,6 +134,11 @@ internal static class Http2ConnectionProcessor
             case Http2FrameType.Settings:
                 if (frame.StreamId != 0)
                 {
+                    logger?.Log(
+                        LogLevel.Debug,
+                        "[H2] SETTINGS with non-zero streamId, sending GOAWAY PROTOCOL_ERROR",
+                        null
+                    );
                     await SendGoAwayAndCloseAsync(
                         connection,
                         Http2ErrorCode.ProtocolError,

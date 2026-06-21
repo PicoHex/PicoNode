@@ -40,8 +40,9 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     )
     {
-        // If ALPN negotiated HTTP/2, send initial SETTINGS immediately
-        // (before any client data arrives, per RFC 7540 §3.4).
+        // If ALPN negotiated HTTP/2, set up the connection state.
+        // Initial SETTINGS are deferred to the first OnReceivedAsync call
+        // to avoid a TLS re-negotiation race with the client's incoming data.
         if (string.Equals(connection.NegotiatedProtocol, "h2", StringComparison.OrdinalIgnoreCase))
         {
             connection.UserState = new ConnectionRuntimeState
@@ -49,7 +50,6 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
                 Protocol = ConnectionProtocol.Http2,
                 MaxRequestBodyBytes = _options.MaxRequestBodySize,
             };
-            return SendInitialSettingsAsync(connection, cancellationToken);
         }
 
         return Task.CompletedTask;
@@ -90,12 +90,10 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
                     state,
                     cancellationToken
                 ),
-                ConnectionProtocol.Http2 => Http2ConnectionProcessor.ProcessAsync(
+                ConnectionProtocol.Http2 => ProcessHttp2Async(
                     connection,
                     buffer,
-                    sendInitialSettings: false,
-                    _requestHandler,
-                    _options.Logger,
+                    state,
                     cancellationToken
                 ),
                 _ => HandleHttp1Async(connection, buffer, cancellationToken),
@@ -108,20 +106,90 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             case DetectedProtocolKind.IncompleteHttp2Preface:
                 return ValueTask.FromResult(buffer.Start);
             case DetectedProtocolKind.Http2:
-                SetConnectionState(connection, ConnectionProtocol.Http2);
-                return Http2ConnectionProcessor.ProcessAsync(
-                    connection,
-                    protocolDecision.Buffer,
-                    sendInitialSettings: true,
-                    _requestHandler,
-                    _options.Logger,
-                    cancellationToken
-                );
+            {
+                var newState = SetConnectionState(connection, ConnectionProtocol.Http2);
+                return newState.InitialSettingsSent
+                    ? Http2ConnectionProcessor.ProcessAsync(
+                        connection,
+                        protocolDecision.Buffer,
+                        sendInitialSettings: false,
+                        _requestHandler,
+                        _options.Logger,
+                        cancellationToken
+                    )
+                    : SendInitialSettingsAndProcessAsync(
+                        connection,
+                        protocolDecision.Buffer,
+                        newState,
+                        cancellationToken
+                    );
+            }
             case DetectedProtocolKind.Http1:
             default:
                 SetConnectionState(connection, ConnectionProtocol.Http1);
                 return HandleHttp1Async(connection, buffer, cancellationToken);
         }
+    }
+
+    private ValueTask<SequencePosition> ProcessHttp2Async(
+        ITcpConnectionContext connection,
+        ReadOnlySequence<byte> buffer,
+        ConnectionRuntimeState state,
+        CancellationToken cancellationToken
+    )
+    {
+        // Defer the initial SETTINGS send to the first OnReceivedAsync call.
+        // Sending it here instead of in OnConnectedAsync avoids a TLS re-negotiation
+        // race between SslStream.WriteAsync and the client's incoming data that
+        // causes WSAECONNABORTED (10053) with Chromium-based browsers.
+        return state.InitialSettingsSent
+            ? Http2ConnectionProcessor.ProcessAsync(
+                connection,
+                buffer,
+                sendInitialSettings: false,
+                _requestHandler,
+                _options.Logger,
+                cancellationToken
+            )
+            : SendInitialSettingsAndProcessAsync(connection, buffer, state, cancellationToken);
+    }
+
+    private async ValueTask<SequencePosition> SendInitialSettingsAndProcessAsync(
+        ITcpConnectionContext connection,
+        ReadOnlySequence<byte> buffer,
+        ConnectionRuntimeState state,
+        CancellationToken ct
+    )
+    {
+        state.InitialSettingsSent = true;
+
+        var settings =
+            (ReadOnlySpan<Http2Setting>)
+                [
+                    new(Http2SettingId.MaxConcurrentStreams, 100),
+                    new(Http2SettingId.InitialWindowSize, 65535),
+                    new(Http2SettingId.HeaderTableSize, 4096),
+                ];
+        var size = Http2FrameCodec.FrameHeaderSize + settings.Length * 6;
+        var rented = ArrayPool<byte>.Shared.Rent(size);
+        try
+        {
+            Http2FrameCodec.WriteSettings(rented, settings);
+            await connection.SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+
+        return await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            buffer,
+            sendInitialSettings: false,
+            _requestHandler,
+            _options.Logger,
+            ct
+        );
     }
 
     private ValueTask<SequencePosition> HandleHttp1Async(
@@ -148,13 +216,18 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         return ValueTask.CompletedTask;
     }
 
-    private void SetConnectionState(ITcpConnectionContext connection, ConnectionProtocol protocol)
+    private ConnectionRuntimeState SetConnectionState(
+        ITcpConnectionContext connection,
+        ConnectionProtocol protocol
+    )
     {
-        connection.UserState = new ConnectionRuntimeState
+        var state = new ConnectionRuntimeState
         {
             Protocol = protocol,
             MaxRequestBodyBytes = _options.MaxRequestBodySize,
         };
+        connection.UserState = state;
+        return state;
     }
 
     private static async Task SendInitialSettingsAsync(

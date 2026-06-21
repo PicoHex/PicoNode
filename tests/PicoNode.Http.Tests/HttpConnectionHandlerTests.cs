@@ -1088,6 +1088,97 @@ public sealed class HttpConnectionHandlerTests
     }
 
     [Test]
+    public async Task OnConnectedAsync_with_h2_does_not_send_initial_settings()
+    {
+        // Bug: OnConnectedAsync was sending initial SETTINGS via SendAsync,
+        // which races with the Chromium client's incoming TLS data and causes
+        // WSAECONNABORTED (10053) on Schannel. The fix defers SETTINGS to
+        // the first OnReceivedAsync call.
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = (req, ct) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            }
+        );
+        var connection = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
+
+        // H2 ALPN connection established — OnConnectedAsync is called.
+        await handler.OnConnectedAsync(connection, CancellationToken.None);
+
+        // The initial SETTINGS must NOT be sent here. Deferred to OnReceivedAsync.
+        await Assert
+            .That(connection.SendCount)
+            .IsEqualTo(0)
+            .Because(
+                "initial SETTINGS should be deferred to OnReceivedAsync to avoid TLS re-negotiation race"
+            );
+    }
+
+    [Test]
+    public async Task OnReceivedAsync_with_h2_ALPN_sends_initial_settings_before_processing()
+    {
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = (req, ct) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            }
+        );
+        var connection = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
+
+        // Simulate what happens after TLS + ALPN negotiation:
+        // 1. OnConnectedAsync runs first
+        await handler.OnConnectedAsync(connection, CancellationToken.None);
+
+        // 2. Then OnReceivedAsync receives the client's data.
+        //    Construct a valid HTTP/2 frame sequence: PRI preface + SETTINGS frame.
+        //    Client SETTINGS: 1 setting (MaxConcurrentStreams=100), no ACK flag.
+        //    Frame header: length=6, type=4(Settings), flags=0, streamId=0
+        var clientSettings = new byte[]
+        {
+            0x00,
+            0x00,
+            0x06, // length = 6
+            0x04, // type = SETTINGS
+            0x00, // flags = None
+            0x00,
+            0x00,
+            0x00,
+            0x00, // streamId = 0
+            0x00,
+            0x03, // SETTINGS_MAX_CONCURRENT_STREAMS = 3
+            0x00,
+            0x00,
+            0x00,
+            0x64, // value = 100
+        };
+        var preface = Http2FrameCodec.ClientPreface.ToArray();
+        var buffer = new ReadOnlySequence<byte>(preface.Concat(clientSettings).ToArray());
+
+        await handler.OnReceivedAsync(connection, buffer, CancellationToken.None);
+
+        // The initial server SETTINGS must have been sent (as first SendAsync call).
+        await Assert
+            .That(connection.SendCount)
+            .IsGreaterThan(0)
+            .Because("initial SETTINGS must be sent before processing client frames");
+
+        // First sent frame should be a SETTINGS frame (type=4, stream=0).
+        // HTTP/2 frame: 9-byte header, payload follows.
+        var firstSent = connection.AllSent[0];
+        await Assert.That(firstSent.Length).IsGreaterThanOrEqualTo(9);
+        await Assert.That((Http2FrameType)firstSent[3]).IsEqualTo(Http2FrameType.Settings);
+        // SETTINGS frame must go on stream 0.
+        var streamId =
+            ((firstSent[5] & 0x7F) << 24)
+            | (firstSent[6] << 16)
+            | (firstSent[7] << 8)
+            | firstSent[8];
+        await Assert.That(streamId).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task OnConnectedAsync_with_h2_ALPN_sets_MaxRequestBodyBytes_from_options()
     {
         var handler = new HttpConnectionHandler(
@@ -1110,8 +1201,8 @@ public sealed class HttpConnectionHandlerTests
     public async Task ALPN_h2_settings_exchange_succeeds()
     {
         // ALPN h2 flow without PRI preface:
-        // 1. OnConnectedAsync → server sends SETTINGS
-        // 2. Client sends SETTINGS → server sends SETTINGS ACK
+        // 1. OnConnectedAsync → sets up state, does NOT send (deferred)
+        // 2. Client sends SETTINGS → server sends initial SETTINGS + SETTINGS ACK
 
         var conn = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
         var handler = new HttpConnectionHandler(
@@ -1122,13 +1213,11 @@ public sealed class HttpConnectionHandlerTests
             }
         );
 
-        // Step 1: OnConnectedAsync — verify SETTINGS sent
+        // Step 1: OnConnectedAsync — SETTINGS deferred, no send yet
         await handler.OnConnectedAsync(conn, CancellationToken.None);
-        await Assert.That(conn.AllSent.Count).IsEqualTo(1);
-        await Assert.That(conn.AllSent[0][3]).IsEqualTo((byte)Http2FrameType.Settings);
+        await Assert.That(conn.AllSent.Count).IsEqualTo(0);
 
         // Step 2: Client sends SETTINGS (no PRI preface, as in ALPN)
-        var prevSentCount = conn.AllSent.Count;
         var clientSettings = Http2FrameCodec.EncodeSettings(
             new Http2Setting(Http2SettingId.MaxConcurrentStreams, 100)
         );
@@ -1137,11 +1226,14 @@ public sealed class HttpConnectionHandlerTests
             new ReadOnlySequence<byte>(clientSettings),
             CancellationToken.None
         );
-        // Server must respond with SETTINGS ACK
-        await Assert.That(conn.AllSent.Count).IsEqualTo(prevSentCount + 1);
-        var ack = conn.AllSent[conn.AllSent.Count - 1];
-        await Assert.That(ack[3]).IsEqualTo((byte)Http2FrameType.Settings);
-        await Assert.That((ack[4] & 0x01)).IsEqualTo(0x01); // ACK flag
+        // Server must send initial SETTINGS + SETTINGS ACK = 2 frames
+        await Assert.That(conn.AllSent.Count).IsEqualTo(2);
+        // First sent: initial SETTINGS (no ACK flag)
+        await Assert.That(conn.AllSent[0][3]).IsEqualTo((byte)Http2FrameType.Settings);
+        await Assert.That((conn.AllSent[0][4] & 0x01)).IsEqualTo(0x00);
+        // Second sent: SETTINGS ACK
+        await Assert.That(conn.AllSent[1][3]).IsEqualTo((byte)Http2FrameType.Settings);
+        await Assert.That((conn.AllSent[1][4] & 0x01)).IsEqualTo(0x01); // ACK flag
     }
 
     [Test]
@@ -1162,7 +1254,6 @@ public sealed class HttpConnectionHandlerTests
         var stateAfterConnect = conn.UserState as ConnectionRuntimeState;
         await Assert.That(stateAfterConnect).IsNotNull();
         await Assert.That(stateAfterConnect!.Protocol).IsEqualTo(ConnectionProtocol.Http2);
-        conn.AllSent.Clear();
 
         // Build client data: PRI preface + SETTINGS frame
         var clientData = new List<byte>();
@@ -1178,11 +1269,14 @@ public sealed class HttpConnectionHandlerTests
             new ReadOnlySequence<byte>([.. clientData]),
             CancellationToken.None
         );
-        // Server must respond with SETTINGS ACK
-        await Assert.That(conn.AllSent.Count).IsEqualTo(1);
-        var ack = conn.AllSent[0];
-        await Assert.That(ack[3]).IsEqualTo((byte)Http2FrameType.Settings);
-        await Assert.That((ack[4] & 0x01)).IsEqualTo(0x01); // ACK flag
+        // Server must send initial SETTINGS + SETTINGS ACK = 2 frames
+        await Assert.That(conn.AllSent.Count).IsEqualTo(2);
+        // First sent: initial SETTINGS (no ACK flag)
+        await Assert.That(conn.AllSent[0][3]).IsEqualTo((byte)Http2FrameType.Settings);
+        await Assert.That((conn.AllSent[0][4] & 0x01)).IsEqualTo(0x00);
+        // Second sent: SETTINGS ACK
+        await Assert.That(conn.AllSent[1][3]).IsEqualTo((byte)Http2FrameType.Settings);
+        await Assert.That((conn.AllSent[1][4] & 0x01)).IsEqualTo(0x01); // ACK flag
     }
 
     [Test]

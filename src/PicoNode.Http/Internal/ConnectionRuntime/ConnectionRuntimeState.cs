@@ -88,6 +88,13 @@ internal sealed class ConnectionRuntimeState
     /// <summary>GoAway frame has been received — stop accepting new streams.</summary>
     public bool GoAwayReceived { get; set; }
 
+    /// <summary>
+    /// Whether the initial SETTINGS frame has been sent on this connection.
+    /// Guarantees SETTINGS is sent exactly once, on the first OnReceivedAsync call,
+    /// avoiding the TLS re-negotiation race that occurred when sent from OnConnectedAsync.
+    /// </summary>
+    public bool InitialSettingsSent { get; set; }
+
     /// <summary>For fair round-robin scheduling across streams.</summary>
     public int LastServedStreamId { get; set; }
 

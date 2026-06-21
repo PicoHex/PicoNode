@@ -18,7 +18,24 @@ WebSocketMessageHandler wsEcho = static async (msg, conn, ct) =>
     await conn.SendAsync(new ReadOnlySequence<byte>(buf), ct);
 };
 
-var app = PicoWeb.Samples.Abs.ShowcaseApp.Create(container, webSocketHandler: wsEcho);
+await using var factory = new LoggerFactory(
+    sinks: [new ColoredConsoleSink(new ConsoleFormatter())],
+    options: new LoggerFactoryOptions
+    {
+        MinLevel = LogLevel.Trace,
+        QueueCapacity = 65535,
+        QueueFullMode = LogQueueFullMode.DropOldest,
+        SyncWriteTimeout = TimeSpan.FromMilliseconds(250),
+        ShutdownTimeout = TimeSpan.FromSeconds(5),
+    }
+);
+var logger = factory.CreateLogger("PicoWeb.Sample");
+
+var app = PicoWeb.Samples.Abs.ShowcaseApp.Create(
+    container,
+    webSocketHandler: wsEcho,
+    logger: logger
+);
 EndpointRegistrar.RegisterAll(app);
 
 // Use --http to force plain HTTP, --fresh-cert to create a new runtime cert
@@ -51,19 +68,6 @@ else
     var hint = useHttp ? "via --http" : "To enable HTTPS/HTTP2:  dotnet dev-certs https --trust";
     Console.Error.WriteLine($"No certificate found — using HTTP ({hint})");
 }
-
-await using var factory = new LoggerFactory(
-    sinks: [new ColoredConsoleSink(new ConsoleFormatter())],
-    options: new LoggerFactoryOptions
-    {
-        MinLevel = LogLevel.Warning,
-        QueueCapacity = 65535,
-        QueueFullMode = LogQueueFullMode.DropOldest,
-        SyncWriteTimeout = TimeSpan.FromMilliseconds(250),
-        ShutdownTimeout = TimeSpan.FromSeconds(5),
-    }
-);
-var logger = factory.CreateLogger("PicoWeb.Sample");
 
 var server = new WebServer(
     app,
@@ -145,15 +149,60 @@ static X509Certificate2 CreateFreshCert()
     san.AddDnsName("localhost");
     req.CertificateExtensions.Add(san.Build());
 
-    // Keep the RSA alive until the cert is used to ensure the key remains accessible.
-    // No PFX round-trip — SslStream/Schannel can use the ephemeral key directly
-    // on Windows when the cert is loaded from the same process that created it.
-    GC.KeepAlive(rsa);
-    return req.CreateSelfSigned(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddYears(1));
+    // Save to PFX so Schannel can access the private key across processes.
+    var pfxPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "PicoWeb",
+        "localhost-dev-cert.pfx"
+    );
+    Directory.CreateDirectory(Path.GetDirectoryName(pfxPath)!);
+    var pfxBytes = req.CreateSelfSigned(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddYears(1));
+    File.WriteAllBytes(pfxPath, pfxBytes.Export(X509ContentType.Pfx, ""));
+
+    // Import to CurrentUser\My so the cert persists and is findable by LoadDevCert on restart.
+    try
+    {
+        using var store = new X509Store("My", StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadWrite);
+        var imported = new X509Certificate2(pfxPath, "", X509KeyStorageFlags.DefaultKeySet);
+        store.Add(imported);
+        store.Close();
+        Console.Error.WriteLine($"Imported dev cert to CurrentUser\\My: {imported.Subject}");
+    }
+    catch { }
+
+    // Best-effort trust: add to CurrentUser\Root so the browser trusts the self-signed cert.
+    try
+    {
+        var imported = new X509Certificate2(pfxPath, "", X509KeyStorageFlags.DefaultKeySet);
+        using var rootStore = new X509Store("Root", StoreLocation.CurrentUser);
+        rootStore.Open(OpenFlags.ReadWrite);
+        var alreadyTrusted = false;
+        foreach (var c in rootStore.Certificates)
+        {
+            if (c.Thumbprint == imported.Thumbprint)
+            {
+                alreadyTrusted = true;
+                break;
+            }
+        }
+        if (!alreadyTrusted)
+        {
+            rootStore.Add(imported);
+            Console.Error.WriteLine(
+                $"Added dev cert to CurrentUser\\Root (trusted): {imported.Subject}"
+            );
+        }
+        rootStore.Close();
+    }
+    catch { }
+
+    return new X509Certificate2(pfxPath, "", X509KeyStorageFlags.DefaultKeySet);
 }
 
 static X509Certificate2? LoadDevCert()
 {
+    // Try to find an existing cert in CurrentUser\My
     try
     {
         using var store = new X509Store("My", StoreLocation.CurrentUser);
@@ -167,16 +216,48 @@ static X509Certificate2? LoadDevCert()
         foreach (var c in certs)
         {
             if (
-                c.FriendlyName?.Contains("ASP.NET", StringComparison.OrdinalIgnoreCase) == true
-                && c.NotAfter > DateTime.UtcNow
+                c.NotAfter > DateTime.UtcNow
+                && c.HasPrivateKey
                 && (best is null || c.NotAfter > best.NotAfter)
             )
             {
                 best = c;
             }
         }
-        return best;
+        if (best is not null)
+        {
+            // Best-effort: ensure the cert is trusted (add to Root store)
+            TryTrustCert(best);
+            return best;
+        }
     }
     catch { }
-    return null;
+
+    // Fallback: create a fresh dev cert and persist it as PFX
+    return CreateFreshCert();
+}
+
+static void TryTrustCert(X509Certificate2 cert)
+{
+    try
+    {
+        using var rootStore = new X509Store("Root", StoreLocation.CurrentUser);
+        rootStore.Open(OpenFlags.ReadWrite);
+        var exists = false;
+        foreach (var c in rootStore.Certificates)
+        {
+            if (c.Thumbprint == cert.Thumbprint)
+            {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists)
+        {
+            rootStore.Add(cert);
+            Console.Error.WriteLine($"Trusted dev cert: {cert.Subject}");
+        }
+        rootStore.Close();
+    }
+    catch { }
 }

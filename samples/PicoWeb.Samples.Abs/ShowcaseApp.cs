@@ -18,7 +18,8 @@ public static class ShowcaseApp
         PicoDI.Abs.ISvcContainer container,
         string? contentRoot = null,
         PicoCfg.Abs.ICfgRoot? config = null,
-        PicoNode.Http.WebSocketMessageHandler? webSocketHandler = null
+        PicoNode.Http.WebSocketMessageHandler? webSocketHandler = null,
+        ILogger? logger = null
     )
     {
         var staticRoot = Path.Combine(contentRoot ?? AppContext.BaseDirectory, "wwwroot");
@@ -34,6 +35,40 @@ public static class ShowcaseApp
 
         var compression = new CompressionMiddleware(minimumBodySize: 256);
         var staticFiles = new StaticFileMiddleware(staticRoot);
+
+        // Request logging middleware — outermost in the pipeline
+        if (logger is not null)
+        {
+            app.Use(
+                async (WebContext ctx, WebRequestHandler next, CancellationToken ct) =>
+                {
+                    var sw = Stopwatch.StartNew();
+                    try
+                    {
+                        var response = await next(ctx, ct);
+                        sw.Stop();
+                        logger.Log(
+                            LogLevel.Debug,
+                            new EventId(0),
+                            $"{ctx.Request.Method} {ctx.Request.Path} -> {response.StatusCode} ({sw.ElapsedMilliseconds}ms)",
+                            null
+                        );
+                        return response;
+                    }
+                    catch (Exception ex)
+                    {
+                        sw.Stop();
+                        logger.Log(
+                            LogLevel.Error,
+                            new EventId(0),
+                            $"{ctx.Request.Method} {ctx.Request.Path} -> EXCEPTION ({sw.ElapsedMilliseconds}ms)",
+                            ex
+                        );
+                        throw;
+                    }
+                }
+            );
+        }
 
         app.Use(
             (WebContext context, WebRequestHandler next, CancellationToken cancellationToken) =>

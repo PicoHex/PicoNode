@@ -69,6 +69,69 @@ public sealed class PicoWebShowcaseSmokeTests
     }
 
     [Test]
+    public async Task Health_endpoint_returns_ok()
+    {
+        await using var host = await StartHostAsync();
+
+        var response = await host.Client.GetAsync("/api/health");
+        var body = await response.Content.ReadAsStringAsync();
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(body).Contains("ok");
+    }
+
+    [Test]
+    public async Task Info_endpoint_returns_server_and_http_version()
+    {
+        await using var host = await StartHostAsync();
+
+        var response = await host.Client.GetAsync("/api/info");
+        var body = await response.Content.ReadAsStringAsync();
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(body).Contains("PicoWeb");
+        await Assert.That(body).Contains("HTTP/1.1");
+    }
+
+    [Test]
+    public async Task Showcase_endpoint_returns_feature_list()
+    {
+        await using var host = await StartHostAsync();
+
+        var response = await host.Client.GetAsync("/api/showcase");
+        var body = await response.Content.ReadAsStringAsync();
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(body).Contains("static-files");
+        await Assert.That(body).Contains("compression");
+        await Assert.That(body).Contains("cors");
+        await Assert.That(body).Contains("multipart-form-data");
+    }
+
+    [Test]
+    public async Task Server_header_is_set()
+    {
+        await using var host = await StartHostAsync();
+
+        var response = await host.Client.GetAsync("/api/health");
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(response.Headers.Server).IsNotEmpty();
+    }
+
+    [Test]
+    public async Task Unknown_route_returns_404()
+    {
+        await using var host = await StartHostAsync();
+
+        var response = await host.Client.GetAsync("/api/nonexistent");
+        var body = await response.Content.ReadAsStringAsync();
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.NotFound);
+        await Assert.That(body).Contains("No route matched");
+    }
+
+    [Test]
     public async Task Compresses_large_content_when_requested()
     {
         await using var host = await StartHostAsync(

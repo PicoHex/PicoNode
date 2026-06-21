@@ -42,8 +42,18 @@ internal static class Http2StreamHandler
         state.LastActivityUtc = DateTime.UtcNow;
 
         // State machine: validate HEADERS is legal in current state
-        if (!state.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.Headers, out _))
+        if (
+            !state.StateMachine.TryTransition(
+                Http2StreamStateMachine.Trigger.Headers,
+                out var prevState
+            )
+        )
         {
+            logger?.Log(
+                LogLevel.Debug,
+                $"[H2] State transition failed: StreamId={frame.StreamId} State={prevState} Trigger=Headers, sending RST_STREAM PROTOCOL_ERROR",
+                null
+            );
             await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct)
                 .ConfigureAwait(false);
             return false;
@@ -86,6 +96,11 @@ internal static class Http2StreamHandler
         var dynamicTable = runtimeStateForLimit?.HpackTable;
         if (!HpackDecoder.TryDecode(payloadData.Value.AsSpan(), out var headerFields, dynamicTable))
         {
+            logger?.Log(
+                LogLevel.Debug,
+                $"[H2] HPACK decode failed: StreamId={frame.StreamId} payloadLen={payloadData.Value.Count}, sending GOAWAY COMPRESSION_ERROR",
+                null
+            );
             await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.CompressionError, ct)
                 .ConfigureAwait(false);
             return true;
