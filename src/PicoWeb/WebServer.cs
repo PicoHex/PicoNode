@@ -15,6 +15,9 @@ public sealed class WebServer : IAsyncDisposable
         _options = options;
     }
 
+    /// <summary>The options used to configure this server. Read-only after construction.</summary>
+    public WebServerOptions Options => _options;
+
     public EndPoint? LocalEndPoint => _node?.LocalEndPoint;
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -36,6 +39,13 @@ public sealed class WebServer : IAsyncDisposable
                 Logger = _options.Logger,
                 SslOptions = _options.SslOptions,
                 EnableDualMode = _options.EnableDualMode,
+                MaxConnections = _options.MaxConnections,
+                ReceiveSocketBufferSize = _options.ReceiveSocketBufferSize,
+                SendSocketBufferSize = _options.SendSocketBufferSize,
+                NoDelay = _options.NoDelay,
+                IdleTimeout = _options.IdleTimeout,
+                DrainTimeout = _options.DrainTimeout,
+                AcceptFaultBackoff = _options.AcceptFaultBackoff,
             }
         );
 
