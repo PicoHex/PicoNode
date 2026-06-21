@@ -408,6 +408,9 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 
+# Runtime logs
+*.log
+
 .sisyphus/
 superpowers/
 .omo/
