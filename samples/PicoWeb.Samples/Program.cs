@@ -18,7 +18,7 @@ WebSocketMessageHandler wsEcho = static async (msg, conn, ct) =>
     await conn.SendAsync(new ReadOnlySequence<byte>(buf), ct);
 };
 
-var app = PicoWeb.Samples.ShowcaseApp.Create(container, webSocketHandler: wsEcho);
+var app = PicoWeb.Samples.Abs.ShowcaseApp.Create(container, webSocketHandler: wsEcho);
 EndpointRegistrar.RegisterAll(app);
 
 // Use --http to force plain HTTP, --fresh-cert to create a new runtime cert

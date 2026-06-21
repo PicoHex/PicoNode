@@ -95,7 +95,7 @@ public sealed class PicoWebShowcaseSmokeTests
         var port = GetAvailablePort();
         var sampleRoot = Path.Combine(GetRepositoryRoot(), "samples", "PicoWeb.Samples");
         var server = new WebServer(
-            ShowcaseApp.Create(new EmptyServiceProvider(), sampleRoot),
+            PicoWeb.Samples.Abs.ShowcaseApp.Create(new EmptyServiceProvider(), sampleRoot),
             new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
         );
 
