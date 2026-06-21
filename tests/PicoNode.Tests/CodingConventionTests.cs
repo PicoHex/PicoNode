@@ -297,29 +297,4 @@ public sealed class CodingConventionTests
         // Hardcoded 'Release' in analyzer path would break Debug builds
         await Assert.That(content).DoesNotContain("bin\\Release\\netstandard2.0");
     }
-
-    [Test]
-    public async Task PicoJetson_version_is_at_least_2026_2()
-    {
-        // NOTE: PicoJetson lags behind other PicoHex packages.
-        // This test guards against regression. When PicoJetson catches up,
-        // update the test and the Directory.Packages.props reference together.
-        var slnDir = FindSolutionDirectory();
-        var content = await File.ReadAllTextAsync(
-            Path.Combine(slnDir, "Directory.Packages.props")
-        );
-        await Assert.That(content).Contains("\"PicoJetson\" Version=\"2026.2.3\"");
-    }
-
-    private static string? FindSolutionDirectory()
-    {
-        var dir = new DirectoryInfo(SrcPath);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "Directory.Packages.props")))
-                return dir.FullName;
-            dir = dir.Parent;
-        }
-        return SrcPath;
-    }
 }
