@@ -303,10 +303,23 @@ public sealed class CodingConventionTests
     {
         // NOTE: PicoJetson lags behind other PicoHex packages.
         // This test guards against regression. When PicoJetson catches up,
-        // update the test and the csproj reference together.
+        // update the test and the Directory.Packages.props reference together.
+        var slnDir = FindSolutionDirectory();
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoWeb", "PicoWeb.csproj")
+            Path.Combine(slnDir, "Directory.Packages.props")
         );
         await Assert.That(content).Contains("\"PicoJetson\" Version=\"2026.2.3\"");
+    }
+
+    private static string? FindSolutionDirectory()
+    {
+        var dir = new DirectoryInfo(SrcPath);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "Directory.Packages.props")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+        return SrcPath;
     }
 }

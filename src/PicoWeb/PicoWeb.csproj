@@ -14,10 +14,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoCfg.Abs" Version="2026.6.11" />
-    <PackageReference Include="PicoDI" Version="2026.6.11" />
-    <PackageReference Include="PicoJetson" Version="2026.2.3" />
-    <PackageReference Update="Microsoft.SourceLink.GitHub" Version="10.0.300" />
+    <PackageReference Include="PicoCfg.Abs" />
+    <PackageReference Include="PicoDI" />
+    <PackageReference Include="PicoJetson" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
@@ -26,8 +25,8 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
-    <PackageReference Include="PicoNode" Version="$(Version)" />
-    <PackageReference Include="PicoNode.Web" Version="$(Version)" />
+    <PackageReference Include="PicoNode" />
+    <PackageReference Include="PicoNode.Web" />
   </ItemGroup>
 
   <ItemGroup>

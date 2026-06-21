@@ -10,9 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoCfg" Version="2026.6.11" />
-    <PackageReference Include="PicoCfg.Gen" Version="2026.6.0" />
-    <PackageReference Include="TUnit" Version="1.54.0" />
+    <PackageReference Include="PicoCfg" />
+    <PackageReference Include="PicoCfg.Gen" />
+    <PackageReference Include="TUnit" />
     <ProjectReference Include="..\..\src\PicoNode.Abs\PicoNode.Abs.csproj" />
     <ProjectReference Include="..\..\src\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />

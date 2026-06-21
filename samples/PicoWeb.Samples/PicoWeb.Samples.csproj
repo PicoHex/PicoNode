@@ -32,10 +32,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoCfg" Version="2026.6.11" />
-    <PackageReference Include="PicoDI" Version="2026.6.11" />
-    <PackageReference Include="PicoLog.Abs" Version="2026.6.11" />
-    <PackageReference Include="PicoLog" Version="2026.6.11" />
+    <PackageReference Include="PicoCfg" />
+    <PackageReference Include="PicoDI" />
+    <PackageReference Include="PicoLog.Abs" />
+    <PackageReference Include="PicoLog" />
   </ItemGroup>
 
   <ItemGroup>

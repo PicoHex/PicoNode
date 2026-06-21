@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoBench" Version="2026.2.0" />
+    <PackageReference Include="PicoBench" />
     <ProjectReference Include="..\..\src\PicoNode.Abs\PicoNode.Abs.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Http\PicoNode.Http.csproj" />
     <ProjectReference Include="..\..\src\PicoNode\PicoNode.csproj" />

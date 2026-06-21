@@ -17,6 +17,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoDI" Version="2026.6.11" />
+    <PackageReference Include="PicoDI" />
   </ItemGroup>
 </Project>

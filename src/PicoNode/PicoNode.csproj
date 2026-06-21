@@ -18,9 +18,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoCfg.Abs" Version="2026.6.11" />
-    <PackageReference Include="PicoLog.Abs" Version="2026.6.11" />
-    <PackageReference Update="Microsoft.SourceLink.GitHub" Version="10.0.300" />
+    <PackageReference Include="PicoCfg.Abs" />
+    <PackageReference Include="PicoLog.Abs" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
@@ -28,7 +27,7 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
-    <PackageReference Include="PicoNode.Abs" Version="$(Version)" />
+    <PackageReference Include="PicoNode.Abs" />
   </ItemGroup>
 
   <ItemGroup>
