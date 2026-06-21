@@ -44,6 +44,9 @@ internal static class Http2ConnectionProcessor
             $"[H2] Parsing frames, sendInitialSettings={sendInitialSettings}, bufferLen={buffer.Length}",
             null
         );
+        System.Console.Error.WriteLine(
+            $"[H2-TRACE] sendInit={sendInitialSettings} len={buffer.Length}"
+        );
 
         while (remaining.Length > 0)
         {
@@ -306,6 +309,7 @@ internal static class Http2ConnectionProcessor
         CancellationToken cancellationToken
     )
     {
+        Console.Error.WriteLine($"[H2-TRACE] GOAWAY code={errorCode}");
         var lastStreamId = 0;
         var state = connection.UserState as ConnectionRuntimeState;
         if (state is not null)

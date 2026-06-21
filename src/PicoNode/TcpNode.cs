@@ -390,12 +390,18 @@ public sealed class TcpNode : INode
     private async Task<SslStream?> NegotiateTlsAsync(Socket socket)
     {
         var networkStream = new NetworkStream(socket, ownsSocket: false);
-        var sslStream = new SslStream(networkStream, leaveInnerStreamOpen: false);
+        var traceStream = new TlsTraceStream(networkStream, "SRV");
+        var sslStream = new SslStream(traceStream, leaveInnerStreamOpen: false);
         try
         {
             await sslStream
                 .AuthenticateAsServerAsync(Options.SslOptions!, _cts.Token)
                 .ConfigureAwait(false);
+            Options.Logger?.Log(
+                LogLevel.Debug,
+                $"[TLS] SRV done: {sslStream.SslProtocol} ALPN={sslStream.NegotiatedApplicationProtocol}",
+                null
+            );
             return sslStream;
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
@@ -632,6 +638,77 @@ public sealed class TcpNode : INode
         if (stopException is not null)
         {
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(stopException).Throw();
+        }
+    }
+
+    /// <summary>Diagnostic stream that logs raw bytes at TLS record level.</summary>
+    internal sealed class TlsTraceStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly string _label;
+        private int _rid,
+            _wid;
+
+        public TlsTraceStream(Stream inner, string label)
+        {
+            _inner = inner;
+            _label = label;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => 0;
+        public override long Position
+        {
+            get => 0;
+            set { }
+        }
+
+        public override void Flush() => _inner.Flush();
+
+        public override long Seek(long o, SeekOrigin org) => 0;
+
+        public override void SetLength(long v) { }
+
+        public override int Read(byte[] b, int o, int c) => 0;
+
+        public override void Write(byte[] b, int o, int c) { }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buf,
+            CancellationToken ct = default
+        )
+        {
+            var r = await _inner.ReadAsync(buf, ct);
+            if (r > 0)
+                Console.WriteLine(
+                    "[{0}] TLS← #{1}: {2}B | {3}",
+                    _label,
+                    ++_rid,
+                    r,
+                    BitConverter
+                        .ToString(buf.Span.Slice(0, Math.Min(r, 50)).ToArray())
+                        .Replace('-', ' ')
+                );
+            return r;
+        }
+
+        public override async ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buf,
+            CancellationToken ct = default
+        )
+        {
+            Console.WriteLine(
+                "[{0}] TLS→ #{1}: {2}B | {3}",
+                _label,
+                ++_wid,
+                buf.Length,
+                BitConverter
+                    .ToString(buf.Span.Slice(0, Math.Min(buf.Length, 50)).ToArray())
+                    .Replace('-', ' ')
+            );
+            await _inner.WriteAsync(buf, ct);
         }
     }
 }

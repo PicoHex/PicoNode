@@ -63,8 +63,28 @@ internal static class Http2StreamHandler
         ArraySegment<byte>? payloadData;
         try
         {
+            var headerPayload = frame.Payload;
+
+            // RFC 7540 §6.2: HEADERS with PRIORITY flag has 5 extra bytes
+            // at the start: Exclusive(1b) + StreamDependency(31b) + Weight(8b).
+            // Slice them off before passing to HPACK decompression.
+            if (frame.HasFlag(Http2FrameFlags.Priority))
+            {
+                if (headerPayload.Length < 5)
+                {
+                    await SendRstStreamAsync(
+                        connection,
+                        frame.StreamId,
+                        Http2ErrorCode.FrameSizeError,
+                        ct
+                    );
+                    return false;
+                }
+                headerPayload = headerPayload.Slice(5);
+            }
+
             payloadData = state.AppendHeaderData(
-                frame.Payload,
+                headerPayload,
                 frame.HasFlag(Http2FrameFlags.EndHeaders)
             );
         }

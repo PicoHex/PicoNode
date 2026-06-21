@@ -30,6 +30,7 @@ public static class ShowcaseApp
                 ServerHeader = "PicoWeb.Samples.Showcase",
                 MaxRequestBytes = 256 * 1024,
                 WebSocketMessageHandler = webSocketHandler,
+                Logger = logger,
             }
         );
 

@@ -1179,6 +1179,200 @@ public sealed class HttpConnectionHandlerTests
     }
 
     [Test]
+    public async Task H2_ALPN_processes_full_request_with_huffman_and_browser_headers()
+    {
+        string? actualMethod = null;
+        string? actualPath = null;
+
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = (req, ct) =>
+                {
+                    actualMethod = req.Method;
+                    actualPath = req.Target;
+                    return ValueTask.FromResult(
+                        new HttpResponse
+                        {
+                            StatusCode = 200,
+                            ReasonPhrase = "OK",
+                            Headers =
+                            [
+                                new KeyValuePair<string, string>("content-type", "text/plain"),
+                            ],
+                            Body = "pong"u8.ToArray(),
+                        }
+                    );
+                },
+            }
+        );
+        var connection = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
+        await handler.OnConnectedAsync(connection, CancellationToken.None);
+
+        // Build frames like a real browser
+        var frames = new List<byte>();
+        frames.AddRange(Http2FrameCodec.ClientPreface.ToArray());
+
+        // SETTINGS: Chromium-like settings
+        frames.AddRange(
+            Http2FrameCodec.EncodeFrame(
+                Http2FrameType.Settings,
+                Http2FrameFlags.None,
+                0,
+                [
+                    0x00,
+                    0x01,
+                    0x00,
+                    0x00,
+                    0x20,
+                    0x00, // HEADER_TABLE_SIZE=8192
+                    0x00,
+                    0x03,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x64, // MAX_CONCURRENT_STREAMS=100
+                    0x00,
+                    0x04,
+                    0x00,
+                    0x04,
+                    0x00,
+                    0x00, // INITIAL_WINDOW_SIZE=262144
+                    0x00,
+                    0x06,
+                    0x00,
+                    0x01,
+                    0x00,
+                    0x00,
+                ]
+            ) // MAX_HEADER_LIST_SIZE=65536
+        );
+
+        // WINDOW_UPDATE: connection-level, increment=15663105 (like Chrome)
+        frames.AddRange(
+            Http2FrameCodec.EncodeFrame(
+                Http2FrameType.WindowUpdate,
+                Http2FrameFlags.None,
+                0,
+                [0x00, 0xef, 0x00, 0x01]
+            )
+        );
+
+        // HEADERS with browser-like headers including Huffman encoding
+        var headers = new List<(string, string)>
+        {
+            (":method", "GET"),
+            (":path", "/"),
+            (":authority", "localhost:7004"),
+            (":scheme", "https"),
+            ("sec-ch-ua", "\"Not/A)Brand\";v=\"99\""),
+            ("sec-ch-ua-mobile", "?0"),
+            ("sec-ch-ua-platform", "\"Windows\""),
+            ("upgrade-insecure-requests", "1"),
+            ("user-agent", "Mozilla/5.0 Chrome/999"),
+            ("accept", "text/html"),
+        };
+        var encoder = new HpackEncoder();
+        var headerBlock = encoder.Encode(headers);
+        var flags = Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream;
+        var headersFrame = Http2FrameCodec.EncodeFrame(
+            Http2FrameType.Headers,
+            flags,
+            1,
+            headerBlock
+        );
+        frames.AddRange(headersFrame);
+
+        var buffer = new ReadOnlySequence<byte>([.. frames]);
+        await handler.OnReceivedAsync(connection, buffer, CancellationToken.None);
+
+        await Assert.That(actualMethod).IsEqualTo("GET");
+        await Assert.That(actualPath).IsEqualTo("/");
+        await Assert.That(connection.CloseCount).IsEqualTo(0);
+        // Verify response frames exist
+        await Assert
+            .That(connection.AllSent.Count)
+            .IsGreaterThanOrEqualTo(3)
+            .Because("expected initial SETTINGS + SETTINGS ACK + response HEADERS");
+
+        // The response should NOT contain a GOAWAY frame
+        var lastSent = connection.AllSent[^1];
+        await Assert
+            .That((Http2FrameType)lastSent[3])
+            .IsNotEqualTo(Http2FrameType.GoAway)
+            .Because("server should not send GOAWAY on a valid request");
+    }
+
+    [Test]
+    public async Task H2_ALPN_with_two_concurrent_connections()
+    {
+        string? actualMethod = null;
+        string? actualPath = null;
+
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = (req, ct) =>
+                {
+                    actualMethod = req.Method;
+                    actualPath = req.Target;
+                    return ValueTask.FromResult(
+                        new HttpResponse
+                        {
+                            StatusCode = 200,
+                            ReasonPhrase = "OK",
+                            Headers =
+                            [
+                                new KeyValuePair<string, string>("content-type", "text/plain"),
+                            ],
+                            Body = "pong"u8.ToArray(),
+                        }
+                    );
+                },
+            }
+        );
+        var connection = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
+        await handler.OnConnectedAsync(connection, CancellationToken.None);
+
+        // Build H2 frames: PRI preface + SETTINGS + HEADERS for GET /api/health
+        var frames = new List<byte>();
+        frames.AddRange(Http2FrameCodec.ClientPreface.ToArray());
+
+        // Client SETTINGS
+        frames.AddRange(
+            Http2FrameCodec.EncodeSettings(
+                new Http2Setting(Http2SettingId.MaxConcurrentStreams, 100)
+            )
+        );
+
+        // HEADERS frame: GET /api/health on stream 1, END_HEADERS + END_STREAM
+        var headers = new List<(string, string)>
+        {
+            (":method", "GET"),
+            (":path", "/api/health"),
+            (":authority", "localhost:7004"),
+            (":scheme", "https"),
+        };
+        var headerBlock = new HpackEncoder().Encode(headers);
+        var flags = Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream;
+        var headersFrame = Http2FrameCodec.EncodeFrame(
+            Http2FrameType.Headers,
+            flags,
+            1,
+            headerBlock
+        );
+        frames.AddRange(headersFrame);
+
+        var buffer = new ReadOnlySequence<byte>([.. frames]);
+        await handler.OnReceivedAsync(connection, buffer, CancellationToken.None);
+
+        // Assert HTTP handler was called
+        await Assert.That(actualMethod).IsEqualTo("GET");
+        await Assert.That(actualPath).IsEqualTo("/api/health");
+        await Assert.That(connection.CloseCount).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task OnConnectedAsync_with_h2_ALPN_sets_MaxRequestBodyBytes_from_options()
     {
         var handler = new HttpConnectionHandler(

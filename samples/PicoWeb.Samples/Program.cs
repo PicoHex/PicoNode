@@ -124,14 +124,10 @@ static X509Certificate2 CreateFreshCert()
         System.Security.Cryptography.HashAlgorithmName.SHA256,
         System.Security.Cryptography.RSASignaturePadding.Pkcs1
     );
-    req.CertificateExtensions.Add(
-        new System.Security.Cryptography.X509Certificates.X509BasicConstraintsExtension(
-            certificateAuthority: false,
-            hasPathLengthConstraint: false,
-            pathLengthConstraint: 0,
-            critical: true
-        )
-    );
+    // Do NOT add BasicConstraints extension.
+    // A self-signed cert placed in the Root store with CA:FALSE is rejected by
+    // Chromium-based browsers. Omitting BasicConstraints entirely lets the
+    // browser accept it as a trust anchor (per RFC 5280 §4.2.1.9).
     req.CertificateExtensions.Add(
         new System.Security.Cryptography.X509Certificates.X509KeyUsageExtension(
             System.Security.Cryptography.X509Certificates.X509KeyUsageFlags.DigitalSignature
