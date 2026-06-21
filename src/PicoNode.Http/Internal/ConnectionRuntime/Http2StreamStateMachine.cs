@@ -59,16 +59,17 @@ internal sealed class Http2StreamStateMachine
                 {
                     Trigger.Headers => true, // trailers
                     Trigger.Data => true,
-                    Trigger.EndStream => TransitionTo(StreamState.HalfClosedLocal),
+                    // RFC 7540 §5.1: EndStream from remote → HalfClosedRemote
+                    Trigger.EndStream => TransitionTo(StreamState.HalfClosedRemote),
                     _ => false,
                 };
 
             case StreamState.HalfClosedLocal:
-                // We sent END_STREAM — only peer can send more
-                return trigger == Trigger.Data || trigger == Trigger.EndStream; // peer's END_STREAM
+                // We (server) sent END_STREAM — waiting for peer's END_STREAM
+                return trigger == Trigger.Data || trigger == Trigger.EndStream;
 
             case StreamState.HalfClosedRemote:
-                // Peer sent END_STREAM — only we can send more
+                // Peer sent END_STREAM — we can still send response
                 return trigger == Trigger.Headers
                     || trigger == Trigger.Data
                     || trigger == Trigger.EndStream;

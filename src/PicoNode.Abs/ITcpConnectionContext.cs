@@ -26,3 +26,15 @@ public interface ITcpConnectionContext
     /// <summary>ALPN-negotiated protocol, e.g. "h2", "http/1.1". Null when not negotiated.</summary>
     string? NegotiatedProtocol { get; }
 }
+
+/// <summary>Type-safe accessors for <see cref="ITcpConnectionContext.UserState"/>.</summary>
+public static class TcpConnectionContextExtensions
+{
+    /// <summary>Gets the user state cast to <typeparamref name="T"/>. Returns null if state is not of that type.</summary>
+    public static T? GetUserState<T>(this ITcpConnectionContext ctx)
+        where T : class => ctx.UserState as T;
+
+    /// <summary>Sets the user state. Prefer this over directly assigning <c>UserState</c> for consistency.</summary>
+    public static void SetUserState<T>(this ITcpConnectionContext ctx, T? state)
+        where T : class => ctx.UserState = state;
+}

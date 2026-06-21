@@ -20,14 +20,15 @@ public sealed class StreamStateMachineTests
     }
 
     [Test]
-    public async Task Open_transitions_to_half_closed_on_end_stream()
+    public async Task Open_transitions_to_half_closed_remote_on_end_stream_from_client()
     {
         var sm = new Http2StreamStateMachine(1);
         sm.TryTransition(Http2StreamStateMachine.Trigger.Headers, out _);
         sm.TryTransition(Http2StreamStateMachine.Trigger.EndStream, out _);
+        // RFC 7540 §5.1: EndStream from REMOTE → HalfClosed(Remote)
         await Assert
             .That(sm.CurrentState)
-            .IsEqualTo(Http2StreamStateMachine.StreamState.HalfClosedLocal);
+            .IsEqualTo(Http2StreamStateMachine.StreamState.HalfClosedRemote);
     }
 
     [Test]
