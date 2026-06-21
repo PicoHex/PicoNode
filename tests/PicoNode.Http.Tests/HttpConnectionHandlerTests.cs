@@ -1501,4 +1501,116 @@ public sealed class HttpConnectionHandlerTests
         // doesn't crash, which proves the 'P' guard works.)
         await Assert.That(true).IsTrue();
     }
+
+    [Test]
+    public async Task H2_headers_with_priority_flag_does_not_trigger_goaway()
+    {
+        // RED: Browsers send HEADERS with PRIORITY flag (0x20), adding 5 bytes
+        // of {Exclusive, StreamDependency, Weight} before HPACK data.
+        // The server must skip these bytes before HPACK decoding.
+        string? actualMethod = null;
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = (req, ct) =>
+                {
+                    actualMethod = req.Method;
+                    return ValueTask.FromResult(
+                        new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
+                    );
+                },
+            }
+        );
+        var conn = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
+        await handler.OnConnectedAsync(conn, CancellationToken.None);
+
+        var frames = BuildBrowserFramesWithPriority("/test", priority: true);
+        var buffer = new ReadOnlySequence<byte>([.. frames]);
+        await handler.OnReceivedAsync(conn, buffer, CancellationToken.None);
+
+        await Assert.That(actualMethod).IsEqualTo("GET");
+        await Assert.That(conn.CloseCount).IsEqualTo(0);
+        // No frame should be GOAWAY — HPACK decode must succeed
+        foreach (var sent in conn.AllSent)
+        {
+            await Assert.That((Http2FrameType)sent[3]).IsNotEqualTo(Http2FrameType.GoAway);
+        }
+    }
+
+    [Test]
+    public async Task H2_headers_without_priority_flag_still_works()
+    {
+        // Baseline: without PRIORITY flag the request must still succeed
+        string? actualPath = null;
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = (req, ct) =>
+                {
+                    actualPath = req.Target;
+                    return ValueTask.FromResult(
+                        new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
+                    );
+                },
+            }
+        );
+        var conn = new RecordingConnectionContext { NegotiatedProtocol = "h2" };
+        await handler.OnConnectedAsync(conn, CancellationToken.None);
+
+        var frames = BuildBrowserFramesWithPriority("/plain", priority: false);
+        var buffer = new ReadOnlySequence<byte>([.. frames]);
+        await handler.OnReceivedAsync(conn, buffer, CancellationToken.None);
+
+        await Assert.That(actualPath).IsEqualTo("/plain");
+        await Assert.That(conn.CloseCount).IsEqualTo(0);
+    }
+
+    private static List<byte> BuildBrowserFramesWithPriority(string path, bool priority)
+    {
+        var frames = new List<byte>();
+        frames.AddRange(Http2FrameCodec.ClientPreface.ToArray());
+        frames.AddRange(
+            Http2FrameCodec.EncodeSettings(
+                new Http2Setting(Http2SettingId.MaxConcurrentStreams, 100)
+            )
+        );
+        var headers = new List<(string, string)>
+        {
+            (":method", "GET"),
+            (":path", path),
+            (":authority", "localhost"),
+            (":scheme", "https"),
+        };
+        var headerBlock = new HpackEncoder().Encode(headers);
+
+        if (priority)
+        {
+            // 5-byte priority info before HPACK data
+            var payload = new byte[5 + headerBlock.Length];
+            payload[4] = 16; // Weight=16
+            headerBlock.CopyTo(payload.AsSpan(5));
+            frames.AddRange(
+                Http2FrameCodec.EncodeFrame(
+                    Http2FrameType.Headers,
+                    Http2FrameFlags.EndHeaders
+                        | Http2FrameFlags.EndStream
+                        | Http2FrameFlags.Priority,
+                    1,
+                    payload
+                )
+            );
+        }
+        else
+        {
+            frames.AddRange(
+                Http2FrameCodec.EncodeFrame(
+                    Http2FrameType.Headers,
+                    Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+                    1,
+                    headerBlock
+                )
+            );
+        }
+        return frames;
+    }
 }
