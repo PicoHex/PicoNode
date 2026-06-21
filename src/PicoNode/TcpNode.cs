@@ -1,6 +1,6 @@
 namespace PicoNode;
 
-public sealed class TcpNode : INode, IAsyncDisposable
+public sealed class TcpNode : INode
 {
     private const string OperationStart = "tcp.start";
     private const string OperationStop = "tcp.stop.listener";

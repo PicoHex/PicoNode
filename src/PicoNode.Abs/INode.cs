@@ -1,7 +1,7 @@
 ﻿namespace PicoNode.Abs;
 
 /// <summary>Represents a transport node (TCP or UDP) with lifecycle management.</summary>
-public interface INode
+public interface INode : IAsyncDisposable
 {
     /// <summary>Gets the local endpoint this node is bound to.</summary>
     EndPoint LocalEndPoint { get; }

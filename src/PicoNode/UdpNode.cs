@@ -1,6 +1,6 @@
 namespace PicoNode;
 
-public sealed class UdpNode : INode, IAsyncDisposable
+public sealed class UdpNode : INode
 {
     private const string OperationStart = "udp.start";
     private const string OperationStop = "udp.stop.socket";
