@@ -18,9 +18,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoDI.Abs" Version="2026.6.10" />
-    <PackageReference Include="PicoLog.Abs" Version="2026.6.10" />
-    <PackageReference Include="PicoCfg.Abs" Version="2026.6.10" />
+    <PackageReference Include="PicoDI.Abs" Version="2026.6.11" />
+    <PackageReference Include="PicoLog.Abs" Version="2026.6.11" />
+    <PackageReference Include="PicoCfg.Abs" Version="2026.6.11" />
     <PackageReference Update="Microsoft.SourceLink.GitHub" Version="10.0.300" />
   </ItemGroup>
 

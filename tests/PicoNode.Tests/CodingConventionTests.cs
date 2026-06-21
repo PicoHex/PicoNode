@@ -301,7 +301,7 @@ public sealed class CodingConventionTests
     [Test]
     public async Task PicoJetson_version_is_at_least_2026_2()
     {
-        // NOTE: PicoJetson lags behind other PicoHex packages (2026.6.10).
+        // NOTE: PicoJetson lags behind other PicoHex packages.
         // This test guards against regression. When PicoJetson catches up,
         // update the test and the csproj reference together.
         var content = await File.ReadAllTextAsync(
