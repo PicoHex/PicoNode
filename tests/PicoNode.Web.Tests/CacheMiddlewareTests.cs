@@ -114,6 +114,77 @@ public sealed class CacheMiddlewareTests
         await Assert.That(GetHeader(response, "Cache-Control")).IsEqualTo("public, max-age=3600");
     }
 
+    [Test]
+    public async Task Evicts_oldest_entry_when_cache_exceeds_capacity()
+    {
+        // Arrange: cache capacity = 3
+        var middleware = new CacheMiddleware(TimeSpan.FromHours(1), maxCacheSize: 3);
+        var body = "x"u8.ToArray();
+        var etag = CacheMiddleware.GenerateETag(body);
+
+        // Fill cache with 3 entries
+        await middleware.InvokeAsync(
+            CreateContext("GET", "/a", null),
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = body }),
+            CancellationToken.None
+        );
+        await middleware.InvokeAsync(
+            CreateContext("GET", "/b", null),
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = body }),
+            CancellationToken.None
+        );
+        await middleware.InvokeAsync(
+            CreateContext("GET", "/c", null),
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = body }),
+            CancellationToken.None
+        );
+
+        // Act: add a 4th entry — triggers eviction of oldest
+        await middleware.InvokeAsync(
+            CreateContext("GET", "/d", null),
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = body }),
+            CancellationToken.None
+        );
+
+        // Assert:
+        // "/b" and "/c" should still be cached → 304
+        var responseB = await middleware.InvokeAsync(
+            CreateContext("GET", "/b", etag),
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = body }),
+            CancellationToken.None
+        );
+        await Assert.That(responseB.StatusCode).IsEqualTo(304);
+
+        var responseC = await middleware.InvokeAsync(
+            CreateContext("GET", "/c", etag),
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = body }),
+            CancellationToken.None
+        );
+        await Assert.That(responseC.StatusCode).IsEqualTo(304);
+
+        // "/d" should also be cached (newest) → 304
+        var responseD = await middleware.InvokeAsync(
+            CreateContext("GET", "/d", etag),
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = body }),
+            CancellationToken.None
+        );
+        await Assert.That(responseD.StatusCode).IsEqualTo(304);
+
+        // "/a" (oldest) should be evicted → 200 (handler called)
+        var handlerCalled = false;
+        var responseA = await middleware.InvokeAsync(
+            CreateContext("GET", "/a", etag),
+            (_, _) =>
+            {
+                handlerCalled = true;
+                return ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = body });
+            },
+            CancellationToken.None
+        );
+        await Assert.That(responseA.StatusCode).IsEqualTo(200);
+        await Assert.That(handlerCalled).IsTrue();
+    }
+
     private static WebContext CreateContext(string method, string path, string? ifNoneMatch)
     {
         var headers = new List<KeyValuePair<string, string>>();

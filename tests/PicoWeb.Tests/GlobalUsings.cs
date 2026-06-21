@@ -4,6 +4,7 @@ global using System.Text;
 global using Controllers.Gen;
 global using Microsoft.CodeAnalysis;
 global using Microsoft.CodeAnalysis.CSharp;
+global using PicoDI.Abs;
 global using PicoNode.Abs;
 global using PicoNode.Web;
 global using PicoWeb.Gen;

@@ -12,6 +12,7 @@ public sealed class CacheMiddleware
 
     // Instance-level cache so different WebApp instances don't interfere.
     private readonly ConcurrentDictionary<string, CachedEntry> _cache = new(StringComparer.Ordinal);
+    private readonly ConcurrentQueue<string> _insertionOrder = new();
     private readonly int _maxCacheSize;
     private readonly int _maxBodySize;
     private readonly TimeSpan _maxAge;
@@ -31,7 +32,11 @@ public sealed class CacheMiddleware
     }
 
     /// <summary>For testing: clears all cached entries.</summary>
-    internal void Clear() => _cache.Clear();
+    internal void Clear()
+    {
+        _cache.Clear();
+        while (_insertionOrder.TryDequeue(out _)) { }
+    }
 
     public async ValueTask<HttpResponse> InvokeAsync(
         WebContext context,
@@ -93,13 +98,17 @@ public sealed class CacheMiddleware
             var bodyData = response.Body.ToArray();
             var etagValue = GenerateETag(bodyData);
 
-            // Evict when over capacity
-            if (_cache.Count >= _maxCacheSize)
+            // Evict oldest entry when over capacity (approximate LRU)
+            while (_cache.Count >= _maxCacheSize)
             {
-                _cache.Clear();
+                if (_insertionOrder.TryDequeue(out var oldestKey))
+                    _cache.TryRemove(oldestKey, out _);
+                else
+                    break;
             }
 
             _cache[path] = new CachedEntry(etagValue, bodyData);
+            _insertionOrder.Enqueue(path);
 
             AddHeaderIfMissing(response.Headers, "ETag", etagValue);
             AddHeaderIfMissing(

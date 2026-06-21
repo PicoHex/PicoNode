@@ -2,9 +2,23 @@ namespace PicoWeb;
 
 public sealed class WebApiBuilder
 {
-    private readonly SvcContainer _container = new();
+    private readonly ISvcContainer _container;
+    private readonly SvcContainer? _ownedContainer;
     private WebAppOptions _options = new();
     private JsonOptions? _jsonOptions;
+
+    /// <summary>Creates a builder with a default DI container.</summary>
+    public WebApiBuilder()
+    {
+        _ownedContainer = new SvcContainer();
+        _container = _ownedContainer;
+    }
+
+    /// <summary>Creates a builder with a pre-configured DI container for advanced scenarios.</summary>
+    public WebApiBuilder(ISvcContainer container)
+    {
+        _container = container ?? throw new ArgumentNullException(nameof(container));
+    }
 
     public WebApiBuilder ConfigureJson(Action<JsonOptions> configure)
     {
@@ -22,27 +36,40 @@ public sealed class WebApiBuilder
     public WebApiBuilder RegisterSingleton<TService, TImpl>()
         where TImpl : TService
     {
-        _container.RegisterSingleton(typeof(TService), typeof(TImpl));
+        if (_ownedContainer is null)
+            throw new InvalidOperationException(
+                "Cannot register services on an externally-provided DI container. "
+                    + "Use the default constructor or register services directly on your container."
+            );
+        _ownedContainer.RegisterSingleton(typeof(TService), typeof(TImpl));
         return this;
     }
 
     public WebApiBuilder RegisterScoped<TService, TImpl>()
         where TImpl : TService
     {
-        _container.RegisterScoped(typeof(TService), typeof(TImpl));
+        if (_ownedContainer is null)
+            throw new InvalidOperationException(
+                "Cannot register services on an externally-provided DI container."
+            );
+        _ownedContainer.RegisterScoped(typeof(TService), typeof(TImpl));
         return this;
     }
 
     public WebApiBuilder RegisterTransient<TService, TImpl>()
         where TImpl : TService
     {
-        _container.RegisterTransient(typeof(TService), typeof(TImpl));
+        if (_ownedContainer is null)
+            throw new InvalidOperationException(
+                "Cannot register services on an externally-provided DI container."
+            );
+        _ownedContainer.RegisterTransient(typeof(TService), typeof(TImpl));
         return this;
     }
 
     public WebApiApp Build()
     {
-        _container.Build();
+        _ownedContainer?.Build();
         if (_jsonOptions is not null)
             AppSerializationOptions.Default = _jsonOptions;
 

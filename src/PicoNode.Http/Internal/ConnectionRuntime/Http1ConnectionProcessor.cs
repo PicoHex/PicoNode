@@ -323,25 +323,58 @@ internal static class Http1ConnectionProcessor
         return consumed;
     }
 
-    private static byte[] EncodeMinimalHpack(string method, string path)
+    internal static byte[] EncodeMinimalHpack(string method, string path)
     {
         // Build minimal HPACK: :method + :path
+        // Uses proper HPACK integer encoding (RFC 7541 §5.1) and
+        // correct string literal format with length prefix.
         var result = new List<byte>();
-        // :method via static table (index 2 = GET)
+
+        // :method via static table (index 2 = GET, index 3 = POST)
         if (method.Equals("GET", StringComparison.Ordinal))
             result.Add(0x82);
         else if (method.Equals("POST", StringComparison.Ordinal))
             result.Add(0x83);
         else
         {
-            result.AddRange([0x00, .. Encoding.ASCII.GetBytes(":method")]);
-            result.AddRange(Encoding.ASCII.GetBytes(method));
+            // Literal without indexing, new name (prefix 0000)
+            result.Add(0x00);
+            EncodeHpackStringLiteral(result, ":method");
+            EncodeHpackStringLiteral(result, method);
         }
-        // :path as literal
-        var pathBytes = Encoding.ASCII.GetBytes(path);
-        result.Add((byte)pathBytes.Length);
-        result.AddRange(pathBytes);
+
+        // :path via static table index 4 = literal with indexing (prefix 0100)
+        result.Add(0x44);
+        EncodeHpackStringLiteral(result, path);
+
         return result.ToArray();
+    }
+
+    /// <summary>Encodes a string literal in HPACK format: Huffman-flag (0) + length in variable-length integer + raw bytes.</summary>
+    private static void EncodeHpackStringLiteral(List<byte> output, string value)
+    {
+        var bytes = Encoding.ASCII.GetBytes(value);
+        var length = bytes.Length;
+
+        // Non-Huffman string: bit 7 = 0, length in 7-bit prefix + continuation
+        int prefixMax = (1 << 7) - 1; // 127
+        if (length <= prefixMax)
+        {
+            output.Add((byte)length);
+        }
+        else
+        {
+            output.Add((byte)prefixMax);
+            var remaining = length - prefixMax;
+            while (remaining >= 128)
+            {
+                output.Add((byte)((remaining & 0x7F) | 0x80));
+                remaining >>= 7;
+            }
+            output.Add((byte)remaining);
+        }
+
+        output.AddRange(bytes);
     }
 
     private static async ValueTask<SequencePosition> HandleProtocolErrorAsync(

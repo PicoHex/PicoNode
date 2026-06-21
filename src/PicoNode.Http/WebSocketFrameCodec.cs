@@ -152,7 +152,8 @@ public static class WebSocketFrameCodec
                 destination[pos + i] ^= destination[maskStart + (i % 4)];
         }
 
-        return destination.Length;
+        pos += payload.Length;
+        return pos;
     }
 
     public static byte[] EncodeFrame(
