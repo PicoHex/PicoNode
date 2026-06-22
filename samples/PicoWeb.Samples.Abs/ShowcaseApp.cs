@@ -37,7 +37,10 @@ public static class ShowcaseApp
         var compression = new CompressionMiddleware(minimumBodySize: 256);
         var staticFiles = new StaticFileMiddleware(staticRoot);
 
-        // Request logging middleware — outermost in the pipeline
+        // Session middleware — injects ISession into WebContext
+        app.Use(SessionMiddleware.Create());
+
+        // Request logging middleware — outermost in the pipeline (but inside session)
         if (logger is not null)
         {
             app.Use(
@@ -226,6 +229,60 @@ public static class ShowcaseApp
             }
         );
 
+        // Session demo endpoints
+        app.MapGet(
+            "/api/session/count",
+            static (WebContext ctx, CancellationToken _) =>
+            {
+                var session = ctx.Session;
+                if (session is null)
+                {
+                    return ValueTask.FromResult(
+                        WebResults.Json(503, """{"error":"session-unavailable"}""", "Service Unavailable"));
+                }
+
+                var count = session.GetInt32("counter") + 1;
+                session.SetInt32("counter", count);
+
+                var json = $$"""{"counter":{{count}},"sessionId":"{{session.Id}}"}""";
+                return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
+            }
+        );
+
+        app.MapGet(
+            "/api/session/reset",
+            static (WebContext ctx, CancellationToken _) =>
+            {
+                var session = ctx.Session;
+                if (session is null)
+                {
+                    return ValueTask.FromResult(
+                        WebResults.Json(503, """{"error":"session-unavailable"}""", "Service Unavailable"));
+                }
+
+                session.Clear();
+                return ValueTask.FromResult(
+                    WebResults.Json(200, """{"cleared":true}""", "OK"));
+            }
+        );
+
+        app.MapGet(
+            "/api/session/info",
+            static (WebContext ctx, CancellationToken _) =>
+            {
+                var session = ctx.Session;
+                if (session is null)
+                {
+                    return ValueTask.FromResult(
+                        WebResults.Json(503, """{"error":"session-unavailable"}""", "Service Unavailable"));
+                }
+
+                var keys = string.Join(", ", session.Keys.Select(k => $"\"{EscapeJson(k)}\""));
+                var json = $$"""{"id":"{{session.Id}}","isNew":{{JsonBool(session.IsNew)}},"isDirty":{{JsonBool(session.IsDirty)}},"keys":[{{keys}}]}""";
+                return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
+            }
+        );
+
         app.MapFallback(
             (WebContext context, CancellationToken _) =>
                 ValueTask.FromResult(
@@ -397,6 +454,8 @@ public static class ShowcaseApp
         builder.Append('}');
         return builder.ToString();
     }
+
+    private static string JsonBool(bool value) => value ? "true" : "false";
 
     private static string EscapeJson(string value)
     {

@@ -8,4 +8,5 @@ global using PicoDI.Abs;
 global using PicoJetson;
 global using PicoNode.Http;
 global using PicoNode.Web;
+global using PicoNode.Web.Session.Abs;
 global using PicoWeb;

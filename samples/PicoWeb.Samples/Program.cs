@@ -2,6 +2,17 @@ using PicoLog;
 using PicoLog.Abs;
 
 var container = new SvcContainer();
+
+// Session store
+container.RegisterSingleton(typeof(ISessionStore), typeof(InMemorySessionStore));
+container.Register(SvcDescriptor.FromInstance(
+    typeof(SessionOptions),
+    new SessionOptions
+    {
+        IdleTimeout = TimeSpan.FromMinutes(30),
+        CleanupInterval = TimeSpan.FromMinutes(5),
+    }));
+
 container.RegisterScoped<PicoWeb.Samples.Controllers.UsersController>();
 container.RegisterScoped<PicoWeb.Samples.Controllers.ProductsController>();
 container.RegisterScoped<PicoWeb.Samples.Controllers.PostsController>();
