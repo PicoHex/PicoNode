@@ -110,10 +110,9 @@ public sealed class SessionShowcaseTests
     public async Task ShowcaseApp_builds_with_session_store_in_di()
     {
         var container = new SvcContainer();
-        container.Register(SvcDescriptor.FromInstance(
-            typeof(ISessionStore), new InMemorySessionStore(DefaultOptions)));
-        container.Register(SvcDescriptor.FromInstance(
-            typeof(SessionOptions), DefaultOptions));
+        container.RegisterSingle(typeof(SessionOptions), DefaultOptions);
+        container.RegisterSingleton<ISessionStore>(scope =>
+            new InMemorySessionStore(scope.GetService<SessionOptions>()));
         container.Build();
 
         // Create wwwroot for StaticFileMiddleware
