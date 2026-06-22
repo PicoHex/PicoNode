@@ -44,6 +44,11 @@ public sealed class WebContext
 
     public ISession? Session { get; internal set; }
 
+    private Dictionary<string, object?>? _items;
+
+    public IDictionary<string, object?> Items
+        => _items ??= new Dictionary<string, object?>();
+
     public static WebContext Create(HttpRequest request)
     {
         return new WebContext(request, request.Path.AsMemory(), request.QueryString);
