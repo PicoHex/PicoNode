@@ -19,6 +19,7 @@
     <PackageVersion Include="PicoNode" Version="$(Version)" />
     <PackageVersion Include="PicoNode.Abs" Version="$(Version)" />
     <PackageVersion Include="PicoNode.Http" Version="$(Version)" />
+    <PackageVersion Include="PicoNode.Web.Session.Abs" Version="$(Version)" />
     <PackageVersion Include="PicoNode.Web" Version="$(Version)" />
 
     <!-- .NET / Roslyn infrastructure -->

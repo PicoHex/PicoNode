@@ -9,6 +9,7 @@
   <Folder Name="/src/">
     <File Path="src\README.md" />
     <Project Path="src/PicoNode.Abs/PicoNode.Abs.csproj" />
+    <Project Path="src/PicoNode.Web.Session.Abs/PicoNode.Web.Session.Abs.csproj" />
     <Project Path="src/PicoNode.Http/PicoNode.Http.csproj" />
     <Project Path="src/PicoNode.Web/PicoNode.Web.csproj" />
     <Project Path="src/PicoNode/PicoNode.csproj" />
