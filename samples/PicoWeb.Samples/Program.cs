@@ -49,35 +49,39 @@ var app = PicoWeb.Samples.Abs.ShowcaseApp.Create(
 );
 EndpointRegistrar.RegisterAll(app);
 
-// Use --http to force plain HTTP, --fresh-cert to create a new runtime cert
-var useHttp = args.Contains("--http");
+// Use --https to enable HTTPS with a dev certificate
+// By default the sample runs on HTTP for simplicity.
+// HTTPS requires a trusted dev certificate:  dotnet dev-certs https --trust
+var useHttps = args.Contains("--https");
 var useFreshCert = args.Contains("--fresh-cert");
-
-// Try to load ASP.NET Core dev cert for HTTPS (enables HTTP/2 via ALPN)
-var cert = useHttp ? null : (useFreshCert ? CreateFreshCert() : LoadDevCert());
 var port = 7004;
 var scheme = "http";
 SslServerAuthenticationOptions? sslOptions = null;
 
-if (cert is not null)
+if (useHttps)
 {
-    sslOptions = new()
+    var cert = useFreshCert ? CreateFreshCert() : LoadDevCert();
+    if (cert is not null)
     {
-        ServerCertificate = cert,
-        EnabledSslProtocols =
-            System.Security.Authentication.SslProtocols.Tls12
-            | System.Security.Authentication.SslProtocols.Tls13,
-        ApplicationProtocols = [SslApplicationProtocol.Http2, SslApplicationProtocol.Http11],
-    };
-    scheme = "https";
-    Console.Error.WriteLine(
-        $"Using {(useFreshCert ? "fresh runtime" : "dev")} certificate for HTTPS"
-    );
-}
-else
-{
-    var hint = useHttp ? "via --http" : "To enable HTTPS/HTTP2:  dotnet dev-certs https --trust";
-    Console.Error.WriteLine($"No certificate found — using HTTP ({hint})");
+        sslOptions = new()
+        {
+            ServerCertificate = cert,
+            EnabledSslProtocols =
+                System.Security.Authentication.SslProtocols.Tls12
+                | System.Security.Authentication.SslProtocols.Tls13,
+            ApplicationProtocols = [SslApplicationProtocol.Http2, SslApplicationProtocol.Http11],
+        };
+        scheme = "https";
+        Console.Error.WriteLine(
+            $"Using {(useFreshCert ? "fresh runtime" : "dev")} certificate for HTTPS"
+        );
+    }
+    else
+    {
+        Console.Error.WriteLine(
+            "No valid HTTPS certificate found. Run:  dotnet dev-certs https --trust");
+        Console.Error.WriteLine("Falling back to HTTP.");
+    }
 }
 
 var server = new WebServer(
