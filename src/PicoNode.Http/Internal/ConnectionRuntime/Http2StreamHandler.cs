@@ -252,8 +252,10 @@ internal static class Http2StreamHandler
             responseHeaders.Add((header.Key, header.Value));
         }
 
-        // Encode response headers as HPACK block and send HEADERS frame in one allocation
-        var encodedHeaders = EncodeResponseHeadersHpack(connection, responseHeaders);
+        // Encode response headers as HPACK block in a temporary buffer,
+        // then write HEADERS frame using a single pooled buffer
+        var headerWriter = new ArrayBufferWriter<byte>();
+        EncodeResponseHeadersHpack(connection, responseHeaders, headerWriter);
         var headersFlags = Http2FrameFlags.EndHeaders;
 
         if (response.Body.Length == 0 && response.BodyStream is null)
@@ -263,21 +265,26 @@ internal static class Http2StreamHandler
                 connection,
                 frame.StreamId,
                 headersFlags,
-                encodedHeaders,
+                headerWriter.WrittenMemory,
                 ct
             );
             return false;
         }
 
-        // BodyStream (streaming) �?reuse SendResponseAsync logic
         if (response.BodyStream is not null)
         {
             await SendResponseAsync(connection, state, response, frame.StreamId, null, ct);
             return false;
         }
 
-        // Has body: send HEADERS frame first (no END_STREAM), then DATA frame
-        await WriteHeadersFrameAsync(connection, frame.StreamId, headersFlags, encodedHeaders, ct);
+        // Has body: send HEADERS frame first, then DATA
+        await WriteHeadersFrameAsync(
+            connection,
+            frame.StreamId,
+            headersFlags,
+            headerWriter.WrittenMemory,
+            ct
+        );
 
         // Send DATA frame(s) with body, chunked by max frame size
         {
@@ -307,14 +314,15 @@ internal static class Http2StreamHandler
 
     // ── HPACK response encoder (uses shared HpackEncoder with independent dynamic table) ──
 
-    private static byte[] EncodeResponseHeadersHpack(
+    private static void EncodeResponseHeadersHpack(
         ITcpConnectionContext connection,
-        List<(string Name, string Value)> headers
+        List<(string Name, string Value)> headers,
+        IBufferWriter<byte> writer
     )
     {
         var state = connection.UserState as ConnectionRuntimeState;
         var encoder = state?.ResponseHpackEncoder ?? new HpackEncoder();
-        return encoder.Encode(headers);
+        encoder.Encode(writer, headers);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -343,12 +351,13 @@ internal static class Http2StreamHandler
         // Send 200 response to complete the extended CONNECT handshake
         var responseHeaders = new List<(string, string)> { (":status", "200") };
 
-        var encodedHeaders = EncodeResponseHeadersHpack(connection, responseHeaders);
+        var headerWriter = new ArrayBufferWriter<byte>();
+        EncodeResponseHeadersHpack(connection, responseHeaders, headerWriter);
         await WriteHeadersFrameAsync(
             connection,
             state.StreamId,
             Http2FrameFlags.EndHeaders,
-            encodedHeaders,
+            headerWriter.WrittenMemory,
             ct
         );
 
@@ -774,8 +783,10 @@ internal static class Http2StreamHandler
             responseHeaders.Add((header.Key, header.Value));
         }
 
-        var encodedHeaders = EncodeResponseHeadersHpack(connection, responseHeaders);
+        var headerWriter = new ArrayBufferWriter<byte>();
+        EncodeResponseHeadersHpack(connection, responseHeaders, headerWriter);
         var headersFlags = Http2FrameFlags.EndHeaders;
+        var encodedHeaders = headerWriter.WrittenMemory;
 
         if (response.Body.Length == 0 && response.BodyStream is null)
         {
@@ -967,7 +978,7 @@ internal static class Http2StreamHandler
         ITcpConnectionContext connection,
         int streamId,
         Http2FrameFlags flags,
-        byte[] encodedHeaders,
+        ReadOnlyMemory<byte> encodedHeaders,
         CancellationToken ct
     )
     {
@@ -982,7 +993,7 @@ internal static class Http2StreamHandler
                 flags,
                 streamId
             );
-            encodedHeaders.CopyTo(rented.AsSpan(Http2FrameCodec.FrameHeaderSize));
+            encodedHeaders.Span.CopyTo(rented.AsSpan(Http2FrameCodec.FrameHeaderSize));
             await connection.SendAsync(
                 new ReadOnlySequence<byte>(rented.AsMemory(0, totalSize)),
                 ct
