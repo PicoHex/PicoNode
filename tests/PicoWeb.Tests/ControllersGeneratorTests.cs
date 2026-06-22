@@ -333,6 +333,29 @@ public sealed class ControllersGeneratorTests
         await Assert.That(result).DoesNotContain("int id");
     }
 
+    [Test]
+    public async Task Controller_generates_DI_registration()
+    {
+        var source = """
+            namespace MyApp.Controllers;
+            public class UsersController
+            {
+                public string GetUser(int id) { return "test"; }
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/UsersController.cs");
+
+        // Should generate DI registration with ModuleInitializer
+        await Assert.That(result).Contains("ControllerServiceRegistrations");
+        await Assert.That(result).Contains("SvcDescriptor.Create");
+        await Assert.That(result).Contains("ModuleInitializer");
+        await Assert.That(result).Contains("SvcContainerAutoConfiguration.RegisterConfigurator");
+        await Assert.That(result).Contains("typeof(global::MyApp.Controllers.UsersController)");
+        await Assert.That(result).Contains("new global::MyApp.Controllers.UsersController()");
+        await Assert.That(result).Contains("SvcLifetime.Scoped");
+    }
+
     private static string RunGenerator(string source, string fileName)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(

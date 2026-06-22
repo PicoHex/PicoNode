@@ -13,9 +13,8 @@ container.RegisterSingle(typeof(SessionOptions), sessionOptions);
 container.RegisterSingleton<ISessionStore>(scope =>
     new InMemorySessionStore(scope.GetService<SessionOptions>()));
 
-container.RegisterScoped<PicoWeb.Samples.Controllers.UsersController>();
-container.RegisterScoped<PicoWeb.Samples.Controllers.ProductsController>();
-container.RegisterScoped<PicoWeb.Samples.Controllers.PostsController>();
+// Controllers are auto-registered by Controllers.Gen source generator
+// via [ModuleInitializer] in ControllerServiceRegistrations.g.cs
 container.Build();
 
 // WebSocket echo handler
