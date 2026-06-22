@@ -94,6 +94,7 @@ public static class ShowcaseApp
                 {
                     PicoNode.Http.HttpVersion.Http10 => "HTTP/1.0",
                     PicoNode.Http.HttpVersion.Http11 => "HTTP/1.1",
+                    PicoNode.Http.HttpVersion.Http2 => "HTTP/2",
                     _ => "unknown",
                 };
                 return ValueTask.FromResult(
