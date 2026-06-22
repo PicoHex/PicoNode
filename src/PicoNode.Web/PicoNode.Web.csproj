@@ -25,11 +25,13 @@
 
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
     <ProjectReference Include="..\PicoNode.Abs\PicoNode.Abs.csproj" />
+    <ProjectReference Include="..\PicoNode.Web.Session.Abs\PicoNode.Web.Session.Abs.csproj" />
     <ProjectReference Include="..\PicoNode.Http\PicoNode.Http.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
     <PackageReference Include="PicoNode.Abs" />
+    <PackageReference Include="PicoNode.Web.Session.Abs" />
     <PackageReference Include="PicoNode.Http" />
   </ItemGroup>
 

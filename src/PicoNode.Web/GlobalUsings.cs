@@ -11,3 +11,4 @@ global using PicoNode.Abs;
 global using PicoNode.Http;
 global using PicoNode.Http.Internal;
 global using PicoNode.Web.Internal;
+global using PicoNode.Web.Session.Abs;
