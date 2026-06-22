@@ -4,6 +4,11 @@
 
 **Goal:** Add typed event methods (`WriteEventAsync`, `WriteErrorAsync`) to the existing `SseConnection` class.
 
+**Known Limitations (non-blocking):**
+- Unicode line separators (`\u2028`, `\u2029`) in the `data` parameter are not normalized.
+  These characters can appear in JSON-stringified content and would break SSE protocol framing.
+  Not a concern for AI Agent text-delta streaming (plain text only). Tracked for future enhancement.
+
 **Architecture:** Two new methods on `SseConnection.cs` with input validation, `\r\n` normalization, multi-line data splitting, and JSON escaping for error messages. No new files.
 
 **Tech Stack:** .NET 10, `TUnit` for tests, `PicoNode.Web` library
