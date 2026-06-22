@@ -328,6 +328,7 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
     private readonly int _maxTokens;
     private readonly int _refillRate;
     private readonly double _refillIntervalTicks;
+    private readonly double _cleanupIntervalTicks;
     private int _disposed;
 
     public InMemoryRateLimitStore(RateLimitOptions options)
@@ -340,8 +341,9 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
         _maxTokens = options.MaxTokens;
         _refillRate = options.RefillRate;
         _refillIntervalTicks = options.RefillInterval.Ticks;
+        _cleanupIntervalTicks = options.CleanupInterval.Ticks;
 
-        var interval = TimeSpan.FromTicks(_refillIntervalTicks) < options.CleanupInterval
+        var interval = TimeSpan.FromTicks((long)_refillIntervalTicks) < options.CleanupInterval
             ? options.RefillInterval
             : options.CleanupInterval;
 
@@ -427,7 +429,7 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
     private void CleanupExpired()
     {
         var cutoff = Stopwatch.GetTimestamp()
-            - _refillIntervalTicks * _maxTokens * 10; // 10x max refill time
+            - (long)_cleanupIntervalTicks * 2;
 
         foreach (var (id, bucket) in _buckets)
         {
