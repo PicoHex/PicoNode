@@ -13,6 +13,7 @@
     <PackageReference Include="TUnit" />
     <ProjectReference Include="..\..\src\PicoNode.Abs\PicoNode.Abs.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Http\PicoNode.Http.csproj" />
+    <ProjectReference Include="..\..\src\PicoNode.Web.Session.Abs\PicoNode.Web.Session.Abs.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />
   </ItemGroup>
 </Project>
