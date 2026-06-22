@@ -6,4 +6,5 @@ namespace PicoNode.Web;
 public static class WebContextKeys
 {
     public const string AuthIdentity = "AuthIdentity";
+    public const string RateLimitState = "RateLimitState";
 }
