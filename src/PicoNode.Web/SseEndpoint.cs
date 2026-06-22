@@ -37,6 +37,39 @@ public sealed class SseConnection
         await WriteAsync("data: [DONE]\n\n", ct);
         await _writer.CompleteAsync();
     }
+
+    /// <summary>
+    /// Writes a typed SSE event. Event type must not be null/empty or contain newlines.
+    /// Data is split on newlines and each line prefixed with "data: ".
+    /// </summary>
+    public async Task WriteEventAsync(string eventType, string data, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(eventType))
+            throw new ArgumentException("Event type required", nameof(eventType));
+        if (eventType.Contains('\n'))
+            throw new ArgumentException("Event type must not contain newlines", nameof(eventType));
+
+        data ??= "";
+
+        var sb = new StringBuilder();
+        sb.Append("event: ").Append(eventType).Append('\n');
+
+        var normalized = data.Replace("\r\n", "\n").Replace("\r", "");
+        if (normalized.Length > 0)
+        {
+            foreach (var line in normalized.Split('\n'))
+                sb.Append("data: ").Append(line).Append('\n');
+        }
+        else
+        {
+            sb.Append("data: \n");
+        }
+        sb.Append('\n');
+
+        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+        await _writer.WriteAsync(bytes, ct);
+        await _writer.FlushAsync(ct);
+    }
 }
 
 /// <summary>
