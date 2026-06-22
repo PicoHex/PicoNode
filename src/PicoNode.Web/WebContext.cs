@@ -42,6 +42,8 @@ public sealed class WebContext
 
     public ISvcScope Services { get; internal set; } = null!;
 
+    public ISession? Session { get; internal set; }
+
     public static WebContext Create(HttpRequest request)
     {
         return new WebContext(request, request.Path.AsMemory(), request.QueryString);
