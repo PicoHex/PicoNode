@@ -126,7 +126,10 @@ internal static class HttpResponseSerializer
                 header.Key.Equals(HttpHeaderNames.ContentLength, StringComparison.OrdinalIgnoreCase)
             )
                 continue;
-            if (header.Key.Equals(HttpHeaderNames.Connection, StringComparison.OrdinalIgnoreCase))
+            if (
+                closeConnection
+                && header.Key.Equals(HttpHeaderNames.Connection, StringComparison.OrdinalIgnoreCase)
+            )
                 continue;
             if (
                 isChunked
@@ -165,7 +168,7 @@ internal static class HttpResponseSerializer
 
         foreach (var header in response.Headers)
         {
-            if (ShouldSkipApplicationHeader(header.Key, serverHeader))
+            if (ShouldSkipApplicationHeader(header.Key, serverHeader, closeConnection))
             {
                 continue;
             }
@@ -200,9 +203,16 @@ internal static class HttpResponseSerializer
         return digits;
     }
 
-    private static bool ShouldSkipApplicationHeader(string name, string? serverHeader) =>
+    private static bool ShouldSkipApplicationHeader(
+        string name,
+        string? serverHeader,
+        bool closeConnection = false
+    ) =>
         name.Equals(HttpHeaderNames.ContentLength, StringComparison.OrdinalIgnoreCase)
-        || name.Equals(HttpHeaderNames.Connection, StringComparison.OrdinalIgnoreCase)
+        || (
+            closeConnection
+            && name.Equals(HttpHeaderNames.Connection, StringComparison.OrdinalIgnoreCase)
+        )
         || (
             !string.IsNullOrEmpty(serverHeader)
             && name.Equals(HttpHeaderNames.Server, StringComparison.OrdinalIgnoreCase)

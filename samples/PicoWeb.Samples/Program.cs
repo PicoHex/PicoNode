@@ -160,7 +160,11 @@ static X509Certificate2 CreateFreshCert()
     {
         using var store = new X509Store("My", StoreLocation.CurrentUser);
         store.Open(OpenFlags.ReadWrite);
-        var imported = new X509Certificate2(pfxPath, "", X509KeyStorageFlags.DefaultKeySet);
+        var imported = X509CertificateLoader.LoadPkcs12FromFile(
+            pfxPath,
+            "",
+            X509KeyStorageFlags.DefaultKeySet
+        );
         store.Add(imported);
         store.Close();
         Console.Error.WriteLine($"Imported dev cert to CurrentUser\\My: {imported.Subject}");
@@ -170,7 +174,11 @@ static X509Certificate2 CreateFreshCert()
     // Best-effort trust: add to CurrentUser\Root so the browser trusts the self-signed cert.
     try
     {
-        var imported = new X509Certificate2(pfxPath, "", X509KeyStorageFlags.DefaultKeySet);
+        var imported = X509CertificateLoader.LoadPkcs12FromFile(
+            pfxPath,
+            "",
+            X509KeyStorageFlags.DefaultKeySet
+        );
         using var rootStore = new X509Store("Root", StoreLocation.CurrentUser);
         rootStore.Open(OpenFlags.ReadWrite);
         var alreadyTrusted = false;
@@ -193,7 +201,7 @@ static X509Certificate2 CreateFreshCert()
     }
     catch { }
 
-    return new X509Certificate2(pfxPath, "", X509KeyStorageFlags.DefaultKeySet);
+    return X509CertificateLoader.LoadPkcs12FromFile(pfxPath, "", X509KeyStorageFlags.DefaultKeySet);
 }
 
 static X509Certificate2? LoadDevCert()

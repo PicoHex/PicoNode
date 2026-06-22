@@ -28,6 +28,7 @@ public sealed class HttpResponseSerializerTests
             .IsEqualTo(
                 "HTTP/1.1 200 OK\r\n"
                     + "Content-Type: text/plain\r\n"
+                    + "connection: keep-alive\r\n"
                     + "Content-Length: 4\r\n"
                     + "\r\n"
             );
@@ -37,10 +38,35 @@ public sealed class HttpResponseSerializerTests
             .IsEqualTo(
                 "HTTP/1.1 200 OK\r\n"
                     + "Content-Type: text/plain\r\n"
+                    + "connection: keep-alive\r\n"
                     + "Content-Length: 4\r\n"
                     + "\r\n"
                     + "pong"
             );
+    }
+
+    [Test]
+    public async Task Serialize_preserves_connection_upgrade_header_in_101_switching_protocols_response()
+    {
+        var response = new HttpResponse
+        {
+            StatusCode = 101,
+            ReasonPhrase = "Switching Protocols",
+            Headers =
+            [
+                new KeyValuePair<string, string>("Upgrade", "websocket"),
+                new KeyValuePair<string, string>("Connection", "Upgrade"),
+                new KeyValuePair<string, string>(
+                    "Sec-WebSocket-Accept",
+                    "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+                ),
+            ],
+        };
+
+        var serialized = HttpResponseSerializer.Serialize(response);
+
+        var text = GetAsciiString(serialized.ToArray());
+        await Assert.That(text).Contains("Connection: Upgrade");
     }
 
     [Test]

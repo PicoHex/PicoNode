@@ -76,7 +76,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     $('btn-ws-connect')?.addEventListener('click', () => {
         if (ws) { wsOut('Already connected'); return; }
-        ws = new WebSocket('ws://localhost:7004/ws/echo');
+        const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/echo`;
+        ws = new WebSocket(wsUrl);
         ws.onopen = () => { out('ws', 'Connected ✅', ''); $('btn-ws-send').disabled = false; };
         ws.onmessage = (e) => { out('ws', 'Echo received', ''); wsOut('', '← ' + e.data); };
         ws.onerror = () => { out('ws', 'ERROR', 'Connection failed', true); ws = null; $('btn-ws-send').disabled = true; };
