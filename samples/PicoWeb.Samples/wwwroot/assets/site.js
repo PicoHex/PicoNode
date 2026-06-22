@@ -50,6 +50,46 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     fetch('/api/preferences').then(r => r.json()).then(d => { if (d && d.theme) applyTheme(d.theme); }).catch(() => {});
 
+    // ── Session panel ──
+    let sessionId = null;
+    const sessionOut = (meta, data, err) => {
+        const m = $('meta-session'), o = $('out-session');
+        if (!m || !o) return;
+        m.textContent = meta;
+        m.style.backgroundColor = err ? 'var(--accent)' : 'var(--border-color)';
+        o.style.color = err ? 'var(--accent)' : 'var(--fg-code)';
+        o.textContent = typeof data === 'object' ? JSON.stringify(data, null, 2) : (data || '');
+    };
+
+    $('btn-session-count')?.addEventListener('click', async () => {
+        try {
+            sessionOut('FETCHING...', '');
+            const s = performance.now(), r = await fetch('/api/session/count');
+            const d = await r.json();
+            if (d.sessionId) sessionId = d.sessionId;
+            sessionOut(`${r.status} | ${Math.round(performance.now() - s)}ms`, d);
+        } catch (e) { sessionOut('ERROR', e.message, true); }
+    });
+
+    $('btn-session-info')?.addEventListener('click', async () => {
+        try {
+            sessionOut('FETCHING...', '');
+            const s = performance.now(), r = await fetch('/api/session/info');
+            const d = await r.json();
+            if (d.id) sessionId = d.id;
+            sessionOut(`${r.status} | ${Math.round(performance.now() - s)}ms`, d);
+        } catch (e) { sessionOut('ERROR', e.message, true); }
+    });
+
+    $('btn-session-reset')?.addEventListener('click', async () => {
+        try {
+            sessionOut('RESETTING...', '');
+            const s = performance.now(), r = await fetch('/api/session/reset');
+            const d = await r.json();
+            sessionOut(`${r.status} | ${Math.round(performance.now() - s)}ms`, d);
+        } catch (e) { sessionOut('ERROR', e.message, true); }
+    });
+
     // Upload
     const fi = $('file-input'), dz = document.querySelector('.file-input-wrapper'), uf = $('upload-form');
     if (dz && fi && uf) {

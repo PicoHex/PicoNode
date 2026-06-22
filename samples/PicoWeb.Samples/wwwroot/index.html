@@ -84,6 +84,18 @@
 </form>
 <div class="output-container mt-4"><div class="output-meta" id="meta-upload">Waiting...</div><pre class="code-block" id="out-upload"></pre></div></div></section>
 
+<section class="panel"><div class="panel-header"><h2>Session</h2><span class="badge">Cookie-based server session</span></div>
+<div class="panel-body">
+<p><code>GET /api/session/count</code> · <code>GET /api/session/info</code> · <code>GET /api/session/reset</code></p>
+<p style="font-size:0.85rem">Cookie-based server-side session via <code>SessionMiddleware</code>.<br>Count persists across requests. Reset clears it.</p>
+<div class="btn-group">
+<button class="btn primary" id="btn-session-count">Count</button>
+<button class="btn secondary" id="btn-session-info">Info</button>
+<button class="btn" id="btn-session-reset" style="border-color:var(--accent);color:var(--accent)">Reset</button>
+</div>
+<div class="output-container"><div class="output-meta" id="meta-session">Click Count to start</div><pre class="code-block" id="out-session"></pre></div>
+</div></section>
+
 </main>
 <footer class="sys-footer"><div>PicoWeb · Samples</div><div>Open console: <code>curl -i http://localhost:7004/api/info</code></div></footer>
 <script src="/assets/site.js"></script>
