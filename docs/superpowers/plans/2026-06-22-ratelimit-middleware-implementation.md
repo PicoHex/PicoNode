@@ -328,7 +328,7 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
     private readonly int _maxTokens;
     private readonly int _refillRate;
     private readonly double _refillIntervalTicks;
-    private readonly double _cleanupIntervalTicks;
+    private readonly long _cleanupIntervalTicks;
     private int _disposed;
 
     public InMemoryRateLimitStore(RateLimitOptions options)
@@ -343,10 +343,10 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
         _refillIntervalTicks = options.RefillInterval.Ticks;
         _cleanupIntervalTicks = options.CleanupInterval.Ticks;
 
-        var interval = TimeSpan.FromTicks((long)_refillIntervalTicks) < options.CleanupInterval
+        var cleanupInterval = options.CleanupInterval;
+        var interval = options.RefillInterval < cleanupInterval
             ? options.RefillInterval
-            : options.CleanupInterval;
-
+            : cleanupInterval;
         _cleanupTimer = new Timer(
             _ => CleanupExpired(), null, interval, interval);
     }
@@ -358,7 +358,7 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
             Volatile.Read(ref _disposed) != 0, this);
 
         var bucket = _buckets.GetOrAdd(key, _ => new Bucket());
-        var now = Stopwatch.GetTimestamp();
+        var now = DateTimeOffset.UtcNow.Ticks;
 
         lock (bucket.Lock)
         {
@@ -428,8 +428,7 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
 
     private void CleanupExpired()
     {
-        var cutoff = Stopwatch.GetTimestamp()
-            - (long)_cleanupIntervalTicks * 2;
+        var cutoff = DateTimeOffset.UtcNow.Ticks - _cleanupIntervalTicks * 2;
 
         foreach (var (id, bucket) in _buckets)
         {

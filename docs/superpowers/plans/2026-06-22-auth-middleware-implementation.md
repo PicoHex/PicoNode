@@ -512,8 +512,7 @@ public sealed class AuthMiddleware
 
         return async (context, next, ct) =>
         {
-            if (context.Request.Headers.TryGetValue("Authorization", out var header)
-                && header.Length > 7)
+            if (context.Request.Headers.TryGetValue("Authorization", out var header))
             {
                 var parts = header.Split(' ', 2);
                 if (parts.Length == 2

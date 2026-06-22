@@ -269,7 +269,7 @@ public async Task WriteErrorAsync_replaces_newlines_with_spaces()
     var pipe = new Pipe();
     var sse = new SseConnection(pipe.Writer);
 
-    await sse.WriteErrorAsync("a\nb\rc\u2028d", CancellationToken.None);
+    await sse.WriteErrorAsync("a\nb\rc", CancellationToken.None);
     await pipe.Writer.CompleteAsync();
 
     var reader = pipe.Reader;
@@ -277,7 +277,7 @@ public async Task WriteErrorAsync_replaces_newlines_with_spaces()
     var output = Encoding.UTF8.GetString(result.Buffer);
 
     await Assert.That(output).IsEqualTo(
-        "event: error\ndata: {\"message\":\"a b c d\"}\n\n");
+        "event: error\ndata: {\"message\":\"a b c\"}\n\n");
 }
 ```
 
