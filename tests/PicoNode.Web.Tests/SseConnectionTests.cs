@@ -105,6 +105,57 @@ public sealed class SseConnectionTests
     }
 
     [Test]
+    public async Task WriteErrorAsync_emits_error_event_with_json()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer);
+
+        await sse.WriteErrorAsync("timeout", CancellationToken.None);
+        await pipe.Writer.CompleteAsync();
+
+        var reader = pipe.Reader;
+        var result = await reader.ReadAsync(CancellationToken.None);
+        var output = Encoding.UTF8.GetString(result.Buffer);
+
+        await Assert.That(output).IsEqualTo(
+            "event: error\ndata: {\"message\":\"timeout\"}\n\n");
+    }
+
+    [Test]
+    public async Task WriteErrorAsync_escapes_quotes_in_message()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer);
+
+        await sse.WriteErrorAsync("unknown model \"gpt-5\"", CancellationToken.None);
+        await pipe.Writer.CompleteAsync();
+
+        var reader = pipe.Reader;
+        var result = await reader.ReadAsync(CancellationToken.None);
+        var output = Encoding.UTF8.GetString(result.Buffer);
+
+        await Assert.That(output).IsEqualTo(
+            "event: error\ndata: {\"message\":\"unknown model \\\"gpt-5\\\"\"}\n\n");
+    }
+
+    [Test]
+    public async Task WriteErrorAsync_replaces_newlines_with_spaces()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer);
+
+        await sse.WriteErrorAsync("a\nb\rc", CancellationToken.None);
+        await pipe.Writer.CompleteAsync();
+
+        var reader = pipe.Reader;
+        var result = await reader.ReadAsync(CancellationToken.None);
+        var output = Encoding.UTF8.GetString(result.Buffer);
+
+        await Assert.That(output).IsEqualTo(
+            "event: error\ndata: {\"message\":\"a b c\"}\n\n");
+    }
+
+    [Test]
     public async Task WriteEventAsync_throws_on_event_type_with_newline()
     {
         var pipe = new Pipe();

@@ -70,6 +70,21 @@ public sealed class SseConnection
         await _writer.WriteAsync(bytes, ct);
         await _writer.FlushAsync(ct);
     }
+
+    /// <summary>
+    /// Convenience: writes an error event with JSON payload.
+    /// The message is JSON-escaped and newlines are replaced with spaces.
+    /// </summary>
+    public Task WriteErrorAsync(string message, CancellationToken ct)
+    {
+        var escaped = message
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\r\n", " ")
+            .Replace("\r", " ")
+            .Replace("\n", " ");
+        return WriteEventAsync("error", $$"""{"message":"{{escaped}}"}""", ct);
+    }
 }
 
 /// <summary>
