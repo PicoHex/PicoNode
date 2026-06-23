@@ -358,7 +358,7 @@ internal static class HuffmanCodec
         // Pad final byte with 1-bits (EOS prefix per RFC 7541 §5.2)
         if (bitsInBuffer > 0)
             result[pos] = (byte)(
-                ((uint)bitBuffer << (8 - bitsInBuffer)) | ((0xFF >> bitsInBuffer) & 0xFF)
+                ((uint)bitBuffer << (8 - bitsInBuffer)) | (uint)((0xFF >> bitsInBuffer) & 0xFF)
             );
 
         return result;
