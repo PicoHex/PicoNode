@@ -33,7 +33,10 @@ public sealed class WebApiBuilder
         return this;
     }
 
-    public WebApiBuilder RegisterSingleton<TService, TImpl>()
+    public WebApiBuilder RegisterSingleton<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] TService,
+        TImpl
+    >()
         where TImpl : TService
     {
         if (_ownedContainer is null)
@@ -45,7 +48,10 @@ public sealed class WebApiBuilder
         return this;
     }
 
-    public WebApiBuilder RegisterScoped<TService, TImpl>()
+    public WebApiBuilder RegisterScoped<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] TService,
+        TImpl
+    >()
         where TImpl : TService
     {
         if (_ownedContainer is null)
@@ -56,7 +62,10 @@ public sealed class WebApiBuilder
         return this;
     }
 
-    public WebApiBuilder RegisterTransient<TService, TImpl>()
+    public WebApiBuilder RegisterTransient<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] TService,
+        TImpl
+    >()
         where TImpl : TService
     {
         if (_ownedContainer is null)

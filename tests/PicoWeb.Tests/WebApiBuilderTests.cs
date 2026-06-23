@@ -36,6 +36,45 @@ internal sealed class SpyScope : ISvcScope
 
 public sealed class WebApiBuilderTests
 {
+    // ── RED test: generic TService params must have DynamicallyAccessedMembers annotation ──
+
+    [Test]
+    public async Task RegisterMethods_TServiceParam_HasDynamicallyAccessedMembersInterfaces()
+    {
+        // The extension methods in PicoDI.Abs now require [DynamicallyAccessedMembers(Interfaces)]
+        // on the serviceType parameter, so the generic TService flowing into them
+        // via typeof(TService) must carry the same annotation.
+        // Without it, the trimmer emits IL2087 during publish.
+
+        var methods = new[]
+        {
+            nameof(WebApiBuilder.RegisterSingleton),
+            nameof(WebApiBuilder.RegisterScoped),
+            nameof(WebApiBuilder.RegisterTransient),
+        };
+
+        foreach (var methodName in methods)
+        {
+            var method = typeof(WebApiBuilder).GetMethod(methodName);
+            await Assert.That(method).IsNotNull();
+
+            var tServiceParam = method!.GetGenericArguments()[0];
+            // Cannot check DAM annotation directly via GenericParameterAttributes,
+            // so we check CustomAttributes data
+            var attrData = tServiceParam.CustomAttributes.FirstOrDefault(a =>
+                a.AttributeType.FullName
+                == "System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembersAttribute"
+            );
+
+            await Assert
+                .That(attrData)
+                .IsNotNull()
+                .Because(
+                    $"{methodName}<TService, TImpl>() is missing [DynamicallyAccessedMembers(Interfaces)] on TService"
+                );
+        }
+    }
+
     [Test]
     public async Task Build_returns_WebApiApp()
     {
