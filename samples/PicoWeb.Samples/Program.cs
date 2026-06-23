@@ -63,7 +63,7 @@ if (cert is not null)
     Console.Error.WriteLine($"Using HTTPS with dev certificate: {cert.Subject}, key={cert.GetKeyAlgorithm()}");
     sslOptions = new()
     {
-        ServerCertificate = cert,
+        ServerCertificateContext = SslStreamCertificateContext.Create(cert!, null),
         EnabledSslProtocols =
             System.Security.Authentication.SslProtocols.Tls12
             | System.Security.Authentication.SslProtocols.Tls13,
