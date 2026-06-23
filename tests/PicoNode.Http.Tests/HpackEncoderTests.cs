@@ -188,4 +188,34 @@ public sealed class HpackEncoderTests
 
         await Assert.That(fromWriter).IsEquivalentTo(baseline);
     }
+
+    [Test]
+    public async Task Roundtrip_response_with_rate_limit_headers()
+    {
+        var encoder = new HpackEncoder();
+        var headers = new List<(string, string)>
+        {
+            (":status", "200"),
+            ("content-type", "text/html; charset=utf-8"),
+            ("server", "PicoWeb.Samples.Showcase"),
+            ("content-length", "6047"),
+            ("X-RateLimit-Limit", "5"),
+            ("X-RateLimit-Remaining", "4"),
+            ("X-RateLimit-Reset", "1750896000"),
+        };
+        var encoded = encoder.Encode(headers);
+
+        var decoded = new List<(string, string)>();
+        var ok = HpackDecoder.TryDecode(encoded, out decoded);
+
+        await Assert.That(ok).IsTrue();
+        await Assert.That(decoded.Count).IsEqualTo(headers.Count);
+        for (int i = 0; i < headers.Count; i++)
+        {
+            await Assert.That(decoded[i].Item1).IsEqualTo(
+                headers[i].Item1, $"Header {i} name mismatch");
+            await Assert.That(decoded[i].Item2).IsEqualTo(
+                headers[i].Item2, $"Header {i} value mismatch");
+        }
+    }
 }

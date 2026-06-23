@@ -60,6 +60,7 @@ internal sealed class ConnectionRuntimeState
                 case Http2SettingId.HeaderTableSize:
                     RemoteHeaderTableSize = (int)setting.Value;
                     HpackTable.Resize(RemoteHeaderTableSize);
+                    ResponseHpackEncoder.DynamicTable.Resize(RemoteHeaderTableSize);
                     break;
             }
         }
