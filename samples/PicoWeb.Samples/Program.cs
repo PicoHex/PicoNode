@@ -63,11 +63,11 @@ if (cert is not null)
     Console.Error.WriteLine($"Using HTTPS with dev certificate: {cert.Subject}, key={cert.GetKeyAlgorithm()}");
     sslOptions = new()
     {
-        ServerCertificateContext = SslStreamCertificateContext.Create(cert!, null),
+        ServerCertificate = cert,
         EnabledSslProtocols =
             System.Security.Authentication.SslProtocols.Tls12
             | System.Security.Authentication.SslProtocols.Tls13,
-        ApplicationProtocols = [SslApplicationProtocol.Http11],
+        ApplicationProtocols = [SslApplicationProtocol.Http2, SslApplicationProtocol.Http11],
     };
     scheme = "https";
     Console.Error.WriteLine(
@@ -170,6 +170,29 @@ static X509Certificate2 CreateFreshCert()
     var loaded = X509CertificateLoader.LoadPkcs12FromFile(
         pfxPath, "",
         X509KeyStorageFlags.DefaultKeySet);
+
+    // Best-effort trust: add to CurrentUser\Root so Schannel accepts HTTP/2 ALPN.
+    try
+    {
+        using var rootStore = new X509Store("Root", StoreLocation.CurrentUser);
+        rootStore.Open(OpenFlags.ReadWrite);
+        var exists = false;
+        foreach (var c in rootStore.Certificates)
+        {
+            if (c.Thumbprint == loaded.Thumbprint)
+            {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists)
+        {
+            rootStore.Add(loaded);
+            Console.Error.WriteLine($"Trusted dev cert in CurrentUser\\Root: {loaded.Subject}");
+        }
+        rootStore.Close();
+    }
+    catch { }
 
     Console.Error.WriteLine($"Created fresh dev cert: {loaded.Subject}, key={loaded.GetKeyAlgorithm()}");
     return loaded;
