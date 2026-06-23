@@ -33,6 +33,7 @@ public static class NodeFaultLogLevelMapper
             NodeFaultCode.DatagramDropped => LogLevel.Warning,
             NodeFaultCode.DatagramHandlerFailed => LogLevel.Error,
             NodeFaultCode.TlsFailed => LogLevel.Debug,
+            _ => LogLevel.Error,
         };
     }
 }

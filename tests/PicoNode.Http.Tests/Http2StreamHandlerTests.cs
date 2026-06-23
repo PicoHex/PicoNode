@@ -381,11 +381,11 @@ public sealed class Http2StreamHandlerTests
 
     private static bool DecodeHeadersFrame(
         byte[] frameBytes,
-        out List<(string, string)>? headers,
+        out List<(string, string)> headers,
         out Http2FrameFlags flags
     )
     {
-        headers = null;
+        headers = new List<(string, string)>();
         flags = Http2FrameFlags.None;
 
         if (!TryReadFrame(frameBytes, out var frame))

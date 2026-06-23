@@ -44,7 +44,6 @@ public static class Http2FrameCodec
         var streamId =
             ((header[5] & 0x7F) << 24) | (header[6] << 16) | (header[7] << 8) | header[8];
 
-        byte[]? rentedBuffer = null;
         var usePool = Http2Frame.ShouldPool(length);
         var payload = usePool ? ArrayPool<byte>.Shared.Rent(length) : new byte[Math.Max(length, 1)];
         if (length > 0)

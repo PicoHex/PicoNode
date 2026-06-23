@@ -122,7 +122,7 @@ internal sealed class ConnectionRuntimeState
         }
     }
 
-    public Http2StreamState GetOrCreateStream(int streamId)
+    public Http2StreamState? GetOrCreateStream(int streamId)
     {
         Http2Streams ??= new ConcurrentDictionary<int, Http2StreamState>();
 

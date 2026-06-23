@@ -150,8 +150,8 @@ internal static class Http2StreamHandler
         scheme = validation.Scheme;
         authority = validation.Authority;
         protocol = validation.Protocol;
-        regularHeaders = validation.RegularHeaders;
-        headerDict = validation.HeaderDict;
+        regularHeaders = validation.RegularHeaders!;
+        headerDict = validation.HeaderDict!;
 
         // Validate required pseudo-headers �?stream-level error, not connection-level
         if (method is null || path is null)

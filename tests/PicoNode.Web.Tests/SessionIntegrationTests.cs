@@ -67,14 +67,16 @@ public sealed class SessionIntegrationTests
 
         await middleware(ctx2, (ctx, ct) =>
         {
-            var count = int.Parse(ctx.Session!.GetString("counter")!);
-            ctx.Session.SetString("counter", (count + 1).ToString());
+            var session = ctx.Session;
+            var count = int.Parse(session!.GetString("counter")!);
+            session!.SetString("counter", (count + 1).ToString());
             return ValueTask.FromResult(
                 new HttpResponse { StatusCode = 200 });
         }, CancellationToken.None);
 
-        await Assert.That(ctx2.Session!.GetString("counter")).IsEqualTo("2");
-        await Assert.That(ctx2.Session.Id).IsEqualTo(sessionId);
+        var s2 = ctx2.Session;
+        await Assert.That(s2!.GetString("counter")).IsEqualTo("2");
+        await Assert.That(s2!.Id).IsEqualTo(sessionId);
     }
 
     private sealed class NullServiceScope : ISvcScope
