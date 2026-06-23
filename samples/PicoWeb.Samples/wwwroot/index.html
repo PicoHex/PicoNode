@@ -84,37 +84,6 @@
 </form>
 <div class="output-container mt-4"><div class="output-meta" id="meta-upload">Waiting...</div><pre class="code-block" id="out-upload"></pre></div></div></section>
 
-<section class="panel"><div class="panel-header"><h2>Auth</h2><span class="badge">Bearer Token Demo</span></div>
-<div class="panel-body">
-<p><code>GET /api/auth/me</code> — send <code>Authorization: Bearer demo-xxx</code> to authenticate</p>
-<div class="action-row">
-<input type="text" id="auth-token" value="demo-user" class="text-input" style="width:160px">
-<button class="btn primary" id="btn-auth-set">Set Token</button>
-</div>
-<div class="btn-group" style="margin-top:0.5rem">
-<button class="btn secondary" id="btn-auth-status">Status</button>
-<button class="btn" id="btn-auth-clear">Clear Token</button>
-</div>
-<div class="output-container"><div class="output-meta" id="meta-auth">No token set</div><pre class="code-block" id="out-auth"></pre></div>
-</div></section>
-
-<section class="panel"><div class="panel-header"><h2>Rate Limit</h2><span class="badge">Token Bucket: 5 req / 3s</span></div>
-<div class="panel-body">
-<p><code>GET /api/ratelimit/ping</code> — each click consumes one token</p>
-<button class="btn primary" id="btn-rate-ping">Ping</button>
-<div class="output-container"><div class="output-meta" id="meta-rate">Waiting...</div><pre class="code-block" id="out-rate"></pre></div>
-</div></section>
-
-<section class="panel"><div class="panel-header"><h2>SSE</h2><span class="badge">Typed Event Stream</span></div>
-<div class="panel-body">
-<p><code>GET /api/sse/demo</code> — typed SSE events with <code>text_delta</code>, <code>tool_call</code>, <code>status</code>, <code>done</code></p>
-<div class="btn-group">
-<button class="btn primary" id="btn-sse-connect">Connect</button>
-<button class="btn" id="btn-sse-disconnect" disabled>Disconnect</button>
-</div>
-<div class="output-container" style="margin-top:0.5rem"><div class="output-meta" id="meta-sse">Idle</div><pre class="code-block" id="out-sse"></pre></div>
-</div></section>
-
 <section class="panel"><div class="panel-header"><h2>Session</h2><span class="badge">Cookie-based server session</span></div>
 <div class="panel-body">
 <p><code>GET /api/session/count</code> · <code>GET /api/session/info</code> · <code>GET /api/session/reset</code></p>
