@@ -37,6 +37,33 @@ public static class ShowcaseApp
         var compression = new CompressionMiddleware(minimumBodySize: 256);
         var staticFiles = new StaticFileMiddleware(staticRoot);
 
+        // Auth middleware — injects AuthIdentity into WebContext.Items
+        app.Use(AuthMiddleware.Create(new AuthOptions
+        {
+            ValidateToken = static (token, ct) =>
+            {
+                // Demo: any token that starts with "demo-" is valid
+                if (token.StartsWith("demo-", StringComparison.Ordinal))
+                {
+                    return ValueTask.FromResult<AuthIdentity?>(
+                        new AuthIdentity { UserId = token.Replace("demo-", "") });
+                }
+                return ValueTask.FromResult<AuthIdentity?>(null);
+            }
+        }));
+
+        // Rate limit middleware — token-bucket rate limiter
+        var rateLimitOpts = new RateLimitOptions
+        {
+            KeySelector = static ctx =>
+                AuthMiddleware.GetIdentity(ctx)?.UserId ?? "anonymous",
+            MaxTokens = 5,
+            RefillRate = 1,
+            RefillInterval = TimeSpan.FromSeconds(3),
+        };
+        var rateLimitStore = new InMemoryRateLimitStore(rateLimitOpts);
+        app.Use(RateLimitMiddleware.Create(rateLimitStore, rateLimitOpts));
+
         // Session middleware — injects ISession into WebContext
         app.Use(SessionMiddleware.Create());
 
@@ -281,6 +308,62 @@ public static class ShowcaseApp
                 var json = $$"""{"id":"{{session.Id}}","isNew":{{JsonBool(session.IsNew)}},"isDirty":{{JsonBool(session.IsDirty)}},"keys":[{{keys}}]}""";
                 return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
             }
+        );
+
+        // Auth demo endpoint
+        app.MapGet(
+            "/api/auth/me",
+            static (WebContext ctx, CancellationToken _) =>
+            {
+                var identity = AuthMiddleware.GetIdentity(ctx);
+                if (identity is null)
+                {
+                    return ValueTask.FromResult(
+                        WebResults.Json(200, """{"authenticated":false}""", "OK"));
+                }
+
+                var json = $$"""{"authenticated":true,"userId":"{{identity.UserId}}"}""";
+                return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
+            }
+        );
+
+        // Rate limit demo endpoint
+        app.MapGet(
+            "/api/ratelimit/ping",
+            static (WebContext ctx, CancellationToken _) =>
+            {
+                var state = ctx.Items[WebContextKeys.RateLimitState] as RateLimitState;
+                if (state is not null)
+                {
+                    var json = $$"""{"ok":true,"remaining":{{state.Remaining}},"limit":{{state.Limit}}}""";
+                    return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
+                }
+                return ValueTask.FromResult(WebResults.Json(200, """{"ok":true}""", "OK"));
+            }
+        );
+
+        // SSE demo endpoint
+        app.MapGet(
+            "/api/sse/demo",
+            SseEndpoint.Create(static async (sse, ct) =>
+            {
+                await sse.WriteEventAsync("status", "Starting demo...", ct);
+                await Task.Delay(300, ct);
+
+                await sse.WriteEventAsync("text_delta", "Hello from PicoWeb SSE!", ct);
+                await Task.Delay(300, ct);
+
+                await sse.WriteEventAsync("tool_call",
+                    """{"tool":"calculator","args":{"expr":"2+2"}}""", ct);
+                await Task.Delay(500, ct);
+
+                await sse.WriteEventAsync("text_delta",
+                    "```\nresult: 4\n```", ct);
+                await Task.Delay(300, ct);
+
+                await sse.WriteEventAsync("done", """{"summary":"demo complete"}""", ct);
+                await sse.CompleteAsync(ct);
+            })
         );
 
         app.MapFallback(
