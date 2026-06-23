@@ -86,6 +86,36 @@ public sealed class RateLimitMiddlewareTests
     }
 
     [Test]
+    public async Task Rate_limited_response_has_Json_body_and_content_type()
+    {
+        var store = new InMemoryRateLimitStore(FixedKeyOptions);
+        var middleware = RateLimitMiddleware.Create(store, FixedKeyOptions);
+
+        var request = new HttpRequest { Method = "GET", Target = "/" };
+        var context = WebContext.Create(request);
+
+        // Exhaust all 3 tokens to force 429
+        for (int i = 0; i < 3; i++)
+        {
+            var ctx = WebContext.Create(request);
+            await middleware(ctx, (_, _) =>
+                ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+                CancellationToken.None);
+        }
+
+        // 4th request — rate limited
+        var limitedCtx = WebContext.Create(request);
+        var response = await middleware(limitedCtx, (_, _) =>
+            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None);
+
+        await Assert.That(response.StatusCode).IsEqualTo(429);
+        await Assert.That(response.Headers.TryGetValue("Content-Type", out var ct)).IsTrue();
+        await Assert.That(ct).IsEqualTo("application/json");
+        await Assert.That(response.Body.Length).IsGreaterThan(0);
+    }
+
+    [Test]
     public async Task Fail_open_allows_when_store_throws()
     {
         var store = new ThrowingRateLimitStore();
