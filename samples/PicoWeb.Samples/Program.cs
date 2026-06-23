@@ -156,14 +156,19 @@ static X509Certificate2 CreateFreshCert()
     san.AddDnsName("localhost");
     req.CertificateExtensions.Add(san.Build());
 
-    // Create cert, export to PFX bytes, reload with EphemeralKeySet
-    // to avoid Schannel store-access issues on Windows.
+    // Create cert, save to PFX file so Schannel can access the private key.
+    var pfxPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "PicoWeb",
+        "localhost-dev-cert.pfx"
+    );
+    Directory.CreateDirectory(Path.GetDirectoryName(pfxPath)!);
     var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddYears(1));
-    var pfxBytes = cert.Export(X509ContentType.Pfx, "");
+    File.WriteAllBytes(pfxPath, cert.Export(X509ContentType.Pfx, ""));
     cert.Dispose();
 
-    var loaded = X509CertificateLoader.LoadPkcs12(
-        pfxBytes, "",
+    var loaded = X509CertificateLoader.LoadPkcs12FromFile(
+        pfxPath, "",
         X509KeyStorageFlags.DefaultKeySet);
 
     Console.Error.WriteLine($"Created fresh dev cert: {loaded.Subject}, key={loaded.GetKeyAlgorithm()}");
