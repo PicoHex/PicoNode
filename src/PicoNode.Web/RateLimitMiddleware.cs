@@ -73,10 +73,7 @@ public sealed class RateLimitMiddleware
                 {
                     { "Retry-After", "60" },
                     { "X-RateLimit-Limit", options.MaxTokens.ToString() },
-                    { "Content-Type", "application/json" },
                 },
-                Body = Encoding.UTF8.GetBytes(
-                    """{"error":"rate-limited","retryAfter":60}"""),
             };
         }
 
@@ -95,10 +92,7 @@ public sealed class RateLimitMiddleware
                 {
                     { "Retry-After", retryAfter.ToString() },
                     { "X-RateLimit-Limit", result.Limit.ToString() },
-                    { "Content-Type", "application/json" },
                 },
-                Body = Encoding.UTF8.GetBytes(
-                    $$"""{"error":"rate-limited","retryAfter":{{retryAfter}}}"""),
             };
         }
 
