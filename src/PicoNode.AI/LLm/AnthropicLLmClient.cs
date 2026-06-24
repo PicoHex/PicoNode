@@ -28,7 +28,33 @@ public sealed class AnthropicLLmClient : ILLmClient
 
         using var response = await _http.SendAsync(
             request, HttpCompletionOption.ResponseHeadersRead, ct);
-        response.EnsureSuccessStatusCode();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            var errorMessage = "Unknown error";
+            try
+            {
+                using var errDoc = JsonDocument.Parse(errorBody);
+                if (errDoc.RootElement.TryGetProperty("error", out var err) &&
+                    err.TryGetProperty("message", out var msg))
+                {
+                    errorMessage = msg.GetString() ?? errorMessage;
+                }
+            }
+            catch (JsonException) { }
+
+            yield return new AssistantMessageEvent.Error
+            {
+                Message = new Message
+                {
+                    Role = "assistant",
+                    ErrorMessage = errorMessage,
+                    StopReason = "error",
+                },
+            };
+            yield break;
+        }
 
         using var bodyStream = await response.Content.ReadAsStreamAsync(ct);
         await foreach (var evt in SseParser.ParseAnthropicStreamAsync(
@@ -218,7 +244,14 @@ public sealed class AnthropicLLmClient : ILLmClient
                 case '\n': sb.Append("\\n"); break;
                 case '\r': sb.Append("\\r"); break;
                 case '\t': sb.Append("\\t"); break;
-                default: sb.Append(c); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\f': sb.Append("\\f"); break;
+                default:
+                    if (c < 0x20)
+                        sb.Append($"\\u{(int)c:X4}");
+                    else
+                        sb.Append(c);
+                    break;
             }
         }
         sb.Append('"');

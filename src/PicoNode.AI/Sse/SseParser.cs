@@ -34,7 +34,11 @@ public static class SseParser
             }
 
             var json = line[6..]; // skip "data: "
-            using var doc = JsonDocument.Parse(json);
+            JsonDocument? doc = null;
+            try { doc = JsonDocument.Parse(json); }
+            catch (JsonException) { continue; } // skip malformed JSON lines
+
+            using var _doc = doc;
             var root = doc.RootElement;
             var type = root.GetProperty("type").GetString();
 
