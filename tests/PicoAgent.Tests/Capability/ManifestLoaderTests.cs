@@ -16,9 +16,9 @@ public class ManifestLoaderTests
                   "name": "bash",
                   "handler": "bash tools/runner.sh",
                   "triggers": [
-                    { "kind": "OnToolCall", "toolName": "bash" }
+                    { "kind": 0, "toolName": "bash" }
                   ],
-                  "lifecycle": "oneshot",
+                  "lifecycle": 1,
                   "priority": 50,
                   "description": "Run shell commands"
                 }
