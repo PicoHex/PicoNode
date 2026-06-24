@@ -8,23 +8,20 @@ public class KnowledgeScannerTests
     public async Task Scan_DiscoversSkillFiles()
     {
         var root = Path.Combine(Path.GetTempPath(), $"pico-knowledge-{Guid.NewGuid()}");
-        var skillDir = Path.Combine(root, "knowledge", "pdf-tools");
+        var knowledgeDir = Path.Combine(root, "knowledge");
+        Directory.CreateDirectory(knowledgeDir);
+
+        // Create SKILL.md directly inside a subdirectory under knowledge/
+        var skillDir = Path.Combine(knowledgeDir, "pdf-tools");
         Directory.CreateDirectory(skillDir);
-        await File.WriteAllTextAsync(Path.Combine(skillDir, "SKILL.md"), """
-            ---
-            name: pdf-tools
-            description: Extract text and tables from PDF files
-            ---
-            # PDF Tools
-            Use this tool to work with PDFs.
-            """);
+
+        var skillPath = Path.Combine(skillDir, "SKILL.md");
+        var lines = new[] { "---", "name: pdf-tools",
+            "description: Extract text and tables from PDF files", "---", "", "# PDF Tools" };
+        await File.WriteAllLinesAsync(skillPath, lines);
 
         try
         {
-            // Debug: verify file exists
-            var skillMdPath = Path.Combine(skillDir, "SKILL.md");
-            await Assert.That(File.Exists(skillMdPath)).IsTrue();
-
             var scanner = new KnowledgeScanner();
             var skills = scanner.Scan(root);
 
@@ -34,6 +31,19 @@ public class KnowledgeScannerTests
                 .IsEqualTo("Extract text and tables from PDF files");
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Test]
+    public async Task ParseSkillMarkdown_ValidContent_ReturnsSkill()
+    {
+        var content = "---\nname: test-skill\ndescription: A test skill\n---\n# Body";
+        var scanner = new KnowledgeScanner();
+
+        var result = scanner.ParseForTest(content);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Name).IsEqualTo("test-skill");
+        await Assert.That(result.Description).IsEqualTo("A test skill");
     }
 
     [Test]

@@ -38,7 +38,7 @@ public sealed class KnowledgeScanner
         if (lines.Length < 3 || lines[0].Trim() != "---") return null;
 
         var skill = new SkillInfo();
-        bool inFrontmatter = false;
+        bool inFrontmatter = true;  // First --- already skipped by Skip(1)
 
         foreach (var line in lines.Skip(1))
         {
@@ -78,4 +78,6 @@ public sealed class KnowledgeScanner
         sb.AppendLine("</available_skills>");
         return sb.ToString();
     }
+
+    public SkillInfo? ParseForTest(string content) => ParseSkillMarkdown(content);
 }
