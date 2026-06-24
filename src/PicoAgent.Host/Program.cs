@@ -2,6 +2,7 @@ using PicoNode.Web;
 using PicoNode.Http;
 using PicoWeb;
 using PicoNode.AI;
+using static PicoAgent.FileSystemConstants;
 
 var port = args.Length > 0 && int.TryParse(args[0], out var p) ? p : 8080;
 Console.WriteLine($"PicoAgent Host starting on port {port}...");
@@ -12,7 +13,7 @@ var llmClient = new AnthropicLLmClient(httpClient);
 var registry = new CapabilityRegistry();
 registry.Scan(Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-    ".pico-agent"));
+    AgentHomeDir));
 var runner = new CapabilityRunner();
 var model = new Model
 {
@@ -57,7 +58,7 @@ api.MapPost("/reload", (WebContext ctx, CancellationToken ct) =>
 {
     registry.Scan(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".pico-agent"));
+        AgentHomeDir));
     return ValueTask.FromResult(new HttpResponse
     {
         StatusCode = 200,

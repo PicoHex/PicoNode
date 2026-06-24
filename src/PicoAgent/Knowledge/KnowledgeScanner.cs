@@ -1,5 +1,8 @@
 namespace PicoAgent;
 
+using static PicoAgent.FileSystemConstants;
+using static PicoAgent.YmlConstants;
+
 public sealed class SkillInfo
 {
     public string Name { get; set; } = "";
@@ -12,11 +15,11 @@ public sealed class KnowledgeScanner
     public List<SkillInfo> Scan(string root)
     {
         var skills = new List<SkillInfo>();
-        var knowledgeDir = Path.Combine(root, "knowledge");
+        var knowledgeDir = Path.Combine(root, KnowledgeDir);
         if (!Directory.Exists(knowledgeDir)) return skills;
 
         // Find all SKILL.md files recursively under knowledge/
-        var skillFiles = Directory.GetFiles(knowledgeDir, "SKILL.md", SearchOption.AllDirectories);
+        var skillFiles = Directory.GetFiles(knowledgeDir, SkillFile, SearchOption.AllDirectories);
 
         foreach (var skillPath in skillFiles)
         {

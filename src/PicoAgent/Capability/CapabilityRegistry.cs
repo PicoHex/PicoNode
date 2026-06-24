@@ -1,17 +1,19 @@
 namespace PicoAgent;
 
+using static PicoAgent.FileSystemConstants;
+
 public sealed class CapabilityRegistry
 {
     private readonly List<ManifestCapability> _capabilities = [];
 
     public void Scan(string root)
     {
-        var capsDir = Path.Combine(root, "capabilities");
+        var capsDir = Path.Combine(root, CapabilitiesDir);
         if (!Directory.Exists(capsDir)) return;
 
         foreach (var dir in Directory.EnumerateDirectories(capsDir, "*", SearchOption.AllDirectories))
         {
-            var manifestPath = Path.Combine(dir, "manifest.json");
+            var manifestPath = Path.Combine(dir, ManifestFile);
             if (!File.Exists(manifestPath)) continue;
 
             var manifest = ManifestLoader.LoadFromFile(manifestPath);
