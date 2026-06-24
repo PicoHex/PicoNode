@@ -5,12 +5,12 @@ using PicoAgent;
 public class ManifestLoaderTests
 {
     [Test]
-    public async Task ForceSerializerRegistration()
+    public async Task SgInit_ForceRegistration()
     {
-        var data = new ManifestData { Name = "test" };
-        var json = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(data);
-        var restored = PicoJetson.JsonSerializer.Deserialize<ManifestData>(json);
-        await Assert.That(restored!.Name).IsEqualTo("test");
+        var d = new ManifestData { Name = "x" };
+        var j = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(d);
+        var r = PicoJetson.JsonSerializer.Deserialize<ManifestData>(j);
+        await Assert.That(r!.Name).IsEqualTo("x");
     }
 
     [Test]
@@ -24,9 +24,8 @@ public class ManifestLoaderTests
                 {
                   "name": "bash",
                   "handler": "bash tools/runner.sh",
-                  "triggers": [
-                    { "kind": 0, "toolName": "bash" }
-                  ],
+                  "triggerKinds": [0],
+                  "triggerToolNames": ["bash"],
                   "lifecycle": 1,
                   "priority": 50,
                   "description": "Run shell commands"
@@ -47,9 +46,9 @@ public class ManifestLoaderTests
             await Assert.That(manifest.Capabilities[0].Name).IsEqualTo("bash");
             await Assert.That(manifest.Capabilities[0].Handler)
                 .IsEqualTo("bash tools/runner.sh");
-            await Assert.That(manifest.Capabilities[0].Triggers[0].Kind)
-                .IsEqualTo(TriggerKind.OnToolCall);
-            await Assert.That(manifest.Capabilities[0].Triggers[0].ToolName)
+            await Assert.That(manifest.Capabilities[0].TriggerKinds[0])
+                .IsEqualTo(0);
+            await Assert.That(manifest.Capabilities[0].TriggerToolNames[0])
                 .IsEqualTo("bash");
         }
         finally

@@ -1,23 +1,31 @@
 namespace PicoAgent;
 
+// Flat DTOs — avoid nested object arrays that trigger PicoJetson SG hintName conflicts.
+
 public sealed class ManifestData
 {
     public string Name { get; set; } = "";
     public string Version { get; set; } = "";
-    public CapabilityConfig[] Capabilities { get; set; } = [];
+    public ManifestCapability[] Capabilities { get; set; } = [];
     public string[] Knowledge { get; set; } = [];
     public string? Setup { get; set; }
 }
 
-public sealed class CapabilityConfig
+public sealed class ManifestCapability
 {
     public string Name { get; set; } = "";
     public string Handler { get; set; } = "";
-    public CapabilityTrigger[] Triggers { get; set; } = [];
-    public LifecycleKind Lifecycle { get; set; }
+    // Flat arrays instead of nested object arrays
+    public int[] TriggerKinds { get; set; } = [];
+    public string?[] TriggerToolNames { get; set; } = [];
+    public int Lifecycle { get; set; }
     public string? SchemaPath { get; set; }
     public int Priority { get; set; } = 50;
     public string Description { get; set; } = "";
+
+    public LifecycleKind LifecycleKind => (LifecycleKind)Lifecycle;
+    public bool MatchesTrigger(TriggerKind kind)
+        => TriggerKinds.Any(k => (TriggerKind)k == kind);
 }
 
 public static class ManifestLoader

@@ -20,14 +20,16 @@ public class CapabilityRegistryTests
                 {
                   "name": "bash",
                   "handler": "bash tools/runner.sh",
-                  "triggers": [{ "kind": "OnToolCall", "toolName": "bash" }],
+                  "triggerKinds": [0],
+                  "triggerToolNames": ["bash"],
                   "lifecycle": 1,
                   "priority": 50
                 },
                 {
                   "name": "guard",
                   "handler": "node hooks/guard.js",
-                  "triggers": [{ "kind": 0 }],
+                  "triggerKinds": [0],
+                  "triggerToolNames": [null],
                   "lifecycle": 0,
                   "priority": 0
                 }

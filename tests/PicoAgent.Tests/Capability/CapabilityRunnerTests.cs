@@ -36,11 +36,11 @@ public class CapabilityRunnerTests
 
         try
         {
-            var config = new CapabilityConfig
+            var config = new ManifestCapability
             {
                 Name = "echo",
                 Handler = handler,
-                Lifecycle = LifecycleKind.Oneshot,
+                Lifecycle = 1,
             };
 
             var runner = new CapabilityRunner();

@@ -7,7 +7,7 @@ public sealed class CapabilityRunner
     private static readonly byte[] NewLine = "\n"u8.ToArray();
 
     public async Task<JsonElement> ExecuteAsync(
-        CapabilityConfig config,
+        ManifestCapability config,
         string contextKind,
         byte[] inputJson,
         CancellationToken ct)

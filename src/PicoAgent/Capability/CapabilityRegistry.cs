@@ -2,7 +2,7 @@ namespace PicoAgent;
 
 public sealed class CapabilityRegistry
 {
-    private readonly List<CapabilityConfig> _capabilities = [];
+    private readonly List<ManifestCapability> _capabilities = [];
 
     public void Scan(string root)
     {
@@ -25,11 +25,11 @@ public sealed class CapabilityRegistry
         }
     }
 
-    public IReadOnlyList<CapabilityConfig> GetAll() => _capabilities;
+    public IReadOnlyList<ManifestCapability> GetAll() => _capabilities;
 
-    public IReadOnlyList<CapabilityConfig> GetByTrigger(TriggerKind kind)
-        => _capabilities.Where(c => c.Triggers.Any(t => t.Kind == kind)).ToList();
+    public IReadOnlyList<ManifestCapability> GetByTrigger(TriggerKind kind)
+        => _capabilities.Where(c => c.MatchesTrigger(kind)).ToList();
 
-    public IReadOnlyList<CapabilityConfig> GetByLifecycle(LifecycleKind lifecycle)
-        => _capabilities.Where(c => c.Lifecycle == lifecycle).ToList();
+    public IReadOnlyList<ManifestCapability> GetByLifecycle(LifecycleKind lifecycle)
+        => _capabilities.Where(c => c.LifecycleKind == lifecycle).ToList();
 }
