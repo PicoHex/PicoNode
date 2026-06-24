@@ -2,11 +2,8 @@ namespace PicoNode.Web.Tests;
 
 public sealed class SessionMiddlewareTests
 {
-    private static SessionOptions DefaultOptions => new()
-    {
-        IdleTimeout = TimeSpan.FromMinutes(20),
-        CleanupInterval = TimeSpan.FromMinutes(5),
-    };
+    private static SessionOptions DefaultOptions =>
+        new() { IdleTimeout = TimeSpan.FromMinutes(20), CleanupInterval = TimeSpan.FromMinutes(5) };
 
     private static (
         HttpRequest Request,
@@ -41,8 +38,7 @@ public sealed class SessionMiddlewareTests
 
         WebRequestHandler handler = (ctx, ct) =>
         {
-            return ValueTask.FromResult(
-                new HttpResponse { StatusCode = 200 });
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
         };
 
         var response = await middleware(context, handler, CancellationToken.None);
@@ -50,9 +46,7 @@ public sealed class SessionMiddlewareTests
         await Assert.That(context.Session).IsNotNull();
         await Assert.That(context.Session!.IsNew).IsTrue();
         // New + not dirty → no Set-Cookie
-        await Assert
-            .That(response.Headers.TryGetValue("Set-Cookie", out _))
-            .IsFalse();
+        await Assert.That(response.Headers.TryGetValue("Set-Cookie", out _)).IsFalse();
     }
 
     [Test]
@@ -65,17 +59,14 @@ public sealed class SessionMiddlewareTests
         WebRequestHandler handler = (ctx, ct) =>
         {
             ctx.Session!.SetString("name", "value");
-            return ValueTask.FromResult(
-                new HttpResponse { StatusCode = 200 });
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
         };
 
         var response = await middleware(context, handler, CancellationToken.None);
 
         await Assert.That(context.Session).IsNotNull();
         // Dirty → SaveAsync called, Set-Cookie emitted
-        await Assert
-            .That(response.Headers["Set-Cookie"])
-            .IsNotNull();
+        await Assert.That(response.Headers["Set-Cookie"]).IsNotNull();
 
         // Verify persistence
         var sessionId = context.Session!.Id;
@@ -111,8 +102,7 @@ public sealed class SessionMiddlewareTests
 
         WebRequestHandler handler = (ctx, ct) =>
         {
-            return ValueTask.FromResult(
-                new HttpResponse { StatusCode = 200 });
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
         };
 
         await middleware(context, handler, CancellationToken.None);
@@ -134,9 +124,8 @@ public sealed class SessionMiddlewareTests
             throw new InvalidOperationException("handler failed");
         };
 
-        await Assert.That(
-                async () => await middleware(context, handler, CancellationToken.None)
-            )
+        await Assert
+            .That(async () => await middleware(context, handler, CancellationToken.None))
             .Throws<InvalidOperationException>();
 
         // Exception propagated — save was skipped
@@ -166,8 +155,7 @@ public sealed class SessionMiddlewareTests
         WebRequestHandler handler = (ctx, ct) =>
         {
             ctx.Session!.SetString("fresh", "yes");
-            return ValueTask.FromResult(
-                new HttpResponse { StatusCode = 200 });
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
         };
 
         var response = await middleware(context, handler, CancellationToken.None);
@@ -177,12 +165,8 @@ public sealed class SessionMiddlewareTests
         await Assert.That(context.Session.IsNew).IsTrue();
 
         // Dirty + new → Set-Cookie with NEW id
-        await Assert
-            .That(response.Headers["Set-Cookie"])
-            .IsNotNull();
-        await Assert
-            .That(response.Headers["Set-Cookie"])
-            .Contains(context.Session.Id);
+        await Assert.That(response.Headers["Set-Cookie"]).IsNotNull();
+        await Assert.That(response.Headers["Set-Cookie"]).Contains(context.Session.Id);
     }
 
     [Test]
@@ -211,8 +195,7 @@ public sealed class SessionMiddlewareTests
         {
             // Read-only access — no writes
             _ = ctx.Session!.GetString("any");
-            return ValueTask.FromResult(
-                new HttpResponse { StatusCode = 200 });
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
         };
 
         var response = await middleware(context, handler, CancellationToken.None);

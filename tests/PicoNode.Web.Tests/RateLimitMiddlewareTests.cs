@@ -2,11 +2,8 @@ namespace PicoNode.Web.Tests;
 
 public sealed class RateLimitMiddlewareTests
 {
-    private static RateLimitOptions FixedKeyOptions => new()
-    {
-        MaxTokens = 3,
-        KeySelector = static _ => "test-key",
-    };
+    private static RateLimitOptions FixedKeyOptions =>
+        new() { MaxTokens = 3, KeySelector = static _ => "test-key" };
 
     [Test]
     public async Task Within_limit_passes_through()
@@ -17,9 +14,11 @@ public sealed class RateLimitMiddlewareTests
         var request = new HttpRequest { Method = "GET", Target = "/" };
         var context = WebContext.Create(request);
 
-        var response = await middleware(context, (ctx, ct) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        var response = await middleware(
+            context,
+            (ctx, ct) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(200);
     }
@@ -27,24 +26,26 @@ public sealed class RateLimitMiddlewareTests
     [Test]
     public async Task Rate_limited_returns_429()
     {
-        var store = new InMemoryRateLimitStore(new RateLimitOptions
-        {
-            MaxTokens = 1,
-            KeySelector = static _ => "test-key",
-        });
+        var store = new InMemoryRateLimitStore(
+            new RateLimitOptions { MaxTokens = 1, KeySelector = static _ => "test-key" }
+        );
         var middleware = RateLimitMiddleware.Create(store, FixedKeyOptions);
 
         var request = new HttpRequest { Method = "GET", Target = "/" };
         var context = WebContext.Create(request);
 
-        await middleware(context, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        await middleware(
+            context,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         var context2 = WebContext.Create(request);
-        var response = await middleware(context2, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        var response = await middleware(
+            context2,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(429);
     }
@@ -58,9 +59,11 @@ public sealed class RateLimitMiddlewareTests
         var request = new HttpRequest { Method = "GET", Target = "/" };
         var context = WebContext.Create(request);
 
-        await middleware(context, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        await middleware(
+            context,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         var state = context.Items[WebContextKeys.RateLimitState] as RateLimitState;
         await Assert.That(state).IsNotNull();
@@ -77,9 +80,11 @@ public sealed class RateLimitMiddlewareTests
         var request = new HttpRequest { Method = "GET", Target = "/" };
         var context = WebContext.Create(request);
 
-        var response = await middleware(context, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        var response = await middleware(
+            context,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(response.Headers.TryGetValue("X-RateLimit-Limit", out _)).IsTrue();
         await Assert.That(response.Headers.TryGetValue("X-RateLimit-Remaining", out _)).IsTrue();
@@ -98,16 +103,20 @@ public sealed class RateLimitMiddlewareTests
         for (int i = 0; i < 3; i++)
         {
             var ctx = WebContext.Create(request);
-            await middleware(ctx, (_, _) =>
-                ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-                CancellationToken.None);
+            await middleware(
+                ctx,
+                (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+                CancellationToken.None
+            );
         }
 
         // 4th request — rate limited
         var limitedCtx = WebContext.Create(request);
-        var response = await middleware(limitedCtx, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        var response = await middleware(
+            limitedCtx,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(429);
         await Assert.That(response.Headers.TryGetValue("Content-Type", out var ct)).IsTrue();
@@ -130,9 +139,11 @@ public sealed class RateLimitMiddlewareTests
         var request = new HttpRequest { Method = "GET", Target = "/" };
         var context = WebContext.Create(request);
 
-        var response = await middleware(context, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        var response = await middleware(
+            context,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(200);
     }
@@ -152,9 +163,11 @@ public sealed class RateLimitMiddlewareTests
         var request = new HttpRequest { Method = "GET", Target = "/" };
         var context = WebContext.Create(request);
 
-        var response = await middleware(context, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        var response = await middleware(
+            context,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(429);
     }
@@ -162,35 +175,36 @@ public sealed class RateLimitMiddlewareTests
     [Test]
     public async Task KeySelector_null_falls_back_to_anonymous()
     {
-        var store = new InMemoryRateLimitStore(new RateLimitOptions
-        {
-            MaxTokens = 1,
-            KeySelector = static _ => null!,
-        });
-        var middleware = RateLimitMiddleware.Create(store, new RateLimitOptions
-        {
-            MaxTokens = 1,
-            KeySelector = static _ => null!,
-        });
+        var store = new InMemoryRateLimitStore(
+            new RateLimitOptions { MaxTokens = 1, KeySelector = static _ => null! }
+        );
+        var middleware = RateLimitMiddleware.Create(
+            store,
+            new RateLimitOptions { MaxTokens = 1, KeySelector = static _ => null! }
+        );
 
         var request = new HttpRequest { Method = "GET", Target = "/" };
         var ctx1 = WebContext.Create(request);
 
-        await middleware(ctx1, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        await middleware(
+            ctx1,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         var ctx2 = WebContext.Create(request);
-        var response = await middleware(ctx2, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        var response = await middleware(
+            ctx2,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(response.StatusCode).IsEqualTo(429);
     }
 
     private sealed class ThrowingRateLimitStore : IRateLimitStore
     {
-        public ValueTask<RateLimitResult> TryConsumeTokenAsync(string key, CancellationToken ct)
-            => throw new InvalidOperationException("store down");
+        public ValueTask<RateLimitResult> TryConsumeTokenAsync(string key, CancellationToken ct) =>
+            throw new InvalidOperationException("store down");
     }
 }

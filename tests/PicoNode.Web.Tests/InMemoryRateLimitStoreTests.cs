@@ -2,13 +2,14 @@ namespace PicoNode.Web.Tests;
 
 public sealed class InMemoryRateLimitStoreTests
 {
-    private static RateLimitOptions DefaultOptions => new()
-    {
-        MaxTokens = 3,
-        RefillRate = 1,
-        RefillInterval = TimeSpan.FromSeconds(1),
-        KeySelector = static _ => "fixed-key",
-    };
+    private static RateLimitOptions DefaultOptions =>
+        new()
+        {
+            MaxTokens = 3,
+            RefillRate = 1,
+            RefillInterval = TimeSpan.FromSeconds(1),
+            KeySelector = static _ => "fixed-key",
+        };
 
     [Test]
     public async Task Single_request_is_allowed()
@@ -67,13 +68,15 @@ public sealed class InMemoryRateLimitStoreTests
     [Test]
     public async Task Bucket_refills_after_interval()
     {
-        using var store = new InMemoryRateLimitStore(new RateLimitOptions
-        {
-            MaxTokens = 1,
-            RefillRate = 1,
-            RefillInterval = TimeSpan.FromMilliseconds(100),
-            KeySelector = static _ => "k",
-        });
+        using var store = new InMemoryRateLimitStore(
+            new RateLimitOptions
+            {
+                MaxTokens = 1,
+                RefillRate = 1,
+                RefillInterval = TimeSpan.FromMilliseconds(100),
+                KeySelector = static _ => "k",
+            }
+        );
 
         await store.TryConsumeTokenAsync("k");
         var resultBefore = await store.TryConsumeTokenAsync("k");
@@ -87,13 +90,12 @@ public sealed class InMemoryRateLimitStoreTests
     [Test]
     public async Task Constructor_throws_on_invalid_max_tokens()
     {
-        await Assert.That(() =>
+        await Assert
+            .That(() =>
                 new InMemoryRateLimitStore(
-                    new RateLimitOptions
-                    {
-                        MaxTokens = 0,
-                        KeySelector = static _ => "k",
-                    }))
+                    new RateLimitOptions { MaxTokens = 0, KeySelector = static _ => "k" }
+                )
+            )
             .Throws<ArgumentOutOfRangeException>();
     }
 

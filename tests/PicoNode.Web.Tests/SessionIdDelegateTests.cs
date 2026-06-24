@@ -27,11 +27,7 @@ public sealed class SessionIdDelegateTests
     {
         var (extract, _) = SessionCookie.Create("sid");
 
-        var request = new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-        };
+        var request = new HttpRequest { Method = "GET", Target = "/" };
 
         var sessionId = extract(request);
 
@@ -109,11 +105,7 @@ public sealed class SessionIdDelegateTests
     {
         var (extract, _) = SessionHeader.Create("X-Session-Id");
 
-        var request = new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-        };
+        var request = new HttpRequest { Method = "GET", Target = "/" };
 
         var sessionId = extract(request);
 
@@ -128,8 +120,6 @@ public sealed class SessionIdDelegateTests
         var response = new HttpResponse { StatusCode = 200 };
         set(response, "abc123");
 
-        await Assert
-            .That(response.Headers["X-Session-Id"])
-            .IsEqualTo("abc123");
+        await Assert.That(response.Headers["X-Session-Id"]).IsEqualTo("abc123");
     }
 }

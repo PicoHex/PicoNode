@@ -10,25 +10,22 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
     public InMemorySessionStore(SessionOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
-            options.IdleTimeout, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
-            options.CleanupInterval, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.IdleTimeout, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.CleanupInterval, TimeSpan.Zero);
 
         _idleTimeout = options.IdleTimeout;
 
-        var interval = options.IdleTimeout < options.CleanupInterval
-            ? options.IdleTimeout
-            : options.CleanupInterval;
+        var interval =
+            options.IdleTimeout < options.CleanupInterval
+                ? options.IdleTimeout
+                : options.CleanupInterval;
 
-        _cleanupTimer = new Timer(
-            _ => CleanupExpired(), null, interval, interval);
+        _cleanupTimer = new Timer(_ => CleanupExpired(), null, interval, interval);
     }
 
     public ValueTask<ISession> CreateAsync(CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(
-            Volatile.Read(ref _disposed) != 0, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         var id = Guid.NewGuid().ToString("N");
         var session = new InMemorySession(id, isNew: true);
@@ -38,14 +35,11 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
 
     public ValueTask<ISession?> LoadAsync(string sessionId, CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(
-            Volatile.Read(ref _disposed) != 0, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         if (_sessions.TryGetValue(sessionId, out var entry))
         {
-            Interlocked.Exchange(
-                ref entry.LastAccessedTicks,
-                DateTimeOffset.UtcNow.Ticks);
+            Interlocked.Exchange(ref entry.LastAccessedTicks, DateTimeOffset.UtcNow.Ticks);
 
             entry.Session.IsNew = false;
 
@@ -55,17 +49,13 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
         return ValueTask.FromResult<ISession?>(null);
     }
 
-    public ValueTask SaveAsync(
-        string sessionId, ISession session, CancellationToken ct = default)
+    public ValueTask SaveAsync(string sessionId, ISession session, CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(
-            Volatile.Read(ref _disposed) != 0, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         if (_sessions.TryGetValue(sessionId, out var entry))
         {
-            Interlocked.Exchange(
-                ref entry.LastAccessedTicks,
-                DateTimeOffset.UtcNow.Ticks);
+            Interlocked.Exchange(ref entry.LastAccessedTicks, DateTimeOffset.UtcNow.Ticks);
         }
 
         return ValueTask.CompletedTask;
@@ -73,8 +63,7 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
 
     public ValueTask DeleteAsync(string sessionId, CancellationToken ct = default)
     {
-        ObjectDisposedException.ThrowIf(
-            Volatile.Read(ref _disposed) != 0, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         _sessions.TryRemove(sessionId, out _);
         return ValueTask.CompletedTask;

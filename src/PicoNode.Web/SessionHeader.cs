@@ -2,8 +2,9 @@ namespace PicoNode.Web;
 
 public static class SessionHeader
 {
-    public static (SessionIdExtractor Extract, SessionIdSetter Set)
-        Create(string headerName = "X-Session-Id")
+    public static (SessionIdExtractor Extract, SessionIdSetter Set) Create(
+        string headerName = "X-Session-Id"
+    )
     {
         return (
             Extract: request =>

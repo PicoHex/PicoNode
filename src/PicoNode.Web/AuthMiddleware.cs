@@ -22,8 +22,10 @@ public sealed class AuthMiddleware
             if (context.Request.Headers.TryGetValue("Authorization", out var header))
             {
                 var parts = header.Split(' ', 2);
-                if (parts.Length == 2
-                    && string.Equals(parts[0], "Bearer", StringComparison.OrdinalIgnoreCase))
+                if (
+                    parts.Length == 2
+                    && string.Equals(parts[0], "Bearer", StringComparison.OrdinalIgnoreCase)
+                )
                 {
                     var raw = parts[1];
                     if (raw.Length == 0)
@@ -57,8 +59,10 @@ public sealed class AuthMiddleware
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        if (context.Items.TryGetValue(WebContextKeys.AuthIdentity, out var v)
-            && v is AuthIdentity identity)
+        if (
+            context.Items.TryGetValue(WebContextKeys.AuthIdentity, out var v)
+            && v is AuthIdentity identity
+        )
             return identity;
 
         return null;

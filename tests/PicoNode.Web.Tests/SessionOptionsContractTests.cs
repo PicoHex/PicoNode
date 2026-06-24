@@ -7,9 +7,7 @@ public sealed class SessionOptionsContractTests
     {
         var options = new SessionOptions();
 
-        await Assert
-            .That(options.IdleTimeout)
-            .IsEqualTo(TimeSpan.FromMinutes(20));
+        await Assert.That(options.IdleTimeout).IsEqualTo(TimeSpan.FromMinutes(20));
     }
 
     [Test]
@@ -17,9 +15,7 @@ public sealed class SessionOptionsContractTests
     {
         var options = new SessionOptions();
 
-        await Assert
-            .That(options.CleanupInterval)
-            .IsEqualTo(TimeSpan.FromMinutes(5));
+        await Assert.That(options.CleanupInterval).IsEqualTo(TimeSpan.FromMinutes(5));
     }
 
     [Test]
@@ -27,9 +23,7 @@ public sealed class SessionOptionsContractTests
     {
         var options = new SessionOptions();
 
-        await Assert
-            .That(options.IdleTimeout)
-            .IsNotEqualTo(options.CleanupInterval);
+        await Assert.That(options.IdleTimeout).IsNotEqualTo(options.CleanupInterval);
     }
 
     [Test]
@@ -41,11 +35,7 @@ public sealed class SessionOptionsContractTests
             CleanupInterval = TimeSpan.FromMinutes(10),
         };
 
-        await Assert
-            .That(options.IdleTimeout)
-            .IsEqualTo(TimeSpan.FromMinutes(60));
-        await Assert
-            .That(options.CleanupInterval)
-            .IsEqualTo(TimeSpan.FromMinutes(10));
+        await Assert.That(options.IdleTimeout).IsEqualTo(TimeSpan.FromMinutes(60));
+        await Assert.That(options.CleanupInterval).IsEqualTo(TimeSpan.FromMinutes(10));
     }
 }

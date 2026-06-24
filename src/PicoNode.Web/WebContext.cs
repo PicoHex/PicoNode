@@ -46,8 +46,7 @@ public sealed class WebContext
 
     private Dictionary<string, object?>? _items;
 
-    public IDictionary<string, object?> Items
-        => _items ??= new Dictionary<string, object?>();
+    public IDictionary<string, object?> Items => _items ??= new Dictionary<string, object?>();
 
     public static WebContext Create(HttpRequest request)
     {

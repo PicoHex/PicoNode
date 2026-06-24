@@ -2,11 +2,8 @@ namespace PicoNode.Web.Tests;
 
 public sealed class InMemorySessionStoreTests
 {
-    private static SessionOptions DefaultOptions => new()
-    {
-        IdleTimeout = TimeSpan.FromMinutes(20),
-        CleanupInterval = TimeSpan.FromMinutes(5),
-    };
+    private static SessionOptions DefaultOptions =>
+        new() { IdleTimeout = TimeSpan.FromMinutes(20), CleanupInterval = TimeSpan.FromMinutes(5) };
 
     [Test]
     public async Task CreateAsync_returns_new_session_with_id()
@@ -107,9 +104,7 @@ public sealed class InMemorySessionStoreTests
         var store = new InMemorySessionStore(DefaultOptions);
         store.Dispose();
 
-        await Assert.ThrowsAsync<ObjectDisposedException>(
-            async () => await store.CreateAsync()
-        );
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () => await store.CreateAsync());
     }
 
     [Test]
@@ -118,18 +113,15 @@ public sealed class InMemorySessionStoreTests
         var store = new InMemorySessionStore(DefaultOptions);
         store.Dispose();
 
-        await Assert.ThrowsAsync<ObjectDisposedException>(
-            async () => await store.LoadAsync("any")
-        );
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () => await store.LoadAsync("any"));
     }
 
     [Test]
     public async Task Constructor_throws_on_zero_IdleTimeout()
     {
-        await Assert.That(
-                () => new InMemorySessionStore(
-                    new SessionOptions { IdleTimeout = TimeSpan.Zero }
-                )
+        await Assert
+            .That(() =>
+                new InMemorySessionStore(new SessionOptions { IdleTimeout = TimeSpan.Zero })
             )
             .Throws<ArgumentOutOfRangeException>();
     }
@@ -137,10 +129,9 @@ public sealed class InMemorySessionStoreTests
     [Test]
     public async Task Constructor_throws_on_zero_CleanupInterval()
     {
-        await Assert.That(
-                () => new InMemorySessionStore(
-                    new SessionOptions { CleanupInterval = TimeSpan.Zero }
-                )
+        await Assert
+            .That(() =>
+                new InMemorySessionStore(new SessionOptions { CleanupInterval = TimeSpan.Zero })
             )
             .Throws<ArgumentOutOfRangeException>();
     }

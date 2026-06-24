@@ -6,6 +6,6 @@ public sealed class AuthIdentity
 
     public IReadOnlyList<string> Permissions { get; init; } = [];
 
-    public IReadOnlyDictionary<string, string> Metadata { get; init; }
-        = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> Metadata { get; init; } =
+        new Dictionary<string, string>();
 }

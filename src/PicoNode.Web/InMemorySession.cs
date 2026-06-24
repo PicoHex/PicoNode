@@ -18,8 +18,7 @@ internal sealed class InMemorySession : ISession
 
     public IEnumerable<string> Keys => _data.Keys;
 
-    public bool TryGetValue(string key, out byte[]? value) =>
-        _data.TryGetValue(key, out value);
+    public bool TryGetValue(string key, out byte[]? value) => _data.TryGetValue(key, out value);
 
     public void SetValue(string key, byte[] value)
     {

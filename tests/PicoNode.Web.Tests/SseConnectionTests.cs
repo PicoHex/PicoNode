@@ -117,8 +117,7 @@ public sealed class SseConnectionTests
         var result = await reader.ReadAsync(CancellationToken.None);
         var output = Encoding.UTF8.GetString(result.Buffer);
 
-        await Assert.That(output).IsEqualTo(
-            "event: error\ndata: {\"message\":\"timeout\"}\n\n");
+        await Assert.That(output).IsEqualTo("event: error\ndata: {\"message\":\"timeout\"}\n\n");
     }
 
     [Test]
@@ -134,8 +133,9 @@ public sealed class SseConnectionTests
         var result = await reader.ReadAsync(CancellationToken.None);
         var output = Encoding.UTF8.GetString(result.Buffer);
 
-        await Assert.That(output).IsEqualTo(
-            "event: error\ndata: {\"message\":\"unknown model \\\"gpt-5\\\"\"}\n\n");
+        await Assert
+            .That(output)
+            .IsEqualTo("event: error\ndata: {\"message\":\"unknown model \\\"gpt-5\\\"\"}\n\n");
     }
 
     [Test]
@@ -151,8 +151,7 @@ public sealed class SseConnectionTests
         var result = await reader.ReadAsync(CancellationToken.None);
         var output = Encoding.UTF8.GetString(result.Buffer);
 
-        await Assert.That(output).IsEqualTo(
-            "event: error\ndata: {\"message\":\"a b c\"}\n\n");
+        await Assert.That(output).IsEqualTo("event: error\ndata: {\"message\":\"a b c\"}\n\n");
     }
 
     [Test]

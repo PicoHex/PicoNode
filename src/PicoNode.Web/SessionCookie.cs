@@ -2,8 +2,9 @@ namespace PicoNode.Web;
 
 public static class SessionCookie
 {
-    public static (SessionIdExtractor Extract, SessionIdSetter Set)
-        Create(string cookieName = "sid")
+    public static (SessionIdExtractor Extract, SessionIdSetter Set) Create(
+        string cookieName = "sid"
+    )
     {
         return (
             Extract: request =>
@@ -32,7 +33,8 @@ public static class SessionCookie
             {
                 response.Headers.Add(
                     "Set-Cookie",
-                    $"{cookieName}={sessionId}; Path=/; HttpOnly; SameSite=Lax");
+                    $"{cookieName}={sessionId}; Path=/; HttpOnly; SameSite=Lax"
+                );
             }
         );
     }

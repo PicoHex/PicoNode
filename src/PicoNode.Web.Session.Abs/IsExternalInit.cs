@@ -5,6 +5,4 @@ namespace System.Runtime.CompilerServices;
 /// This type is normally defined by the compiler in .NET 5+, but must be
 /// provided manually for netstandard2.0 targets.
 /// </summary>
-internal class IsExternalInit
-{
-}
+internal class IsExternalInit { }

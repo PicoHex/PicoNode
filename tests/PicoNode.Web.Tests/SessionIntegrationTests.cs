@@ -2,11 +2,8 @@ namespace PicoNode.Web.Tests;
 
 public sealed class SessionIntegrationTests
 {
-    private static SessionOptions DefaultOptions => new()
-    {
-        IdleTimeout = TimeSpan.FromMinutes(20),
-        CleanupInterval = TimeSpan.FromMinutes(5),
-    };
+    private static SessionOptions DefaultOptions =>
+        new() { IdleTimeout = TimeSpan.FromMinutes(20), CleanupInterval = TimeSpan.FromMinutes(5) };
 
     [Test]
     public async Task WebApp_builds_with_session_middleware()
@@ -17,12 +14,15 @@ public sealed class SessionIntegrationTests
             new WebAppOptions { MaxRequestBytes = 16384 }
         );
 
-        app.Use(SessionMiddleware.Create(store,
-            SessionCookie.Create().Extract,
-            SessionCookie.Create().Set));
+        app.Use(
+            SessionMiddleware.Create(
+                store,
+                SessionCookie.Create().Extract,
+                SessionCookie.Create().Set
+            )
+        );
 
-        app.MapGet("/", (ctx, ct) =>
-            ValueTask.FromResult(WebResults.Text(200, "ok")));
+        app.MapGet("/", (ctx, ct) => ValueTask.FromResult(WebResults.Text(200, "ok")));
 
         var handler = app.Build();
 
@@ -37,19 +37,18 @@ public sealed class SessionIntegrationTests
         var middleware = SessionMiddleware.Create(store, extract, set);
 
         // Request 1: Create and write
-        var req1 = new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-        };
+        var req1 = new HttpRequest { Method = "GET", Target = "/" };
         var ctx1 = WebContext.Create(req1);
 
-        await middleware(ctx1, (ctx, ct) =>
-        {
-            ctx.Session!.SetString("counter", "1");
-            return ValueTask.FromResult(
-                new HttpResponse { StatusCode = 200 });
-        }, CancellationToken.None);
+        await middleware(
+            ctx1,
+            (ctx, ct) =>
+            {
+                ctx.Session!.SetString("counter", "1");
+                return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+            },
+            CancellationToken.None
+        );
 
         var sessionId = ctx1.Session!.Id;
 
@@ -65,14 +64,17 @@ public sealed class SessionIntegrationTests
         };
         var ctx2 = WebContext.Create(req2);
 
-        await middleware(ctx2, (ctx, ct) =>
-        {
-            var session = ctx.Session;
-            var count = int.Parse(session!.GetString("counter")!);
-            session!.SetString("counter", (count + 1).ToString());
-            return ValueTask.FromResult(
-                new HttpResponse { StatusCode = 200 });
-        }, CancellationToken.None);
+        await middleware(
+            ctx2,
+            (ctx, ct) =>
+            {
+                var session = ctx.Session;
+                var count = int.Parse(session!.GetString("counter")!);
+                session!.SetString("counter", (count + 1).ToString());
+                return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+            },
+            CancellationToken.None
+        );
 
         var s2 = ctx2.Session;
         await Assert.That(s2!.GetString("counter")).IsEqualTo("2");
@@ -82,20 +84,38 @@ public sealed class SessionIntegrationTests
     private sealed class NullServiceScope : ISvcScope
     {
         public object GetService(Type t) => null!;
+
         public IReadOnlyList<object> GetServices(Type t) => Array.Empty<object>();
-        public bool TryGetService(Type t, out object? r) { r = null; return false; }
-        public bool TryGetServices(Type t, out IReadOnlyList<object>? r) { r = null; return false; }
+
+        public bool TryGetService(Type t, out object? r)
+        {
+            r = null;
+            return false;
+        }
+
+        public bool TryGetServices(Type t, out IReadOnlyList<object>? r)
+        {
+            r = null;
+            return false;
+        }
+
         public ISvcScope CreateScope() => throw new NotSupportedException();
+
         public void Dispose() { }
+
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private sealed class TestServiceProvider : ISvcContainer
     {
         public ISvcContainer Register(SvcDescriptor d) => this;
+
         public bool IsRegistered(Type t) => true;
+
         public void Build() { }
+
         public ISvcScope CreateScope() => new NullServiceScope();
+
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

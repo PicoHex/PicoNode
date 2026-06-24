@@ -4,36 +4,32 @@ public sealed class SessionMiddleware
 {
     public static WebMiddleware Create()
     {
-        return Create(
-            SessionCookie.Create().Extract,
-            SessionCookie.Create().Set);
+        return Create(SessionCookie.Create().Extract, SessionCookie.Create().Set);
     }
 
-    public static WebMiddleware Create(
-        SessionIdExtractor extractor,
-        SessionIdSetter setter)
+    public static WebMiddleware Create(SessionIdExtractor extractor, SessionIdSetter setter)
     {
         return async (context, next, ct) =>
         {
-            if (!context.Services.TryGetService(
-                    typeof(ISessionStore), out var svc)
-                || svc is not ISessionStore store)
+            if (
+                !context.Services.TryGetService(typeof(ISessionStore), out var svc)
+                || svc is not ISessionStore store
+            )
             {
                 return await next(context, ct);
             }
 
-            return await InvokeCoreAsync(
-                context, next, ct, store, extractor, setter);
+            return await InvokeCoreAsync(context, next, ct, store, extractor, setter);
         };
     }
 
     public static WebMiddleware Create(
         ISessionStore store,
         SessionIdExtractor extractor,
-        SessionIdSetter setter)
+        SessionIdSetter setter
+    )
     {
-        return (context, next, ct) =>
-            InvokeCoreAsync(context, next, ct, store, extractor, setter);
+        return (context, next, ct) => InvokeCoreAsync(context, next, ct, store, extractor, setter);
     }
 
     private static async ValueTask<HttpResponse> InvokeCoreAsync(
@@ -42,7 +38,8 @@ public sealed class SessionMiddleware
         CancellationToken ct,
         ISessionStore store,
         SessionIdExtractor extractor,
-        SessionIdSetter setter)
+        SessionIdSetter setter
+    )
     {
         // 1. Extract session ID
         var sessionId = extractor(context.Request);

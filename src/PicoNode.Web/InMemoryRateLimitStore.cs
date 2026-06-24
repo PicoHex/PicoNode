@@ -14,8 +14,7 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.MaxTokens, 0);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(
-            options.RefillInterval, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.RefillInterval, TimeSpan.Zero);
 
         _maxTokens = options.MaxTokens;
         _refillRate = options.RefillRate;
@@ -23,19 +22,18 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
         _cleanupIntervalTicks = options.CleanupInterval.Ticks;
 
         var cleanupInterval = options.CleanupInterval;
-        var interval = options.RefillInterval < cleanupInterval
-            ? options.RefillInterval
-            : cleanupInterval;
+        var interval =
+            options.RefillInterval < cleanupInterval ? options.RefillInterval : cleanupInterval;
 
-        _cleanupTimer = new Timer(
-            _ => CleanupExpired(), null, interval, interval);
+        _cleanupTimer = new Timer(_ => CleanupExpired(), null, interval, interval);
     }
 
     public ValueTask<RateLimitResult> TryConsumeTokenAsync(
-        string key, CancellationToken ct = default)
+        string key,
+        CancellationToken ct = default
+    )
     {
-        ObjectDisposedException.ThrowIf(
-            Volatile.Read(ref _disposed) != 0, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         var bucket = _buckets.GetOrAdd(key, _ => new Bucket());
         var now = DateTimeOffset.UtcNow.Ticks;
@@ -90,15 +88,15 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
         else
         {
             var needed = 1.0 - Math.Max(bucket.Tokens, 0);
-            var seconds = (long)Math.Ceiling(
-                needed * _refillIntervalTicks / _refillRate / TimeSpan.TicksPerSecond);
+            var seconds = (long)
+                Math.Ceiling(needed * _refillIntervalTicks / _refillRate / TimeSpan.TicksPerSecond);
             nextAvailable = nowUnix + seconds;
         }
 
         // ResetAt (when bucket is fully refilled)
         var toFill = _maxTokens - bucket.Tokens;
-        var resetSeconds = (long)Math.Ceiling(
-            toFill * _refillIntervalTicks / _refillRate / TimeSpan.TicksPerSecond);
+        var resetSeconds = (long)
+            Math.Ceiling(toFill * _refillIntervalTicks / _refillRate / TimeSpan.TicksPerSecond);
         var resetAt = nowUnix + resetSeconds;
 
         return new RateLimitResult

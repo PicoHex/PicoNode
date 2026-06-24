@@ -4,11 +4,8 @@ namespace PicoWeb.Integration.Tests;
 
 public sealed class SessionShowcaseTests
 {
-    private static SessionOptions DefaultOptions => new()
-    {
-        IdleTimeout = TimeSpan.FromMinutes(20),
-        CleanupInterval = TimeSpan.FromMinutes(5),
-    };
+    private static SessionOptions DefaultOptions =>
+        new() { IdleTimeout = TimeSpan.FromMinutes(20), CleanupInterval = TimeSpan.FromMinutes(5) };
 
     [Test]
     public async Task Session_counter_endpoint_returns_incrementing_values()
@@ -18,20 +15,24 @@ public sealed class SessionShowcaseTests
         var middleware = SessionMiddleware.Create(store, extract, set);
 
         // Request 1: creates session, counter starts at 1
-        var req1 = new HttpRequest
-        {
-            Method = "GET",
-            Target = "/api/session/count",
-        };
+        var req1 = new HttpRequest { Method = "GET", Target = "/api/session/count" };
         var ctx1 = WebContext.Create(req1);
-        var resp1 = await middleware(ctx1, (ctx, ct) =>
-        {
-            var count = ctx.Session?.GetInt32("counter") ?? 0;
-            count++;
-            ctx.Session?.SetInt32("counter", count);
-            return ValueTask.FromResult(WebResults.Json(200,
-                $$"""{"counter":{{count}},"sessionId":"{{ctx.Session?.Id}}"}"""));
-        }, CancellationToken.None);
+        var resp1 = await middleware(
+            ctx1,
+            (ctx, ct) =>
+            {
+                var count = ctx.Session?.GetInt32("counter") ?? 0;
+                count++;
+                ctx.Session?.SetInt32("counter", count);
+                return ValueTask.FromResult(
+                    WebResults.Json(
+                        200,
+                        $$"""{"counter":{{count}},"sessionId":"{{ctx.Session?.Id}}"}"""
+                    )
+                );
+            },
+            CancellationToken.None
+        );
 
         await Assert.That(resp1.StatusCode).IsEqualTo(200);
         var sessionId = ctx1.Session?.Id;
@@ -48,14 +49,22 @@ public sealed class SessionShowcaseTests
             },
         };
         var ctx2 = WebContext.Create(req2);
-        var resp2 = await middleware(ctx2, (ctx, ct) =>
-        {
-            var count = ctx.Session?.GetInt32("counter") ?? 0;
-            count++;
-            ctx.Session?.SetInt32("counter", count);
-            return ValueTask.FromResult(WebResults.Json(200,
-                $$"""{"counter":{{count}},"sessionId":"{{ctx.Session?.Id}}"}"""));
-        }, CancellationToken.None);
+        var resp2 = await middleware(
+            ctx2,
+            (ctx, ct) =>
+            {
+                var count = ctx.Session?.GetInt32("counter") ?? 0;
+                count++;
+                ctx.Session?.SetInt32("counter", count);
+                return ValueTask.FromResult(
+                    WebResults.Json(
+                        200,
+                        $$"""{"counter":{{count}},"sessionId":"{{ctx.Session?.Id}}"}"""
+                    )
+                );
+            },
+            CancellationToken.None
+        );
 
         await Assert.That(resp2.StatusCode).IsEqualTo(200);
         await Assert.That(ctx2.Session).IsNotNull();
@@ -77,28 +86,37 @@ public sealed class SessionShowcaseTests
         // Create session with counter=5
         var req1 = new HttpRequest { Method = "GET", Target = "/api/session/count" };
         var ctx1 = WebContext.Create(req1);
-        await middleware(ctx1, (ctx, ct) =>
-        {
-            ctx.Session?.SetInt32("counter", 5);
-            return ValueTask.FromResult(WebResults.Text(200, "ok"));
-        }, CancellationToken.None);
+        await middleware(
+            ctx1,
+            (ctx, ct) =>
+            {
+                ctx.Session?.SetInt32("counter", 5);
+                return ValueTask.FromResult(WebResults.Text(200, "ok"));
+            },
+            CancellationToken.None
+        );
         var sessionId = ctx1.Session!.Id;
 
         // Reset session
         var req2 = new HttpRequest
         {
-            Method = "GET", Target = "/api/session/reset",
+            Method = "GET",
+            Target = "/api/session/reset",
             Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["Cookie"] = $"sid={sessionId}",
             },
         };
         var ctx2 = WebContext.Create(req2);
-        await middleware(ctx2, (ctx, ct) =>
-        {
-            ctx.Session?.Clear();
-            return ValueTask.FromResult(WebResults.Text(200, "cleared"));
-        }, CancellationToken.None);
+        await middleware(
+            ctx2,
+            (ctx, ct) =>
+            {
+                ctx.Session?.Clear();
+                return ValueTask.FromResult(WebResults.Text(200, "cleared"));
+            },
+            CancellationToken.None
+        );
 
         // Counter should be gone
         var loaded = await store.LoadAsync(sessionId);
@@ -111,8 +129,9 @@ public sealed class SessionShowcaseTests
     {
         var container = new SvcContainer();
         container.RegisterSingle(typeof(SessionOptions), DefaultOptions);
-        container.RegisterSingleton<ISessionStore>(scope =>
-            new InMemorySessionStore(scope.GetService<SessionOptions>()));
+        container.RegisterSingleton<ISessionStore>(scope => new InMemorySessionStore(
+            scope.GetService<SessionOptions>()
+        ));
         container.Build();
 
         // Create wwwroot for StaticFileMiddleware
@@ -120,17 +139,18 @@ public sealed class SessionShowcaseTests
         Directory.CreateDirectory(Path.Combine(tempRoot, "wwwroot"));
         try
         {
-            var app = PicoWeb.Samples.Abs.ShowcaseApp.Create(
-                container,
-                contentRoot: tempRoot
-            );
+            var app = PicoWeb.Samples.Abs.ShowcaseApp.Create(container, contentRoot: tempRoot);
 
             var handler = app.Build();
             await Assert.That(handler).IsNotNull();
         }
         finally
         {
-            try { Directory.Delete(tempRoot, recursive: true); } catch { }
+            try
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+            catch { }
         }
     }
 }

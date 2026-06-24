@@ -424,18 +424,24 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         diCode.AppendLine("    [global::System.Runtime.CompilerServices.ModuleInitializer]");
         diCode.AppendLine("    internal static void AutoRegisterControllerServices()");
         diCode.AppendLine("    {");
-        diCode.AppendLine("        global::PicoDI.SvcContainerAutoConfiguration.RegisterConfigurator(");
+        diCode.AppendLine(
+            "        global::PicoDI.SvcContainerAutoConfiguration.RegisterConfigurator("
+        );
         diCode.AppendLine("            \"generated::Controllers.Gen::ControllerServices\",");
         diCode.AppendLine("            static container => RegisterAll(container));");
         diCode.AppendLine("    }");
         diCode.AppendLine();
-        diCode.AppendLine("    private static void RegisterAll(global::PicoDI.Abs.ISvcContainer container)");
+        diCode.AppendLine(
+            "    private static void RegisterAll(global::PicoDI.Abs.ISvcContainer container)"
+        );
         diCode.AppendLine("    {");
 
         foreach (var controller in controllers)
         {
             var fqn = controller.FullName; // e.g. "global::MyApp.Controllers.UsersController"
-            diCode.AppendLine("        container.Register(global::PicoDI.Abs.SvcDescriptor.Create(");
+            diCode.AppendLine(
+                "        container.Register(global::PicoDI.Abs.SvcDescriptor.Create("
+            );
             diCode.AppendLine($"            typeof({fqn}),");
             diCode.AppendLine($"            static _ => new {fqn}(),");
             diCode.AppendLine("            global::PicoDI.Abs.SvcLifetime.Scoped));");

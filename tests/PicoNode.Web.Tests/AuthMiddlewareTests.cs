@@ -9,9 +9,8 @@ public sealed class AuthMiddlewareTests
         {
             ValidateToken = static (token, ct) =>
                 ValueTask.FromResult<AuthIdentity?>(
-                    token == "valid-token"
-                        ? new AuthIdentity { UserId = "user-1" }
-                        : null),
+                    token == "valid-token" ? new AuthIdentity { UserId = "user-1" } : null
+                ),
         };
         var middleware = AuthMiddleware.Create(options);
 
@@ -26,9 +25,11 @@ public sealed class AuthMiddlewareTests
         };
         var context = WebContext.Create(request);
 
-        await middleware(context, (ctx, ct) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        await middleware(
+            context,
+            (ctx, ct) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         var identity = AuthMiddleware.GetIdentity(context);
         await Assert.That(identity).IsNotNull();
@@ -48,9 +49,11 @@ public sealed class AuthMiddlewareTests
         var request = new HttpRequest { Method = "GET", Target = "/" };
         var context = WebContext.Create(request);
 
-        await middleware(context, (ctx, ct) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        await middleware(
+            context,
+            (ctx, ct) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(AuthMiddleware.GetIdentity(context)).IsNull();
     }
@@ -76,9 +79,11 @@ public sealed class AuthMiddlewareTests
         };
         var context = WebContext.Create(request);
 
-        await middleware(context, (ctx, ct) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        await middleware(
+            context,
+            (ctx, ct) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(AuthMiddleware.GetIdentity(context)).IsNull();
     }
@@ -88,8 +93,7 @@ public sealed class AuthMiddlewareTests
     {
         var options = new AuthOptions
         {
-            ValidateToken = static (_, _) =>
-                ValueTask.FromResult<AuthIdentity?>(null),
+            ValidateToken = static (_, _) => ValueTask.FromResult<AuthIdentity?>(null),
         };
         var middleware = AuthMiddleware.Create(options);
 
@@ -104,9 +108,11 @@ public sealed class AuthMiddlewareTests
         };
         var context = WebContext.Create(request);
 
-        await middleware(context, (ctx, ct) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        await middleware(
+            context,
+            (ctx, ct) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(AuthMiddleware.GetIdentity(context)).IsNull();
     }
@@ -116,8 +122,7 @@ public sealed class AuthMiddlewareTests
     {
         var options = new AuthOptions
         {
-            ValidateToken = static (_, _) =>
-                throw new InvalidOperationException("db down"),
+            ValidateToken = static (_, _) => throw new InvalidOperationException("db down"),
         };
         var middleware = AuthMiddleware.Create(options);
 
@@ -132,9 +137,11 @@ public sealed class AuthMiddlewareTests
         };
         var context = WebContext.Create(request);
 
-        await middleware(context, (ctx, ct) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        await middleware(
+            context,
+            (ctx, ct) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(AuthMiddleware.GetIdentity(context)).IsNull();
     }
@@ -146,7 +153,8 @@ public sealed class AuthMiddlewareTests
         {
             ValidateToken = static (token, ct) =>
                 ValueTask.FromResult<AuthIdentity?>(
-                    token == "tk" ? new AuthIdentity { UserId = "u" } : null),
+                    token == "tk" ? new AuthIdentity { UserId = "u" } : null
+                ),
         };
         var middleware = AuthMiddleware.Create(options);
 
@@ -161,9 +169,11 @@ public sealed class AuthMiddlewareTests
         };
         var context = WebContext.Create(request);
 
-        await middleware(context, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        await middleware(
+            context,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(AuthMiddleware.GetIdentity(context)?.UserId).IsEqualTo("u");
     }
@@ -175,7 +185,8 @@ public sealed class AuthMiddlewareTests
         {
             ValidateToken = static (token, ct) =>
                 ValueTask.FromResult<AuthIdentity?>(
-                    token == "abc123" ? new AuthIdentity { UserId = "u" } : null),
+                    token == "abc123" ? new AuthIdentity { UserId = "u" } : null
+                ),
         };
         var middleware = AuthMiddleware.Create(options);
 
@@ -190,9 +201,11 @@ public sealed class AuthMiddlewareTests
         };
         var context = WebContext.Create(request);
 
-        await middleware(context, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        await middleware(
+            context,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(AuthMiddleware.GetIdentity(context)?.UserId).IsEqualTo("u");
     }
@@ -218,9 +231,11 @@ public sealed class AuthMiddlewareTests
         };
         var context = WebContext.Create(request);
 
-        await middleware(context, (_, _) =>
-            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
-            CancellationToken.None);
+        await middleware(
+            context,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
 
         await Assert.That(AuthMiddleware.GetIdentity(context)).IsNull();
     }

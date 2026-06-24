@@ -4,11 +4,8 @@ namespace PicoWeb.Integration.Tests;
 
 public sealed class SessionPageTests
 {
-    private static SessionOptions DefaultOptions => new()
-    {
-        IdleTimeout = TimeSpan.FromMinutes(20),
-        CleanupInterval = TimeSpan.FromMinutes(5),
-    };
+    private static SessionOptions DefaultOptions =>
+        new() { IdleTimeout = TimeSpan.FromMinutes(20), CleanupInterval = TimeSpan.FromMinutes(5) };
 
     [Test]
     public async Task Session_UI_flow_count_then_info_then_reset()
@@ -20,13 +17,21 @@ public sealed class SessionPageTests
         // ── Step 1: GET /api/session/count (simulates JS button click) ──
         var req1 = new HttpRequest { Method = "GET", Target = "/api/session/count" };
         var ctx1 = WebContext.Create(req1);
-        var resp1 = await middleware(ctx1, (ctx, ct) =>
-        {
-            var count = (ctx.Session?.GetInt32("counter") ?? 0) + 1;
-            ctx.Session?.SetInt32("counter", count);
-            return ValueTask.FromResult(WebResults.Json(200,
-                $$"""{"counter":{{count}},"sessionId":"{{ctx.Session?.Id}}"}"""));
-        }, CancellationToken.None);
+        var resp1 = await middleware(
+            ctx1,
+            (ctx, ct) =>
+            {
+                var count = (ctx.Session?.GetInt32("counter") ?? 0) + 1;
+                ctx.Session?.SetInt32("counter", count);
+                return ValueTask.FromResult(
+                    WebResults.Json(
+                        200,
+                        $$"""{"counter":{{count}},"sessionId":"{{ctx.Session?.Id}}"}"""
+                    )
+                );
+            },
+            CancellationToken.None
+        );
 
         await Assert.That(resp1.StatusCode).IsEqualTo(200);
 
@@ -42,13 +47,21 @@ public sealed class SessionPageTests
             },
         };
         var ctx2 = WebContext.Create(req2);
-        var resp2 = await middleware(ctx2, (ctx, ct) =>
-        {
-            var s = ctx.Session;
-            var keys = string.Join(",", s?.Keys ?? []);
-            return ValueTask.FromResult(WebResults.Json(200,
-                $$"""{"id":"{{s?.Id}}","isNew":false,"isDirty":true,"keys":["counter"],"counter":{{s?.GetInt32("counter")}}}"""));
-        }, CancellationToken.None);
+        var resp2 = await middleware(
+            ctx2,
+            (ctx, ct) =>
+            {
+                var s = ctx.Session;
+                var keys = string.Join(",", s?.Keys ?? []);
+                return ValueTask.FromResult(
+                    WebResults.Json(
+                        200,
+                        $$"""{"id":"{{s?.Id}}","isNew":false,"isDirty":true,"keys":["counter"],"counter":{{s?.GetInt32("counter")}}}"""
+                    )
+                );
+            },
+            CancellationToken.None
+        );
 
         await Assert.That(resp2.StatusCode).IsEqualTo(200);
 
@@ -63,11 +76,15 @@ public sealed class SessionPageTests
             },
         };
         var ctx3 = WebContext.Create(req3);
-        await middleware(ctx3, (ctx, ct) =>
-        {
-            ctx.Session?.Clear();
-            return ValueTask.FromResult(WebResults.Json(200, """{"cleared":true}"""));
-        }, CancellationToken.None);
+        await middleware(
+            ctx3,
+            (ctx, ct) =>
+            {
+                ctx.Session?.Clear();
+                return ValueTask.FromResult(WebResults.Json(200, """{"cleared":true}"""));
+            },
+            CancellationToken.None
+        );
 
         // ── Step 4: Verify counter is gone ──
         var loaded = await store.LoadAsync(sessionId);
@@ -80,8 +97,9 @@ public sealed class SessionPageTests
     {
         var container = new SvcContainer();
         container.RegisterSingle(typeof(SessionOptions), DefaultOptions);
-        container.RegisterSingleton<ISessionStore>(scope =>
-            new InMemorySessionStore(scope.GetService<SessionOptions>()));
+        container.RegisterSingleton<ISessionStore>(scope => new InMemorySessionStore(
+            scope.GetService<SessionOptions>()
+        ));
         container.Build();
 
         var tempRoot = Path.Combine(Path.GetTempPath(), "PicoWebSessionPageTest");
@@ -98,16 +116,17 @@ public sealed class SessionPageTests
                 """;
             await File.WriteAllTextAsync(Path.Combine(wwwroot, "session.html"), sessionHtml);
 
-            var app = PicoWeb.Samples.Abs.ShowcaseApp.Create(
-                container,
-                contentRoot: tempRoot
-            );
+            var app = PicoWeb.Samples.Abs.ShowcaseApp.Create(container, contentRoot: tempRoot);
 
             await Assert.That(app).IsNotNull();
         }
         finally
         {
-            try { Directory.Delete(tempRoot, recursive: true); } catch { }
+            try
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+            catch { }
         }
     }
 }

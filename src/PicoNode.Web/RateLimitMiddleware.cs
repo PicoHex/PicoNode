@@ -8,9 +8,10 @@ public sealed class RateLimitMiddleware
 
         return async (context, next, ct) =>
         {
-            if (!context.Services.TryGetService(
-                    typeof(IRateLimitStore), out var svc)
-                || svc is not IRateLimitStore store)
+            if (
+                !context.Services.TryGetService(typeof(IRateLimitStore), out var svc)
+                || svc is not IRateLimitStore store
+            )
             {
                 return new HttpResponse
                 {
@@ -28,8 +29,7 @@ public sealed class RateLimitMiddleware
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(options);
 
-        return (context, next, ct) =>
-            InvokeCoreAsync(context, next, ct, store, options);
+        return (context, next, ct) => InvokeCoreAsync(context, next, ct, store, options);
     }
 
     private static async ValueTask<HttpResponse> InvokeCoreAsync(
@@ -37,7 +37,8 @@ public sealed class RateLimitMiddleware
         WebRequestHandler next,
         CancellationToken ct,
         IRateLimitStore store,
-        RateLimitOptions options)
+        RateLimitOptions options
+    )
     {
         // Extract key
         string key;
@@ -75,8 +76,7 @@ public sealed class RateLimitMiddleware
                     { "X-RateLimit-Limit", options.MaxTokens.ToString() },
                     { "Content-Type", "application/json" },
                 },
-                Body = Encoding.UTF8.GetBytes(
-                    """{"error":"rate-limited","retryAfter":60}"""),
+                Body = Encoding.UTF8.GetBytes("""{"error":"rate-limited","retryAfter":60}"""),
             };
         }
 
@@ -84,8 +84,9 @@ public sealed class RateLimitMiddleware
         if (!result.Allowed)
         {
             var retryAfter = Math.Max(
-                result.NextAvailableAt
-                    - DateTimeOffset.UtcNow.ToUnixTimeSeconds(), 1);
+                result.NextAvailableAt - DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                1
+            );
 
             return new HttpResponse
             {
@@ -98,7 +99,8 @@ public sealed class RateLimitMiddleware
                     { "Content-Type", "application/json" },
                 },
                 Body = Encoding.UTF8.GetBytes(
-                    $$"""{"error":"rate-limited","retryAfter":{{retryAfter}}}"""),
+                    $$"""{"error":"rate-limited","retryAfter":{{retryAfter}}}"""
+                ),
             };
         }
 

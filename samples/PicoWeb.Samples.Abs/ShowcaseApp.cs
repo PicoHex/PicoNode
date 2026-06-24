@@ -38,25 +38,29 @@ public static class ShowcaseApp
         var staticFiles = new StaticFileMiddleware(staticRoot);
 
         // Auth middleware — injects AuthIdentity into WebContext.Items
-        app.Use(AuthMiddleware.Create(new AuthOptions
-        {
-            ValidateToken = static (token, ct) =>
-            {
-                // Demo: any token that starts with "demo-" is valid
-                if (token.StartsWith("demo-", StringComparison.Ordinal))
+        app.Use(
+            AuthMiddleware.Create(
+                new AuthOptions
                 {
-                    return ValueTask.FromResult<AuthIdentity?>(
-                        new AuthIdentity { UserId = token.Replace("demo-", "") });
+                    ValidateToken = static (token, ct) =>
+                    {
+                        // Demo: any token that starts with "demo-" is valid
+                        if (token.StartsWith("demo-", StringComparison.Ordinal))
+                        {
+                            return ValueTask.FromResult<AuthIdentity?>(
+                                new AuthIdentity { UserId = token.Replace("demo-", "") }
+                            );
+                        }
+                        return ValueTask.FromResult<AuthIdentity?>(null);
+                    },
                 }
-                return ValueTask.FromResult<AuthIdentity?>(null);
-            }
-        }));
+            )
+        );
 
         // Rate limit middleware — token-bucket rate limiter
         var rateLimitOpts = new RateLimitOptions
         {
-            KeySelector = static ctx =>
-                AuthMiddleware.GetIdentity(ctx)?.UserId ?? "anonymous",
+            KeySelector = static ctx => AuthMiddleware.GetIdentity(ctx)?.UserId ?? "anonymous",
             MaxTokens = 5,
             RefillRate = 1,
             RefillInterval = TimeSpan.FromSeconds(3),
@@ -265,7 +269,12 @@ public static class ShowcaseApp
                 if (session is null)
                 {
                     return ValueTask.FromResult(
-                        WebResults.Json(503, """{"error":"session-unavailable"}""", "Service Unavailable"));
+                        WebResults.Json(
+                            503,
+                            """{"error":"session-unavailable"}""",
+                            "Service Unavailable"
+                        )
+                    );
                 }
 
                 var count = session.GetInt32("counter") + 1;
@@ -284,12 +293,16 @@ public static class ShowcaseApp
                 if (session is null)
                 {
                     return ValueTask.FromResult(
-                        WebResults.Json(503, """{"error":"session-unavailable"}""", "Service Unavailable"));
+                        WebResults.Json(
+                            503,
+                            """{"error":"session-unavailable"}""",
+                            "Service Unavailable"
+                        )
+                    );
                 }
 
                 session.Clear();
-                return ValueTask.FromResult(
-                    WebResults.Json(200, """{"cleared":true}""", "OK"));
+                return ValueTask.FromResult(WebResults.Json(200, """{"cleared":true}""", "OK"));
             }
         );
 
@@ -301,11 +314,17 @@ public static class ShowcaseApp
                 if (session is null)
                 {
                     return ValueTask.FromResult(
-                        WebResults.Json(503, """{"error":"session-unavailable"}""", "Service Unavailable"));
+                        WebResults.Json(
+                            503,
+                            """{"error":"session-unavailable"}""",
+                            "Service Unavailable"
+                        )
+                    );
                 }
 
                 var keys = string.Join(", ", session.Keys.Select(k => $"\"{EscapeJson(k)}\""));
-                var json = $$"""{"id":"{{session.Id}}","isNew":{{JsonBool(session.IsNew)}},"isDirty":{{JsonBool(session.IsDirty)}},"keys":[{{keys}}]}""";
+                var json =
+                    $$"""{"id":"{{session.Id}}","isNew":{{JsonBool(session.IsNew)}},"isDirty":{{JsonBool(session.IsDirty)}},"keys":[{{keys}}]}""";
                 return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
             }
         );
@@ -319,7 +338,8 @@ public static class ShowcaseApp
                 if (identity is null)
                 {
                     return ValueTask.FromResult(
-                        WebResults.Json(200, """{"authenticated":false}""", "OK"));
+                        WebResults.Json(200, """{"authenticated":false}""", "OK")
+                    );
                 }
 
                 var json = $$"""{"authenticated":true,"userId":"{{identity.UserId}}"}""";
@@ -335,7 +355,8 @@ public static class ShowcaseApp
                 var state = ctx.Items[WebContextKeys.RateLimitState] as RateLimitState;
                 if (state is not null)
                 {
-                    var json = $$"""{"ok":true,"remaining":{{state.Remaining}},"limit":{{state.Limit}}}""";
+                    var json =
+                        $$"""{"ok":true,"remaining":{{state.Remaining}},"limit":{{state.Limit}}}""";
                     return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
                 }
                 return ValueTask.FromResult(WebResults.Json(200, """{"ok":true}""", "OK"));
@@ -345,25 +366,29 @@ public static class ShowcaseApp
         // SSE demo endpoint
         app.MapGet(
             "/api/sse/demo",
-            SseEndpoint.Create(static async (sse, ct) =>
-            {
-                await sse.WriteEventAsync("status", "Starting demo...", ct);
-                await Task.Delay(300, ct);
+            SseEndpoint.Create(
+                static async (sse, ct) =>
+                {
+                    await sse.WriteEventAsync("status", "Starting demo...", ct);
+                    await Task.Delay(300, ct);
 
-                await sse.WriteEventAsync("text_delta", "Hello from PicoWeb SSE!", ct);
-                await Task.Delay(300, ct);
+                    await sse.WriteEventAsync("text_delta", "Hello from PicoWeb SSE!", ct);
+                    await Task.Delay(300, ct);
 
-                await sse.WriteEventAsync("tool_call",
-                    """{"tool":"calculator","args":{"expr":"2+2"}}""", ct);
-                await Task.Delay(500, ct);
+                    await sse.WriteEventAsync(
+                        "tool_call",
+                        """{"tool":"calculator","args":{"expr":"2+2"}}""",
+                        ct
+                    );
+                    await Task.Delay(500, ct);
 
-                await sse.WriteEventAsync("text_delta",
-                    "```\nresult: 4\n```", ct);
-                await Task.Delay(300, ct);
+                    await sse.WriteEventAsync("text_delta", "```\nresult: 4\n```", ct);
+                    await Task.Delay(300, ct);
 
-                await sse.WriteEventAsync("done", """{"summary":"demo complete"}""", ct);
-                await sse.CompleteAsync(ct);
-            })
+                    await sse.WriteEventAsync("done", """{"summary":"demo complete"}""", ct);
+                    await sse.CompleteAsync(ct);
+                }
+            )
         );
 
         app.MapFallback(
