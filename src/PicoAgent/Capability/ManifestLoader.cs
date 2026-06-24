@@ -4,8 +4,8 @@ public sealed class ManifestData
 {
     public string Name { get; set; } = "";
     public string Version { get; set; } = "";
-    public List<CapabilityConfig> Capabilities { get; set; } = [];
-    public List<string> Knowledge { get; set; } = [];
+    public CapabilityConfig[] Capabilities { get; set; } = [];
+    public string[] Knowledge { get; set; } = [];
     public string? Setup { get; set; }
 }
 
@@ -13,7 +13,7 @@ public sealed class CapabilityConfig
 {
     public string Name { get; set; } = "";
     public string Handler { get; set; } = "";
-    public List<CapabilityTrigger> Triggers { get; set; } = [];
+    public CapabilityTrigger[] Triggers { get; set; } = [];
     public LifecycleKind Lifecycle { get; set; }
     public string? SchemaPath { get; set; }
     public int Priority { get; set; } = 50;

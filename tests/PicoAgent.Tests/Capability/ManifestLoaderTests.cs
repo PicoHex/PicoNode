@@ -5,6 +5,15 @@ using PicoAgent;
 public class ManifestLoaderTests
 {
     [Test]
+    public async Task ForceSerializerRegistration()
+    {
+        var data = new ManifestData { Name = "test" };
+        var json = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(data);
+        var restored = PicoJetson.JsonSerializer.Deserialize<ManifestData>(json);
+        await Assert.That(restored!.Name).IsEqualTo("test");
+    }
+
+    [Test]
     public async Task Load_ValidManifest_ReturnsCapabilities()
     {
         var json = """
@@ -34,7 +43,7 @@ public class ManifestLoaderTests
 
             await Assert.That(manifest).IsNotNull();
             await Assert.That(manifest!.Name).IsEqualTo("test-pack");
-            await Assert.That(manifest.Capabilities.Count).IsEqualTo(1);
+            await Assert.That(manifest.Capabilities.Length).IsEqualTo(1);
             await Assert.That(manifest.Capabilities[0].Name).IsEqualTo("bash");
             await Assert.That(manifest.Capabilities[0].Handler)
                 .IsEqualTo("bash tools/runner.sh");
@@ -58,7 +67,7 @@ public class ManifestLoaderTests
         try
         {
             var manifest = ManifestLoader.LoadFromFile(path);
-            await Assert.That(manifest!.Capabilities.Count).IsEqualTo(0);
+            await Assert.That(manifest!.Capabilities.Length).IsEqualTo(0);
         }
         finally { File.Delete(path); }
     }
