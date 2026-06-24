@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+    <IsPackable>true</IsPackable>
+    <PackageId>PicoAgent.Host</PackageId>
+    <Description>PicoAgent Host — HTTP/SSE server for the PicoAgent framework</Description>
+    <PackageTags>PicoHex;PicoAgent;AI;Agent;AOT;Host</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PicoAgent\PicoAgent.csproj" />
+    <ProjectReference Include="..\PicoNode.Web\PicoNode.Web.csproj" />
+    <ProjectReference Include="..\PicoWeb\PicoWeb.csproj" />
+    <PackageReference Include="PicoJetson" />
+    <PackageReference Include="PicoDI" />
+    <PackageReference Include="PicoLog" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="" Visible="false" />
+  </ItemGroup>
+</Project>
