@@ -2,6 +2,22 @@ namespace PicoNode.AI;
 
 public static class SseParser
 {
+    // Anthropic SSE protocol constants
+    private const string EventPrefix = "event: ";
+    private const string DataPrefix = "data: ";
+    private const string EventMessageStop = "message_stop";
+    private const string TypeMessageStart = "message_start";
+    private const string TypeContentBlockStart = "content_block_start";
+    private const string TypeContentBlockDelta = "content_block_delta";
+    private const string TypeContentBlockStop = "content_block_stop";
+    private const string TypeMessageDelta = "message_delta";
+    private const string TypeError = "error";
+    private const string BlockTypeText = "text";
+    private const string BlockTypeToolUse = "tool_use";
+    private const string DeltaTypeText = "text_delta";
+    private const string DeltaTypeInputJson = "input_json_delta";
+    private const string DeltaTypeThinking = "thinking_delta";
+
     public static async IAsyncEnumerable<AssistantMessageEvent> ParseAnthropicStreamAsync(
         Stream stream,
         string model,
@@ -21,9 +37,9 @@ public static class SseParser
             if (line == null) break;
 
             // SSE: lines starting with "data: " contain JSON
-            if (!line.StartsWith("data: "))
+            if (!line.StartsWith(DataPrefix))
             {
-                if (line.StartsWith("event: ") && line[7..] == "message_stop")
+                if (line.StartsWith(EventPrefix) && line[EventPrefix.Length..] == EventMessageStop)
                 {
                     message.ContentBlocks = contentBlocks.ToArray();
                     message.StopReason = stopReason ?? "end_turn";
@@ -33,7 +49,7 @@ public static class SseParser
                 continue;
             }
 
-            var json = line[6..]; // skip "data: "
+            var json = line[DataPrefix.Length..]; // skip "data: "
             JsonDocument? doc = null;
             try { doc = JsonDocument.Parse(json); }
             catch (JsonException) { continue; } // skip malformed JSON lines
@@ -44,7 +60,7 @@ public static class SseParser
 
             switch (type)
             {
-                case "message_start":
+                case TypeMessageStart:
                     if (!started)
                     {
                         started = true;
@@ -52,17 +68,17 @@ public static class SseParser
                     }
                     break;
 
-                case "content_block_start":
+                case TypeContentBlockStart:
                     var cbIndex = root.GetProperty("index").GetInt32();
                     var cb = root.GetProperty("content_block");
                     var cbType = cb.GetProperty("type").GetString()!;
 
-                    if (cbType == "text")
+                    if (cbType == BlockTypeText)
                     {
                         while (contentBlocks.Count <= cbIndex) contentBlocks.Add(new ContentBlock());
                         contentBlocks[cbIndex] = new ContentBlock { Type = "text", Text = "" };
                     }
-                    else if (cbType == "tool_use")
+                    else if (cbType == BlockTypeToolUse)
                     {
                         while (contentBlocks.Count <= cbIndex) contentBlocks.Add(new ContentBlock());
                         contentBlocks[cbIndex] = new ContentBlock
@@ -80,12 +96,12 @@ public static class SseParser
                     }
                     break;
 
-                case "content_block_delta":
+                case TypeContentBlockDelta:
                     var deltaIndex = root.GetProperty("index").GetInt32();
                     var delta = root.GetProperty("delta");
                     var deltaType = delta.GetProperty("type").GetString();
 
-                    if (deltaType == "text_delta")
+                    if (deltaType == DeltaTypeText)
                     {
                         var text = delta.GetProperty("text").GetString()!;
                         if (contentBlocks[deltaIndex].Type == "text")
@@ -99,7 +115,7 @@ public static class SseParser
                             Partial = ClonePartial(message, contentBlocks),
                         };
                     }
-                    else if (deltaType == "input_json_delta")
+                    else if (deltaType == DeltaTypeInputJson)
                     {
                         var partialJson = delta.GetProperty("partial_json").GetString()!;
                         currentToolArgs.Append(partialJson);
@@ -110,7 +126,7 @@ public static class SseParser
                             Partial = ClonePartial(message, contentBlocks),
                         };
                     }
-                    else if (deltaType == "thinking_delta")
+                    else if (deltaType == DeltaTypeThinking)
                     {
                         var thinking = delta.GetProperty("thinking").GetString()!;
                         yield return new AssistantMessageEvent.ThinkingDelta
@@ -122,7 +138,7 @@ public static class SseParser
                     }
                     break;
 
-                case "content_block_stop":
+                case TypeContentBlockStop:
                     var stopIdx = root.GetProperty("index").GetInt32();
                     if (contentBlocks[stopIdx].Type == "tool_call")
                     {
@@ -136,7 +152,7 @@ public static class SseParser
                     }
                     break;
 
-                case "message_delta":
+                case TypeMessageDelta:
                     if (root.TryGetProperty("delta", out var msgDelta) &&
                         msgDelta.TryGetProperty("stop_reason", out var sr))
                     {
@@ -149,7 +165,7 @@ public static class SseParser
                     }
                     break;
 
-                case "error":
+                case TypeError:
                     var errorMsg = new Message
                     {
                         Role = "assistant",

@@ -14,8 +14,12 @@ public sealed class ProviderRouter : IProviderRouter
         if (_providers.Count == 0) return null;
 
         var candidates = preferredFormat.HasValue
-            ? _providers.Where(p => p.ApiFormat == preferredFormat.Value)
+            ? _providers.Where(p => p.ApiFormat == preferredFormat.Value).ToList()
             : _providers;
+
+        // Fall back to all providers if format filter yields no results
+        if (candidates.Count == 0)
+            candidates = _providers;
 
         var match = candidates.FirstOrDefault(p =>
             model != null && p.ModelMapping.ContainsKey(model))

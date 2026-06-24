@@ -2,6 +2,11 @@ namespace PicoNode.AI;
 
 public sealed class AnthropicLLmClient : ILLmClient
 {
+    private const string MessagesPath = "/v1/messages";
+    private const string ApiKeyHeader = "x-api-key";
+    private const string VersionHeader = "anthropic-version";
+    private const string ApiVersion = "2023-06-01";
+
     private readonly HttpClient _http;
 
     public AnthropicLLmClient(HttpClient http) => _http = http;
@@ -12,19 +17,21 @@ public sealed class AnthropicLLmClient : ILLmClient
         StreamOptions? options,
         [EnumeratorCancellation] CancellationToken ct)
     {
+        // Prefer explicit key, then provider-specific env var (e.g. ANTHROPIC_API_KEY).
         var apiKey = options?.ApiKey
-            ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
+            ?? Environment.GetEnvironmentVariable(
+                $"{model.Provider.ToUpperInvariant()}_API_KEY")
             ?? "";
 
         var json = BuildRequestJson(model, context, options);
 
         using var request = new HttpRequestMessage(
-            HttpMethod.Post, $"{model.BaseUrl}/v1/messages")
+            HttpMethod.Post, $"{model.BaseUrl}{MessagesPath}")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };
-        request.Headers.Add("x-api-key", apiKey);
-        request.Headers.Add("anthropic-version", "2023-06-01");
+        request.Headers.Add(ApiKeyHeader, apiKey);
+        request.Headers.Add(VersionHeader, ApiVersion);
 
         using var response = await _http.SendAsync(
             request, HttpCompletionOption.ResponseHeadersRead, ct);
