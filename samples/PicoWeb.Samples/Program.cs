@@ -67,7 +67,7 @@ if (cert is not null)
         EnabledSslProtocols =
             System.Security.Authentication.SslProtocols.Tls12
             | System.Security.Authentication.SslProtocols.Tls13,
-        ApplicationProtocols = [SslApplicationProtocol.Http2, SslApplicationProtocol.Http11],
+        ApplicationProtocols = [SslApplicationProtocol.Http11], // HTTP/2 has pre-existing protocol error (ERR_HTTP2_PROTOCOL_ERROR); HPACK fixed in PicoNode.Http
     };
     scheme = "https";
     Console.Error.WriteLine(
