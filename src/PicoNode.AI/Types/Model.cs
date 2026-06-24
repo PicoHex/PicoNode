@@ -1,0 +1,22 @@
+namespace PicoNode.AI;
+
+public sealed class Model
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public AiApiFormat Api { get; set; }
+    public string BaseUrl { get; set; } = "";
+    public bool Reasoning { get; set; }
+    public ModelCost Cost { get; set; } = new();
+    public int ContextWindow { get; set; }
+    public int MaxTokens { get; set; }
+}
+
+public sealed class ModelCost
+{
+    public decimal Input { get; set; }
+    public decimal Output { get; set; }
+    public decimal CacheRead { get; set; }
+    public decimal CacheWrite { get; set; }
+}
