@@ -18,6 +18,7 @@
     <Project Path="src/Analyzers/PicoWeb.Gen/PicoWeb.Gen.csproj" />
     <Project Path="src/PicoNode.AI/PicoNode.AI.csproj" />
     <Project Path="src/PicoAgent/PicoAgent.csproj" />
+    <Project Path="src/PicoAgent.Host/PicoAgent.Host.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests\README.md" />
