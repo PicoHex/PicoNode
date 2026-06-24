@@ -80,6 +80,13 @@ internal sealed class HpackDynamicTable
         return null;
     }
 
+    /// <summary>Clears all entries from the dynamic table.</summary>
+    public void Clear()
+    {
+        _entries.Clear();
+        _currentSize = 0;
+    }
+
     /// <summary>Updates the dynamic table capacity. Evicts entries if needed.</summary>
     public void Resize(int newCapacity)
     {

@@ -320,8 +320,9 @@ internal static class Http2StreamHandler
         IBufferWriter<byte> writer
     )
     {
-        var state = connection.UserState as ConnectionRuntimeState;
-        var encoder = state?.ResponseHpackEncoder ?? new HpackEncoder();
+        // Use a fresh encoder per response — the shared encoder's dynamic table
+        // accumulates entries across requests, causing index mismatches (ERR_HTTP2_COMPRESSION_ERROR).
+        var encoder = new HpackEncoder();
         encoder.Encode(writer, headers);
     }
 
