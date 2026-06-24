@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PicoNode.AI\PicoNode.AI.csproj" />
+    <PackageReference Include="PicoJetson" />
     <PackageReference Include="TUnit" />
   </ItemGroup>
 </Project>
