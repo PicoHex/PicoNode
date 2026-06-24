@@ -7,27 +7,23 @@ public sealed class AgentLoop
     private readonly ILLmClient _llm;
     private readonly CapabilityRegistry _registry;
     private readonly CapabilityRunner _runner;
+    private readonly Model _model;
     private const int MaxToolIterations = 20;
 
-    public AgentLoop(ILLmClient llm, CapabilityRegistry registry, CapabilityRunner runner)
+    public AgentLoop(ILLmClient llm, CapabilityRegistry registry, CapabilityRunner runner, Model model)
     {
         _llm = llm;
         _registry = registry;
         _runner = runner;
+        _model = model;
     }
 
+    // v1: exceptions propagate to caller. v2: wrap in agent-level error handling.
     public async Task<List<Message>> RunTurnAsync(
         List<Message> messages, CancellationToken ct)
     {
         var result = new List<Message>();
-        var model = new Model
-        {
-            Id = "claude-sonnet-4-20250514",
-            BaseUrl = "https://api.anthropic.com",
-            Api = AiApiFormat.AnthropicMessages,
-            Provider = "anthropic",
-            MaxTokens = 4096,
-        };
+        var model = _model;
 
         var iterations = 0;
         bool hasTools;
@@ -78,7 +74,7 @@ public sealed class AgentLoop
                     var hookInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(new
                     {
                         kind = "hook",
-                        @event = "on_tool_call",
+                        eventName = "on_tool_call",
                         toolName = tc.Name,
                         args = tc.Arguments,
                     });

@@ -15,6 +15,7 @@ public sealed class CapabilityRunner
         var startInfo = ParseHandler(config.Handler);
         startInfo.RedirectStandardInput = true;
         startInfo.RedirectStandardOutput = true;
+        startInfo.RedirectStandardError = true;
         startInfo.UseShellExecute = false;
         startInfo.CreateNoWindow = true;
 

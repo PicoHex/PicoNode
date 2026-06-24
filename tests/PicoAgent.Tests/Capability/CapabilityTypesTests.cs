@@ -5,28 +5,33 @@ using PicoAgent;
 public class CapabilityTypesTests
 {
     [Test]
-    public async Task CapabilityTrigger_Construction_Works()
+    public async Task ManifestCapability_Construction_Works()
     {
-        var trigger = new CapabilityTrigger
+        var cap = new ManifestCapability
         {
-            Kind = TriggerKind.OnToolCall,
-            ToolName = "bash",
+            Name = "bash",
+            Handler = "bash tools/runner.sh",
+            TriggerKinds = [0],
+            TriggerToolNames = ["bash"],
         };
 
-        await Assert.That(trigger.Kind).IsEqualTo(TriggerKind.OnToolCall);
-        await Assert.That(trigger.ToolName).IsEqualTo("bash");
+        await Assert.That(cap.Name).IsEqualTo("bash");
+        await Assert.That(cap.MatchesTrigger(TriggerKind.OnToolCall)).IsTrue();
+        await Assert.That(cap.LifecycleKind).IsEqualTo(LifecycleKind.Persistent);
     }
 
     [Test]
-    public async Task CapabilityTrigger_NullToolName_ForAllTools()
+    public async Task ManifestCapability_NullToolName_ForAllTools()
     {
-        var trigger = new CapabilityTrigger
+        var cap = new ManifestCapability
         {
-            Kind = TriggerKind.OnToolCall,
-            ToolName = null,
+            Name = "guard",
+            TriggerKinds = [0],
+            TriggerToolNames = [null],
         };
 
-        await Assert.That(trigger.ToolName).IsNull();
+        await Assert.That(cap.TriggerToolNames[0]).IsNull();
+        await Assert.That(cap.MatchesTrigger(TriggerKind.OnToolCall)).IsTrue();
     }
 
     [Test]

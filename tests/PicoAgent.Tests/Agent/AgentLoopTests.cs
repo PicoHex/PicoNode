@@ -11,7 +11,15 @@ public class AgentLoopTests
         var llmClient = new MockLLmClient();
         var registry = new CapabilityRegistry();
         var runner = new CapabilityRunner();
-        var loop = new AgentLoop(llmClient, registry, runner);
+        var model = new Model
+        {
+            Id = "claude-sonnet-4-20250514",
+            BaseUrl = "https://api.anthropic.com",
+            Api = AiApiFormat.AnthropicMessages,
+            Provider = "anthropic",
+            MaxTokens = 4096,
+        };
+        var loop = new AgentLoop(llmClient, registry, runner, model);
 
         var messages = new List<Message>
         {
