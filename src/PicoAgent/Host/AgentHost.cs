@@ -5,13 +5,11 @@ using PicoNode.AI;
 public sealed class AgentHost
 {
     private readonly AgentLoop _loop;
-    private readonly CapabilityRegistry _registry;
     private readonly Dictionary<string, List<Message>> _sessions = [];
 
-    public AgentHost(AgentLoop loop, CapabilityRegistry registry)
+    public AgentHost(AgentLoop loop)
     {
         _loop = loop;
-        _registry = registry;
     }
 
     public async Task<string> ProcessMessageAsync(

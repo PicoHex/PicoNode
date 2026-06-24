@@ -23,7 +23,7 @@ var model = new Model
     MaxTokens = 4096,
 };
 var loop = new AgentLoop(llmClient, registry, runner, model);
-var host = new AgentHost(loop, registry);
+var host = new AgentHost(loop);
 
 var api = new WebApiBuilder()
     .ConfigureApp(o => new WebAppOptions { ServerHeader = "PicoAgent" })
@@ -42,6 +42,7 @@ api.MapPost("/session/{id}/message", async (WebContext ctx, CancellationToken ct
     };
 });
 
+// v1: stub SSE endpoint. v2: use SseConnection to stream AgentLoop events in real-time.
 api.MapGet("/session/{id}/events", (WebContext ctx, CancellationToken ct) =>
 {
     return ValueTask.FromResult(new HttpResponse
@@ -68,5 +69,23 @@ var url = $"http://+:{port}";
 Console.WriteLine($"Listening on {url}");
 await api.RunAsync(url);
 
-static string EscapeJson(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"")
-    .Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+static string EscapeJson(string s)
+{
+    var sb = new StringBuilder(s.Length + 2);
+    foreach (var c in s)
+    {
+        switch (c)
+        {
+            case '"': sb.Append("\\\""); break;
+            case '\\': sb.Append("\\\\"); break;
+            case '\n': sb.Append("\\n"); break;
+            case '\r': sb.Append("\\r"); break;
+            case '\t': sb.Append("\\t"); break;
+            default:
+                if (c < 0x20) sb.Append($"\\u{(int)c:X4}");
+                else sb.Append(c);
+                break;
+        }
+    }
+    return sb.ToString();
+}

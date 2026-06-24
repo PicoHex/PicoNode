@@ -20,7 +20,7 @@ public class AgentHostTests
             MaxTokens = 4096,
         };
         var loop = new AgentLoop(llmClient, registry, runner, model);
-        var host = new AgentHost(loop, registry);
+        var host = new AgentHost(loop);
 
         var response = await host.ProcessMessageAsync("Hello", CancellationToken.None);
 
