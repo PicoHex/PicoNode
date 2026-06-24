@@ -5,7 +5,6 @@ public sealed class TcpNode : INode
     private const string OperationStart = "tcp.start";
     private const string OperationStop = "tcp.stop.listener";
     private const string OperationAccept = "tcp.accept";
-    private const string OperationAcceptCancelled = "tcp.accept.cancelled";
     private const string OperationRejectLimit = "tcp.reject.limit";
     private const string OperationRejectTracking = "tcp.reject.tracking";
     private const string OperationTls = "tcp.tls";
@@ -296,9 +295,9 @@ public sealed class TcpNode : INode
                 {
                     break;
                 }
-                catch (SocketException ex) when (_cts.IsCancellationRequested)
+                catch (SocketException) when (_cts.IsCancellationRequested)
                 {
-                    ReportFault(NodeFaultCode.AcceptFailed, OperationAcceptCancelled, ex);
+                    // Graceful shutdown — accept was cancelled intentionally.
                     break;
                 }
                 catch (ObjectDisposedException) when (_cts.IsCancellationRequested)
