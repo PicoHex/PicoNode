@@ -249,7 +249,7 @@ internal static class Http2StreamHandler
                 continue;
             }
 
-            responseHeaders.Add((header.Key, header.Value));
+            responseHeaders.Add((header.Key.ToLowerInvariant(), header.Value));
         }
 
         // Encode response headers as HPACK block in a temporary buffer,
@@ -781,7 +781,7 @@ internal static class Http2StreamHandler
                     or "upgrade"
             )
                 continue;
-            responseHeaders.Add((header.Key, header.Value));
+            responseHeaders.Add((header.Key.ToLowerInvariant(), header.Value));
         }
 
         var headerWriter = new ArrayBufferWriter<byte>();

@@ -10,8 +10,9 @@ var sessionOptions = new SessionOptions
     CleanupInterval = TimeSpan.FromMinutes(5),
 };
 container.RegisterSingle(typeof(SessionOptions), sessionOptions);
-container.RegisterSingleton<ISessionStore>(scope =>
-    new InMemorySessionStore(scope.GetService<SessionOptions>()));
+container.RegisterSingleton<ISessionStore>(scope => new InMemorySessionStore(
+    scope.GetService<SessionOptions>()
+));
 
 // Controllers are auto-registered by Controllers.Gen source generator
 // via [ModuleInitializer] in ControllerServiceRegistrations.g.cs
@@ -60,14 +61,16 @@ SslServerAuthenticationOptions? sslOptions = null;
 
 if (cert is not null)
 {
-    Console.Error.WriteLine($"Using HTTPS with dev certificate: {cert.Subject}, key={cert.GetKeyAlgorithm()}");
+    Console.Error.WriteLine(
+        $"Using HTTPS with dev certificate: {cert.Subject}, key={cert.GetKeyAlgorithm()}"
+    );
     sslOptions = new()
     {
         ServerCertificate = cert,
         EnabledSslProtocols =
             System.Security.Authentication.SslProtocols.Tls12
             | System.Security.Authentication.SslProtocols.Tls13,
-        ApplicationProtocols = [SslApplicationProtocol.Http11], // HTTP/2: HPACK fixed, flow control fixed; remaining proto error in TCP send path (pre-existing)
+        ApplicationProtocols = [SslApplicationProtocol.Http2, SslApplicationProtocol.Http11],
     };
     scheme = "https";
     Console.Error.WriteLine(
@@ -168,8 +171,10 @@ static X509Certificate2 CreateFreshCert()
     cert.Dispose();
 
     var loaded = X509CertificateLoader.LoadPkcs12FromFile(
-        pfxPath, "",
-        X509KeyStorageFlags.DefaultKeySet);
+        pfxPath,
+        "",
+        X509KeyStorageFlags.DefaultKeySet
+    );
 
     // Best-effort trust: add to CurrentUser\Root so Schannel accepts HTTP/2 ALPN.
     try
@@ -194,11 +199,41 @@ static X509Certificate2 CreateFreshCert()
     }
     catch { }
 
-    Console.Error.WriteLine($"Created fresh dev cert: {loaded.Subject}, key={loaded.GetKeyAlgorithm()}");
+    Console.Error.WriteLine(
+        $"Created fresh dev cert: {loaded.Subject}, key={loaded.GetKeyAlgorithm()}"
+    );
     return loaded;
 }
 
 static X509Certificate2? LoadDevCert()
 {
+    // Try to load the cached PFX first to avoid re-creating the cert
+    // and re-triggering the UAC prompt on every restart.
+    var pfxPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "PicoWeb",
+        "localhost-dev-cert.pfx"
+    );
+
+    if (File.Exists(pfxPath))
+    {
+        try
+        {
+            var cached = X509CertificateLoader.LoadPkcs12FromFile(
+                pfxPath,
+                "",
+                X509KeyStorageFlags.DefaultKeySet
+            );
+            Console.Error.WriteLine(
+                $"Loaded cached dev cert: {cached.Subject}, key={cached.GetKeyAlgorithm()}"
+            );
+            return cached;
+        }
+        catch
+        {
+            // Corrupted or invalid PFX — fall through to create a fresh one.
+        }
+    }
+
     return CreateFreshCert();
 }
