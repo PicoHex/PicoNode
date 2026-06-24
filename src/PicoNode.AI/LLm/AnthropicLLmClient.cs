@@ -4,10 +4,7 @@ public sealed class AnthropicLLmClient : ILLmClient
 {
     private readonly HttpClient _http;
 
-    public AnthropicLLmClient(HttpClient http)
-    {
-        _http = http;
-    }
+    public AnthropicLLmClient(HttpClient http) => _http = http;
 
     public async IAsyncEnumerable<AssistantMessageEvent> StreamAsync(
         Model model,
@@ -19,7 +16,7 @@ public sealed class AnthropicLLmClient : ILLmClient
             ?? Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
             ?? "";
 
-        var json = BuildRequestBody(model, context, options);
+        var json = BuildRequestJson(model, context, options);
 
         using var request = new HttpRequestMessage(
             HttpMethod.Post, $"{model.BaseUrl}/v1/messages")
@@ -41,89 +38,197 @@ public sealed class AnthropicLLmClient : ILLmClient
         }
     }
 
-    private static string BuildRequestBody(
+    private static string BuildRequestJson(
         Model model, ChatContext context, StreamOptions? options)
     {
-        var body = new Dictionary<string, object?>
-        {
-            ["model"] = model.Id,
-            ["max_tokens"] = options?.MaxTokens ?? model.MaxTokens,
-            ["stream"] = true,
-            ["messages"] = context.Messages.Select(FormatMessage).ToArray(),
-        };
+        var sb = new StringBuilder(4096);
+        sb.Append('{');
+        AppendProp(sb, "model", model.Id);
+        sb.Append(',');
+        AppendProp(sb, "max_tokens", (options?.MaxTokens ?? model.MaxTokens).ToString());
+        sb.Append(',');
+        sb.Append("\"stream\":true");
+        sb.Append(',');
 
+        // Messages
+        sb.Append("\"messages\":[");
+        for (int i = 0; i < context.Messages.Length; i++)
+        {
+            if (i > 0) sb.Append(',');
+            AppendMessage(sb, context.Messages[i]);
+        }
+        sb.Append(']');
+
+        // System prompt
         if (context.SystemPrompt != null)
         {
-            body["system"] = new[]
-            {
-                new Dictionary<string, object?>
-                {
-                    ["type"] = "text",
-                    ["text"] = context.SystemPrompt,
-                },
-            };
+            sb.Append(',');
+            sb.Append("\"system\":[{\"type\":\"text\",\"text\":");
+            sb.Append(EscapeString(context.SystemPrompt));
+            sb.Append("}]");
         }
 
+        // Tools
         if (context.Tools is { Length: > 0 })
         {
-            body["tools"] = context.Tools.Select(t => new Dictionary<string, object?>
+            sb.Append(',');
+            sb.Append("\"tools\":[");
+            for (int i = 0; i < context.Tools.Length; i++)
             {
-                ["name"] = t.Function.Name,
-                ["description"] = t.Function.Description,
-                ["input_schema"] = System.Text.Json.JsonSerializer
-                    .Deserialize<object>(t.Function.Parameters),
-            }).ToArray();
+                if (i > 0) sb.Append(',');
+                sb.Append("{\"name\":");
+                sb.Append(EscapeString(context.Tools[i].Function.Name));
+                sb.Append(",\"description\":");
+                sb.Append(EscapeString(context.Tools[i].Function.Description));
+                sb.Append(",\"input_schema\":");
+                sb.Append(context.Tools[i].Function.Parameters); // raw JSON string
+                sb.Append('}');
+            }
+            sb.Append(']');
         }
 
-        return System.Text.Json.JsonSerializer.Serialize(body);
+        sb.Append('}');
+        return sb.ToString();
     }
 
-    private static object FormatMessage(Message m) => m.Role switch
+    private static void AppendMessage(StringBuilder sb, Message m)
     {
-        "user" => new Dictionary<string, object?>
+        if (m.Role == "user")
         {
-            ["role"] = "user",
-            ["content"] = m.Content,
-        },
-        "assistant" => new Dictionary<string, object?>
+            sb.Append("{\"role\":\"user\",\"content\":");
+            sb.Append(EscapeString(m.Content));
+            sb.Append('}');
+        }
+        else if (m.Role == "assistant")
         {
-            ["role"] = "assistant",
-            ["content"] = m.ContentBlocks?
-                .Select(FormatContentBlock).ToArray() ?? [],
-        },
-        "toolResult" => new Dictionary<string, object?>
-        {
-            ["role"] = "user",
-            ["content"] = new[]
+            sb.Append("{\"role\":\"assistant\",\"content\":[");
+            if (m.ContentBlocks != null)
             {
-                new Dictionary<string, object?>
+                for (int i = 0; i < m.ContentBlocks.Length; i++)
                 {
-                    ["type"] = "tool_result",
-                    ["tool_use_id"] = m.ToolCallId,
-                    ["content"] = m.ContentBlocks?
-                        .Where(cb => cb.Type == "text")
-                        .Select(cb => cb.Text).FirstOrDefault() ?? "",
-                    ["is_error"] = m.IsError,
-                },
-            },
-        },
-        _ => throw new ArgumentException($"Unknown role: {m.Role}"),
-    };
+                    if (i > 0) sb.Append(',');
+                    AppendContentBlock(sb, m.ContentBlocks[i]);
+                }
+            }
+            sb.Append("]}");
+        }
+        else if (m.Role == "toolResult")
+        {
+            var text = m.ContentBlocks?
+                .Where(cb => cb.Type == "text")
+                .Select(cb => cb.Text).FirstOrDefault() ?? "";
+            sb.Append("{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",");
+            sb.Append("\"tool_use_id\":");
+            sb.Append(EscapeString(m.ToolCallId ?? ""));
+            sb.Append(",\"content\":");
+            sb.Append(EscapeString(text));
+            sb.Append(",\"is_error\":");
+            sb.Append(m.IsError ? "true" : "false");
+            sb.Append("}]}");
+        }
+    }
 
-    private static object FormatContentBlock(ContentBlock cb) => cb.Type switch
+    private static void AppendContentBlock(StringBuilder sb, ContentBlock cb)
     {
-        "text" => new Dictionary<string, object?>
+        if (cb.Type == "text")
         {
-            ["type"] = "text",
-            ["text"] = cb.Text,
-        },
-        "tool_call" => new Dictionary<string, object?>
+            sb.Append("{\"type\":\"text\",\"text\":");
+            sb.Append(EscapeString(cb.Text ?? ""));
+            sb.Append('}');
+        }
+        else if (cb.Type == "tool_call")
         {
-            ["type"] = "tool_use",
-            ["id"] = cb.Id,
-            ["name"] = cb.Name,
-            ["input"] = cb.Arguments,
-        },
-        _ => throw new ArgumentException($"Unknown content block type: {cb.Type}"),
-    };
+            sb.Append("{\"type\":\"tool_use\",\"id\":");
+            sb.Append(EscapeString(cb.Id ?? ""));
+            sb.Append(",\"name\":");
+            sb.Append(EscapeString(cb.Name ?? ""));
+            sb.Append(",\"input\":");
+            sb.Append(BuildArgsJson(cb.Arguments));
+            sb.Append('}');
+        }
+    }
+
+    private static string BuildArgsJson(Dictionary<string, object?> args)
+    {
+        if (args.Count == 0) return "{}";
+        var sb = new StringBuilder(256);
+        sb.Append('{');
+        bool first = true;
+        foreach (var (k, v) in args)
+        {
+            if (!first) sb.Append(',');
+            sb.Append(EscapeString(k));
+            sb.Append(':');
+            AppendValue(sb, v);
+            first = false;
+        }
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    private static void AppendValue(StringBuilder sb, object? v)
+    {
+        switch (v)
+        {
+            case null: sb.Append("null"); break;
+            case string s: sb.Append(EscapeString(s)); break;
+            case bool b: sb.Append(b ? "true" : "false"); break;
+            case int i: sb.Append(i); break;
+            case long l: sb.Append(l); break;
+            case double d: sb.Append(d.ToString("G")); break;
+            case float f: sb.Append(f.ToString("G")); break;
+            case Dictionary<string, object?> dict:
+                sb.Append('{');
+                bool first = true;
+                foreach (var (dk, dv) in dict)
+                {
+                    if (!first) sb.Append(',');
+                    sb.Append(EscapeString(dk));
+                    sb.Append(':');
+                    AppendValue(sb, dv);
+                    first = false;
+                }
+                sb.Append('}');
+                break;
+            case System.Collections.IList list:
+                sb.Append('[');
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (i > 0) sb.Append(',');
+                    AppendValue(sb, list[i]);
+                }
+                sb.Append(']');
+                break;
+            default:
+                sb.Append(EscapeString(v.ToString() ?? "null"));
+                break;
+        }
+    }
+
+    private static string EscapeString(string s)
+    {
+        var sb = new StringBuilder(s.Length + 2);
+        sb.Append('"');
+        foreach (var c in s)
+        {
+            switch (c)
+            {
+                case '"': sb.Append("\\\""); break;
+                case '\\': sb.Append("\\\\"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default: sb.Append(c); break;
+            }
+        }
+        sb.Append('"');
+        return sb.ToString();
+    }
+
+    private static void AppendProp(StringBuilder sb, string name, string value)
+    {
+        sb.Append(EscapeString(name));
+        sb.Append(':');
+        sb.Append(EscapeString(value));
+    }
 }

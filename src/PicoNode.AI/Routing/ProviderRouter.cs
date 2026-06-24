@@ -1,0 +1,26 @@
+namespace PicoNode.AI;
+
+public sealed class ProviderRouter : IProviderRouter
+{
+    private readonly IReadOnlyList<ProviderConfig> _providers;
+
+    public ProviderRouter(IEnumerable<ProviderConfig> providers)
+    {
+        _providers = providers.OrderBy(p => p.Priority).ToList();
+    }
+
+    public ProviderConfig? Resolve(string? model, AiApiFormat? preferredFormat)
+    {
+        if (_providers.Count == 0) return null;
+
+        var candidates = preferredFormat.HasValue
+            ? _providers.Where(p => p.ApiFormat == preferredFormat.Value)
+            : _providers;
+
+        var match = candidates.FirstOrDefault(p =>
+            model != null && p.ModelMapping.ContainsKey(model))
+            ?? candidates.FirstOrDefault();
+
+        return match;
+    }
+}
