@@ -54,4 +54,26 @@ public class ProviderRouterTests
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.ModelMapping["gpt-4"]).IsEqualTo("gpt-4o-2025-05-14");
     }
+
+    [Test]
+    public async Task Resolve_PreferredFormatNoMatch_ReturnsNull()
+    {
+        var providers = new[]
+        {
+            new ProviderConfig
+            {
+                Name = "anthropic",
+                ApiFormat = AiApiFormat.AnthropicMessages,
+                Priority = 1,
+            },
+        };
+        var router = new ProviderRouter(providers);
+
+        // Request OpenAI but only Anthropic provider exists
+        var result = router.Resolve(null, AiApiFormat.OpenAIChatCompletions);
+
+        // Should fall back to any available provider
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Name).IsEqualTo("anthropic");
+    }
 }
