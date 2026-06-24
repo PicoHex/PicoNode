@@ -25,7 +25,11 @@ public sealed class ManifestCapability
 
     public LifecycleKind LifecycleKind => (LifecycleKind)Lifecycle;
     public bool MatchesTrigger(TriggerKind kind)
-        => TriggerKinds.Any(k => (TriggerKind)k == kind);
+    {
+        if (TriggerKinds.Length != TriggerToolNames.Length)
+            return false;
+        return TriggerKinds.Any(k => (TriggerKind)k == kind);
+    }
 }
 
 public static class ManifestLoader

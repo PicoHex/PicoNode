@@ -6,18 +6,40 @@ using PicoNode.AI;
 var port = args.Length > 0 && int.TryParse(args[0], out var p) ? p : 8080;
 Console.WriteLine($"PicoAgent Host starting on port {port}...");
 
+// Wire up the agent loop
+var httpClient = new HttpClient();
+var llmClient = new AnthropicLLmClient(httpClient);
+var registry = new CapabilityRegistry();
+registry.Scan(Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+    ".pico-agent"));
+var runner = new CapabilityRunner();
+var model = new Model
+{
+    Id = "claude-sonnet-4-20250514",
+    BaseUrl = "https://api.anthropic.com",
+    Api = AiApiFormat.AnthropicMessages,
+    Provider = "anthropic",
+    MaxTokens = 4096,
+};
+var loop = new AgentLoop(llmClient, registry, runner, model);
+var host = new AgentHost(loop, registry);
+
 var api = new WebApiBuilder()
     .ConfigureApp(o => new WebAppOptions { ServerHeader = "PicoAgent" })
     .Build();
 
-api.MapPost("/session/{id}/message", (WebContext ctx, CancellationToken ct) =>
+api.MapPost("/session/{id}/message", async (WebContext ctx, CancellationToken ct) =>
 {
-    return ValueTask.FromResult(new HttpResponse
+    using var reader = new StreamReader(ctx.Request.BodyStream);
+    var body = await reader.ReadToEndAsync(ct);
+    var response = await host.ProcessMessageAsync(body, ct, ctx.RouteValues["id"]);
+    return new HttpResponse
     {
         StatusCode = 200,
         Headers = [new("Content-Type", "application/json")],
-        Body = "{\"status\":\"ok\"}"u8.ToArray(),
-    });
+        Body = Encoding.UTF8.GetBytes($"{{\"response\":\"{EscapeJson(response)}\"}}"),
+    };
 });
 
 api.MapGet("/session/{id}/events", (WebContext ctx, CancellationToken ct) =>
@@ -32,7 +54,9 @@ api.MapGet("/session/{id}/events", (WebContext ctx, CancellationToken ct) =>
 
 api.MapPost("/reload", (WebContext ctx, CancellationToken ct) =>
 {
-    // v1: reload signal — Agent rescans capabilities + knowledge on next turn
+    registry.Scan(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".pico-agent"));
     return ValueTask.FromResult(new HttpResponse
     {
         StatusCode = 200,
@@ -43,3 +67,6 @@ api.MapPost("/reload", (WebContext ctx, CancellationToken ct) =>
 var url = $"http://+:{port}";
 Console.WriteLine($"Listening on {url}");
 await api.RunAsync(url);
+
+static string EscapeJson(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"")
+    .Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
