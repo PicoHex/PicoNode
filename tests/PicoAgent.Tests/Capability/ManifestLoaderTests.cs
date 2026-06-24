@@ -1,0 +1,65 @@
+namespace PicoAgent.Tests.Capability;
+
+using PicoAgent;
+
+public class ManifestLoaderTests
+{
+    [Test]
+    public async Task Load_ValidManifest_ReturnsCapabilities()
+    {
+        var json = """
+            {
+              "name": "test-pack",
+              "version": "1.0.0",
+              "capabilities": [
+                {
+                  "name": "bash",
+                  "handler": "bash tools/runner.sh",
+                  "triggers": [
+                    { "kind": "OnToolCall", "toolName": "bash" }
+                  ],
+                  "lifecycle": "oneshot",
+                  "priority": 50,
+                  "description": "Run shell commands"
+                }
+              ]
+            }
+            """;
+
+        var path = Path.GetTempFileName();
+        await File.WriteAllTextAsync(path, json);
+        try
+        {
+            var manifest = ManifestLoader.LoadFromFile(path);
+
+            await Assert.That(manifest).IsNotNull();
+            await Assert.That(manifest!.Name).IsEqualTo("test-pack");
+            await Assert.That(manifest.Capabilities.Count).IsEqualTo(1);
+            await Assert.That(manifest.Capabilities[0].Name).IsEqualTo("bash");
+            await Assert.That(manifest.Capabilities[0].Handler)
+                .IsEqualTo("bash tools/runner.sh");
+            await Assert.That(manifest.Capabilities[0].Triggers[0].Kind)
+                .IsEqualTo(TriggerKind.OnToolCall);
+            await Assert.That(manifest.Capabilities[0].Triggers[0].ToolName)
+                .IsEqualTo("bash");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Test]
+    public async Task Load_EmptyCapabilities_ReturnsEmptyList()
+    {
+        var json = """{"name":"minimal","capabilities":[]}""";
+        var path = Path.GetTempFileName();
+        await File.WriteAllTextAsync(path, json);
+        try
+        {
+            var manifest = ManifestLoader.LoadFromFile(path);
+            await Assert.That(manifest!.Capabilities.Count).IsEqualTo(0);
+        }
+        finally { File.Delete(path); }
+    }
+}
