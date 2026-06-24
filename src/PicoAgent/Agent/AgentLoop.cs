@@ -18,6 +18,13 @@ public sealed class AgentLoop
         _model = model;
     }
 
+    /// v1: truncate to last N messages. v2: LLM-based summary.
+    public static List<Message> Compact(List<Message> messages, int keepLast = 20)
+    {
+        if (messages.Count <= keepLast) return [..messages];
+        return messages.Skip(messages.Count - keepLast).ToList();
+    }
+
     // v1: exceptions propagate to caller. v2: wrap in agent-level error handling.
     public async Task<List<Message>> RunTurnAsync(
         List<Message> messages, CancellationToken ct)

@@ -30,6 +30,16 @@ api.MapGet("/session/{id}/events", (WebContext ctx, CancellationToken ct) =>
     });
 });
 
+api.MapPost("/reload", (WebContext ctx, CancellationToken ct) =>
+{
+    // v1: reload signal — Agent rescans capabilities + knowledge on next turn
+    return ValueTask.FromResult(new HttpResponse
+    {
+        StatusCode = 200,
+        Body = "{\"status\":\"reloaded\"}"u8.ToArray(),
+    });
+});
+
 var url = $"http://+:{port}";
 Console.WriteLine($"Listening on {url}");
 await api.RunAsync(url);

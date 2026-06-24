@@ -28,6 +28,7 @@ public sealed class CapabilityRunner
         process.StandardInput.Close();
 
         // Read response — single line, parse as JSON
+        // v1: single response. v2: streaming with health ping/pong for persistent hooks.
         var responseLine = await process.StandardOutput.ReadLineAsync(ct);
         if (responseLine == null)
             return default;
