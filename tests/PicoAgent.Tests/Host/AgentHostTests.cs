@@ -57,4 +57,36 @@ public sealed class MockLLmClient : ILLmClient
             },
         };
     }
+
+    [Test]
+    public async Task ProcessMessage_Concurrent_NoExceptions()
+    {
+        var llmClient = new MockLLmClient();
+        var registry = new CapabilityRegistry();
+        var runner = new CapabilityRunner();
+        var model = new Model
+        {
+            Id = "claude-sonnet-4",
+            BaseUrl = "https://api.anthropic.com",
+            Api = AiApiFormat.AnthropicMessages,
+            Provider = "anthropic",
+            MaxTokens = 4096,
+        };
+        var loop = new AgentLoop(llmClient, registry, runner, model);
+        var host = new AgentHost(loop);
+
+        var tasks = new List<Task>();
+        for (int i = 0; i < 10; i++)
+        {
+            var sessionId = $"session-{i}";
+            tasks.Add(Task.Run(async () =>
+            {
+                var response = await host.ProcessMessageAsync(
+                    $"msg-{i}", CancellationToken.None, sessionId);
+                await Assert.That(response).Contains("Hello!");
+            }));
+        }
+
+        await Task.WhenAll(tasks);
+    }
 }

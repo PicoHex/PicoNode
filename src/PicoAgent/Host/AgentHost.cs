@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace PicoAgent;
 
 using PicoNode.AI;
@@ -5,7 +7,7 @@ using PicoNode.AI;
 public sealed class AgentHost
 {
     private readonly AgentLoop _loop;
-    private readonly Dictionary<string, List<Message>> _sessions = [];
+    private readonly ConcurrentDictionary<string, List<Message>> _sessions = [];
 
     public AgentHost(AgentLoop loop)
     {
@@ -17,11 +19,7 @@ public sealed class AgentHost
         CancellationToken ct,
         string sessionId = "default")
     {
-        if (!_sessions.TryGetValue(sessionId, out var messages))
-        {
-            messages = [];
-            _sessions[sessionId] = messages;
-        }
+        var messages = _sessions.GetOrAdd(sessionId, _ => []);
 
         messages.Add(new Message
         {
