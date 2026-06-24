@@ -69,7 +69,7 @@ public sealed class Http2Tests
         using var client = new HttpClient(handler)
         {
             BaseAddress = new Uri($"http://127.0.0.1:{port}"),
-            DefaultRequestVersion = HttpVersion.Version20,
+            DefaultRequestVersion = System.Net.HttpVersion.Version20,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact,
         };
 
@@ -77,7 +77,7 @@ public sealed class Http2Tests
         var body = await response.Content.ReadAsStringAsync();
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
-        await Assert.That(response.Version).IsEqualTo(HttpVersion.Version20);
+        await Assert.That(response.Version).IsEqualTo(System.Net.HttpVersion.Version20);
         await Assert.That(body).Contains("ok");
     }
 
@@ -127,7 +127,7 @@ public sealed class Http2Tests
         using var client = new HttpClient(handler)
         {
             BaseAddress = new Uri($"https://localhost:{port}"),
-            DefaultRequestVersion = HttpVersion.Version20,
+            DefaultRequestVersion = System.Net.HttpVersion.Version20,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact,
         };
 
@@ -135,7 +135,7 @@ public sealed class Http2Tests
         var body = await response.Content.ReadAsStringAsync();
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
-        await Assert.That(response.Version).IsEqualTo(HttpVersion.Version20);
+        await Assert.That(response.Version).IsEqualTo(System.Net.HttpVersion.Version20);
         await Assert.That(body).Contains("ok");
     }
 

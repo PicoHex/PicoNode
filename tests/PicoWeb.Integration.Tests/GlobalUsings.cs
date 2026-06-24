@@ -1,9 +1,12 @@
+global using System.IO.Pipelines;
 global using System.Net;
 global using System.Net.Security;
 global using System.Security.Authentication;
 global using System.Security.Cryptography.X509Certificates;
+global using System.Text;
 global using PicoDI;
 global using PicoDI.Abs;
+global using PicoNode.Http;
 global using PicoNode.Web;
 global using PicoNode.Web.Session.Abs;
 global using PicoWeb;
