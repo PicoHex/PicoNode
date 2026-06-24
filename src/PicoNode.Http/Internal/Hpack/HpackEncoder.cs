@@ -76,7 +76,10 @@ internal sealed class HpackEncoder
         {
             if (!TryEncodeIndexed(writer, name, value))
             {
-                EncodeLiteral(writer, name, value);
+                // RFC 7540 §8.1.2: header field names MUST be lowercase on the wire.
+                // Only EncodeLiteral reaches the wire with the name string;
+                // TryEncodeIndexed uses static table references (already lowercase).
+                EncodeLiteral(writer, name.ToLowerInvariant(), value);
             }
         }
     }

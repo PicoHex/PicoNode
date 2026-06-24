@@ -210,12 +210,21 @@ public sealed class HpackEncoderTests
 
         await Assert.That(ok).IsTrue();
         await Assert.That(decoded.Count).IsEqualTo(headers.Count);
+
+        // After encoding, names are normalized to lowercase per RFC 7540 §8.1.2.
+        await Assert.That(decoded[0].Item1).IsEqualTo(":status");
+        await Assert.That(decoded[1].Item1).IsEqualTo("content-type");
+        await Assert.That(decoded[2].Item1).IsEqualTo("server");
+        await Assert.That(decoded[3].Item1).IsEqualTo("content-length");
+        await Assert.That(decoded[4].Item1).IsEqualTo("x-ratelimit-limit");
+        await Assert.That(decoded[5].Item1).IsEqualTo("x-ratelimit-remaining");
+        await Assert.That(decoded[6].Item1).IsEqualTo("x-ratelimit-reset");
+
         for (int i = 0; i < headers.Count; i++)
         {
-            await Assert.That(decoded[i].Item1).IsEqualTo(
-                headers[i].Item1, $"Header {i} name mismatch");
-            await Assert.That(decoded[i].Item2).IsEqualTo(
-                headers[i].Item2, $"Header {i} value mismatch");
+            await Assert
+                .That(decoded[i].Item2)
+                .IsEqualTo(headers[i].Item2, $"Header {i} value mismatch");
         }
     }
 }

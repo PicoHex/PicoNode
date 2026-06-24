@@ -15,13 +15,13 @@ public sealed class HuffmanRfcTests
         // RFC 7541 §C.4.1: Literal Header Field with Indexing
         // The server responds with a 302 status
         // The HPACK encoded header list for this response will be: 0x4882 6402 5885 aec3 771a 4b61 96d0 7abe 9410 54d4 44a8 2005 9504 0b81 66e0 82a6 2d1b ff6e 919d 29ad 1718 63c7 8f0b 97c8 e9ae 82ae 43d3
-        
+
         // Let's test the simpler: ":status 302" → 0x4803 333032
         // Actually per RFC: ":status: 302" indexed at position 8 → 0x88, but 302 is not 200
         // So it's literal: name index 8, value "302"
         // 0x48 → 0100 1000 = literal with indexing (01), name index = 8 (001000)
         // "302" Huffman-encoded: 0x6402
-        
+
         var headers = new List<(string, string)> { (":status", "302") };
         var encoder = new HpackEncoder();
         var encoded = encoder.Encode(headers);
@@ -61,6 +61,7 @@ public sealed class HuffmanRfcTests
     [Test]
     public async Task Multi_header_response_roundtrip()
     {
+        // Input headers may use mixed case; HTTP/2 requires lowercase per RFC 7540 §8.1.2.
         var headers = new List<(string, string)>
         {
             (":status", "200"),
@@ -74,10 +75,19 @@ public sealed class HuffmanRfcTests
         var decoded = new List<(string, string)>();
         HpackDecoder.TryDecode(encoded, out decoded);
 
-        for (int i = 0; i < headers.Count; i++)
+        // After encoding, names are normalized to lowercase.
+        var expected = new List<(string, string)>
         {
-            await Assert.That(decoded[i].Item1).IsEqualTo(headers[i].Item1);
-            await Assert.That(decoded[i].Item2).IsEqualTo(headers[i].Item2);
+            (":status", "200"),
+            ("content-type", "text/html; charset=utf-8"),
+            ("server", "PicoWeb.Samples.Showcase"),
+            ("content-length", "6047"),
+            ("x-ratelimit-limit", "5"),
+        };
+        for (int i = 0; i < expected.Count; i++)
+        {
+            await Assert.That(decoded[i].Item1).IsEqualTo(expected[i].Item1);
+            await Assert.That(decoded[i].Item2).IsEqualTo(expected[i].Item2);
         }
     }
 
@@ -94,14 +104,29 @@ public sealed class HuffmanRfcTests
         // RFC 7541 §C.4.3: The Huffman-encoded literal value for "www.example.com" is 0xf1e3c2e5f23a6ba0ab90f4ff
         var expected = new byte[]
         {
-            0xf1, 0xe3, 0xc2, 0xe5, 0xf2, 0x3a, 0x6b, 0xa0, 0xab, 0x90, 0xf4, 0xff
+            0xf1,
+            0xe3,
+            0xc2,
+            0xe5,
+            0xf2,
+            0x3a,
+            0x6b,
+            0xa0,
+            0xab,
+            0x90,
+            0xf4,
+            0xff,
         };
 
         await Assert.That(encoded.Length).IsEqualTo(expected.Length);
         for (int i = 0; i < expected.Length; i++)
         {
-            await Assert.That(encoded[i]).IsEqualTo(expected[i],
-                $"Byte {i}: expected 0x{expected[i]:x2}, got 0x{encoded[i]:x2}");
+            await Assert
+                .That(encoded[i])
+                .IsEqualTo(
+                    expected[i],
+                    $"Byte {i}: expected 0x{expected[i]:x2}, got 0x{encoded[i]:x2}"
+                );
         }
     }
 }
