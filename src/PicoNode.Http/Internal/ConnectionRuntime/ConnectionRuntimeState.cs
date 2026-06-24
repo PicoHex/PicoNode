@@ -52,7 +52,8 @@ internal sealed class ConnectionRuntimeState
                     break;
                 case Http2SettingId.InitialWindowSize:
                     RemoteInitialWindowSize = (int)setting.Value;
-                    ConnectionSendWindow = RemoteInitialWindowSize;
+                    // Do NOT set ConnectionSendWindow — connection-level flow control
+                    // is separate from stream-level and managed by WINDOW_UPDATE frames only.
                     break;
                 case Http2SettingId.MaxFrameSize:
                     RemoteMaxFrameSize = (int)setting.Value;
