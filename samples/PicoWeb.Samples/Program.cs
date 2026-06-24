@@ -67,7 +67,7 @@ if (cert is not null)
         EnabledSslProtocols =
             System.Security.Authentication.SslProtocols.Tls12
             | System.Security.Authentication.SslProtocols.Tls13,
-        ApplicationProtocols = [SslApplicationProtocol.Http2, SslApplicationProtocol.Http11],
+        ApplicationProtocols = [SslApplicationProtocol.Http11], // HTTP/2 HPACK: adding any extra response header triggers ERR_HTTP2_COMPRESSION_ERROR — root cause in PicoNode.Http frame handler, tracked separately
     };
     scheme = "https";
     Console.Error.WriteLine(
