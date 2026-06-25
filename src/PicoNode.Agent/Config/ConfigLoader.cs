@@ -22,28 +22,7 @@ public static class ConfigLoader
     public static AgentConfig? Load(string path)
     {
         if (!File.Exists(path))
-        {
-            var template = """
-            {
-              "model": null,
-              "maxTokens": 4096,
-              "contextWindow": 128000,
-              "compactThreshold": 100,
-              "providers": {
-                "anthropic": { "apiKey": "$ANTHROPIC_API_KEY", "baseUrl": "https://api.anthropic.com", "apiFormat": "anthropic" },
-                "openai":    { "apiKey": "$OPENAI_API_KEY",    "baseUrl": "https://api.openai.com/v1",       "apiFormat": "openai" },
-                "deepseek":  { "apiKey": "$DEEPSEEK_API_KEY",  "baseUrl": "https://api.deepseek.com/v1",     "apiFormat": "openai" },
-                "kimi":      { "apiKey": "$KIMI_API_KEY",      "baseUrl": "https://api.moonshot.cn/v1",      "apiFormat": "openai" },
-                "glm":       { "apiKey": "$GLM_API_KEY",       "baseUrl": "https://open.bigmodel.cn/api/paas/v4", "apiFormat": "openai" },
-                "groq":      { "apiKey": "$GROQ_API_KEY",      "baseUrl": "https://api.groq.com/openai/v1",  "apiFormat": "openai" }
-              }
-            }
-            """;
-            File.WriteAllText(path, template);
-            Console.Error.WriteLine($"Settings template created at {path}");
-            Console.Error.WriteLine("Set your apiKey values, then restart.");
             return null;
-        }
 
         var json = File.ReadAllText(path);
         var expanded = ExpandEnvVars(json);

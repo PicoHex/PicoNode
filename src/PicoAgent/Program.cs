@@ -15,7 +15,29 @@ Directory.CreateDirectory(Path.Combine(homeDir, SessionsDir));
 
 var settingsPath = Path.Combine(homeDir, "settings.json");
 var settings = ConfigLoader.Load(settingsPath);
-if (settings == null) return;
+if (settings == null)
+{
+    var template = """
+    {
+      "model": null,
+      "maxTokens": 4096,
+      "contextWindow": 128000,
+      "compactThreshold": 100,
+      "providers": {
+        "anthropic": { "apiKey": "$ANTHROPIC_API_KEY", "baseUrl": "https://api.anthropic.com", "apiFormat": "anthropic" },
+        "openai":    { "apiKey": "$OPENAI_API_KEY",    "baseUrl": "https://api.openai.com/v1",       "apiFormat": "openai" },
+        "deepseek":  { "apiKey": "$DEEPSEEK_API_KEY",  "baseUrl": "https://api.deepseek.com/v1",     "apiFormat": "openai" },
+        "kimi":      { "apiKey": "$KIMI_API_KEY",      "baseUrl": "https://api.moonshot.cn/v1",      "apiFormat": "openai" },
+        "glm":       { "apiKey": "$GLM_API_KEY",       "baseUrl": "https://open.bigmodel.cn/api/paas/v4", "apiFormat": "openai" },
+        "groq":      { "apiKey": "$GROQ_API_KEY",      "baseUrl": "https://api.groq.com/openai/v1",  "apiFormat": "openai" }
+      }
+    }
+    """;
+    File.WriteAllText(settingsPath, template);
+    Console.Error.WriteLine($"Settings template created at {settingsPath}");
+    Console.Error.WriteLine("Set your apiKey values, then restart.");
+    return;
+}
 
 var validation = ConfigLoader.Validate(settings);
 if (!validation.IsValid)

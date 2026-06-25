@@ -29,14 +29,14 @@ public class ConfigLoaderTests
     }
 
     [Test]
-    public async Task Load_MissingFile_CreatesTemplate()
+    public async Task Load_MissingFile_ReturnsNull()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"pico-config-{Guid.NewGuid()}.json");
+        var path = Path.Combine(Path.GetTempPath(), $"pico-missing-{Guid.NewGuid()}.json");
         try
         {
             var config = ConfigLoader.Load(path);
             await Assert.That(config).IsNull();
-            await Assert.That(File.Exists(path)).IsTrue();
+            await Assert.That(File.Exists(path)).IsFalse();
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
