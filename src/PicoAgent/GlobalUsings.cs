@@ -1,4 +1,5 @@
 global using System.Diagnostics;
+global using System.IO.Pipelines;
 global using System.Runtime.CompilerServices;
 global using System.Text;
 global using PicoDI;

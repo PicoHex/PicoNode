@@ -15,7 +15,7 @@ public sealed class AgentHost
         string content,
         CancellationToken ct,
         string sessionId = "default",
-        Action<AssistantMessageEvent>? onEvent = null
+        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
     )
     {
         var messages = _sessions.GetOrAdd(sessionId, _ => []);

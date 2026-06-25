@@ -236,7 +236,7 @@ async Task RunChatAsync(
             await host.ProcessMessageAsync(
                 input,
                 cts.Token,
-                onEvent: evt =>
+                onEvent: async (evt, _) =>
                 {
                     if (evt is AssistantMessageEvent.TextDelta td)
                         Console.Write(td.Delta);
@@ -299,7 +299,7 @@ async Task RunServeAsync(int port, AgentHost host, CapabilityRegistry reg, strin
             );
         }
     );
-    await api.RunAsync($"http://+:{port}");
+    await api.RunAsync($"http://localhost:{port}");
 }
 
 static string Esc(string s)
@@ -334,3 +334,7 @@ static string Esc(string s)
     }
     return sb.ToString();
 }
+
+
+
+

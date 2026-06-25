@@ -34,7 +34,7 @@ public sealed class AgentLoop
     public async Task<List<Message>> RunTurnAsync(
         List<Message> messages,
         CancellationToken ct,
-        Action<AssistantMessageEvent>? onEvent = null
+        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
     )
     {
         var result = new List<Message>();
@@ -168,14 +168,14 @@ public sealed class AgentLoop
         Model model,
         ChatContext context,
         CancellationToken ct,
-        Action<AssistantMessageEvent>? onEvent = null
+        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
     )
     {
         Message? finalMessage = null;
 
         await foreach (var evt in _llm.StreamAsync(model, context, null, ct))
         {
-            onEvent?.Invoke(evt);
+            onEvent?.Invoke(evt, ct);
             if (evt is AssistantMessageEvent.Done d)
                 finalMessage = d.Message;
             else if (evt is AssistantMessageEvent.Error e)
