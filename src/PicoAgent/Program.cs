@@ -12,21 +12,58 @@ var homeDir = Path.Combine(
 Directory.CreateDirectory(homeDir);
 Directory.CreateDirectory(Path.Combine(homeDir, SessionsDir));
 
-var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? "";
-var modelId = Environment.GetEnvironmentVariable("PICO_MODEL") ?? "claude-sonnet-4-20250514";
-var baseUrl = Environment.GetEnvironmentVariable("PICO_BASE_URL") ?? "https://api.anthropic.com";
+var configPath = Path.Combine(homeDir, "config.json");
+var config = ConfigLoader.Load(configPath);
+if (config == null) return; // Template created, user needs to edit
+
+// ── Build provider clients ──────────────────────────────
+var clients = new Dictionary<string, ILLmClient>();
+var breakers = new Dictionary<string, ICircuitBreaker>();
+var providerConfigs = new List<ProviderConfig>();
+var http = new HttpClient();
+
+foreach (var (name, entry) in config.Providers)
+{
+    var preset = ProviderPresets.Get(name);
+    if (preset == null)
+    {
+        Console.Error.WriteLine($"Unknown provider: {name}. Skipping.");
+        continue;
+    }
+    var pc = new ProviderConfig
+    {
+        Name = name,
+        BaseUrl = entry.BaseUrlOverride ?? preset.BaseUrl,
+        ApiFormat = preset.ApiFormat,
+        ApiKey = entry.ApiKey,
+        Priority = preset.Priority,
+    };
+    providerConfigs.Add(pc);
+
+    ILLmClient client = pc.ApiFormat == AiApiFormat.AnthropicMessages
+        ? new AnthropicLLmClient(http)
+        : new OpenAILlmClient(http);
+    clients[name] = client;
+    breakers[name] = new CircuitBreaker();
+}
+
+var router = new ProviderRouter(providerConfigs);
+var resilientClient = new ResilientLLmClient(router, breakers, clients);
 
 // ── Components ──────────────────────────────────────────
-var llmClient = new AnthropicLLmClient(new HttpClient());
 var registry = new CapabilityRegistry();
 registry.Scan(homeDir);
 var runner = new CapabilityRunner();
+
+// Default model from first provider
+var defaultModel = config.Providers.Keys.FirstOrDefault() ?? "anthropic";
 var model = new Model
 {
-    Id = modelId, BaseUrl = baseUrl,
-    Api = AiApiFormat.AnthropicMessages, Provider = "anthropic", MaxTokens = 4096,
+    Id = "claude-sonnet-4-20250514", BaseUrl = "",
+    Api = AiApiFormat.AnthropicMessages, Provider = defaultModel, MaxTokens = 4096,
 };
-var loop = new AgentLoop(llmClient, registry, runner, model);
+
+var loop = new AgentLoop(resilientClient, registry, runner, model);
 var host = new AgentHost(loop);
 
 // ── System prompt from skills ───────────────────────────
@@ -45,29 +82,24 @@ var cmd = args.Length > 0 ? args[0] : "chat";
 
 if (cmd == "serve")
 {
-    var port = args.Length > 1 && int.TryParse(args[1], out var p) ? p : 8080;
+    var port = args.Length > 1 && int.TryParse(args[1], out var prt) ? prt : 8080;
     await RunServeAsync(port, host, registry, homeDir);
 }
 else
 {
-    await RunChatAsync(host, sessionPath, sessionMessages, skillsPrompt, apiKey);
+    await RunChatAsync(host, sessionPath, sessionMessages, skillsPrompt, model, router, providerConfigs);
 }
 
 // ══════════════════════════════════════════════════════════
 
 static async Task RunChatAsync(
     AgentHost host, string sessionPath, List<Message> messages,
-    string skillsPrompt, string apiKey)
+    string skillsPrompt, Model model, IProviderRouter router, List<ProviderConfig> providers)
 {
-    if (string.IsNullOrEmpty(apiKey))
-    {
-        Console.Error.WriteLine("Error: ANTHROPIC_API_KEY not set.");
-        Console.Error.WriteLine("  export ANTHROPIC_API_KEY=sk-ant-...");
-        return;
-    }
-
-    Console.WriteLine("PicoAgent chat. Type /exit to quit, /save to persist.");
-    Console.WriteLine();
+    Console.WriteLine("PicoAgent chat.");
+    Console.WriteLine($"Providers: {string.Join(", ", providers.Select(p => p.Name))}");
+    Console.WriteLine($"Model: {model.Id} | Provider: {model.Provider}");
+    Console.WriteLine("Type /help for commands.\n");
 
     var cts = new CancellationTokenSource();
     Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
@@ -78,43 +110,70 @@ static async Task RunChatAsync(
         {
             Console.Write("> ");
             var input = Console.ReadLine();
-            if (input == null || input == "/exit") break;
-            if (input == "/save")
+            if (input == null) break;
+
+            if (input.StartsWith('/'))
             {
-                await SessionStore.SaveAsync(sessionPath, messages);
-                Console.WriteLine("[Saved]");
-                continue;
+                var parts = input.Split(' ', 2);
+                var command = parts[0];
+                var arg = parts.Length > 1 ? parts[1] : "";
+
+                switch (command)
+                {
+                    case "/exit": goto exit;
+                    case "/save":
+                        await SessionStore.SaveAsync(sessionPath, messages);
+                        Console.WriteLine("[Saved]");
+                        continue;
+                    case "/help":
+                        Console.WriteLine("/model <name>  /thinking <lvl>  /list-models  /provider <name>  /save  /exit");
+                        continue;
+                    case "/model":
+                        if (string.IsNullOrWhiteSpace(arg)) { Console.WriteLine("Usage: /model <name>"); continue; }
+                        model.Id = arg;
+                        Console.WriteLine($"[Model: {model.Id}]");
+                        continue;
+                    case "/thinking":
+                        if (string.IsNullOrWhiteSpace(arg)) { Console.WriteLine("Usage: /thinking <level>"); continue; }
+                        Console.WriteLine($"[Thinking: {arg}]");
+                        continue;
+                    case "/list-models":
+                        Console.WriteLine("Available models (configured providers):");
+                        foreach (var p in providers)
+                            Console.WriteLine($"  {p.Name} ({p.ApiFormat}) — query GET {p.BaseUrl}/v1/models");
+                        continue;
+                    case "/provider":
+                        if (string.IsNullOrWhiteSpace(arg)) { Console.WriteLine("Usage: /provider <name>"); continue; }
+                        model.Provider = arg;
+                        Console.WriteLine($"[Provider: {model.Provider}, Model: {model.Id}]");
+                        continue;
+                }
             }
+
             if (string.IsNullOrWhiteSpace(input)) continue;
 
-            // Inject skills prompt into system message if not already present
             if (!string.IsNullOrEmpty(skillsPrompt) &&
                 !messages.Any(m => m.Role == RoleAssistant && m.ContentBlocks != null))
             {
                 messages.Insert(0, new Message
                 {
-                    Role = RoleUser,
-                    Content = $"[System]\n{skillsPrompt}",
+                    Role = RoleUser, Content = $"[System]\n{skillsPrompt}",
                     Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 });
             }
 
             Console.WriteLine();
-            var response = await host.ProcessMessageAsync(
-                input, cts.Token,
+            await host.ProcessMessageAsync(input, cts.Token,
                 onEvent: evt =>
                 {
-                    if (evt is AssistantMessageEvent.TextDelta td)
-                        Console.Write(td.Delta);
+                    if (evt is AssistantMessageEvent.TextDelta td) Console.Write(td.Delta);
                 });
-
-            Console.WriteLine();
-            Console.WriteLine();
+            Console.WriteLine("\n");
         }
     }
     catch (OperationCanceledException) { }
 
-    // Auto-save on exit
+exit:
     await SessionStore.SaveAsync(sessionPath, messages);
     Console.WriteLine("[Session saved]");
 }
@@ -122,8 +181,7 @@ static async Task RunChatAsync(
 static async Task RunServeAsync(
     int port, AgentHost host, CapabilityRegistry registry, string homeDir)
 {
-    Console.WriteLine($"PicoAgent serve starting on port {port}...");
-
+    Console.WriteLine($"PicoAgent serve on port {port}...");
     var api = new WebApiBuilder()
         .ConfigureApp(o => new WebAppOptions { ServerHeader = "PicoAgent" })
         .Build();
@@ -135,8 +193,7 @@ static async Task RunServeAsync(
         var response = await host.ProcessMessageAsync(body, ct, ctx.RouteValues["id"]);
         return new HttpResponse
         {
-            StatusCode = 200,
-            Headers = [new("Content-Type", "application/json")],
+            StatusCode = 200, Headers = [new("Content-Type", "application/json")],
             Body = Encoding.UTF8.GetBytes($"{{\"response\":\"{EscapeJson(response)}\"}}"),
         };
     });
@@ -145,7 +202,7 @@ static async Task RunServeAsync(
         ValueTask.FromResult(new HttpResponse
         {
             StatusCode = 200,
-            Headers = [new("Content-Type", "text/event-stream"), new("Cache-Control", "no-cache")],
+            Headers = [new("Content-Type", "text/event-stream")],
             Body = "data: {\"type\":\"ready\"}\n\n"u8.ToArray(),
         }));
 
@@ -154,8 +211,7 @@ static async Task RunServeAsync(
         registry.Scan(homeDir);
         return ValueTask.FromResult(new HttpResponse
         {
-            StatusCode = 200,
-            Body = "{\"status\":\"reloaded\"}"u8.ToArray(),
+            StatusCode = 200, Body = "{\"status\":\"reloaded\"}"u8.ToArray(),
         });
     });
 
@@ -169,15 +225,10 @@ static string EscapeJson(string s)
     {
         switch (c)
         {
-            case '"': sb.Append("\\\""); break;
-            case '\\': sb.Append("\\\\"); break;
-            case '\n': sb.Append("\\n"); break;
-            case '\r': sb.Append("\\r"); break;
+            case '"': sb.Append("\\\""); break; case '\\': sb.Append("\\\\"); break;
+            case '\n': sb.Append("\\n"); break; case '\r': sb.Append("\\r"); break;
             case '\t': sb.Append("\\t"); break;
-            default:
-                if (c < 0x20) sb.Append($"\\u{(int)c:X4}");
-                else sb.Append(c);
-                break;
+            default: if (c < 0x20) sb.Append($"\\u{(int)c:X4}"); else sb.Append(c); break;
         }
     }
     return sb.ToString();
