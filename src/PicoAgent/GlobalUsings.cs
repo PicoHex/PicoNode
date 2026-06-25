@@ -11,3 +11,7 @@ global using PicoNode.Web;
 global using PicoWeb;
 global using static PicoNode.Agent.FileSystemConstants;
 global using static PicoNode.Agent.ProtocolConstants;
+
+[PicoJsonSerializable(typeof(AgentConfig))]
+[PicoJsonSerializable(typeof(ProviderEntry))]
+internal sealed class PicoAgentSerializerReg { }
