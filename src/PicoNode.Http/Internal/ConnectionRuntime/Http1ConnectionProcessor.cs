@@ -485,15 +485,31 @@ internal static class Http1ConnectionProcessor
                     // Connection cancelled mid-send — the pipe writer was completed
                     // by RunSseWriterAsync. Exit without sending the chunk terminator.
                 }
+                catch
+                {
+                    // Producer error (e.g. LLM call failure) — the pipe writer was
+                    // completed with exception by RunSseWriterAsync. Headers have
+                    // already been sent; sending an HTTP error response now would
+                    // corrupt the chunked encoding and cause the client to see
+                    // garbage instead of a valid HTTP response. Exit quietly.
+                }
                 finally
                 {
                     System.Buffers.ArrayPool<byte>.Shared.Return(buffer, clearArray: false);
                 }
             }
 
-            await connection
-                .SendAsync(HttpResponseSerializer.ChunkTerminator, CancellationToken.None)
-                .ConfigureAwait(false);
+            try
+            {
+                await connection
+                    .SendAsync(HttpResponseSerializer.ChunkTerminator, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                // Terminator send failure after streaming has started is non-fatal.
+                // Headers were already sent; a 500 error would corrupt the response.
+            }
         }
         finally
         {
