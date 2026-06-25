@@ -29,18 +29,25 @@ var http = new HttpClient();
 foreach (var (name, entry) in config.Providers)
 {
     var preset = ProviderPresets.Get(name);
-    if (preset == null)
+    if (preset == null && entry.ApiFormat == null)
     {
-        Console.Error.WriteLine($"Unknown provider: {name}. Skipping.");
+        Console.Error.WriteLine($"Unknown provider '{name}' and no apiFormat specified. Skipping.");
         continue;
     }
+    var apiFormat = entry.ApiFormat?.ToLowerInvariant() switch
+    {
+        "openai" or "openaichatcompletions" => AiApiFormat.OpenAIChatCompletions,
+        "anthropic" or "anthropicmessages" => AiApiFormat.AnthropicMessages,
+        _ => preset?.ApiFormat ?? AiApiFormat.OpenAIChatCompletions,
+    };
+    var baseUrl = entry.BaseUrl ?? preset?.BaseUrl ?? "";
     var pc = new ProviderConfig
     {
         Name = name,
-        BaseUrl = entry.BaseUrlOverride ?? preset.BaseUrl,
-        ApiFormat = preset.ApiFormat,
+        BaseUrl = baseUrl,
+        ApiFormat = apiFormat,
         ApiKey = entry.ApiKey,
-        Priority = preset.Priority,
+        Priority = preset?.Priority ?? 99,
     };
     providerConfigs.Add(pc);
 

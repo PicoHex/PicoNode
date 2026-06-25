@@ -10,7 +10,8 @@ public sealed class AgentConfig
 public sealed class ProviderEntry
 {
     public string ApiKey { get; set; } = "";
-    public string? BaseUrlOverride { get; set; }
+    public string? ApiFormat { get; set; }
+    public string? BaseUrl { get; set; }
 }
 
 public static class ConfigLoader
