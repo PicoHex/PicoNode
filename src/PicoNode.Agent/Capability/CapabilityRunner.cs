@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-
 public sealed class CapabilityRunner
 {
     private static readonly byte[] NewLine = "\n"u8.ToArray();
@@ -9,7 +8,8 @@ public sealed class CapabilityRunner
         ManifestCapability config,
         string contextKind,
         byte[] inputJson,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var startInfo = ParseHandler(config.Handler);
         startInfo.RedirectStandardInput = true;

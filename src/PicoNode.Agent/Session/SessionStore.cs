@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-
 /// <summary>Triggers PicoJetson SG for types from PicoNode.AI used in this assembly.</summary>
 internal static class SerializerInit
 {
@@ -14,7 +13,11 @@ internal static class SerializerInit
 
 public static class SessionStore
 {
-    public static async Task SaveAsync(string path, List<Message> messages, CancellationToken ct = default)
+    public static async Task SaveAsync(
+        string path,
+        List<Message> messages,
+        CancellationToken ct = default
+    )
     {
         var jsonl = PicoJetson.JsonSerializer.SerializeLines(messages);
         await File.WriteAllBytesAsync(path, jsonl, ct);
@@ -22,7 +25,8 @@ public static class SessionStore
 
     public static async Task<List<Message>> LoadAsync(string path, CancellationToken ct = default)
     {
-        if (!File.Exists(path)) return [];
+        if (!File.Exists(path))
+            return [];
 
         var bytes = await File.ReadAllBytesAsync(path, ct);
         var entries = PicoJetson.JsonSerializer.DeserializeLines<Message>(bytes);

@@ -11,7 +11,8 @@ public sealed class ProviderRouter : IProviderRouter
 
     public ProviderConfig? Resolve(string? model, AiApiFormat? preferredFormat)
     {
-        if (_providers.Count == 0) return null;
+        if (_providers.Count == 0)
+            return null;
 
         var candidates = preferredFormat.HasValue
             ? _providers.Where(p => p.ApiFormat == preferredFormat.Value).ToList()
@@ -21,8 +22,8 @@ public sealed class ProviderRouter : IProviderRouter
         if (candidates.Count == 0)
             candidates = _providers;
 
-        var match = candidates.FirstOrDefault(p =>
-            model != null && p.ModelMapping.ContainsKey(model))
+        var match =
+            candidates.FirstOrDefault(p => model != null && p.ModelMapping.ContainsKey(model))
             ?? candidates.FirstOrDefault();
 
         return match;

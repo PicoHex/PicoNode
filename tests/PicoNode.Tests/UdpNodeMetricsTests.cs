@@ -1,4 +1,3 @@
-
 namespace PicoNode.Tests;
 
 public sealed class UdpNodeMetricsTests

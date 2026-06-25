@@ -1,6 +1,5 @@
 namespace PicoNode.Agent.Tests.Config;
 
-
 public class ConfigLoaderTests
 {
     [Test]
@@ -24,7 +23,11 @@ public class ConfigLoaderTests
             var config = ConfigLoader.Load(path);
             await Assert.That(config.Providers["test"].ApiKey).IsEqualTo("sk-test-123");
         }
-        finally { File.Delete(path); Environment.SetEnvironmentVariable("MY_KEY", null); }
+        finally
+        {
+            File.Delete(path);
+            Environment.SetEnvironmentVariable("MY_KEY", null);
+        }
     }
 
     [Test]
@@ -37,7 +40,11 @@ public class ConfigLoaderTests
             await Assert.That(config).IsNull();
             await Assert.That(File.Exists(path)).IsFalse();
         }
-        finally { if (File.Exists(path)) File.Delete(path); }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
     }
 
     [Test]
@@ -51,7 +58,10 @@ public class ConfigLoaderTests
     [Test]
     public async Task Validate_MissingApiKey_ReturnsError()
     {
-        var config = new AgentConfig { Providers = new() { ["x"] = new ProviderEntry { ApiKey = "" } } };
+        var config = new AgentConfig
+        {
+            Providers = new() { ["x"] = new ProviderEntry { ApiKey = "" } },
+        };
         var result = ConfigLoader.Validate(config);
         await Assert.That(result.IsValid).IsFalse();
         await Assert.That(result.Errors[0]).Contains("apiKey");
@@ -60,7 +70,10 @@ public class ConfigLoaderTests
     [Test]
     public async Task Validate_ValidConfig_Passes()
     {
-        var config = new AgentConfig { Providers = new() { ["x"] = new ProviderEntry { ApiKey = "sk-xxx" } } };
+        var config = new AgentConfig
+        {
+            Providers = new() { ["x"] = new ProviderEntry { ApiKey = "sk-xxx" } },
+        };
         var result = ConfigLoader.Validate(config);
         await Assert.That(result.IsValid).IsTrue();
     }

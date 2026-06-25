@@ -1,6 +1,5 @@
 namespace PicoNode.Agent.Tests.Capability;
 
-
 public class ManifestLoaderTests
 {
     [Test]
@@ -43,12 +42,9 @@ public class ManifestLoaderTests
             await Assert.That(manifest!.Name).IsEqualTo("test-pack");
             await Assert.That(manifest.Capabilities.Length).IsEqualTo(1);
             await Assert.That(manifest.Capabilities[0].Name).IsEqualTo("bash");
-            await Assert.That(manifest.Capabilities[0].Handler)
-                .IsEqualTo("bash tools/runner.sh");
-            await Assert.That(manifest.Capabilities[0].TriggerKinds[0])
-                .IsEqualTo(0);
-            await Assert.That(manifest.Capabilities[0].TriggerToolNames[0])
-                .IsEqualTo("bash");
+            await Assert.That(manifest.Capabilities[0].Handler).IsEqualTo("bash tools/runner.sh");
+            await Assert.That(manifest.Capabilities[0].TriggerKinds[0]).IsEqualTo(0);
+            await Assert.That(manifest.Capabilities[0].TriggerToolNames[0]).IsEqualTo("bash");
         }
         finally
         {
@@ -67,6 +63,9 @@ public class ManifestLoaderTests
             var manifest = ManifestLoader.LoadFromFile(path);
             await Assert.That(manifest!.Capabilities.Length).IsEqualTo(0);
         }
-        finally { File.Delete(path); }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }

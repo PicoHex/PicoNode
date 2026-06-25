@@ -1,12 +1,16 @@
 namespace PicoNode.Agent.Tests.Session;
 
-
 public class SessionStoreTests
 {
     [Test]
     public async Task SgInit_ForceMessageSerializers()
     {
-        var msg = new Message { Role = "user", Content = "x", Timestamp = 1 };
+        var msg = new Message
+        {
+            Role = "user",
+            Content = "x",
+            Timestamp = 1,
+        };
         var json = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(msg);
         var restored = PicoJetson.JsonSerializer.Deserialize<Message>(json);
         await Assert.That(restored!.Content).IsEqualTo("x");
@@ -17,7 +21,12 @@ public class SessionStoreTests
     {
         var messages = new List<Message>
         {
-            new() { Role = "user", Content = "Hello", Timestamp = 1 },
+            new()
+            {
+                Role = "user",
+                Content = "Hello",
+                Timestamp = 1,
+            },
             new()
             {
                 Role = "assistant",
@@ -44,6 +53,10 @@ public class SessionStoreTests
             await Assert.That(loaded[0].Content).IsEqualTo("Hello");
             await Assert.That(loaded[1].ContentBlocks![0].Text).IsEqualTo("Hi!");
         }
-        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, true);
+        }
     }
 }

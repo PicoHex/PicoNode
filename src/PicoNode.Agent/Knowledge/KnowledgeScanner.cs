@@ -16,7 +16,8 @@ public sealed class KnowledgeScanner
     {
         var skills = new List<SkillInfo>();
         var knowledgeDir = Path.Combine(root, KnowledgeDir);
-        if (!Directory.Exists(knowledgeDir)) return skills;
+        if (!Directory.Exists(knowledgeDir))
+            return skills;
 
         // Find all SKILL.md files recursively under knowledge/
         var skillFiles = Directory.GetFiles(knowledgeDir, SkillFile, SearchOption.AllDirectories);
@@ -38,30 +39,39 @@ public sealed class KnowledgeScanner
     private static SkillInfo? ParseSkillMarkdown(string content)
     {
         var lines = content.Replace("\r", "").Split('\n');
-        if (lines.Length < 3 || lines[0].Trim() != FrontmatterDelim) return null;
+        if (lines.Length < 3 || lines[0].Trim() != FrontmatterDelim)
+            return null;
 
         var skill = new SkillInfo();
-        bool inFrontmatter = true;  // First --- already skipped by Skip(1)
+        bool inFrontmatter = true; // First --- already skipped by Skip(1)
 
         foreach (var line in lines.Skip(1))
         {
             var trimmed = line.Trim();
             if (trimmed == FrontmatterDelim)
             {
-                if (!inFrontmatter) { inFrontmatter = true; continue; }
+                if (!inFrontmatter)
+                {
+                    inFrontmatter = true;
+                    continue;
+                }
                 break;
             }
 
-            if (!inFrontmatter) continue;
+            if (!inFrontmatter)
+                continue;
 
             var colonIdx = trimmed.IndexOf(':');
-            if (colonIdx < 0) continue;
+            if (colonIdx < 0)
+                continue;
 
             var key = trimmed[..colonIdx].Trim();
             var value = trimmed[(colonIdx + 1)..].Trim();
 
-            if (key == KeyName) skill.Name = value;
-            else if (key == KeyDescription) skill.Description = value;
+            if (key == KeyName)
+                skill.Name = value;
+            else if (key == KeyDescription)
+                skill.Description = value;
         }
 
         return string.IsNullOrEmpty(skill.Name) ? null : skill;

@@ -20,17 +20,25 @@ public sealed class CircuitBreaker : ICircuitBreaker
 
     public CircuitState State
     {
-        get { lock (_lock) return _state; }
+        get
+        {
+            lock (_lock)
+                return _state;
+        }
     }
 
     public bool TryAcquire()
     {
         lock (_lock)
         {
-            if (_state == CircuitState.Closed) return true;
-            if (_state == CircuitState.HalfOpen) return true;
-            if (_state == CircuitState.Open
-                && (DateTime.UtcNow - _openedAt).TotalSeconds >= _opts.RecoveryWaitSeconds)
+            if (_state == CircuitState.Closed)
+                return true;
+            if (_state == CircuitState.HalfOpen)
+                return true;
+            if (
+                _state == CircuitState.Open
+                && (DateTime.UtcNow - _openedAt).TotalSeconds >= _opts.RecoveryWaitSeconds
+            )
             {
                 _state = CircuitState.HalfOpen;
                 return true;
@@ -48,8 +56,10 @@ public sealed class CircuitBreaker : ICircuitBreaker
             _totalSuccesses++;
             _lastSuccess = DateTimeOffset.UtcNow;
 
-            if (_state == CircuitState.HalfOpen
-                && _consecutiveSuccesses >= _opts.RecoverySuccessThreshold)
+            if (
+                _state == CircuitState.HalfOpen
+                && _consecutiveSuccesses >= _opts.RecoverySuccessThreshold
+            )
             {
                 _state = CircuitState.Closed;
             }
@@ -65,8 +75,7 @@ public sealed class CircuitBreaker : ICircuitBreaker
             _totalFailures++;
             _lastFailure = DateTimeOffset.UtcNow;
 
-            if (_state == CircuitState.Closed
-                && _consecutiveFailures >= _opts.FailureThreshold)
+            if (_state == CircuitState.Closed && _consecutiveFailures >= _opts.FailureThreshold)
             {
                 _state = CircuitState.Open;
                 _openedAt = DateTime.UtcNow;
@@ -84,9 +93,7 @@ public sealed class CircuitBreaker : ICircuitBreaker
         lock (_lock)
         {
             var total = _totalSuccesses + _totalFailures;
-            var errorRate = total >= _opts.MinRequests
-                ? (double)_totalFailures / total
-                : 0;
+            var errorRate = total >= _opts.MinRequests ? (double)_totalFailures / total : 0;
 
             return new ProviderHealth
             {

@@ -1,7 +1,7 @@
 namespace PicoNode.AI.Tests.LLm;
+
 using System.Net;
 using PicoNode.AI;
-
 
 public sealed class MockHttpHandler : HttpMessageHandler
 {
@@ -10,18 +10,21 @@ public sealed class MockHttpHandler : HttpMessageHandler
     public string? CapturedRequestBody { get; private set; }
 
     protected override Task<HttpResponseMessage> SendAsync(
-        HttpRequestMessage request, CancellationToken ct)
+        HttpRequestMessage request,
+        CancellationToken ct
+    )
     {
         LastRequest = request;
         if (request.Content != null)
         {
-            CapturedRequestBody = request.Content.ReadAsStringAsync(ct)
-                .GetAwaiter().GetResult();
+            CapturedRequestBody = request.Content.ReadAsStringAsync(ct).GetAwaiter().GetResult();
         }
-        return Task.FromResult(NextResponse
-            ?? new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-            {
-                Content = new StringContent(""),
-            });
+        return Task.FromResult(
+            NextResponse
+                ?? new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new StringContent(""),
+                }
+        );
     }
 }

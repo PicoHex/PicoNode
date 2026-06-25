@@ -1,6 +1,6 @@
 namespace PicoNode.AI.Tests.Routing;
-using PicoNode.AI;
 
+using PicoNode.AI;
 
 public class ProviderRouterTests
 {
@@ -9,8 +9,18 @@ public class ProviderRouterTests
     {
         var providers = new[]
         {
-            new ProviderConfig { Name = "anthropic", ApiFormat = AiApiFormat.AnthropicMessages, Priority = 1 },
-            new ProviderConfig { Name = "openai", ApiFormat = AiApiFormat.OpenAIChatCompletions, Priority = 2 },
+            new ProviderConfig
+            {
+                Name = "anthropic",
+                ApiFormat = AiApiFormat.AnthropicMessages,
+                Priority = 1,
+            },
+            new ProviderConfig
+            {
+                Name = "openai",
+                ApiFormat = AiApiFormat.OpenAIChatCompletions,
+                Priority = 2,
+            },
         };
         var router = new ProviderRouter(providers);
 
@@ -25,7 +35,12 @@ public class ProviderRouterTests
     {
         var providers = new[]
         {
-            new ProviderConfig { Name = "first", ApiFormat = AiApiFormat.AnthropicMessages, Priority = 1 },
+            new ProviderConfig
+            {
+                Name = "first",
+                ApiFormat = AiApiFormat.AnthropicMessages,
+                Priority = 1,
+            },
         };
         var router = new ProviderRouter(providers);
 

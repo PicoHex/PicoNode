@@ -1,6 +1,6 @@
 namespace PicoNode.AI.Tests.Types;
-using PicoNode.AI;
 
+using PicoNode.AI;
 
 public class MessageSerializationTests
 {
@@ -67,7 +67,10 @@ public class MessageSerializationTests
             Role = "toolResult",
             ToolCallId = "tc_001",
             ToolName = "read",
-            ContentBlocks = new[] { new ContentBlock { Type = "text", Text = "file contents..." } },
+            ContentBlocks = new[]
+            {
+                new ContentBlock { Type = "text", Text = "file contents..." },
+            },
             IsError = false,
             Timestamp = 1719000002000,
         };
@@ -91,7 +94,9 @@ public class MessageSerializationTests
             {
                 new Message
                 {
-                    Role = "user", Content = "Hi", Timestamp = 1,
+                    Role = "user",
+                    Content = "Hi",
+                    Timestamp = 1,
                 },
             },
         };

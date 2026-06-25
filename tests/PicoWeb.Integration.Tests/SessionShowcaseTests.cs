@@ -1,4 +1,3 @@
-
 namespace PicoWeb.Integration.Tests;
 
 public sealed class SessionShowcaseTests

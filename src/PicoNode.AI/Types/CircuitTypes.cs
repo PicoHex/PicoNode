@@ -1,6 +1,11 @@
 namespace PicoNode.AI;
 
-public enum CircuitState { Closed, Open, HalfOpen }
+public enum CircuitState
+{
+    Closed,
+    Open,
+    HalfOpen,
+}
 
 public sealed class ProviderHealth
 {

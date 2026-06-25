@@ -1,6 +1,5 @@
 namespace PicoNode.Agent.Tests.Knowledge;
 
-
 public class KnowledgeScannerTests
 {
     [Test]
@@ -15,8 +14,15 @@ public class KnowledgeScannerTests
         Directory.CreateDirectory(skillDir);
 
         var skillPath = Path.Combine(skillDir, "SKILL.md");
-        var lines = new[] { "---", "name: pdf-tools",
-            "description: Extract text and tables from PDF files", "---", "", "# PDF Tools" };
+        var lines = new[]
+        {
+            "---",
+            "name: pdf-tools",
+            "description: Extract text and tables from PDF files",
+            "---",
+            "",
+            "# PDF Tools",
+        };
         await File.WriteAllLinesAsync(skillPath, lines);
 
         try
@@ -26,10 +32,15 @@ public class KnowledgeScannerTests
 
             await Assert.That(skills.Count).IsEqualTo(1);
             await Assert.That(skills[0].Name).IsEqualTo("pdf-tools");
-            await Assert.That(skills[0].Description)
+            await Assert
+                .That(skills[0].Description)
                 .IsEqualTo("Extract text and tables from PDF files");
         }
-        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, true);
+        }
     }
 
     [Test]

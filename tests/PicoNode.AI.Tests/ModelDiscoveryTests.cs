@@ -1,6 +1,6 @@
 namespace PicoNode.AI.Tests;
-using PicoNode.AI;
 
+using PicoNode.AI;
 using PicoNode.AI;
 
 public class ModelDiscoveryTests
@@ -9,13 +9,16 @@ public class ModelDiscoveryTests
     public async Task Discover_FromDeepSeek_ReturnsModels()
     {
         var apiKey = Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY") ?? "";
-        if (string.IsNullOrEmpty(apiKey)) return;
+        if (string.IsNullOrEmpty(apiKey))
+            return;
 
         var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
         var provider = new ProviderConfig
         {
-            Name = "deepseek", BaseUrl = "https://api.deepseek.com/v1",
-            ApiFormat = AiApiFormat.OpenAIChatCompletions, ApiKey = apiKey,
+            Name = "deepseek",
+            BaseUrl = "https://api.deepseek.com/v1",
+            ApiFormat = AiApiFormat.OpenAIChatCompletions,
+            ApiKey = apiKey,
         };
 
         var models = await ModelDiscovery.DiscoverAsync(http, provider, CancellationToken.None);
@@ -35,8 +38,10 @@ public class ModelDiscoveryTests
         var http = new HttpClient();
         var provider = new ProviderConfig
         {
-            Name = "test", BaseUrl = "https://api.deepseek.com/v1",
-            ApiFormat = AiApiFormat.OpenAIChatCompletions, ApiKey = "invalid",
+            Name = "test",
+            BaseUrl = "https://api.deepseek.com/v1",
+            ApiFormat = AiApiFormat.OpenAIChatCompletions,
+            ApiKey = "invalid",
         };
 
         var models = await ModelDiscovery.DiscoverAsync(http, provider, CancellationToken.None);

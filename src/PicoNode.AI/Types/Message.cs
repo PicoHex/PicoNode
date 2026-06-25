@@ -6,7 +6,7 @@ namespace PicoNode.AI;
 /// </summary>
 public sealed class Message
 {
-    public string Role { get; set; } = "";       // user | assistant | toolResult
+    public string Role { get; set; } = ""; // user | assistant | toolResult
     public long Timestamp { get; set; }
 
     // User message fields

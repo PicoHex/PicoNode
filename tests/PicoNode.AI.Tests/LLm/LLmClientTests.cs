@@ -1,14 +1,15 @@
 namespace PicoNode.AI.Tests.LLm;
+
 using System.Net;
 using PicoNode.AI;
-
 
 public class SseParserTests
 {
     [Test]
     public async Task Parse_TextDelta_EmitsCorrectEvents()
     {
-        var sseData = """
+        var sseData =
+            """
             event: content_block_start
             data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
 
@@ -26,8 +27,13 @@ public class SseParserTests
         using var stream = new MemoryStream(sseData);
         var events = new List<AssistantMessageEvent>();
 
-        await foreach (var evt in SseParser.ParseAnthropicStreamAsync(
-            stream, "claude-sonnet-4", CancellationToken.None))
+        await foreach (
+            var evt in SseParser.ParseAnthropicStreamAsync(
+                stream,
+                "claude-sonnet-4",
+                CancellationToken.None
+            )
+        )
         {
             events.Add(evt);
         }
@@ -43,7 +49,8 @@ public class SseParserTests
     [Test]
     public async Task Parse_ToolCall_EmitsToolCallEvents()
     {
-        var sseData = """
+        var sseData =
+            """
             event: content_block_start
             data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tc_1","name":"read","input":{}}}
 
@@ -64,8 +71,13 @@ public class SseParserTests
         using var stream = new MemoryStream(sseData);
         var events = new List<AssistantMessageEvent>();
 
-        await foreach (var evt in SseParser.ParseAnthropicStreamAsync(
-            stream, "claude-sonnet-4", CancellationToken.None))
+        await foreach (
+            var evt in SseParser.ParseAnthropicStreamAsync(
+                stream,
+                "claude-sonnet-4",
+                CancellationToken.None
+            )
+        )
         {
             events.Add(evt);
         }
@@ -85,8 +97,13 @@ public class SseParserTests
         using var stream = new MemoryStream([]);
         var count = 0;
 
-        await foreach (var _ in SseParser.ParseAnthropicStreamAsync(
-            stream, "claude-sonnet-4", CancellationToken.None))
+        await foreach (
+            var _ in SseParser.ParseAnthropicStreamAsync(
+                stream,
+                "claude-sonnet-4",
+                CancellationToken.None
+            )
+        )
         {
             count++;
         }
@@ -97,7 +114,8 @@ public class SseParserTests
     [Test]
     public async Task Parse_MalformedJsonLine_SkipsAndContinues()
     {
-        var sseData = """
+        var sseData =
+            """
             event: content_block_start
             data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
 
@@ -115,8 +133,13 @@ public class SseParserTests
         using var stream = new MemoryStream(sseData);
         var events = new List<AssistantMessageEvent>();
 
-        await foreach (var evt in SseParser.ParseAnthropicStreamAsync(
-            stream, "claude-sonnet-4", CancellationToken.None))
+        await foreach (
+            var evt in SseParser.ParseAnthropicStreamAsync(
+                stream,
+                "claude-sonnet-4",
+                CancellationToken.None
+            )
+        )
         {
             events.Add(evt);
         }
@@ -133,7 +156,8 @@ public class SseParserTests
     public async Task Parse_OutOfOrderBlockIndices_HandlesCorrectly()
     {
         // Send block index 1 before index 0 — should still work
-        var sseData = """
+        var sseData =
+            """
             event: content_block_start
             data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tc_1","name":"read","input":{}}}
 
@@ -160,8 +184,13 @@ public class SseParserTests
         using var stream = new MemoryStream(sseData);
         var events = new List<AssistantMessageEvent>();
 
-        await foreach (var evt in SseParser.ParseAnthropicStreamAsync(
-            stream, "claude-sonnet-4", CancellationToken.None))
+        await foreach (
+            var evt in SseParser.ParseAnthropicStreamAsync(
+                stream,
+                "claude-sonnet-4",
+                CancellationToken.None
+            )
+        )
         {
             events.Add(evt);
         }
@@ -184,7 +213,8 @@ public class AnthropicLLmClientTests
         {
             NextResponse = new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("""
+                Content = new StringContent(
+                    """
                     event: message_start
                     data: {"type":"message_start","message":{}}
 
@@ -203,7 +233,8 @@ public class AnthropicLLmClientTests
                     event: message_stop
                     data: {"type":"message_stop"}
 
-                    """),
+                    """
+                ),
             },
         };
         var httpClient = new HttpClient(handler);
@@ -221,9 +252,15 @@ public class AnthropicLLmClientTests
             {
                 Messages = new[]
                 {
-                    new Message { Role = "user", Content = "Hi", Timestamp = 1 },
+                    new Message
+                    {
+                        Role = "user",
+                        Content = "Hi",
+                        Timestamp = 1,
+                    },
                 },
-            });
+            }
+        );
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result.StopReason).IsEqualTo("end_turn");
@@ -239,30 +276,39 @@ public class AnthropicLLmClientTests
             NextResponse = new HttpResponseMessage(HttpStatusCode.TooManyRequests)
             {
                 Content = new StringContent(
-                    "{\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Rate limited\"}}"),
+                    "{\"error\":{\"type\":\"rate_limit_error\",\"message\":\"Rate limited\"}}"
+                ),
             },
         };
         var httpClient = new HttpClient(handler);
         var client = new AnthropicLLmClient(httpClient);
 
         var events = new List<AssistantMessageEvent>();
-        await foreach (var evt in client.StreamAsync(
-            new Model
-            {
-                Id = "claude-sonnet-4",
-                BaseUrl = "https://api.anthropic.com",
-                Api = AiApiFormat.AnthropicMessages,
-                MaxTokens = 4096,
-            },
-            new ChatContext
-            {
-                Messages = new[]
+        await foreach (
+            var evt in client.StreamAsync(
+                new Model
                 {
-                    new Message { Role = "user", Content = "Hi", Timestamp = 1 },
+                    Id = "claude-sonnet-4",
+                    BaseUrl = "https://api.anthropic.com",
+                    Api = AiApiFormat.AnthropicMessages,
+                    MaxTokens = 4096,
                 },
-            },
-            null,
-            CancellationToken.None))
+                new ChatContext
+                {
+                    Messages = new[]
+                    {
+                        new Message
+                        {
+                            Role = "user",
+                            Content = "Hi",
+                            Timestamp = 1,
+                        },
+                    },
+                },
+                null,
+                CancellationToken.None
+            )
+        )
         {
             events.Add(evt);
         }
@@ -282,7 +328,8 @@ public class AnthropicLLmClientTests
             NextResponse = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
-                    "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"),
+                    "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+                ),
             },
         };
         var httpClient = new HttpClient(handler);
@@ -292,30 +339,35 @@ public class AnthropicLLmClientTests
         {
             Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "env-key-123");
 
-            await foreach (var _ in client.StreamAsync(
-                new Model
-                {
-                    Id = "claude-sonnet-4",
-                    Provider = "anthropic",
-                    BaseUrl = "https://api.anthropic.com",
-                    Api = AiApiFormat.AnthropicMessages,
-                    MaxTokens = 4096,
-                },
-                new ChatContext
-                {
-                    Messages = new[]
+            await foreach (
+                var _ in client.StreamAsync(
+                    new Model
                     {
-                        new Message { Role = "user", Content = "Hi", Timestamp = 1 },
+                        Id = "claude-sonnet-4",
+                        Provider = "anthropic",
+                        BaseUrl = "https://api.anthropic.com",
+                        Api = AiApiFormat.AnthropicMessages,
+                        MaxTokens = 4096,
                     },
-                },
-                null,
-                CancellationToken.None))
-            {
-            }
+                    new ChatContext
+                    {
+                        Messages = new[]
+                        {
+                            new Message
+                            {
+                                Role = "user",
+                                Content = "Hi",
+                                Timestamp = 1,
+                            },
+                        },
+                    },
+                    null,
+                    CancellationToken.None
+                )
+            ) { }
 
             await Assert.That(handler.LastRequest).IsNotNull();
-            var authHeader = handler.LastRequest!.Headers
-                .GetValues("x-api-key").FirstOrDefault();
+            var authHeader = handler.LastRequest!.Headers.GetValues("x-api-key").FirstOrDefault();
             await Assert.That(authHeader).IsEqualTo("env-key-123");
         }
         finally
@@ -332,36 +384,44 @@ public class AnthropicLLmClientTests
             NextResponse = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
-                    "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"),
+                    "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+                ),
             },
         };
         var httpClient = new HttpClient(handler);
         var client = new AnthropicLLmClient(httpClient);
 
-        await foreach (var _ in client.StreamAsync(
-            new Model
-            {
-                Id = "claude-sonnet-4",
-                BaseUrl = "https://api.anthropic.com",
-                Api = AiApiFormat.AnthropicMessages,
-                MaxTokens = 4096,
-            },
-            new ChatContext
-            {
-                SystemPrompt = "Prompt\u0000with\u0000nulls",
-                Messages = new[]
+        await foreach (
+            var _ in client.StreamAsync(
+                new Model
                 {
-                    new Message { Role = "user", Content = "Tab\there", Timestamp = 1 },
+                    Id = "claude-sonnet-4",
+                    BaseUrl = "https://api.anthropic.com",
+                    Api = AiApiFormat.AnthropicMessages,
+                    MaxTokens = 4096,
                 },
-            },
-            null,
-            CancellationToken.None))
-        {
-        }
+                new ChatContext
+                {
+                    SystemPrompt = "Prompt\u0000with\u0000nulls",
+                    Messages = new[]
+                    {
+                        new Message
+                        {
+                            Role = "user",
+                            Content = "Tab\there",
+                            Timestamp = 1,
+                        },
+                    },
+                },
+                null,
+                CancellationToken.None
+            )
+        ) { }
 
         await Assert.That(handler.CapturedRequestBody).IsNotNull();
         using var doc = System.Text.Json.JsonDocument.Parse(handler.CapturedRequestBody!);
-        await Assert.That(doc.RootElement.GetProperty("messages")[0]
-            .GetProperty("content").GetString()).IsEqualTo("Tab\there");
+        await Assert
+            .That(doc.RootElement.GetProperty("messages")[0].GetProperty("content").GetString())
+            .IsEqualTo("Tab\there");
     }
 }

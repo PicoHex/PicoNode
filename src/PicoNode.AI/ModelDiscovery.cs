@@ -9,7 +9,10 @@ public sealed class DiscoveredModel
 public static class ModelDiscovery
 {
     public static async Task<DiscoveredModel[]> DiscoverAsync(
-        HttpClient http, ProviderConfig provider, CancellationToken ct)
+        HttpClient http,
+        ProviderConfig provider,
+        CancellationToken ct
+    )
     {
         try
         {
@@ -18,13 +21,15 @@ public static class ModelDiscovery
             request.Headers.Add("Authorization", $"Bearer {provider.ApiKey}");
 
             using var response = await http.SendAsync(request, ct);
-            if (!response.IsSuccessStatusCode) return [];
+            if (!response.IsSuccessStatusCode)
+                return [];
 
             var json = await response.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            if (!root.TryGetProperty("data", out var data)) return [];
+            if (!root.TryGetProperty("data", out var data))
+                return [];
 
             return data.EnumerateArray()
                 .Select(m => new DiscoveredModel

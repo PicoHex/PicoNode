@@ -1,6 +1,5 @@
 namespace PicoNode.Agent.Tests.Capability;
 
-
 public class CapabilityRunnerTests
 {
     [Test]
@@ -42,17 +41,23 @@ public class CapabilityRunnerTests
             };
 
             var runner = new CapabilityRunner();
-            var inputJson = """{"kind":"tool_call","toolCallId":"1","toolName":"echo","args":{}}"""u8.ToArray();
+            var inputJson =
+                """{"kind":"tool_call","toolCallId":"1","toolName":"echo","args":{}}"""u8.ToArray();
 
             var result = await runner.ExecuteAsync(
-                config, "tool_call", inputJson, CancellationToken.None);
+                config,
+                "tool_call",
+                inputJson,
+                CancellationToken.None
+            );
 
             await Assert.That(result.TryGetProperty("content", out var c)).IsTrue();
             await Assert.That(c.GetString()).IsEqualTo("got it");
         }
         finally
         {
-            if (Directory.Exists(scriptDir)) Directory.Delete(scriptDir, true);
+            if (Directory.Exists(scriptDir))
+                Directory.Delete(scriptDir, true);
         }
     }
 }

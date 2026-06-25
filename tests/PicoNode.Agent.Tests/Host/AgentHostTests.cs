@@ -1,6 +1,5 @@
 namespace PicoNode.Agent.Tests.Host;
 
-
 public class AgentHostTests
 {
     [Test]
@@ -29,8 +28,11 @@ public class AgentHostTests
 public sealed class MockLLmClient : ILLmClient
 {
     public async IAsyncEnumerable<AssistantMessageEvent> StreamAsync(
-        Model model, ChatContext context, StreamOptions? options,
-        [EnumeratorCancellation] CancellationToken ct)
+        Model model,
+        ChatContext context,
+        StreamOptions? options,
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         yield return new AssistantMessageEvent.Start
         {
@@ -38,7 +40,8 @@ public sealed class MockLLmClient : ILLmClient
         };
         yield return new AssistantMessageEvent.TextDelta
         {
-            Index = 0, Delta = "Hello!",
+            Index = 0,
+            Delta = "Hello!",
             Partial = new Message
             {
                 Role = "assistant",
@@ -77,12 +80,17 @@ public sealed class MockLLmClient : ILLmClient
         for (int i = 0; i < 10; i++)
         {
             var sessionId = $"session-{i}";
-            tasks.Add(Task.Run(async () =>
-            {
-                var response = await host.ProcessMessageAsync(
-                    $"msg-{i}", CancellationToken.None, sessionId);
-                await Assert.That(response).Contains("Hello!");
-            }));
+            tasks.Add(
+                Task.Run(async () =>
+                {
+                    var response = await host.ProcessMessageAsync(
+                        $"msg-{i}",
+                        CancellationToken.None,
+                        sessionId
+                    );
+                    await Assert.That(response).Contains("Hello!");
+                })
+            );
         }
 
         await Task.WhenAll(tasks);

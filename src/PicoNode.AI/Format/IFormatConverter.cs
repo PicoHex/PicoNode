@@ -7,5 +7,6 @@ public interface IFormatConverter
     IAsyncEnumerable<AssistantMessageEvent> ConvertStream(
         IAsyncEnumerable<AssistantMessageEvent> source,
         AiApiFormat targetFormat,
-        CancellationToken ct);
+        CancellationToken ct
+    );
 }

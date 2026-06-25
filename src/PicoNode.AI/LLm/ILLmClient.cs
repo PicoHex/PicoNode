@@ -6,7 +6,8 @@ public interface ILLmClient
         Model model,
         ChatContext context,
         StreamOptions? options,
-        CancellationToken ct);
+        CancellationToken ct
+    );
 }
 
 public static class LLmClientExtensions
@@ -16,7 +17,8 @@ public static class LLmClientExtensions
         Model model,
         ChatContext context,
         StreamOptions? options = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         await foreach (var evt in client.StreamAsync(model, context, options, ct))
         {

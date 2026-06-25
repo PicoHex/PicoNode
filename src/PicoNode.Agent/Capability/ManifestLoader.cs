@@ -15,6 +15,7 @@ public sealed class ManifestCapability
 {
     public string Name { get; set; } = "";
     public string Handler { get; set; } = "";
+
     // Flat arrays instead of nested object arrays
     public int[] TriggerKinds { get; set; } = [];
     public string?[] TriggerToolNames { get; set; } = [];
@@ -24,6 +25,7 @@ public sealed class ManifestCapability
     public string Description { get; set; } = "";
 
     public LifecycleKind LifecycleKind => (LifecycleKind)Lifecycle;
+
     public bool MatchesTrigger(TriggerKind kind)
     {
         if (TriggerKinds.Length != TriggerToolNames.Length)

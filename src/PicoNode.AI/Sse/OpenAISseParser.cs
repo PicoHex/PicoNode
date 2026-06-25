@@ -12,39 +12,60 @@ public static class OpenAISseParser
     public static async IAsyncEnumerable<AssistantMessageEvent> ParseStreamAsync(
         Stream stream,
         string model,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
         var contentAccum = new StringBuilder();
-        var message = new Message { Role = "assistant", Model = model, Provider = "openai", Api = AiApiFormat.OpenAIChatCompletions };
+        var message = new Message
+        {
+            Role = "assistant",
+            Model = model,
+            Provider = "openai",
+            Api = AiApiFormat.OpenAIChatCompletions,
+        };
 
         bool started = false;
 
         while (!ct.IsCancellationRequested)
         {
             var line = await reader.ReadLineAsync(ct);
-            if (line == null) break;
+            if (line == null)
+                break;
 
-            if (!line.StartsWith(DataPrefix)) continue;
+            if (!line.StartsWith(DataPrefix))
+                continue;
 
             var json = line[DataPrefix.Length..];
 
             if (json.Trim() == DoneMarker)
             {
-                message.ContentBlocks = [new ContentBlock { Type = "text", Text = contentAccum.ToString() }];
+                message.ContentBlocks =
+                [
+                    new ContentBlock { Type = "text", Text = contentAccum.ToString() },
+                ];
                 message.StopReason = "stop";
                 yield return new AssistantMessageEvent.Done { Message = message };
                 yield break;
             }
 
             JsonDocument? doc = null;
-            try { doc = JsonDocument.Parse(json); }
-            catch (JsonException) { continue; }
+            try
+            {
+                doc = JsonDocument.Parse(json);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
 
             using var _doc = doc;
             var root = doc.RootElement;
 
-            if (!root.TryGetProperty(JsonPropChoices, out var choices) || choices.GetArrayLength() == 0)
+            if (
+                !root.TryGetProperty(JsonPropChoices, out var choices)
+                || choices.GetArrayLength() == 0
+            )
                 continue;
 
             var choice = choices[0];
@@ -70,14 +91,25 @@ public static class OpenAISseParser
                     {
                         Role = "assistant",
                         Model = model,
-                        ContentBlocks = [new ContentBlock { Type = "text", Text = contentAccum.ToString() }],
+                        ContentBlocks =
+                        [
+                            new ContentBlock { Type = "text", Text = contentAccum.ToString() },
+                        ],
                     },
                 };
             }
 
-            if (choice.TryGetProperty(JsonPropFinishReason, out var fr) && fr.GetString() is { } reason && reason != "null" && reason != "")
+            if (
+                choice.TryGetProperty(JsonPropFinishReason, out var fr)
+                && fr.GetString() is { } reason
+                && reason != "null"
+                && reason != ""
+            )
             {
-                message.ContentBlocks = [new ContentBlock { Type = "text", Text = contentAccum.ToString() }];
+                message.ContentBlocks =
+                [
+                    new ContentBlock { Type = "text", Text = contentAccum.ToString() },
+                ];
                 message.StopReason = reason;
                 yield return new AssistantMessageEvent.Done { Message = message };
                 yield break;

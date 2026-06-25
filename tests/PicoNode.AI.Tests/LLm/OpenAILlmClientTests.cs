@@ -1,7 +1,7 @@
 namespace PicoNode.AI.Tests.LLm;
+
 using System.Net;
 using PicoNode.AI;
-
 
 public class OpenAILlmClientTests
 {
@@ -13,24 +13,39 @@ public class OpenAILlmClientTests
             NextResponse = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
-                    "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"},\"finish_reason\":null}]}\n\n" +
-                    "data: [DONE]\n\n"),
+                    "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"},\"finish_reason\":null}]}\n\n"
+                        + "data: [DONE]\n\n"
+                ),
             },
         };
         var client = new OpenAILlmClient(new HttpClient(handler));
 
         var events = new List<AssistantMessageEvent>();
-        await foreach (var e in client.StreamAsync(
-            new Model
-            {
-                Id = "gpt-4o", BaseUrl = "https://api.openai.com/v1",
-                Api = AiApiFormat.OpenAIChatCompletions, MaxTokens = 4096,
-            },
-            new ChatContext
-            {
-                Messages = [new Message { Role = "user", Content = "Hi", Timestamp = 1 }],
-            },
-            null, CancellationToken.None))
+        await foreach (
+            var e in client.StreamAsync(
+                new Model
+                {
+                    Id = "gpt-4o",
+                    BaseUrl = "https://api.openai.com/v1",
+                    Api = AiApiFormat.OpenAIChatCompletions,
+                    MaxTokens = 4096,
+                },
+                new ChatContext
+                {
+                    Messages =
+                    [
+                        new Message
+                        {
+                            Role = "user",
+                            Content = "Hi",
+                            Timestamp = 1,
+                        },
+                    ],
+                },
+                null,
+                CancellationToken.None
+            )
+        )
         {
             events.Add(e);
         }

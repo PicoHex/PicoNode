@@ -1,6 +1,6 @@
 namespace PicoNode.AI.Tests.Types;
-using PicoNode.AI;
 
+using PicoNode.AI;
 
 public class AssistantMessageEventTests
 {
@@ -11,7 +11,10 @@ public class AssistantMessageEventTests
         {
             Role = "assistant",
             Model = "claude-sonnet-4",
-            ContentBlocks = new[] { new ContentBlock { Type = "text", Text = "Hel" } },
+            ContentBlocks = new[]
+            {
+                new ContentBlock { Type = "text", Text = "Hel" },
+            },
         };
 
         var evt = new AssistantMessageEvent.TextDelta
@@ -32,7 +35,10 @@ public class AssistantMessageEventTests
         var msg = new Message
         {
             Role = "assistant",
-            ContentBlocks = new[] { new ContentBlock { Type = "text", Text = "Done!" } },
+            ContentBlocks = new[]
+            {
+                new ContentBlock { Type = "text", Text = "Done!" },
+            },
             StopReason = "end_turn",
         };
         var evt = new AssistantMessageEvent.Done { Message = msg };

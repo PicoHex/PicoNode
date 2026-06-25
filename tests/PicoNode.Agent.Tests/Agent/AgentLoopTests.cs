@@ -1,6 +1,5 @@
 namespace PicoNode.Agent.Tests.Agent;
 
-
 public class AgentLoopTests
 {
     [Test]
@@ -21,7 +20,12 @@ public class AgentLoopTests
 
         var messages = new List<Message>
         {
-            new() { Role = "user", Content = "Hello", Timestamp = 1 },
+            new()
+            {
+                Role = "user",
+                Content = "Hello",
+                Timestamp = 1,
+            },
         };
 
         var result = await loop.RunTurnAsync(messages, CancellationToken.None);
@@ -32,6 +36,7 @@ public class AgentLoopTests
         await Assert.That(lastAssistant).IsNotNull();
         await Assert.That(lastAssistant!.ContentBlocks![0].Text).IsEqualTo("Hello!");
     }
+
     [Test]
     public async Task RunTurnAsync_WithCallback_StreamsEvents()
     {
@@ -53,7 +58,12 @@ public class AgentLoopTests
 
         var messages = new List<Message>
         {
-            new() { Role = "user", Content = "Hello", Timestamp = 1 },
+            new()
+            {
+                Role = "user",
+                Content = "Hello",
+                Timestamp = 1,
+            },
         };
 
         await loop.RunTurnAsync(messages, CancellationToken.None, onEvent);
@@ -71,8 +81,11 @@ public class AgentLoopTests
 public sealed class MockLLmClient : ILLmClient
 {
     public async IAsyncEnumerable<AssistantMessageEvent> StreamAsync(
-        Model model, ChatContext context, StreamOptions? options,
-        [EnumeratorCancellation] CancellationToken ct)
+        Model model,
+        ChatContext context,
+        StreamOptions? options,
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         yield return new AssistantMessageEvent.Start
         {
@@ -80,7 +93,8 @@ public sealed class MockLLmClient : ILLmClient
         };
         yield return new AssistantMessageEvent.TextDelta
         {
-            Index = 0, Delta = "Hello!",
+            Index = 0,
+            Delta = "Hello!",
             Partial = new Message
             {
                 Role = "assistant",

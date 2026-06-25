@@ -1,13 +1,14 @@
 namespace PicoNode.AI.Tests.Sse;
-using PicoNode.AI;
 
+using PicoNode.AI;
 
 public class OpenAISseParserTests
 {
     [Test]
     public async Task Parse_TextDelta_EmitsEvents()
     {
-        var sseData = """
+        var sseData =
+            """
             data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
 
             data: {"id":"1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}
@@ -18,7 +19,9 @@ public class OpenAISseParserTests
 
         using var stream = new MemoryStream(sseData);
         var events = new List<AssistantMessageEvent>();
-        await foreach (var e in OpenAISseParser.ParseStreamAsync(stream, "gpt-4o", CancellationToken.None))
+        await foreach (
+            var e in OpenAISseParser.ParseStreamAsync(stream, "gpt-4o", CancellationToken.None)
+        )
             events.Add(e);
 
         var deltas = events.OfType<AssistantMessageEvent.TextDelta>().ToArray();
@@ -33,7 +36,9 @@ public class OpenAISseParserTests
     {
         using var stream = new MemoryStream([]);
         var count = 0;
-        await foreach (var _ in OpenAISseParser.ParseStreamAsync(stream, "gpt-4o", CancellationToken.None))
+        await foreach (
+            var _ in OpenAISseParser.ParseStreamAsync(stream, "gpt-4o", CancellationToken.None)
+        )
             count++;
         await Assert.That(count).IsEqualTo(0);
     }

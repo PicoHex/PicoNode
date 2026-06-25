@@ -1,6 +1,5 @@
 namespace PicoNode.Agent.Tests.Capability;
 
-
 public class CapabilityRegistryTests
 {
     [Test]
@@ -12,7 +11,9 @@ public class CapabilityRegistryTests
         Directory.CreateDirectory(pkgDir);
 
         var manifestPath = Path.Combine(pkgDir, "manifest.json");
-        await File.WriteAllTextAsync(manifestPath, """
+        await File.WriteAllTextAsync(
+            manifestPath,
+            """
             {
               "name": "my-pack",
               "capabilities": [
@@ -34,7 +35,8 @@ public class CapabilityRegistryTests
                 }
               ]
             }
-            """);
+            """
+        );
 
         try
         {
@@ -53,7 +55,8 @@ public class CapabilityRegistryTests
         }
         finally
         {
-            if (Directory.Exists(root)) Directory.Delete(root, true);
+            if (Directory.Exists(root))
+                Directory.Delete(root, true);
         }
     }
 
@@ -69,6 +72,10 @@ public class CapabilityRegistryTests
             registry.Scan(root);
             await Assert.That(registry.GetAll().Count).IsEqualTo(0);
         }
-        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, true);
+        }
     }
 }

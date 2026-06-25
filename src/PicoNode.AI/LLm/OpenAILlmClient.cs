@@ -14,24 +14,27 @@ public sealed class OpenAILlmClient : ILLmClient
         Model model,
         ChatContext context,
         StreamOptions? options,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
-        var apiKey = options?.ApiKey
-            ?? Environment.GetEnvironmentVariable(
-                $"{model.Provider.ToUpperInvariant()}_API_KEY")
+        var apiKey =
+            options?.ApiKey
+            ?? Environment.GetEnvironmentVariable($"{model.Provider.ToUpperInvariant()}_API_KEY")
             ?? "";
 
         var json = BuildRequestJson(model, context, options);
 
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post, $"{model.BaseUrl}{ChatPath}")
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{model.BaseUrl}{ChatPath}")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };
         request.Headers.Add(ApiKeyHeader, $"{BearerPrefix}{apiKey}");
 
         using var response = await _http.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, ct);
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            ct
+        );
 
         if (!response.IsSuccessStatusCode)
         {
@@ -40,11 +43,16 @@ public sealed class OpenAILlmClient : ILLmClient
             try
             {
                 using var errDoc = JsonDocument.Parse(errorBody);
-                if (errDoc.RootElement.TryGetProperty("error", out var err) &&
-                    err.TryGetProperty("message", out var msg))
+                if (
+                    errDoc.RootElement.TryGetProperty("error", out var err)
+                    && err.TryGetProperty("message", out var msg)
+                )
                     errorMessage = msg.GetString() ?? errorBody;
             }
-            catch (JsonException) { errorMessage = errorBody; }
+            catch (JsonException)
+            {
+                errorMessage = errorBody;
+            }
 
             yield return new AssistantMessageEvent.Error
             {
@@ -59,15 +67,13 @@ public sealed class OpenAILlmClient : ILLmClient
         }
 
         using var bodyStream = await response.Content.ReadAsStreamAsync(ct);
-        await foreach (var evt in OpenAISseParser.ParseStreamAsync(
-            bodyStream, model.Id, ct))
+        await foreach (var evt in OpenAISseParser.ParseStreamAsync(bodyStream, model.Id, ct))
         {
             yield return evt;
         }
     }
 
-    private static string BuildRequestJson(
-        Model model, ChatContext context, StreamOptions? options)
+    private static string BuildRequestJson(Model model, ChatContext context, StreamOptions? options)
     {
         var sb = new StringBuilder(2048);
         sb.Append('{');
@@ -80,7 +86,8 @@ public sealed class OpenAILlmClient : ILLmClient
         sb.Append("\"messages\":[");
         for (int i = 0; i < context.Messages.Length; i++)
         {
-            if (i > 0) sb.Append(',');
+            if (i > 0)
+                sb.Append(',');
             AppendMessage(sb, context.Messages[i]);
         }
         sb.Append(']');
@@ -102,10 +109,11 @@ public sealed class OpenAILlmClient : ILLmClient
             sb.Append("\"content\":");
             if (m.ContentBlocks != null && m.ContentBlocks.Length > 0)
             {
-                var text = m.ContentBlocks
-                    .Where(cb => cb.Type == "text")
-                    .Select(cb => cb.Text)
-                    .FirstOrDefault() ?? "";
+                var text =
+                    m.ContentBlocks.Where(cb => cb.Type == "text")
+                        .Select(cb => cb.Text)
+                        .FirstOrDefault()
+                    ?? "";
                 sb.Append($"\"{EscapeJson(text)}\"");
             }
             else
@@ -115,7 +123,9 @@ public sealed class OpenAILlmClient : ILLmClient
         }
         else if (m.Role == "toolResult")
         {
-            sb.Append($"\"content\":\"{EscapeJson(m.ContentBlocks?.FirstOrDefault()?.Text ?? "")}\"");
+            sb.Append(
+                $"\"content\":\"{EscapeJson(m.ContentBlocks?.FirstOrDefault()?.Text ?? "")}\""
+            );
         }
         sb.Append('}');
     }
@@ -127,14 +137,26 @@ public sealed class OpenAILlmClient : ILLmClient
         {
             switch (c)
             {
-                case '"': sb.Append("\\\""); break;
-                case '\\': sb.Append("\\\\"); break;
-                case '\n': sb.Append("\\n"); break;
-                case '\r': sb.Append("\\r"); break;
-                case '\t': sb.Append("\\t"); break;
+                case '"':
+                    sb.Append("\\\"");
+                    break;
+                case '\\':
+                    sb.Append("\\\\");
+                    break;
+                case '\n':
+                    sb.Append("\\n");
+                    break;
+                case '\r':
+                    sb.Append("\\r");
+                    break;
+                case '\t':
+                    sb.Append("\\t");
+                    break;
                 default:
-                    if (c < 0x20) sb.Append($"\\u{(int)c:X4}");
-                    else sb.Append(c);
+                    if (c < 0x20)
+                        sb.Append($"\\u{(int)c:X4}");
+                    else
+                        sb.Append(c);
                     break;
             }
         }

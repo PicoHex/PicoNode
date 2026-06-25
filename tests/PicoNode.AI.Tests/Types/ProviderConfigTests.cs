@@ -1,6 +1,6 @@
 namespace PicoNode.AI.Tests.Types;
-using PicoNode.AI;
 
+using PicoNode.AI;
 
 public class ProviderConfigTests
 {
@@ -23,7 +23,8 @@ public class ProviderConfigTests
         await Assert.That(restored).IsNotNull();
         await Assert.That(restored!.Name).IsEqualTo("anthropic");
         await Assert.That(restored.Priority).IsEqualTo(1);
-        await Assert.That(restored.ModelMapping["claude-sonnet"])
+        await Assert
+            .That(restored.ModelMapping["claude-sonnet"])
             .IsEqualTo("claude-sonnet-4-20250514");
     }
 

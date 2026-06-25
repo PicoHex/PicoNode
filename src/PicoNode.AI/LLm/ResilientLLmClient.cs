@@ -9,7 +9,8 @@ public sealed class ResilientLLmClient : ILLmClient
     public ResilientLLmClient(
         IProviderRouter router,
         IReadOnlyDictionary<string, ICircuitBreaker> breakers,
-        IReadOnlyDictionary<string, ILLmClient> clients)
+        IReadOnlyDictionary<string, ILLmClient> clients
+    )
     {
         _router = router;
         _breakers = breakers;
@@ -20,7 +21,8 @@ public sealed class ResilientLLmClient : ILLmClient
         Model model,
         ChatContext context,
         StreamOptions? options,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         var provider = _router.Resolve(model.Id, model.Api);
         if (provider == null)
@@ -47,7 +49,9 @@ public sealed class ResilientLLmClient : ILLmClient
         }
 
         if (!_clients.TryGetValue(provider.Name, out var client))
-            throw new InvalidOperationException($"No client registered for provider '{provider.Name}'");
+            throw new InvalidOperationException(
+                $"No client registered for provider '{provider.Name}'"
+            );
 
         await foreach (var evt in client.StreamAsync(resolvedModel, context, options, ct))
             yield return evt;

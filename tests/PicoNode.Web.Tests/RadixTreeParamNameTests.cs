@@ -1,4 +1,3 @@
-
 namespace PicoNode.Web.Tests;
 
 /// <summary>

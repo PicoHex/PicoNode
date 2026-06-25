@@ -21,12 +21,19 @@ public static class SseParser
     public static async IAsyncEnumerable<AssistantMessageEvent> ParseAnthropicStreamAsync(
         Stream stream,
         string model,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
         var contentBlocks = new List<ContentBlock>();
         var currentToolArgs = new StringBuilder();
-        var message = new Message { Role = "assistant", Model = model, Provider = "anthropic", Api = AiApiFormat.AnthropicMessages };
+        var message = new Message
+        {
+            Role = "assistant",
+            Model = model,
+            Provider = "anthropic",
+            Api = AiApiFormat.AnthropicMessages,
+        };
 
         bool started = false;
         string? stopReason = null;
@@ -34,7 +41,8 @@ public static class SseParser
         while (!ct.IsCancellationRequested)
         {
             var line = await reader.ReadLineAsync(ct);
-            if (line == null) break;
+            if (line == null)
+                break;
 
             // SSE: lines starting with "data: " contain JSON
             if (!line.StartsWith(DataPrefix))
@@ -51,8 +59,14 @@ public static class SseParser
 
             var json = line[DataPrefix.Length..]; // skip "data: "
             JsonDocument? doc = null;
-            try { doc = JsonDocument.Parse(json); }
-            catch (JsonException) { continue; } // skip malformed JSON lines
+            try
+            {
+                doc = JsonDocument.Parse(json);
+            }
+            catch (JsonException)
+            {
+                continue;
+            } // skip malformed JSON lines
 
             using var _doc = doc;
             var root = doc.RootElement;
@@ -75,12 +89,14 @@ public static class SseParser
 
                     if (cbType == BlockTypeText)
                     {
-                        while (contentBlocks.Count <= cbIndex) contentBlocks.Add(new ContentBlock());
+                        while (contentBlocks.Count <= cbIndex)
+                            contentBlocks.Add(new ContentBlock());
                         contentBlocks[cbIndex] = new ContentBlock { Type = "text", Text = "" };
                     }
                     else if (cbType == BlockTypeToolUse)
                     {
-                        while (contentBlocks.Count <= cbIndex) contentBlocks.Add(new ContentBlock());
+                        while (contentBlocks.Count <= cbIndex)
+                            contentBlocks.Add(new ContentBlock());
                         contentBlocks[cbIndex] = new ContentBlock
                         {
                             Type = "tool_call",
@@ -142,7 +158,9 @@ public static class SseParser
                     var stopIdx = root.GetProperty("index").GetInt32();
                     if (contentBlocks[stopIdx].Type == "tool_call")
                     {
-                        contentBlocks[stopIdx].Arguments = ParseJsonObject(currentToolArgs.ToString());
+                        contentBlocks[stopIdx].Arguments = ParseJsonObject(
+                            currentToolArgs.ToString()
+                        );
                         yield return new AssistantMessageEvent.ToolCallEnd
                         {
                             Index = stopIdx,
@@ -153,8 +171,10 @@ public static class SseParser
                     break;
 
                 case TypeMessageDelta:
-                    if (root.TryGetProperty("delta", out var msgDelta) &&
-                        msgDelta.TryGetProperty("stop_reason", out var sr))
+                    if (
+                        root.TryGetProperty("delta", out var msgDelta)
+                        && msgDelta.TryGetProperty("stop_reason", out var sr)
+                    )
                     {
                         stopReason = sr.GetString();
                     }
@@ -194,7 +214,8 @@ public static class SseParser
 
     private static Dictionary<string, object?> ParseJsonObject(string json)
     {
-        if (string.IsNullOrWhiteSpace(json)) return new();
+        if (string.IsNullOrWhiteSpace(json))
+            return new();
         using var doc = JsonDocument.Parse(json);
         var result = ParseElement(doc.RootElement);
         return (result as Dictionary<string, object?>) ?? new();

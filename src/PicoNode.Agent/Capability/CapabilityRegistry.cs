@@ -9,15 +9,20 @@ public sealed class CapabilityRegistry
     public void Scan(string root)
     {
         var capsDir = Path.Combine(root, CapabilitiesDir);
-        if (!Directory.Exists(capsDir)) return;
+        if (!Directory.Exists(capsDir))
+            return;
 
-        foreach (var dir in Directory.EnumerateDirectories(capsDir, "*", SearchOption.AllDirectories))
+        foreach (
+            var dir in Directory.EnumerateDirectories(capsDir, "*", SearchOption.AllDirectories)
+        )
         {
             var manifestPath = Path.Combine(dir, ManifestFile);
-            if (!File.Exists(manifestPath)) continue;
+            if (!File.Exists(manifestPath))
+                continue;
 
             var manifest = ManifestLoader.LoadFromFile(manifestPath);
-            if (manifest?.Capabilities == null) continue;
+            if (manifest?.Capabilities == null)
+                continue;
 
             foreach (var cap in manifest.Capabilities)
             {
@@ -29,9 +34,9 @@ public sealed class CapabilityRegistry
 
     public IReadOnlyList<ManifestCapability> GetAll() => _capabilities;
 
-    public IReadOnlyList<ManifestCapability> GetByTrigger(TriggerKind kind)
-        => _capabilities.Where(c => c.MatchesTrigger(kind)).ToList();
+    public IReadOnlyList<ManifestCapability> GetByTrigger(TriggerKind kind) =>
+        _capabilities.Where(c => c.MatchesTrigger(kind)).ToList();
 
-    public IReadOnlyList<ManifestCapability> GetByLifecycle(LifecycleKind lifecycle)
-        => _capabilities.Where(c => c.LifecycleKind == lifecycle).ToList();
+    public IReadOnlyList<ManifestCapability> GetByLifecycle(LifecycleKind lifecycle) =>
+        _capabilities.Where(c => c.LifecycleKind == lifecycle).ToList();
 }

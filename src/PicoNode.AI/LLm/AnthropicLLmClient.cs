@@ -15,18 +15,21 @@ public sealed class AnthropicLLmClient : ILLmClient
         Model model,
         ChatContext context,
         StreamOptions? options,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         // Prefer explicit key, then provider-specific env var (e.g. ANTHROPIC_API_KEY).
-        var apiKey = options?.ApiKey
-            ?? Environment.GetEnvironmentVariable(
-                $"{model.Provider.ToUpperInvariant()}_API_KEY")
+        var apiKey =
+            options?.ApiKey
+            ?? Environment.GetEnvironmentVariable($"{model.Provider.ToUpperInvariant()}_API_KEY")
             ?? "";
 
         var json = BuildRequestJson(model, context, options);
 
         using var request = new HttpRequestMessage(
-            HttpMethod.Post, $"{model.BaseUrl}{MessagesPath}")
+            HttpMethod.Post,
+            $"{model.BaseUrl}{MessagesPath}"
+        )
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json"),
         };
@@ -34,7 +37,10 @@ public sealed class AnthropicLLmClient : ILLmClient
         request.Headers.Add(VersionHeader, ApiVersion);
 
         using var response = await _http.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, ct);
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            ct
+        );
 
         if (!response.IsSuccessStatusCode)
         {
@@ -43,13 +49,18 @@ public sealed class AnthropicLLmClient : ILLmClient
             try
             {
                 using var errDoc = JsonDocument.Parse(errorBody);
-                if (errDoc.RootElement.TryGetProperty("error", out var err) &&
-                    err.TryGetProperty("message", out var msg))
+                if (
+                    errDoc.RootElement.TryGetProperty("error", out var err)
+                    && err.TryGetProperty("message", out var msg)
+                )
                 {
                     errorMessage = msg.GetString() ?? errorBody;
                 }
             }
-            catch (JsonException) { errorMessage = errorBody; }
+            catch (JsonException)
+            {
+                errorMessage = errorBody;
+            }
 
             yield return new AssistantMessageEvent.Error
             {
@@ -64,15 +75,13 @@ public sealed class AnthropicLLmClient : ILLmClient
         }
 
         using var bodyStream = await response.Content.ReadAsStreamAsync(ct);
-        await foreach (var evt in SseParser.ParseAnthropicStreamAsync(
-            bodyStream, model.Id, ct))
+        await foreach (var evt in SseParser.ParseAnthropicStreamAsync(bodyStream, model.Id, ct))
         {
             yield return evt;
         }
     }
 
-    private static string BuildRequestJson(
-        Model model, ChatContext context, StreamOptions? options)
+    private static string BuildRequestJson(Model model, ChatContext context, StreamOptions? options)
     {
         var sb = new StringBuilder(4096);
         sb.Append('{');
@@ -87,7 +96,8 @@ public sealed class AnthropicLLmClient : ILLmClient
         sb.Append("\"messages\":[");
         for (int i = 0; i < context.Messages.Length; i++)
         {
-            if (i > 0) sb.Append(',');
+            if (i > 0)
+                sb.Append(',');
             AppendMessage(sb, context.Messages[i]);
         }
         sb.Append(']');
@@ -108,7 +118,8 @@ public sealed class AnthropicLLmClient : ILLmClient
             sb.Append("\"tools\":[");
             for (int i = 0; i < context.Tools.Length; i++)
             {
-                if (i > 0) sb.Append(',');
+                if (i > 0)
+                    sb.Append(',');
                 sb.Append("{\"name\":");
                 sb.Append(EscapeString(context.Tools[i].Function.Name));
                 sb.Append(",\"description\":");
@@ -139,7 +150,8 @@ public sealed class AnthropicLLmClient : ILLmClient
             {
                 for (int i = 0; i < m.ContentBlocks.Length; i++)
                 {
-                    if (i > 0) sb.Append(',');
+                    if (i > 0)
+                        sb.Append(',');
                     AppendContentBlock(sb, m.ContentBlocks[i]);
                 }
             }
@@ -147,9 +159,11 @@ public sealed class AnthropicLLmClient : ILLmClient
         }
         else if (m.Role == "toolResult")
         {
-            var text = m.ContentBlocks?
-                .Where(cb => cb.Type == "text")
-                .Select(cb => cb.Text).FirstOrDefault() ?? "";
+            var text =
+                m.ContentBlocks?.Where(cb => cb.Type == "text")
+                    .Select(cb => cb.Text)
+                    .FirstOrDefault()
+                ?? "";
             sb.Append("{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",");
             sb.Append("\"tool_use_id\":");
             sb.Append(EscapeString(m.ToolCallId ?? ""));
@@ -183,13 +197,15 @@ public sealed class AnthropicLLmClient : ILLmClient
 
     private static string BuildArgsJson(Dictionary<string, object?> args)
     {
-        if (args.Count == 0) return "{}";
+        if (args.Count == 0)
+            return "{}";
         var sb = new StringBuilder(256);
         sb.Append('{');
         bool first = true;
         foreach (var (k, v) in args)
         {
-            if (!first) sb.Append(',');
+            if (!first)
+                sb.Append(',');
             sb.Append(EscapeString(k));
             sb.Append(':');
             AppendValue(sb, v);
@@ -203,19 +219,34 @@ public sealed class AnthropicLLmClient : ILLmClient
     {
         switch (v)
         {
-            case null: sb.Append("null"); break;
-            case string s: sb.Append(EscapeString(s)); break;
-            case bool b: sb.Append(b ? "true" : "false"); break;
-            case int i: sb.Append(i); break;
-            case long l: sb.Append(l); break;
-            case double d: sb.Append(d.ToString("G")); break;
-            case float f: sb.Append(f.ToString("G")); break;
+            case null:
+                sb.Append("null");
+                break;
+            case string s:
+                sb.Append(EscapeString(s));
+                break;
+            case bool b:
+                sb.Append(b ? "true" : "false");
+                break;
+            case int i:
+                sb.Append(i);
+                break;
+            case long l:
+                sb.Append(l);
+                break;
+            case double d:
+                sb.Append(d.ToString("G"));
+                break;
+            case float f:
+                sb.Append(f.ToString("G"));
+                break;
             case Dictionary<string, object?> dict:
                 sb.Append('{');
                 bool first = true;
                 foreach (var (dk, dv) in dict)
                 {
-                    if (!first) sb.Append(',');
+                    if (!first)
+                        sb.Append(',');
                     sb.Append(EscapeString(dk));
                     sb.Append(':');
                     AppendValue(sb, dv);
@@ -227,7 +258,8 @@ public sealed class AnthropicLLmClient : ILLmClient
                 sb.Append('[');
                 for (int i = 0; i < list.Count; i++)
                 {
-                    if (i > 0) sb.Append(',');
+                    if (i > 0)
+                        sb.Append(',');
                     AppendValue(sb, list[i]);
                 }
                 sb.Append(']');
@@ -246,13 +278,27 @@ public sealed class AnthropicLLmClient : ILLmClient
         {
             switch (c)
             {
-                case '"': sb.Append("\\\""); break;
-                case '\\': sb.Append("\\\\"); break;
-                case '\n': sb.Append("\\n"); break;
-                case '\r': sb.Append("\\r"); break;
-                case '\t': sb.Append("\\t"); break;
-                case '\b': sb.Append("\\b"); break;
-                case '\f': sb.Append("\\f"); break;
+                case '"':
+                    sb.Append("\\\"");
+                    break;
+                case '\\':
+                    sb.Append("\\\\");
+                    break;
+                case '\n':
+                    sb.Append("\\n");
+                    break;
+                case '\r':
+                    sb.Append("\\r");
+                    break;
+                case '\t':
+                    sb.Append("\\t");
+                    break;
+                case '\b':
+                    sb.Append("\\b");
+                    break;
+                case '\f':
+                    sb.Append("\\f");
+                    break;
                 default:
                     if (c < 0x20)
                         sb.Append($"\\u{(int)c:X4}");

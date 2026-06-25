@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-
 public sealed class AgentConfig
 {
     public Dictionary<string, ProviderEntry> Providers { get; set; } = [];
@@ -39,13 +38,17 @@ public static class ConfigLoader
     {
         var errors = new List<string>();
         if (config.Providers.Count == 0)
-            errors.Add("No providers configured. Add at least one provider to ~/.pico-agent/settings.json → providers");
+            errors.Add(
+                "No providers configured. Add at least one provider to ~/.pico-agent/settings.json → providers"
+            );
         else
         {
             foreach (var (name, entry) in config.Providers)
             {
                 if (string.IsNullOrWhiteSpace(entry.ApiKey))
-                    errors.Add($"Missing apiKey for provider '{name}'. Set providers.{name}.apiKey in ~/.pico-agent/settings.json");
+                    errors.Add(
+                        $"Missing apiKey for provider '{name}'. Set providers.{name}.apiKey in ~/.pico-agent/settings.json"
+                    );
             }
         }
         return new ValidateResult { IsValid = errors.Count == 0, Errors = errors.ToArray() };
