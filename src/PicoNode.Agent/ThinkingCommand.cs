@@ -12,6 +12,11 @@ public static class ThinkingCommand
     /// </summary>
     public static string? Apply(Model model, string arg)
     {
+        if (arg is null)
+        {
+            return "Usage: /thinking [on|off]";
+        }
+
         if (string.IsNullOrWhiteSpace(arg))
         {
             // Bare /thinking — toggle

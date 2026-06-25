@@ -7,7 +7,7 @@ namespace PicoNode.Agent.Tests.Agent;
 public sealed class AgentLoopThinkingTests
 {
     /// <summary>
-    /// RED: When Model.Reasoning is true, AgentLoop should pass StreamOptions
+    /// When Model.Reasoning is true, AgentLoop should pass StreamOptions
     /// with Reasoning set, not null.
     /// </summary>
     [Test]
@@ -60,7 +60,7 @@ public sealed class AgentLoopThinkingTests
     }
 
     /// <summary>
-    /// RED: When Model.Reasoning is false, AgentLoop should pass null options
+    /// When Model.Reasoning is false, AgentLoop should pass null options
     /// (existing behavior preserved).
     /// </summary>
     [Test]
@@ -110,7 +110,7 @@ public sealed class AgentLoopThinkingTests
     // ── ThinkingCommand.Apply tests ──────────────────────────────────
 
     /// <summary>
-    /// RED: /thinking on should SET reasoning to true, not toggle.
+    /// /thinking on should SET reasoning to true, not toggle.
     /// </summary>
     [Test]
     public async Task Command_thinking_on_sets_true_when_already_true()
@@ -124,7 +124,7 @@ public sealed class AgentLoopThinkingTests
     }
 
     /// <summary>
-    /// RED: Bare /thinking should toggle reasoning state.
+    /// Bare /thinking should toggle reasoning state.
     /// </summary>
     [Test]
     public async Task Command_thinking_bare_toggles()
@@ -144,7 +144,7 @@ public sealed class AgentLoopThinkingTests
     }
 
     /// <summary>
-    /// RED: /thinking off should always set reasoning to false.
+    /// /thinking off should always set reasoning to false.
     /// </summary>
     [Test]
     public async Task Command_thinking_off_sets_false()
@@ -158,7 +158,7 @@ public sealed class AgentLoopThinkingTests
     }
 
     /// <summary>
-    /// RED: /thinking true should always set reasoning to true.
+    /// /thinking true should always set reasoning to true.
     /// </summary>
     [Test]
     public async Task Command_thinking_true_sets_true()
@@ -178,7 +178,7 @@ public sealed class AgentLoopThinkingTests
     }
 
     /// <summary>
-    /// RED: /thinking false should always set reasoning to false.
+    /// /thinking false should always set reasoning to false.
     /// </summary>
     [Test]
     public async Task Command_thinking_false_sets_false()
@@ -198,7 +198,7 @@ public sealed class AgentLoopThinkingTests
     }
 
     /// <summary>
-    /// RED: Unknown argument returns error message.
+    /// Unknown argument returns error message.
     /// </summary>
     [Test]
     public async Task Command_thinking_unknown_arg_returns_error()
@@ -213,6 +213,24 @@ public sealed class AgentLoopThinkingTests
             .That(model.Reasoning)
             .IsFalse()
             .Because("unknown argument should not change reasoning state");
+    }
+
+    /// <summary>
+    /// Null argument returns error message, does not toggle.
+    /// </summary>
+    [Test]
+    public async Task Command_thinking_null_returns_error()
+    {
+        var model = new Model { Reasoning = false };
+        var result = ThinkingCommand.Apply(model, null!);
+        await Assert
+            .That(result)
+            .IsNotNull()
+            .Because("null argument should return an error message");
+        await Assert
+            .That(model.Reasoning)
+            .IsFalse()
+            .Because("null argument should not change reasoning state");
     }
 }
 
