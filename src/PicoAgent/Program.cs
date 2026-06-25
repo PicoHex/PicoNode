@@ -214,17 +214,10 @@ async Task RunChatAsync(
                         }
                         continue;
                     case "/thinking":
-                        if (string.IsNullOrWhiteSpace(arg) || arg == "on" || arg == "true")
+                        var err = ThinkingCommand.Apply(m, arg);
+                        if (err is not null)
                         {
-                            m.Reasoning = !m.Reasoning;
-                        }
-                        else if (arg == "off" || arg == "false")
-                        {
-                            m.Reasoning = false;
-                        }
-                        else
-                        {
-                            Console.WriteLine("Usage: /thinking [on|off]");
+                            Console.WriteLine(err);
                             continue;
                         }
                         Console.WriteLine($"[Thinking: {(m.Reasoning ? "on" : "off")}]");
