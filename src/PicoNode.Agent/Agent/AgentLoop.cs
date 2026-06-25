@@ -1,7 +1,5 @@
 namespace PicoNode.Agent;
 
-using static PicoNode.Agent.ProtocolConstants;
-using static PicoNode.Agent.YmlConstants;
 
 public sealed class AgentLoop
 {

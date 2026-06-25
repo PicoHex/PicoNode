@@ -1,5 +1,3 @@
-using static PicoNode.Agent.FileSystemConstants;
-using static PicoNode.Agent.ProtocolConstants;
 
 _ = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(new AgentConfig());
 _ = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(new ProviderEntry());

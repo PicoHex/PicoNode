@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-using static PicoNode.Agent.FileSystemConstants;
 
 public sealed class CapabilityRegistry
 {

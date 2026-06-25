@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-using static PicoNode.Agent.ProtocolConstants;
 
 public sealed class AgentHost
 {
