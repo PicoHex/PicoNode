@@ -1,5 +1,6 @@
 namespace PicoNode.Agent;
 
+[PicoJsonSerializable]
 public sealed class AgentConfig
 {
     public Dictionary<string, ProviderEntry> Providers { get; set; } = [];
@@ -8,6 +9,7 @@ public sealed class AgentConfig
     public int? MaxTokens { get; set; }
 }
 
+[PicoJsonSerializable]
 public sealed class ProviderEntry
 {
     public string ApiKey { get; set; } = "";
