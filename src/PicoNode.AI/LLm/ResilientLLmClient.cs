@@ -26,6 +26,20 @@ public sealed class ResilientLLmClient : ILLmClient
         if (provider == null)
             throw new InvalidOperationException($"No provider found for model '{model.Id}'");
 
+        // Populate model with provider config
+        var resolvedModel = new Model
+        {
+            Id = model.Id,
+            Name = model.Name,
+            Provider = provider.Name,
+            Api = provider.ApiFormat,
+            BaseUrl = provider.BaseUrl,
+            Reasoning = model.Reasoning,
+            Cost = model.Cost,
+            ContextWindow = model.ContextWindow,
+            MaxTokens = model.MaxTokens,
+        };
+
         if (_breakers.TryGetValue(provider.Name, out var breaker) && !breaker.TryAcquire())
         {
             // v1: no failover. v2: use FailoverService.
@@ -35,7 +49,7 @@ public sealed class ResilientLLmClient : ILLmClient
         if (!_clients.TryGetValue(provider.Name, out var client))
             throw new InvalidOperationException($"No client registered for provider '{provider.Name}'");
 
-        await foreach (var evt in client.StreamAsync(model, context, options, ct))
+        await foreach (var evt in client.StreamAsync(resolvedModel, context, options, ct))
             yield return evt;
 
         breaker?.RecordSuccess();
