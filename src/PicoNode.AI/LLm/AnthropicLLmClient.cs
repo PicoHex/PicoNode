@@ -39,17 +39,17 @@ public sealed class AnthropicLLmClient : ILLmClient
         if (!response.IsSuccessStatusCode)
         {
             var errorBody = await response.Content.ReadAsStringAsync(ct);
-            var errorMessage = "Unknown error";
+            var errorMessage = $"HTTP {(int)response.StatusCode}";
             try
             {
                 using var errDoc = JsonDocument.Parse(errorBody);
                 if (errDoc.RootElement.TryGetProperty("error", out var err) &&
                     err.TryGetProperty("message", out var msg))
                 {
-                    errorMessage = msg.GetString() ?? errorMessage;
+                    errorMessage = msg.GetString() ?? errorBody;
                 }
             }
-            catch (JsonException) { }
+            catch (JsonException) { errorMessage = errorBody; }
 
             yield return new AssistantMessageEvent.Error
             {
