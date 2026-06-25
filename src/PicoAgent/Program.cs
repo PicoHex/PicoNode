@@ -266,28 +266,30 @@ async Task RunServeAsync(int port, AgentHost host, CapabilityRegistry reg, strin
             var b = await r.ReadToEndAsync(ct).ConfigureAwait(false);
             var sid = ctx.RouteValues["id"];
 
-            // Collect all SSE events into a list, then send at once
-            System.Collections.Concurrent.ConcurrentBag<string> sseEvents = [];
+            using var ms = new MemoryStream();
+            var writer = new StreamWriter(ms);
 
             await host.ProcessMessageAsync(b, ct, sid,
                 onEvent: (evt, _) =>
                 {
+                    Program.CallbackCount++;
+            Console.Error.WriteLine($"CB: {evt.GetType().Name} (hash={GetHashCode()})");
                     if (evt is AssistantMessageEvent.TextDelta td)
-                        sseEvents.Add($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "delta", content = td.Delta })}\n\n");
+                        ms.Write(Encoding.UTF8.GetBytes($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "delta", content = td.Delta })}\n\n"));
                     else if (evt is AssistantMessageEvent.Done d)
-                        sseEvents.Add($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "done", stopReason = d.Message.StopReason })}\n\n");
+                        ms.Write(Encoding.UTF8.GetBytes($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "done", stopReason = d.Message.StopReason })}\n\n"));
                     else if (evt is AssistantMessageEvent.Error e)
-                        sseEvents.Add($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "error", message = e.Message.ErrorMessage })}\n\n");
+                        ms.Write(Encoding.UTF8.GetBytes($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "error", message = e.Message.ErrorMessage })}\n\n"));
                     return ValueTask.CompletedTask;
                 });
 
-            var body = string.Concat(sseEvents);
-            System.Console.Error.WriteLine($"sse: {sseEvents.Count} events, {body.Length} bytes");
+            await writer.FlushAsync();
+            var body = ms.ToArray();
             return new HttpResponse
             {
                 StatusCode = 200,
                 Headers = [new("Content-Type", "text/event-stream"), new("Cache-Control", "no-cache")],
-                Body = Encoding.UTF8.GetBytes(body),
+                Body = body,
             };
         }
     );

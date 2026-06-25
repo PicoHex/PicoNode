@@ -173,11 +173,10 @@ public sealed class AgentLoop
     {
         Message? finalMessage = null;
 
-        if (onEvent is not null) System.Console.Error.WriteLine("CallLLMAsync: onEvent IS set");
+        if (onEvent is not null) { }
 
     await foreach (var evt in _llm.StreamAsync(model, context, null, ct))
         {
-            System.Console.Error.WriteLine($"CallLLMAsync: got event {evt.GetType().Name}");
             onEvent?.Invoke(evt, ct);
             if (evt is AssistantMessageEvent.Done d)
                 finalMessage = d.Message;
