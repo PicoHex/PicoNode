@@ -1,7 +1,7 @@
-namespace PicoAgent.Tests.Host;
+namespace PicoNode.Agent.Tests.Host;
 
 using PicoNode.AI;
-using PicoAgent;
+using PicoNode.Agent;
 
 public class AgentHostTests
 {

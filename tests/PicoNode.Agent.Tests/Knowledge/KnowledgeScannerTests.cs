@@ -1,6 +1,6 @@
-namespace PicoAgent.Tests.Knowledge;
+namespace PicoNode.Agent.Tests.Knowledge;
 
-using PicoAgent;
+using PicoNode.Agent;
 
 public class KnowledgeScannerTests
 {

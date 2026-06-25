@@ -1,4 +1,4 @@
-namespace PicoAgent;
+namespace PicoNode.Agent;
 
 // Flat DTOs — avoid nested object arrays that trigger PicoJetson SG hintName conflicts.
 

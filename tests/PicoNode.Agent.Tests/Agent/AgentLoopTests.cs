@@ -1,7 +1,7 @@
-namespace PicoAgent.Tests.Agent;
+namespace PicoNode.Agent.Tests.Agent;
 
 using PicoNode.AI;
-using PicoAgent;
+using PicoNode.Agent;
 
 public class AgentLoopTests
 {

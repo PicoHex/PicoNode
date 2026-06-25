@@ -1,6 +1,6 @@
-namespace PicoAgent.Tests.Capability;
+namespace PicoNode.Agent.Tests.Capability;
 
-using PicoAgent;
+using PicoNode.Agent;
 
 public class ManifestLoaderTests
 {

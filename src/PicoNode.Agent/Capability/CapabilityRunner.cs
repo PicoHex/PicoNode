@@ -1,4 +1,4 @@
-namespace PicoAgent;
+namespace PicoNode.Agent;
 
 using System.Diagnostics;
 

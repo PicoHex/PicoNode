@@ -1,4 +1,4 @@
-namespace PicoAgent.Tests.Session;
+namespace PicoNode.Agent.Tests.Session;
 
 using PicoNode.AI;
 

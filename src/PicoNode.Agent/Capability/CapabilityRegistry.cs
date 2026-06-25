@@ -1,4 +1,4 @@
-namespace PicoAgent;
+namespace PicoNode.Agent;
 
 public sealed class CapabilityRegistry
 {

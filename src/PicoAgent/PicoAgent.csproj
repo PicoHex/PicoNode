@@ -8,13 +8,16 @@
     <IsTrimmable>true</IsTrimmable>
     <IsPackable>true</IsPackable>
     <PackageId>PicoAgent</PackageId>
-    <Description>PicoAgent — AOT-first AI agent framework for PicoHex ecosystem</Description>
-    <PackageTags>PicoHex;PicoAgent;AI;Agent;AOT</PackageTags>
+    <Description>PicoAgent Host — HTTP/SSE server for the PicoAgent framework</Description>
+    <PackageTags>PicoHex;PicoAgent;AI;Agent;AOT;Host</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <OutputType>Exe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\PicoNode.AI\PicoNode.AI.csproj" />
+    <ProjectReference Include="..\PicoNode.Agent\PicoNode.Agent.csproj" />
+    <ProjectReference Include="..\PicoNode.Web\PicoNode.Web.csproj" />
+    <ProjectReference Include="..\PicoWeb\PicoWeb.csproj" />
     <PackageReference Include="PicoJetson" />
     <PackageReference Include="PicoDI" />
     <PackageReference Include="PicoLog" />

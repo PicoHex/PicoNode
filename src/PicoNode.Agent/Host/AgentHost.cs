@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 
-namespace PicoAgent;
+namespace PicoNode.Agent;
 
 using PicoNode.AI;
 
