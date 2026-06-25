@@ -17,3 +17,4 @@ global using static PicoNode.Agent.ProtocolConstants;
 [PicoJsonSerializable(typeof(AgentConfig))]
 [PicoJsonSerializable(typeof(ProviderEntry))]
 internal sealed class PicoAgentSerializerReg { }
+
