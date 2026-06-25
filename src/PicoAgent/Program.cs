@@ -1,6 +1,4 @@
 
-_ = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(new AgentConfig());
-_ = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(new ProviderEntry());
 
 var homeDir = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),

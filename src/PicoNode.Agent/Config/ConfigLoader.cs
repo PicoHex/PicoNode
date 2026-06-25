@@ -1,5 +1,7 @@
 namespace PicoNode.Agent;
 
+using PicoJetson;
+
 public sealed class AgentConfig
 {
     public Dictionary<string, ProviderEntry> Providers { get; set; } = [];
@@ -15,7 +17,7 @@ public sealed class ProviderEntry
     public string? BaseUrl { get; set; }
 }
 
-public static class ConfigLoader
+public sealed class ConfigLoader
 {
     public static AgentConfig? Load(string path)
     {
