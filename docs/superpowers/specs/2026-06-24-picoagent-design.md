@@ -102,6 +102,8 @@ Agent ↔ 用户:   SSE / WebSocket / stdout
 
 > **实现约束**：PicoJetson 不支持 `record` / `init` 属性。所有类型使用 `class` + `{ get; set; }`。
 
+> **Phase 1 更新**：TUI 未实现。当前 `pico-agent`（无参数）= 交互式 chat（stdin/stdout），`pico-agent serve` = HTTP 模式。
+
 Agent 核心分为两个独立进程：
 
 ```
@@ -675,9 +677,16 @@ Agent 生命周期     ──► 内部状态机               ──► Agent H
 ## 9. CLI 命令
 
 ```
-pico-agent chat                    → 交互模式 (连接已有 host 或自动启动)
-pico-agent serve --port 8080       → API 服务模式 (Host 进程)
+pico-agent                          → 交互式 chat (stdin/stdout 流式)
+pico-agent serve --port 8080        → API 服务模式 (Host 进程)
 
+// Phase 2: 运行时命令 (在 chat 模式内使用)
+/model <name>     → 切换模型（自动路由到对应 Provider）
+/thinking <level> → 切换思考深度（minimal/low/medium/high/xhigh）
+/list-models      → 查询并显示所有 Provider 的可用模型
+/provider <name>  → 切换默认 Provider
+
+// 未来
 pico-agent install git:github.com/user/pack
 pico-agent install /local/path
 pico-agent remove my-pack
@@ -738,7 +747,7 @@ pico-agent status                   → 当前状态
 ### 13.1 设计原则
 
 - **配置只写 apiKey**——`url` 和 `apiFormat` 从内置 preset 自动获取
-- **Model 从 API 获取**——`GET /v1/models` 动态查询
+- **Model 列表从 API 获取**——`GET /v1/models` 动态查询。thinking 支持范围来自内置映射（Anthropic 不通过 API 返回）
 - **thinkingLevel 运行时选择**——`/thinking` 命令切换
 - **Provider 切换不感知**——`/model` 命令背后自动路由
 
@@ -774,22 +783,30 @@ pico-agent status                   → 当前状态
 
 所有主流 Provider 支持 `GET /v1/models`。PicoAgent 启动时调用每个已配置 Provider 的此端点，获取可用模型列表。
 
-- Anthropic 模型附带 `thinking` 支持范围（如 `low..xhigh`）
+- Anthropic `/v1/models` 返回 `id`, `display_name`, `created_at`。thinking 支持范围来自文档（非 API），PicoNode.AI 内置静态映射。
+- OpenAI `/v1/models` 返回完整模型元数据
 - OpenAI 兼容模型附带 `reasoning` 支持范围
 - 模型列表缓存在内存，`/list-models` 重新查询
 
 ### 13.5 运行时命令
 
 ```
+/help           → 显示所有命令
 /list-models     → 显示所有 Provider 的可用模型
 /model <name>    → 切换模型（自动选择 Provider）
 /thinking <lvl>  → 切换思考深度
-/provider <name> → 切换默认 Provider
+/provider <name> → 切换到指定 Provider，自动恢复上次模型
+/save           → 保存 session
+/exit           → 退出（自动保存）
 
 例：
   /model gpt-4o        → ProviderRouter → openai → gpt-4o
   /model deepseek-chat → ProviderRouter → deepseek → deepseek-chat
+  /thinking medium     → [thinkingLevel: medium]
+  /provider openai     → [Switched to openai, model: gpt-4o]
 ```
+
+`/model` 切换时系统自动查找包含该模型的 Provider。`/provider` 切换时恢复该 Provider 上次使用的模型。
 
 ### 13.6 ResilientLLmClient
 

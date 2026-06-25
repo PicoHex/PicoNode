@@ -14,7 +14,9 @@
 - TDD: test first, see it fail, implement, see it pass
 - Commit after each task
 - No hardcoded strings — use constants
-- Keep 18 existing tests passing
+- Keep 18 existing tests passing (PicoNode.Agent.Tests)
+- Existing PicoNode.AI tests (33) must also remain passing
+- Format conversion (Anthropic↔OpenAI): v1 pass-through. Full conversion deferred to Phase 3.
 
 ---
 
@@ -119,6 +121,36 @@ public async Task Parse_TextDelta_EmitsEvents()
 Schema: `POST {baseUrl}/chat/completions` with OpenAI-compatible body. Streaming via `stream: true`.
 
 - [ ] **Step 1: Write failing test**
+
+```csharp
+[Test]
+public async Task StreamAsync_TextResponse_EmitsEvents()
+{
+    var handler = new MockHttpHandler
+    {
+        NextResponse = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n" +
+                "data: [DONE]\n\n"),
+        },
+    };
+    var client = new OpenAILlmClient(new HttpClient(handler));
+
+    var events = new List<AssistantMessageEvent>();
+    await foreach (var e in client.StreamAsync(
+        new Model { Id = "gpt-4o", BaseUrl = "https://api.openai.com/v1",
+            Api = AiApiFormat.OpenAIChatCompletions, MaxTokens = 4096 },
+        new ChatContext { Messages = [new Message { Role = "user", Content = "Hi", Timestamp = 1 }] },
+        null, CancellationToken.None))
+        events.Add(e);
+
+    var deltas = events.OfType<AssistantMessageEvent.TextDelta>().ToArray();
+    await Assert.That(deltas.Length).IsEqualTo(1);
+    await Assert.That(deltas[0].Delta).IsEqualTo("Hi");
+}
+```
+
 - [ ] **Step 2-5:** Implement, test, commit
 
 ---
@@ -160,7 +192,31 @@ public async Task Load_WithEnvVarExpansion_ResolvesKey()
 
 Wraps: ProviderRouter → CircuitBreaker → Physical client call. Exposes `ILLmClient`.
 
-- [ ] **Step 1: Write failing test — route + call**
+- [ ] **Step 1: Write failing test — route to mock client**
+
+```csharp
+[Test]
+public async Task StreamAsync_RoutesByModel()
+{
+    var model = new Model { Id = "gpt-4o", Api = AiApiFormat.OpenAIChatCompletions };
+    var openaiClient = new MockLLmClient("openai-response");
+    var clients = new Dictionary<string, ILLmClient> { ["openai"] = openaiClient };
+    var router = new ProviderRouter(new[] { new ProviderConfig { Name = "openai", ApiFormat = AiApiFormat.OpenAIChatCompletions } });
+    var breakers = new Dictionary<string, ICircuitBreaker>();
+    var resilient = new ResilientLLmClient(router, breakers, clients, model);
+
+    var events = new List<string>();
+    await foreach (var e in resilient.StreamAsync(model,
+        new ChatContext { Messages = [new Message { Role = "user", Content = "Hi", Timestamp = 1 }] },
+        null, CancellationToken.None))
+    {
+        if (e is AssistantMessageEvent.TextDelta td) events.Add(td.Delta);
+    }
+
+    await Assert.That(events).Contains("openai-response");
+}
+```
+
 - [ ] **Step 2-5:** Implement, test with mock breaker + mock clients, commit
 
 ---
