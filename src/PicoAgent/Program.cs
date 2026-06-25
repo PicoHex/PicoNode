@@ -78,8 +78,13 @@ if (defPreset != null)
     var discovered = await ModelDiscovery.DiscoverAsync(httpClient, pc, CancellationToken.None);
     defaultModelId = discovered.FirstOrDefault()?.Id;
 }
-defaultModelId ??= defPreset?.ApiFormat == AiApiFormat.AnthropicMessages
-    ? "claude-sonnet-4-20250514" : "deepseek-chat";
+
+if (defaultModelId == null)
+{
+    Console.Error.WriteLine($"Error: Could not discover models from {defaultProvider}. Check your API key and network.");
+    return;
+}
+
 var model = new Model
 {
     Id = defaultModelId, BaseUrl = "",
