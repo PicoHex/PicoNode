@@ -6,6 +6,10 @@ using PicoNode.Agent;
 using static PicoNode.Agent.FileSystemConstants;
 using static PicoNode.Agent.ProtocolConstants;
 
+// Trigger PicoJetson SG for types in PicoNode.Agent used by this host
+_ = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(new AgentConfig());
+_ = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(new ProviderEntry());
+
 // ── Config ──────────────────────────────────────────────
 var homeDir = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), AgentHomeDir);
