@@ -14,17 +14,12 @@ Directory.CreateDirectory(homeDir);
 Directory.CreateDirectory(Path.Combine(homeDir, SessionsDir));
 
 var settingsPath = Path.Combine(homeDir, "settings.json");
-var presetsPath = Path.Combine(homeDir, "provider-presets.json");
 var settings = ConfigLoader.Load(settingsPath);
-var presets = ConfigLoader.LoadPresets(presetsPath);
 if (settings == null) return;
 
 var validation = ConfigLoader.Validate(settings);
 if (!validation.IsValid)
-{
-    foreach (var err in validation.Errors) Console.Error.WriteLine(err);
-    return;
-}
+{ foreach (var err in validation.Errors) Console.Error.WriteLine(err); return; }
 
 var clients = new Dictionary<string, ILLmClient>();
 var breakers = new Dictionary<string, ICircuitBreaker>();
@@ -33,22 +28,10 @@ var http = new HttpClient();
 
 foreach (var (name, entry) in settings.Providers)
 {
-    presets.TryGetValue(name, out var p);
-    if (p == null && entry.ApiFormat == null)
-    { Console.Error.WriteLine($"Unknown provider '{name}' and no apiFormat. Skipping."); continue; }
-    var apiFormat = entry.ApiFormat?.ToLowerInvariant() switch
-    {
-        "openai" => AiApiFormat.OpenAIChatCompletions,
-        "anthropic" => AiApiFormat.AnthropicMessages,
-        _ => p?.ApiFormat?.ToLowerInvariant() switch
-        {
-            "openai" => AiApiFormat.OpenAIChatCompletions,
-            "anthropic" => AiApiFormat.AnthropicMessages,
-            _ => AiApiFormat.OpenAIChatCompletions,
-        },
-    };
-    var baseUrl = entry.BaseUrl ?? p?.BaseUrl ?? "";
-    var pc = new ProviderConfig { Name = name, BaseUrl = baseUrl, ApiFormat = apiFormat, ApiKey = entry.ApiKey, Priority = p != null ? 1 : 99 };
+    if (entry.ApiFormat == null) { Console.Error.WriteLine($"Provider '{name}' missing apiFormat. Skipping."); continue; }
+    var apiFormat = entry.ApiFormat.ToLowerInvariant() switch
+    { "openai" => AiApiFormat.OpenAIChatCompletions, "anthropic" => AiApiFormat.AnthropicMessages, _ => AiApiFormat.OpenAIChatCompletions };
+    var pc = new ProviderConfig { Name = name, BaseUrl = entry.BaseUrl ?? "", ApiFormat = apiFormat, ApiKey = entry.ApiKey, Priority = 1 };
     providerConfigs.Add(pc);
     clients[name] = apiFormat == AiApiFormat.AnthropicMessages ? new AnthropicLLmClient(http) : new OpenAILlmClient(http);
     breakers[name] = new CircuitBreaker();
@@ -56,24 +39,22 @@ foreach (var (name, entry) in settings.Providers)
 
 var router = new ProviderRouter(providerConfigs);
 var resilientClient = new ResilientLLmClient(router, breakers, clients);
-
-var registry = new CapabilityRegistry();
-registry.Scan(homeDir);
+var registry = new CapabilityRegistry(); registry.Scan(homeDir);
 var runner = new CapabilityRunner();
 
 var defaultProvider = settings.Providers.Keys.FirstOrDefault() ?? "anthropic";
-var defPreset = presets.GetValueOrDefault(defaultProvider);
-string? defaultModelId = settings.Model;
-if (defaultModelId == null && defPreset != null)
+var defaultPreset = settings.Providers.GetValueOrDefault(defaultProvider);
+string? modelId = settings.Model;
+if (modelId == null && defaultPreset != null)
 {
-    var df = defPreset.ApiFormat?.ToLowerInvariant() == "anthropic" ? AiApiFormat.AnthropicMessages : AiApiFormat.OpenAIChatCompletions;
-    var pc = new ProviderConfig { Name = defaultProvider, BaseUrl = defPreset.BaseUrl ?? "", ApiFormat = df, ApiKey = settings.Providers.Values.FirstOrDefault()?.ApiKey ?? "", Priority = 1 };
+    var df = defaultPreset.ApiFormat?.ToLowerInvariant() == "anthropic" ? AiApiFormat.AnthropicMessages : AiApiFormat.OpenAIChatCompletions;
+    var pc = new ProviderConfig { Name = defaultProvider, BaseUrl = defaultPreset.BaseUrl ?? "", ApiFormat = df, ApiKey = defaultPreset.ApiKey ?? "", Priority = 1 };
     var discovered = await ModelDiscovery.DiscoverAsync(http, pc, CancellationToken.None);
-    defaultModelId = discovered.FirstOrDefault()?.Id;
+    modelId = discovered.FirstOrDefault()?.Id;
 }
-if (defaultModelId == null) { Console.Error.WriteLine("Could not determine model. Set 'model' in settings.json."); return; }
+if (modelId == null) { Console.Error.WriteLine("Could not determine model. Set 'model' in settings.json."); return; }
 
-var model = new Model { Id = defaultModelId, BaseUrl = "", Api = defPreset?.ApiFormat?.ToLowerInvariant() == "anthropic" ? AiApiFormat.AnthropicMessages : AiApiFormat.OpenAIChatCompletions, Provider = defaultProvider, MaxTokens = settings.MaxTokens ?? 4096 };
+var model = new Model { Id = modelId, BaseUrl = "", Api = defaultPreset?.ApiFormat?.ToLowerInvariant() == "anthropic" ? AiApiFormat.AnthropicMessages : AiApiFormat.OpenAIChatCompletions, Provider = defaultProvider, MaxTokens = settings.MaxTokens ?? 4096 };
 var loop = new AgentLoop(resilientClient, registry, runner, model);
 var host = new AgentHost(loop);
 
@@ -104,9 +85,8 @@ async Task RunChatAsync(AgentHost host, string sp, List<Message> msgs, string sp
                 switch (c2) {
                     case "/exit": goto exit;
                     case "/save": await SessionStore.SaveAsync(sp, msgs); Console.WriteLine("[Saved]"); continue;
-                    case "/help": Console.WriteLine("/model /thinking /list-models /provider /save /exit"); continue;
+                    case "/help": Console.WriteLine("/model /list-models /provider /save /exit"); continue;
                     case "/model": if (!string.IsNullOrWhiteSpace(arg)) { m.Id = arg; Console.WriteLine($"[Model: {m.Id}]"); } continue;
-                    case "/thinking": if (!string.IsNullOrWhiteSpace(arg)) Console.WriteLine($"[Thinking: {arg}]"); continue;
                     case "/list-models": foreach (var p in provs) { var ms = await ModelDiscovery.DiscoverAsync(new HttpClient { Timeout = TimeSpan.FromSeconds(10) }, p, CancellationToken.None); Console.WriteLine($"{p.Name}:"); foreach (var mm in ms) Console.WriteLine($"  {mm.Id}"); } continue;
                     case "/provider": if (!string.IsNullOrWhiteSpace(arg)) { m.Provider = arg; Console.WriteLine($"[Provider: {m.Provider}]"); } continue;
                 }

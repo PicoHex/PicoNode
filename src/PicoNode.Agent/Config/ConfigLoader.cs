@@ -25,14 +25,23 @@ public static class ConfigLoader
         {
             var template = """
             {
+              "model": null,
+              "maxTokens": 4096,
+              "contextWindow": 128000,
+              "compactThreshold": 100,
               "providers": {
-                "anthropic": { "apiKey": "$ANTHROPIC_API_KEY" }
+                "anthropic": { "apiKey": "$ANTHROPIC_API_KEY", "baseUrl": "https://api.anthropic.com", "apiFormat": "anthropic" },
+                "openai":    { "apiKey": "$OPENAI_API_KEY",    "baseUrl": "https://api.openai.com/v1",       "apiFormat": "openai" },
+                "deepseek":  { "apiKey": "$DEEPSEEK_API_KEY",  "baseUrl": "https://api.deepseek.com/v1",     "apiFormat": "openai" },
+                "kimi":      { "apiKey": "$KIMI_API_KEY",      "baseUrl": "https://api.moonshot.cn/v1",      "apiFormat": "openai" },
+                "glm":       { "apiKey": "$GLM_API_KEY",       "baseUrl": "https://open.bigmodel.cn/api/paas/v4", "apiFormat": "openai" },
+                "groq":      { "apiKey": "$GROQ_API_KEY",      "baseUrl": "https://api.groq.com/openai/v1",  "apiFormat": "openai" }
               }
             }
             """;
             File.WriteAllText(path, template);
             Console.Error.WriteLine($"Settings template created at {path}");
-            Console.Error.WriteLine("Configure your providers, then restart.");
+            Console.Error.WriteLine("Set your apiKey values, then restart.");
             return null;
         }
 
@@ -40,54 +49,6 @@ public static class ConfigLoader
         var expanded = ExpandEnvVars(json);
         var bytes = Encoding.UTF8.GetBytes(expanded);
         return PicoJetson.JsonSerializer.Deserialize<AgentConfig>(bytes);
-    }
-
-    /// <summary>
-    /// Load provider presets from a JSON file. Returns empty if file missing.
-    /// </summary>
-    public static Dictionary<string, PresetEntry> LoadPresets(string path)
-    {
-        if (!File.Exists(path))
-        {
-            var embedded = Path.Combine(AppContext.BaseDirectory, "provider-presets.json");
-            if (File.Exists(embedded))
-            {
-                File.Copy(embedded, path, overwrite: false);
-                Console.Error.WriteLine($"Provider presets copied to {path}");
-            }
-            else return [];
-        }
-
-        return ParsePresetsFile(path);
-    }
-
-    private static Dictionary<string, PresetEntry> ParsePresetsFile(string path)
-    {
-        var result = new Dictionary<string, PresetEntry>();
-        try
-        {
-            var json = File.ReadAllText(path);
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("providers", out var providers))
-            {
-                foreach (var p in providers.EnumerateObject())
-                {
-                    var apiFormat = "openai";
-                    var baseUrl = "";
-                    if (p.Value.TryGetProperty("apiFormat", out var f)) apiFormat = f.GetString() ?? "openai";
-                    if (p.Value.TryGetProperty("baseUrl", out var u)) baseUrl = u.GetString() ?? "";
-                    result[p.Name] = new PresetEntry { ApiFormat = apiFormat, BaseUrl = baseUrl };
-                }
-            }
-        }
-        catch { }
-        return result;
-    }
-
-    public sealed class PresetEntry
-    {
-        public string ApiFormat { get; set; } = "openai";
-        public string BaseUrl { get; set; } = "";
     }
 
     public sealed class ValidateResult
