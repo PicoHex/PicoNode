@@ -1,6 +1,8 @@
 namespace PicoNode.Agent;
 
 using PicoNode.AI;
+using static PicoNode.Agent.ProtocolConstants;
+using static PicoNode.Agent.YmlConstants;
 
 public sealed class AgentLoop
 {
@@ -54,7 +56,7 @@ public sealed class AgentLoop
 
             // Check for tool calls in ContentBlocks
             var toolCallBlocks = assistantMsg.ContentBlocks?
-                .Where(cb => cb.Type == "tool_call").ToArray();
+                .Where(cb => cb.Type == BlockTypeToolCall).ToArray();
             hasTools = toolCallBlocks is { Length: > 0 };
 
             if (hasTools)
@@ -71,7 +73,7 @@ public sealed class AgentLoop
                             Role = "toolResult",
                             ToolCallId = tc.Id,
                             ToolName = tc.Name,
-                            ContentBlocks = [new ContentBlock { Type = "text", Text = $"Tool not found: {tc.Name}" }],
+                            ContentBlocks = [new ContentBlock { Type = BlockTypeText, Text = $"Tool not found: {tc.Name}" }],
                             IsError = true,
                             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                         });
@@ -81,8 +83,8 @@ public sealed class AgentLoop
                     // Run hooks before tool execution
                     var hookInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(new
                     {
-                        kind = "hook",
-                        eventName = "on_tool_call",
+                        kind = KindHook,
+                        eventName = HookEventToolCall,
                         toolName = tc.Name,
                         args = tc.Arguments,
                     });
@@ -92,20 +94,20 @@ public sealed class AgentLoop
 
                     if (hookResult is { } h && h.TryGetProperty("action", out var action))
                     {
-                        if (action.GetString() == "block") break;
+                        if (action.GetString() == ActionBlock) break;
                     }
 
                     // Execute tool
                     var toolInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(new
                     {
-                        kind = "tool_call",
+                        kind = KindToolCall,
                         toolCallId = tc.Id,
                         toolName = tc.Name,
                         args = tc.Arguments,
                     });
 
                     var toolResponse = await _runner.ExecuteAsync(
-                        capConfig, "tool_call", toolInput, ct);
+                        capConfig, KindToolCall, toolInput, ct);
 
                     var toolMsg = new Message
                     {
@@ -114,10 +116,10 @@ public sealed class AgentLoop
                         ToolName = tc.Name,
                         ContentBlocks = [new ContentBlock
                         {
-                            Type = "text",
-                            Text = toolResponse.TryGetProperty("content", out var c) ? c.ToString() : "",
+                            Type = BlockTypeText,
+                            Text = toolResponse.TryGetProperty(FieldContent, out var c) ? c.ToString() : "",
                         }],
-                        IsError = toolResponse.TryGetProperty("isError", out var isErr) && isErr.GetBoolean(),
+                        IsError = toolResponse.TryGetProperty(FieldIsError, out var isErr) && isErr.GetBoolean(),
                         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     };
                     messages.Add(toolMsg);
@@ -158,10 +160,10 @@ public sealed class AgentLoop
 
         foreach (var hook in hooks)
         {
-            var result = await _runner.ExecuteAsync(hook, "hook", input, ct);
+            var result = await _runner.ExecuteAsync(hook, KindHook, input, ct);
             if (result.TryGetProperty("action", out var action))
             {
-                if (action.GetString() == "block")
+                if (action.GetString() == ActionBlock)
                     return result;
             }
         }

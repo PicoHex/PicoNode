@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 namespace PicoNode.Agent;
 
 using PicoNode.AI;
+using static PicoNode.Agent.ProtocolConstants;
 
 public sealed class AgentHost
 {
@@ -24,16 +25,16 @@ public sealed class AgentHost
 
         messages.Add(new Message
         {
-            Role = "user",
+            Role = RoleUser,
             Content = content,
             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         });
 
         var result = await _loop.RunTurnAsync(messages, ct, onEvent);
 
-        var lastAssistant = result.LastOrDefault(m => m.Role == "assistant");
+        var lastAssistant = result.LastOrDefault(m => m.Role == RoleAssistant);
         var text = lastAssistant?.ContentBlocks?
-            .Where(cb => cb.Type == "text")
+            .Where(cb => cb.Type == BlockTypeText)
             .Select(cb => cb.Text)
             .FirstOrDefault() ?? "";
 
