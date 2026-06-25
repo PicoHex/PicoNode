@@ -4,6 +4,9 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>Exe</OutputType>
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
     <IsPackable>true</IsPackable>
@@ -11,7 +14,6 @@
     <Description>PicoAgent Host — HTTP/SSE server for the PicoAgent framework</Description>
     <PackageTags>PicoHex;PicoAgent;AI;Agent;AOT;Host</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <OutputType>Exe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>

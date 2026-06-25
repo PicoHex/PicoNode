@@ -26,11 +26,11 @@ public sealed class ConfigLoader
 
         var json = File.ReadAllText(path);
         var expanded = ExpandEnvVars(json);
-        var opts = new System.Text.Json.JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-        };
-        return System.Text.Json.JsonSerializer.Deserialize<AgentConfig>(expanded, opts);
+
+        // PicoJetson is AOT-safe (source generated).
+        // Default PropertyNameCaseInsensitive=true enables lowercase JSON
+        // keys (apiKey) to match PascalCase C# properties (ApiKey).
+        return PicoJetson.JsonSerializer.Deserialize<AgentConfig>(Encoding.UTF8.GetBytes(expanded));
     }
 
     public sealed class ValidateResult
