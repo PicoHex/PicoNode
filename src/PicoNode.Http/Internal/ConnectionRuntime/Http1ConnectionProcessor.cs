@@ -246,6 +246,10 @@ internal static class Http1ConnectionProcessor
                     .SendAsync(InternalServerErrorBytes, cancellationToken)
                     .ConfigureAwait(false);
             }
+            catch
+            {
+                // Send failure during error response — connection is closing anyway
+            }
             finally
             {
                 connection.Close();
@@ -456,11 +460,16 @@ internal static class Http1ConnectionProcessor
                 );
                 try
                 {
+                    // Read loop: use CancellationToken.None for the Pipe read so that
+                    // data already written by the producer IS returned even when the
+                    // cancellation token fires — PipeReader.ReadAsync checks the token
+                    // BEFORE returning buffered data. The connection SendAsync still
+                    // uses the real CT so connection shutdown cancels the send.
                     while (true)
                     {
                         var read = await stream.ReadAsync(
                             buffer.AsMemory(0, options.StreamingResponseBufferSize),
-                            cancellationToken
+                            CancellationToken.None
                         );
                         if (read == 0)
                         {
@@ -471,6 +480,11 @@ internal static class Http1ConnectionProcessor
                         await connection.SendAsync(chunk, cancellationToken).ConfigureAwait(false);
                     }
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // Connection cancelled mid-send — the pipe writer was completed
+                    // by RunSseWriterAsync. Exit without sending the chunk terminator.
+                }
                 finally
                 {
                     System.Buffers.ArrayPool<byte>.Shared.Return(buffer, clearArray: false);
@@ -478,7 +492,7 @@ internal static class Http1ConnectionProcessor
             }
 
             await connection
-                .SendAsync(HttpResponseSerializer.ChunkTerminator, cancellationToken)
+                .SendAsync(HttpResponseSerializer.ChunkTerminator, CancellationToken.None)
                 .ConfigureAwait(false);
         }
         finally

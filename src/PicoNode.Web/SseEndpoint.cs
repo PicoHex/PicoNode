@@ -127,10 +127,14 @@ public static class SseEndpoint
         try
         {
             await handler(sse, ct);
+            await writer.CompleteAsync();
         }
         catch (OperationCanceledException)
         {
-            // Expected on connection close
+            // Expected on connection close — complete the pipe so the reader
+            // can observe the completed state and exit cleanly instead of
+            // hanging on a dangling pipe writer.
+            await writer.CompleteAsync();
         }
         catch (Exception ex)
         {

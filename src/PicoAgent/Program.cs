@@ -1,5 +1,3 @@
-
-
 var homeDir = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
     AgentHomeDir
@@ -266,30 +264,23 @@ async Task RunServeAsync(int port, AgentHost host, CapabilityRegistry reg, strin
             var b = await r.ReadToEndAsync(ct).ConfigureAwait(false);
             var sid = ctx.RouteValues["id"];
 
-            using var ms = new MemoryStream();
-            var writer = new StreamWriter(ms);
+            // Set up Pipe-based streaming: write SSE events as they arrive
+            // from the LLM, return the response immediately so the HTTP layer
+            // can stream the data to the client via SendStreamingResponseAsync.
+            var pipe = new Pipe();
+            var sse = new SseConnection(pipe.Writer);
 
-            await host.ProcessMessageAsync(b, ct, sid,
-                onEvent: (evt, _) =>
-                {
-                    Program.CallbackCount++;
-            Console.Error.WriteLine($"CB: {evt.GetType().Name} (hash={GetHashCode()})");
-                    if (evt is AssistantMessageEvent.TextDelta td)
-                        ms.Write(Encoding.UTF8.GetBytes($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "delta", content = td.Delta })}\n\n"));
-                    else if (evt is AssistantMessageEvent.Done d)
-                        ms.Write(Encoding.UTF8.GetBytes($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "done", stopReason = d.Message.StopReason })}\n\n"));
-                    else if (evt is AssistantMessageEvent.Error e)
-                        ms.Write(Encoding.UTF8.GetBytes($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "error", message = e.Message.ErrorMessage })}\n\n"));
-                    return ValueTask.CompletedTask;
-                });
+            _ = WriteSseStreamAsync(sse, pipe.Writer, host, b, sid, ct);
 
-            await writer.FlushAsync();
-            var body = ms.ToArray();
             return new HttpResponse
             {
                 StatusCode = 200,
-                Headers = [new("Content-Type", "text/event-stream"), new("Cache-Control", "no-cache")],
-                Body = body,
+                Headers =
+                [
+                    new("Content-Type", "text/event-stream"),
+                    new("Cache-Control", "no-cache"),
+                ],
+                BodyStream = pipe.Reader.AsStream(),
             };
         }
     );
@@ -322,40 +313,53 @@ async Task RunServeAsync(int port, AgentHost host, CapabilityRegistry reg, strin
     await api.RunAsync($"http://localhost:{port}");
 }
 
-static string Esc(string s)
+/// <summary>
+/// Background writer for SSE streaming. Runs the agent loop and writes
+/// each LLM event as an SSE text/event-stream message to the pipe.
+/// </summary>
+static async Task WriteSseStreamAsync(
+    SseConnection sse,
+    PipeWriter writer,
+    AgentHost host,
+    string input,
+    string sessionId,
+    CancellationToken ct
+)
 {
-    var sb = new StringBuilder(s.Length + 2);
-    foreach (var c in s)
+    try
     {
-        switch (c)
-        {
-            case '"':
-                sb.Append("\\\"");
-                break;
-            case '\\':
-                sb.Append("\\\\");
-                break;
-            case '\n':
-                sb.Append("\\n");
-                break;
-            case '\r':
-                sb.Append("\\r");
-                break;
-            case '\t':
-                sb.Append("\\t");
-                break;
-            default:
-                if (c < 0x20)
-                    sb.Append($"\\u{(int)c:X4}");
-                else
-                    sb.Append(c);
-                break;
-        }
+        await host.ProcessMessageAsync(
+            input,
+            ct,
+            sessionId,
+            onEvent: async (evt, ct2) =>
+            {
+                if (evt is AssistantMessageEvent.TextDelta td)
+                    await sse.WriteAsync(
+                        $"data: {PicoJetson.JsonSerializer.Serialize(new { type = "delta", content = td.Delta })}\n\n",
+                        ct2
+                    );
+                else if (evt is AssistantMessageEvent.Done d)
+                    await sse.WriteAsync(
+                        $"data: {PicoJetson.JsonSerializer.Serialize(new { type = "done", stopReason = d.Message.StopReason })}\n\n",
+                        ct2
+                    );
+                else if (evt is AssistantMessageEvent.Error e)
+                    await sse.WriteAsync(
+                        $"data: {PicoJetson.JsonSerializer.Serialize(new { type = "error", message = e.Message.ErrorMessage })}\n\n",
+                        ct2
+                    );
+            }
+        );
+
+        await sse.CompleteAsync(ct);
     }
-    return sb.ToString();
+    catch (OperationCanceledException)
+    {
+        await writer.CompleteAsync();
+    }
+    catch (Exception ex)
+    {
+        await writer.CompleteAsync(ex);
+    }
 }
-
-
-
-
-
