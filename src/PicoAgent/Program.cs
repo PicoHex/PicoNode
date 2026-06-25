@@ -60,11 +60,15 @@ registry.Scan(homeDir);
 var runner = new CapabilityRunner();
 
 // Default model from first provider
-var defaultModel = config.Providers.Keys.FirstOrDefault() ?? "anthropic";
+var defaultProvider = config.Providers.Keys.FirstOrDefault() ?? "anthropic";
+var defPreset = ProviderPresets.Get(defaultProvider);
+var defaultModelId = defPreset?.ApiFormat == AiApiFormat.AnthropicMessages
+    ? "claude-sonnet-4-20250514" : "deepseek-chat";
 var model = new Model
 {
-    Id = "claude-sonnet-4-20250514", BaseUrl = "",
-    Api = AiApiFormat.AnthropicMessages, Provider = defaultModel, MaxTokens = 4096,
+    Id = defaultModelId, BaseUrl = "",
+    Api = defPreset?.ApiFormat ?? AiApiFormat.AnthropicMessages,
+    Provider = defaultProvider, MaxTokens = 4096,
 };
 
 var loop = new AgentLoop(resilientClient, registry, runner, model);
@@ -171,6 +175,8 @@ static async Task RunChatAsync(
                 onEvent: evt =>
                 {
                     if (evt is AssistantMessageEvent.TextDelta td) Console.Write(td.Delta);
+                    else if (evt is AssistantMessageEvent.Error err)
+                        Console.Write($"\n[Error: {err.Message.ErrorMessage}]");
                 });
             Console.WriteLine("\n");
         }
