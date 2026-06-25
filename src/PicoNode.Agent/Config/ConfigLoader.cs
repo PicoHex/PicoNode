@@ -40,6 +40,54 @@ public static class ConfigLoader
         return PicoJetson.JsonSerializer.Deserialize<AgentConfig>(bytes);
     }
 
+    /// <summary>
+    /// Load provider presets from a JSON file. Returns empty if file missing.
+    /// </summary>
+    public static Dictionary<string, PresetEntry> LoadPresets(string path)
+    {
+        if (!File.Exists(path))
+        {
+            var embedded = Path.Combine(AppContext.BaseDirectory, "provider-presets.json");
+            if (File.Exists(embedded))
+            {
+                File.Copy(embedded, path, overwrite: false);
+                Console.Error.WriteLine($"Provider presets copied to {path}");
+            }
+            else return [];
+        }
+
+        return ParsePresetsFile(path);
+    }
+
+    private static Dictionary<string, PresetEntry> ParsePresetsFile(string path)
+    {
+        var result = new Dictionary<string, PresetEntry>();
+        try
+        {
+            var json = File.ReadAllText(path);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("providers", out var providers))
+            {
+                foreach (var p in providers.EnumerateObject())
+                {
+                    var apiFormat = "openai";
+                    var baseUrl = "";
+                    if (p.Value.TryGetProperty("apiFormat", out var f)) apiFormat = f.GetString() ?? "openai";
+                    if (p.Value.TryGetProperty("baseUrl", out var u)) baseUrl = u.GetString() ?? "";
+                    result[p.Name] = new PresetEntry { ApiFormat = apiFormat, BaseUrl = baseUrl };
+                }
+            }
+        }
+        catch { }
+        return result;
+    }
+
+    public sealed class PresetEntry
+    {
+        public string ApiFormat { get; set; } = "openai";
+        public string BaseUrl { get; set; } = "";
+    }
+
     private static string ExpandEnvVars(string json)
     {
         var result = new StringBuilder(json.Length);

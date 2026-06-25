@@ -1,0 +1,10 @@
+{
+  "providers": {
+    "anthropic": { "baseUrl": "https://api.anthropic.com",      "apiFormat": "anthropic" },
+    "openai":    { "baseUrl": "https://api.openai.com/v1",       "apiFormat": "openai" },
+    "deepseek":  { "baseUrl": "https://api.deepseek.com/v1",     "apiFormat": "openai" },
+    "kimi":      { "baseUrl": "https://api.moonshot.cn/v1",      "apiFormat": "openai" },
+    "glm":       { "baseUrl": "https://open.bigmodel.cn/api/paas/v4", "apiFormat": "openai" },
+    "groq":      { "baseUrl": "https://api.groq.com/openai/v1",  "apiFormat": "openai" }
+  }
+}

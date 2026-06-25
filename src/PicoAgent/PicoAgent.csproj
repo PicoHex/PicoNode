@@ -25,5 +25,6 @@
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="" Visible="false" />
+    <Content Include="provider-presets.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
