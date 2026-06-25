@@ -2,6 +2,13 @@ namespace PicoNode.AI;
 
 public static class OpenAISseParser
 {
+    private const string DataPrefix = "data: ";
+    private const string DoneMarker = "[DONE]";
+    private const string JsonPropChoices = "choices";
+    private const string JsonPropDelta = "delta";
+    private const string JsonPropContent = "content";
+    private const string JsonPropFinishReason = "finish_reason";
+
     public static async IAsyncEnumerable<AssistantMessageEvent> ParseStreamAsync(
         Stream stream,
         string model,
@@ -18,12 +25,11 @@ public static class OpenAISseParser
             var line = await reader.ReadLineAsync(ct);
             if (line == null) break;
 
-            if (!line.StartsWith("data: ")) continue;
+            if (!line.StartsWith(DataPrefix)) continue;
 
-            var json = line[6..]; // skip "data: "
+            var json = line[DataPrefix.Length..];
 
-            // Terminal signal
-            if (json.Trim() == "[DONE]")
+            if (json.Trim() == DoneMarker)
             {
                 message.ContentBlocks = [new ContentBlock { Type = "text", Text = contentAccum.ToString() }];
                 message.StopReason = "stop";
@@ -38,14 +44,14 @@ public static class OpenAISseParser
             using var _doc = doc;
             var root = doc.RootElement;
 
-            if (!root.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
+            if (!root.TryGetProperty(JsonPropChoices, out var choices) || choices.GetArrayLength() == 0)
                 continue;
 
             var choice = choices[0];
-            if (!choice.TryGetProperty("delta", out var delta))
+            if (!choice.TryGetProperty(JsonPropDelta, out var delta))
                 continue;
 
-            if (delta.TryGetProperty("content", out var content))
+            if (delta.TryGetProperty(JsonPropContent, out var content))
             {
                 var text = content.GetString()!;
                 contentAccum.Append(text);
@@ -69,7 +75,7 @@ public static class OpenAISseParser
                 };
             }
 
-            if (choice.TryGetProperty("finish_reason", out var fr) && fr.GetString() is { } reason && reason != "null" && reason != "")
+            if (choice.TryGetProperty(JsonPropFinishReason, out var fr) && fr.GetString() is { } reason && reason != "null" && reason != "")
             {
                 message.ContentBlocks = [new ContentBlock { Type = "text", Text = contentAccum.ToString() }];
                 message.StopReason = reason;
