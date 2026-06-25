@@ -34,6 +34,40 @@ public class AgentLoopTests
         await Assert.That(lastAssistant).IsNotNull();
         await Assert.That(lastAssistant!.ContentBlocks![0].Text).IsEqualTo("Hello!");
     }
+    [Test]
+    public async Task RunTurnAsync_WithCallback_StreamsEvents()
+    {
+        var llmClient = new MockLLmClient();
+        var registry = new CapabilityRegistry();
+        var runner = new CapabilityRunner();
+        var model = new Model
+        {
+            Id = "claude-sonnet-4",
+            BaseUrl = "https://api.anthropic.com",
+            Api = AiApiFormat.AnthropicMessages,
+            Provider = "anthropic",
+            MaxTokens = 4096,
+        };
+        var loop = new AgentLoop(llmClient, registry, runner, model);
+
+        var events = new List<AssistantMessageEvent>();
+        Action<AssistantMessageEvent> onEvent = e => events.Add(e);
+
+        var messages = new List<Message>
+        {
+            new() { Role = "user", Content = "Hello", Timestamp = 1 },
+        };
+
+        await loop.RunTurnAsync(messages, CancellationToken.None, onEvent);
+
+        // Should have received TextDelta and Done events
+        await Assert.That(events.Count).IsGreaterThan(0);
+        var textEvents = events.OfType<AssistantMessageEvent.TextDelta>().ToArray();
+        await Assert.That(textEvents.Length).IsEqualTo(1);
+        await Assert.That(textEvents[0].Delta).IsEqualTo("Hello!");
+        var done = events.OfType<AssistantMessageEvent.Done>().ToArray();
+        await Assert.That(done.Length).IsEqualTo(1);
+    }
 }
 
 public sealed class MockLLmClient : ILLmClient

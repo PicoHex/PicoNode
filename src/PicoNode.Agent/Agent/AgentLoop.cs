@@ -27,7 +27,8 @@ public sealed class AgentLoop
 
     // v1: exceptions propagate to caller. v2: wrap in agent-level error handling.
     public async Task<List<Message>> RunTurnAsync(
-        List<Message> messages, CancellationToken ct)
+        List<Message> messages, CancellationToken ct,
+        Action<AssistantMessageEvent>? onEvent = null)
     {
         var result = new List<Message>();
         var model = _model;
@@ -44,7 +45,7 @@ public sealed class AgentLoop
             messages.CopyTo(msgArr);
 
             var context = new ChatContext { Messages = msgArr };
-            var assistantMsg = await CallLLMAsync(model, context, ct);
+            var assistantMsg = await CallLLMAsync(model, context, ct, onEvent);
 
             if (assistantMsg == null) break;
 
@@ -132,12 +133,14 @@ public sealed class AgentLoop
     }
 
     private async Task<Message?> CallLLMAsync(
-        Model model, ChatContext context, CancellationToken ct)
+        Model model, ChatContext context, CancellationToken ct,
+        Action<AssistantMessageEvent>? onEvent = null)
     {
         Message? finalMessage = null;
 
         await foreach (var evt in _llm.StreamAsync(model, context, null, ct))
         {
+            onEvent?.Invoke(evt);
             if (evt is AssistantMessageEvent.Done d)
                 finalMessage = d.Message;
             else if (evt is AssistantMessageEvent.Error e)
