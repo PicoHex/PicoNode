@@ -60,9 +60,25 @@ registry.Scan(homeDir);
 var runner = new CapabilityRunner();
 
 // Default model from first provider
+// Default model from first provider
 var defaultProvider = config.Providers.Keys.FirstOrDefault() ?? "anthropic";
 var defPreset = ProviderPresets.Get(defaultProvider);
-var defaultModelId = defPreset?.ApiFormat == AiApiFormat.AnthropicMessages
+var httpClient = new HttpClient();
+
+// Discover models from API
+string? defaultModelId = null;
+if (defPreset != null)
+{
+    var pc = new ProviderConfig
+    {
+        Name = defaultProvider, BaseUrl = defPreset.BaseUrl,
+        ApiFormat = defPreset.ApiFormat, ApiKey = config.Providers.Values.FirstOrDefault()?.ApiKey ?? "",
+        Priority = defPreset.Priority,
+    };
+    var discovered = await ModelDiscovery.DiscoverAsync(httpClient, pc, CancellationToken.None);
+    defaultModelId = discovered.FirstOrDefault()?.Id;
+}
+defaultModelId ??= defPreset?.ApiFormat == AiApiFormat.AnthropicMessages
     ? "claude-sonnet-4-20250514" : "deepseek-chat";
 var model = new Model
 {
@@ -100,7 +116,7 @@ else
 
 // ══════════════════════════════════════════════════════════
 
-static async Task RunChatAsync(
+async Task RunChatAsync(
     AgentHost host, string sessionPath, List<Message> messages,
     string skillsPrompt, Model model, IProviderRouter router, List<ProviderConfig> providers)
 {
@@ -146,9 +162,14 @@ static async Task RunChatAsync(
                         Console.WriteLine($"[Thinking: {arg}]");
                         continue;
                     case "/list-models":
-                        Console.WriteLine("Available models (configured providers):");
-                        foreach (var p in providers)
-                            Console.WriteLine($"  {p.Name} ({p.ApiFormat}) — query GET {p.BaseUrl}/v1/models");
+                        foreach (var p in providerConfigs)
+                        {
+                            var models = await ModelDiscovery.DiscoverAsync(
+                                new HttpClient { Timeout = TimeSpan.FromSeconds(10) }, p, CancellationToken.None);
+                            Console.WriteLine($"{p.Name} ({p.BaseUrl}):");
+                            foreach (var m in models)
+                                Console.WriteLine($"  {m.Id}");
+                        }
                         continue;
                     case "/provider":
                         if (string.IsNullOrWhiteSpace(arg)) { Console.WriteLine("Usage: /provider <name>"); continue; }
@@ -188,7 +209,7 @@ exit:
     Console.WriteLine("[Session saved]");
 }
 
-static async Task RunServeAsync(
+async Task RunServeAsync(
     int port, AgentHost host, CapabilityRegistry registry, string homeDir)
 {
     Console.WriteLine($"PicoAgent serve on port {port}...");
