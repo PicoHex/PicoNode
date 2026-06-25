@@ -263,13 +263,31 @@ async Task RunServeAsync(int port, AgentHost host, CapabilityRegistry reg, strin
         async (WebContext ctx, CancellationToken ct) =>
         {
             using var r = new StreamReader(ctx.Request.BodyStream);
-            var b = await r.ReadToEndAsync(ct);
-            var resp = await host.ProcessMessageAsync(b, ct, ctx.RouteValues["id"]);
+            var b = await r.ReadToEndAsync(ct).ConfigureAwait(false);
+            var sid = ctx.RouteValues["id"];
+
+            // Collect all SSE events into a list, then send at once
+            System.Collections.Concurrent.ConcurrentBag<string> sseEvents = [];
+
+            await host.ProcessMessageAsync(b, ct, sid,
+                onEvent: (evt, _) =>
+                {
+                    if (evt is AssistantMessageEvent.TextDelta td)
+                        sseEvents.Add($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "delta", content = td.Delta })}\n\n");
+                    else if (evt is AssistantMessageEvent.Done d)
+                        sseEvents.Add($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "done", stopReason = d.Message.StopReason })}\n\n");
+                    else if (evt is AssistantMessageEvent.Error e)
+                        sseEvents.Add($"data: {PicoJetson.JsonSerializer.Serialize(new { type = "error", message = e.Message.ErrorMessage })}\n\n");
+                    return ValueTask.CompletedTask;
+                });
+
+            var body = string.Concat(sseEvents);
+            System.Console.Error.WriteLine($"sse: {sseEvents.Count} events, {body.Length} bytes");
             return new HttpResponse
             {
                 StatusCode = 200,
-                Headers = [new("Content-Type", "application/json")],
-                Body = Encoding.UTF8.GetBytes($"{{\"response\":\"{Esc(resp)}\"}}"),
+                Headers = [new("Content-Type", "text/event-stream"), new("Cache-Control", "no-cache")],
+                Body = Encoding.UTF8.GetBytes(body),
             };
         }
     );
@@ -334,6 +352,7 @@ static string Esc(string s)
     }
     return sb.ToString();
 }
+
 
 
 

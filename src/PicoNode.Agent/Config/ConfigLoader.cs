@@ -26,8 +26,8 @@ public sealed class ConfigLoader
 
         var json = File.ReadAllText(path);
         var expanded = ExpandEnvVars(json);
-        var bytes = Encoding.UTF8.GetBytes(expanded);
-        return PicoJetson.JsonSerializer.Deserialize<AgentConfig>(bytes);
+        var opts = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        return System.Text.Json.JsonSerializer.Deserialize<AgentConfig>(expanded, opts);
     }
 
     public sealed class ValidateResult
