@@ -1,6 +1,6 @@
 namespace PicoNode.AI.Tests.Format;
-
 using PicoNode.AI;
+
 
 public class FormatConverterTests
 {

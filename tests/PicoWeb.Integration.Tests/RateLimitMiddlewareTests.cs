@@ -5,13 +5,6 @@ namespace PicoWeb.Integration.Tests;
 /// </summary>
 public sealed class RateLimitMiddlewareTests
 {
-    // ── Helpers ────────────────────────────────────────────────────────
-
-    private static RateLimitMiddleware Create(
-        IRateLimitStore store,
-        RateLimitOptions? options = null
-    ) => new();
-
     private static WebMiddleware CreateMiddleware(
         IRateLimitStore store,
         RateLimitOptions? options = null

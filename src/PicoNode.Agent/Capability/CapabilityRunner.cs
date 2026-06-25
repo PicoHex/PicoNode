@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-using System.Diagnostics;
 
 public sealed class CapabilityRunner
 {

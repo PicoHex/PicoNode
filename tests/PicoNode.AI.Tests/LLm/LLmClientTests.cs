@@ -1,7 +1,7 @@
 namespace PicoNode.AI.Tests.LLm;
-
-using PicoNode.AI;
 using System.Net;
+using PicoNode.AI;
+
 
 public class SseParserTests
 {

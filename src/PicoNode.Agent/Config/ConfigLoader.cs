@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-using PicoNode.AI;
 
 public sealed class AgentConfig
 {

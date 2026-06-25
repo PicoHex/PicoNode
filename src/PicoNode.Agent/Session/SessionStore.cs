@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-using PicoNode.AI;
 
 /// <summary>Triggers PicoJetson SG for types from PicoNode.AI used in this assembly.</summary>
 internal static class SerializerInit
