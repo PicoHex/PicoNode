@@ -1,5 +1,8 @@
 namespace PicoNode.Agent;
 
+using static PicoNode.Agent.FileSystemConstants;
+using static PicoNode.Agent.YmlConstants;
+
 public sealed class SkillInfo
 {
     public string Name { get; set; } = "";
@@ -12,11 +15,11 @@ public sealed class KnowledgeScanner
     public List<SkillInfo> Scan(string root)
     {
         var skills = new List<SkillInfo>();
-        var knowledgeDir = Path.Combine(root, "knowledge");
+        var knowledgeDir = Path.Combine(root, KnowledgeDir);
         if (!Directory.Exists(knowledgeDir)) return skills;
 
         // Find all SKILL.md files recursively under knowledge/
-        var skillFiles = Directory.GetFiles(knowledgeDir, "SKILL.md", SearchOption.AllDirectories);
+        var skillFiles = Directory.GetFiles(knowledgeDir, SkillFile, SearchOption.AllDirectories);
 
         foreach (var skillPath in skillFiles)
         {
@@ -35,7 +38,7 @@ public sealed class KnowledgeScanner
     private static SkillInfo? ParseSkillMarkdown(string content)
     {
         var lines = content.Replace("\r", "").Split('\n');
-        if (lines.Length < 3 || lines[0].Trim() != "---") return null;
+        if (lines.Length < 3 || lines[0].Trim() != FrontmatterDelim) return null;
 
         var skill = new SkillInfo();
         bool inFrontmatter = true;  // First --- already skipped by Skip(1)
@@ -43,7 +46,7 @@ public sealed class KnowledgeScanner
         foreach (var line in lines.Skip(1))
         {
             var trimmed = line.Trim();
-            if (trimmed == "---")
+            if (trimmed == FrontmatterDelim)
             {
                 if (!inFrontmatter) { inFrontmatter = true; continue; }
                 break;
@@ -57,8 +60,8 @@ public sealed class KnowledgeScanner
             var key = trimmed[..colonIdx].Trim();
             var value = trimmed[(colonIdx + 1)..].Trim();
 
-            if (key == "name") skill.Name = value;
-            else if (key == "description") skill.Description = value;
+            if (key == KeyName) skill.Name = value;
+            else if (key == KeyDescription) skill.Description = value;
         }
 
         return string.IsNullOrEmpty(skill.Name) ? null : skill;

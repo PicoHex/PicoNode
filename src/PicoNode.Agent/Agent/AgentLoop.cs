@@ -70,7 +70,7 @@ public sealed class AgentLoop
                     {
                         messages.Add(new Message
                         {
-                            Role = "toolResult",
+                            Role = RoleToolResult,
                             ToolCallId = tc.Id,
                             ToolName = tc.Name,
                             ContentBlocks = [new ContentBlock { Type = BlockTypeText, Text = $"Tool not found: {tc.Name}" }],
@@ -111,7 +111,7 @@ public sealed class AgentLoop
 
                     var toolMsg = new Message
                     {
-                        Role = "toolResult",
+                        Role = RoleToolResult,
                         ToolCallId = tc.Id,
                         ToolName = tc.Name,
                         ContentBlocks = [new ContentBlock
