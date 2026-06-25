@@ -10,3 +10,4 @@ global using PicoNode.Http;
 global using PicoNode.Web.Internal;
 global using PicoNode.Web.Session.Abs;
 global using HttpVersion = PicoNode.Http.HttpVersion;
+global using PicoNode.Web.Internal;

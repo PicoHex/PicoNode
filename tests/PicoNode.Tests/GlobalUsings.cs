@@ -16,3 +16,5 @@ global using PicoCfg.Extensions;
 global using PicoDI.Abs;
 global using PicoLog.Abs;
 global using PicoNode.Abs;
+global using System.Reflection;
+global using System.Runtime.InteropServices;

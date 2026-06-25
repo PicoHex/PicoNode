@@ -1,7 +1,5 @@
 namespace PicoNode.Agent.Tests.Capability;
 
-using PicoNode.Agent;
-using System.Text.Json;
 
 public class CapabilityRunnerTests
 {

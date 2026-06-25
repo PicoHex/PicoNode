@@ -1,4 +1,3 @@
-using PicoNode.Http;
 
 namespace PicoWeb.Integration.Tests;
 

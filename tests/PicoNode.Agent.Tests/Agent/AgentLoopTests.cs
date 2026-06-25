@@ -1,7 +1,5 @@
 namespace PicoNode.Agent.Tests.Agent;
 
-using PicoNode.AI;
-using PicoNode.Agent;
 
 public class AgentLoopTests
 {

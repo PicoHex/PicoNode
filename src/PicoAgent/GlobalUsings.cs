@@ -6,3 +6,6 @@ global using PicoJetson;
 global using PicoLog;
 global using PicoNode.AI;
 global using PicoNode.Agent;
+global using PicoNode.Web;
+global using PicoNode.Http;
+global using PicoWeb;

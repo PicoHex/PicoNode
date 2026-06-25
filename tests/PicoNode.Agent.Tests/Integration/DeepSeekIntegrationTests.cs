@@ -1,7 +1,5 @@
 namespace PicoNode.Agent.Tests.Integration;
 
-using PicoNode.AI;
-using PicoNode.Agent;
 
 public class DeepSeekIntegrationTests
 {

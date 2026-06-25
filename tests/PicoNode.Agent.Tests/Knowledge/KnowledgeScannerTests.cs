@@ -1,6 +1,5 @@
 namespace PicoNode.Agent.Tests.Knowledge;
 
-using PicoNode.Agent;
 
 public class KnowledgeScannerTests
 {

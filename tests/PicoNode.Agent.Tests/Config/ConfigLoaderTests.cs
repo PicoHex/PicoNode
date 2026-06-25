@@ -1,6 +1,5 @@
 namespace PicoNode.Agent.Tests.Config;
 
-using PicoNode.Agent;
 
 public class ConfigLoaderTests
 {

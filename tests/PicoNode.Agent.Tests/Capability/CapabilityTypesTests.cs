@@ -1,6 +1,5 @@
 namespace PicoNode.Agent.Tests.Capability;
 
-using PicoNode.Agent;
 
 public class CapabilityTypesTests
 {

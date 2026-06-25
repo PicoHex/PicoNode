@@ -1,6 +1,5 @@
 namespace PicoNode.Agent.Tests.Session;
 
-using PicoNode.AI;
 
 public class SessionStoreTests
 {
