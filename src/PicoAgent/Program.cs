@@ -2,72 +2,165 @@ using PicoNode.Web;
 using PicoNode.Http;
 using PicoWeb;
 using PicoNode.AI;
+using PicoNode.Agent;
+using static PicoNode.Agent.FileSystemConstants;
+using static PicoNode.Agent.ProtocolConstants;
 
-var port = args.Length > 0 && int.TryParse(args[0], out var p) ? p : 8080;
-Console.WriteLine($"PicoAgent Host starting on port {port}...");
+// ── Config ──────────────────────────────────────────────
+var homeDir = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), AgentHomeDir);
+Directory.CreateDirectory(homeDir);
+Directory.CreateDirectory(Path.Combine(homeDir, SessionsDir));
 
-// Wire up the agent loop
-var httpClient = new HttpClient();
-var llmClient = new AnthropicLLmClient(httpClient);
+var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") ?? "";
+var modelId = Environment.GetEnvironmentVariable("PICO_MODEL") ?? "claude-sonnet-4-20250514";
+var baseUrl = Environment.GetEnvironmentVariable("PICO_BASE_URL") ?? "https://api.anthropic.com";
+
+// ── Components ──────────────────────────────────────────
+var llmClient = new AnthropicLLmClient(new HttpClient());
 var registry = new CapabilityRegistry();
-registry.Scan(Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-    ".pico-agent"));
+registry.Scan(homeDir);
 var runner = new CapabilityRunner();
 var model = new Model
 {
-    Id = "claude-sonnet-4-20250514",
-    BaseUrl = "https://api.anthropic.com",
-    Api = AiApiFormat.AnthropicMessages,
-    Provider = "anthropic",
-    MaxTokens = 4096,
+    Id = modelId, BaseUrl = baseUrl,
+    Api = AiApiFormat.AnthropicMessages, Provider = "anthropic", MaxTokens = 4096,
 };
 var loop = new AgentLoop(llmClient, registry, runner, model);
 var host = new AgentHost(loop);
 
-var api = new WebApiBuilder()
-    .ConfigureApp(o => new WebAppOptions { ServerHeader = "PicoAgent" })
-    .Build();
+// ── System prompt from skills ───────────────────────────
+var scanner = new KnowledgeScanner();
+var skills = scanner.Scan(homeDir);
+var skillsPrompt = skills.Count > 0 ? KnowledgeScanner.BuildSkillsPrompt(skills) : "";
 
-api.MapPost("/session/{id}/message", async (WebContext ctx, CancellationToken ct) =>
-{
-    using var reader = new StreamReader(ctx.Request.BodyStream);
-    var body = await reader.ReadToEndAsync(ct);
-    var response = await host.ProcessMessageAsync(body, ct, ctx.RouteValues["id"]);
-    return new HttpResponse
-    {
-        StatusCode = 200,
-        Headers = [new("Content-Type", "application/json")],
-        Body = Encoding.UTF8.GetBytes($"{{\"response\":\"{EscapeJson(response)}\"}}"),
-    };
-});
+// ── Session ─────────────────────────────────────────────
+var sessionPath = Path.Combine(homeDir, SessionsDir, "default.jsonl");
+var sessionMessages = await SessionStore.LoadAsync(sessionPath);
+if (sessionMessages.Count > 0)
+    Console.WriteLine($"[Loaded {sessionMessages.Count} messages from session]");
 
-// v1: stub SSE endpoint. v2: use SseConnection to stream AgentLoop events in real-time.
-api.MapGet("/session/{id}/events", (WebContext ctx, CancellationToken ct) =>
+// ── Parse command ───────────────────────────────────────
+var cmd = args.Length > 0 ? args[0] : "chat";
+
+if (cmd == "serve")
 {
-    return ValueTask.FromResult(new HttpResponse
+    var port = args.Length > 1 && int.TryParse(args[1], out var p) ? p : 8080;
+    await RunServeAsync(port, host, registry, homeDir);
+}
+else
+{
+    await RunChatAsync(host, sessionPath, sessionMessages, skillsPrompt, apiKey);
+}
+
+// ══════════════════════════════════════════════════════════
+
+static async Task RunChatAsync(
+    AgentHost host, string sessionPath, List<Message> messages,
+    string skillsPrompt, string apiKey)
+{
+    if (string.IsNullOrEmpty(apiKey))
     {
-        StatusCode = 200,
-        Headers = [new("Content-Type", "text/event-stream"), new("Cache-Control", "no-cache")],
-        Body = "data: {\"type\":\"ready\"}\n\n"u8.ToArray(),
+        Console.Error.WriteLine("Error: ANTHROPIC_API_KEY not set.");
+        Console.Error.WriteLine("  export ANTHROPIC_API_KEY=sk-ant-...");
+        return;
+    }
+
+    Console.WriteLine("PicoAgent chat. Type /exit to quit, /save to persist.");
+    Console.WriteLine();
+
+    var cts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+    try
+    {
+        while (!cts.Token.IsCancellationRequested)
+        {
+            Console.Write("> ");
+            var input = Console.ReadLine();
+            if (input == null || input == "/exit") break;
+            if (input == "/save")
+            {
+                await SessionStore.SaveAsync(sessionPath, messages);
+                Console.WriteLine("[Saved]");
+                continue;
+            }
+            if (string.IsNullOrWhiteSpace(input)) continue;
+
+            // Inject skills prompt into system message if not already present
+            if (!string.IsNullOrEmpty(skillsPrompt) &&
+                !messages.Any(m => m.Role == RoleAssistant && m.ContentBlocks != null))
+            {
+                messages.Insert(0, new Message
+                {
+                    Role = RoleUser,
+                    Content = $"[System]\n{skillsPrompt}",
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                });
+            }
+
+            Console.WriteLine();
+            var response = await host.ProcessMessageAsync(
+                input, cts.Token,
+                onEvent: evt =>
+                {
+                    if (evt is AssistantMessageEvent.TextDelta td)
+                        Console.Write(td.Delta);
+                });
+
+            Console.WriteLine();
+            Console.WriteLine();
+        }
+    }
+    catch (OperationCanceledException) { }
+
+    // Auto-save on exit
+    await SessionStore.SaveAsync(sessionPath, messages);
+    Console.WriteLine("[Session saved]");
+}
+
+static async Task RunServeAsync(
+    int port, AgentHost host, CapabilityRegistry registry, string homeDir)
+{
+    Console.WriteLine($"PicoAgent serve starting on port {port}...");
+
+    var api = new WebApiBuilder()
+        .ConfigureApp(o => new WebAppOptions { ServerHeader = "PicoAgent" })
+        .Build();
+
+    api.MapPost("/session/{id}/message", async (WebContext ctx, CancellationToken ct) =>
+    {
+        using var reader = new StreamReader(ctx.Request.BodyStream);
+        var body = await reader.ReadToEndAsync(ct);
+        var response = await host.ProcessMessageAsync(body, ct, ctx.RouteValues["id"]);
+        return new HttpResponse
+        {
+            StatusCode = 200,
+            Headers = [new("Content-Type", "application/json")],
+            Body = Encoding.UTF8.GetBytes($"{{\"response\":\"{EscapeJson(response)}\"}}"),
+        };
     });
-});
 
-api.MapPost("/reload", (WebContext ctx, CancellationToken ct) =>
-{
-    registry.Scan(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".pico-agent"));
-    return ValueTask.FromResult(new HttpResponse
+    api.MapGet("/session/{id}/events", (WebContext _, CancellationToken __) =>
+        ValueTask.FromResult(new HttpResponse
+        {
+            StatusCode = 200,
+            Headers = [new("Content-Type", "text/event-stream"), new("Cache-Control", "no-cache")],
+            Body = "data: {\"type\":\"ready\"}\n\n"u8.ToArray(),
+        }));
+
+    api.MapPost("/reload", (WebContext _, CancellationToken __) =>
     {
-        StatusCode = 200,
-        Body = "{\"status\":\"reloaded\"}"u8.ToArray(),
+        registry.Scan(homeDir);
+        return ValueTask.FromResult(new HttpResponse
+        {
+            StatusCode = 200,
+            Body = "{\"status\":\"reloaded\"}"u8.ToArray(),
+        });
     });
-});
 
-var url = $"http://+:{port}";
-Console.WriteLine($"Listening on {url}");
-await api.RunAsync(url);
+    await api.RunAsync($"http://+:{port}");
+}
 
 static string EscapeJson(string s)
 {

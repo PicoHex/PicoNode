@@ -17,7 +17,8 @@ public sealed class AgentHost
     public async Task<string> ProcessMessageAsync(
         string content,
         CancellationToken ct,
-        string sessionId = "default")
+        string sessionId = "default",
+        Action<AssistantMessageEvent>? onEvent = null)
     {
         var messages = _sessions.GetOrAdd(sessionId, _ => []);
 
@@ -28,7 +29,7 @@ public sealed class AgentHost
             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         });
 
-        var result = await _loop.RunTurnAsync(messages, ct);
+        var result = await _loop.RunTurnAsync(messages, ct, onEvent);
 
         var lastAssistant = result.LastOrDefault(m => m.Role == "assistant");
         var text = lastAssistant?.ContentBlocks?
