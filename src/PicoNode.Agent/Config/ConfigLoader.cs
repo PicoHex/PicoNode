@@ -26,7 +26,10 @@ public sealed class ConfigLoader
 
         var json = File.ReadAllText(path);
         var expanded = ExpandEnvVars(json);
-        var opts = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+        var opts = new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+        };
         return System.Text.Json.JsonSerializer.Deserialize<AgentConfig>(expanded, opts);
     }
 

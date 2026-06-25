@@ -40,33 +40,39 @@ public sealed class AnthropicLLmClientThinkingTests
         {
             Messages = new[]
             {
-                new Message { Role = "user", Content = "Hi", Timestamp = 1 },
+                new Message
+                {
+                    Role = "user",
+                    Content = "Hi",
+                    Timestamp = 1,
+                },
             },
         };
 
-        var options = new StreamOptions
-        {
-            ApiKey = "test-key",
-            Reasoning = ThinkingLevel.Medium,
-        };
+        var options = new StreamOptions { ApiKey = "test-key", Reasoning = ThinkingLevel.Medium };
 
         await foreach (var _ in client.StreamAsync(model, context, options, CancellationToken.None))
-        {
-        }
+        { }
 
         await Assert.That(handler.CapturedRequestBody).IsNotNull();
 
         using var doc = System.Text.Json.JsonDocument.Parse(handler.CapturedRequestBody!);
         var root = doc.RootElement;
 
-        await Assert.That(root.TryGetProperty("thinking", out var thinkingProp)).IsTrue()
+        await Assert
+            .That(root.TryGetProperty("thinking", out var thinkingProp))
+            .IsTrue()
             .Because("StreamOptions.Reasoning should cause thinking block in request");
 
-        await Assert.That(thinkingProp.GetProperty("type").GetString()).IsEqualTo("enabled")
+        await Assert
+            .That(thinkingProp.GetProperty("type").GetString())
+            .IsEqualTo("enabled")
             .Because("thinking type must be 'enabled'");
 
         var budgetTokens = thinkingProp.GetProperty("budget_tokens").GetInt32();
-        await Assert.That(budgetTokens).IsGreaterThan(0)
+        await Assert
+            .That(budgetTokens)
+            .IsGreaterThan(0)
             .Because("thinking budget_tokens must be positive");
     }
 
@@ -101,20 +107,26 @@ public sealed class AnthropicLLmClientThinkingTests
         {
             Messages = new[]
             {
-                new Message { Role = "user", Content = "Hi", Timestamp = 1 },
+                new Message
+                {
+                    Role = "user",
+                    Content = "Hi",
+                    Timestamp = 1,
+                },
             },
         };
 
         await foreach (var _ in client.StreamAsync(model, context, null, CancellationToken.None))
-        {
-        }
+        { }
 
         await Assert.That(handler.CapturedRequestBody).IsNotNull();
 
         using var doc = System.Text.Json.JsonDocument.Parse(handler.CapturedRequestBody!);
         var root = doc.RootElement;
 
-        await Assert.That(root.TryGetProperty("thinking", out _)).IsFalse()
+        await Assert
+            .That(root.TryGetProperty("thinking", out _))
+            .IsFalse()
             .Because("without StreamOptions.Reasoning, no thinking block should be present");
     }
 
@@ -149,15 +161,19 @@ public sealed class AnthropicLLmClientThinkingTests
         {
             Messages = new[]
             {
-                new Message { Role = "user", Content = "Deep thinking", Timestamp = 1 },
+                new Message
+                {
+                    Role = "user",
+                    Content = "Deep thinking",
+                    Timestamp = 1,
+                },
             },
         };
 
         var options = new StreamOptions { ApiKey = "test-key", Reasoning = ThinkingLevel.XHigh };
 
         await foreach (var _ in client.StreamAsync(model, context, options, CancellationToken.None))
-        {
-        }
+        { }
 
         await Assert.That(handler.CapturedRequestBody).IsNotNull();
 
@@ -165,7 +181,9 @@ public sealed class AnthropicLLmClientThinkingTests
         var thinkingProp = doc.RootElement.GetProperty("thinking");
         var budgetTokens = thinkingProp.GetProperty("budget_tokens").GetInt32();
 
-        await Assert.That(budgetTokens).IsGreaterThanOrEqualTo(32000)
+        await Assert
+            .That(budgetTokens)
+            .IsGreaterThanOrEqualTo(32000)
             .Because("XHigh thinking level should have a large token budget");
     }
 }

@@ -54,7 +54,10 @@ public class AgentLoopTests
         var loop = new AgentLoop(llmClient, registry, runner, model);
 
         var events = new List<AssistantMessageEvent>();
-        Func<AssistantMessageEvent, CancellationToken, ValueTask> onEvent = async (e, _) => { events.Add(e); };
+        Func<AssistantMessageEvent, CancellationToken, ValueTask> onEvent = async (e, _) =>
+        {
+            events.Add(e);
+        };
 
         var messages = new List<Message>
         {
@@ -112,4 +115,3 @@ public sealed class MockLLmClient : ILLmClient
         };
     }
 }
-

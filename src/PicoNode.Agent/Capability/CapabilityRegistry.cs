@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-
 public sealed class CapabilityRegistry
 {
     private readonly List<ManifestCapability> _capabilities = [];

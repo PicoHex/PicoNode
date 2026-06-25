@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-
 public sealed class SkillInfo
 {
     public string Name { get; set; } = "";

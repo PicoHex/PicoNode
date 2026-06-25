@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-
 public sealed class AgentHost
 {
     private readonly AgentLoop _loop;
