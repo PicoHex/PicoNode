@@ -180,7 +180,8 @@ public sealed class AgentLoop
 
         await foreach (var evt in _llm.StreamAsync(model, context, streamOptions, ct))
         {
-            onEvent?.Invoke(evt, ct);
+            if (onEvent is { } handler)
+                await handler(evt, ct);
             if (evt is AssistantMessageEvent.Done d)
                 finalMessage = d.Message;
             else if (evt is AssistantMessageEvent.Error e)
