@@ -1,6 +1,5 @@
 namespace PicoNode.Agent;
 
-
 public sealed class AgentLoop
 {
     private readonly ILLmClient _llm;
@@ -175,7 +174,11 @@ public sealed class AgentLoop
 
         if (onEvent is not null) { }
 
-    await foreach (var evt in _llm.StreamAsync(model, context, null, ct))
+        var streamOptions = model.Reasoning
+            ? new StreamOptions { Reasoning = ThinkingLevel.Medium }
+            : null;
+
+        await foreach (var evt in _llm.StreamAsync(model, context, streamOptions, ct))
         {
             onEvent?.Invoke(evt, ct);
             if (evt is AssistantMessageEvent.Done d)

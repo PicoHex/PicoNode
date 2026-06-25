@@ -90,6 +90,25 @@ public sealed class AnthropicLLmClient : ILLmClient
         AppendProp(sb, "max_tokens", (options?.MaxTokens ?? model.MaxTokens).ToString());
         sb.Append(',');
         sb.Append("\"stream\":true");
+
+        // Thinking block
+        if (options?.Reasoning is { } level)
+        {
+            var budget = level switch
+            {
+                ThinkingLevel.Minimal => 2000,
+                ThinkingLevel.Low => 8000,
+                ThinkingLevel.Medium => 16000,
+                ThinkingLevel.High => 32000,
+                ThinkingLevel.XHigh => 64000,
+                _ => 16000,
+            };
+            sb.Append(',');
+            sb.Append("\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":");
+            sb.Append(budget);
+            sb.Append('}');
+        }
+
         sb.Append(',');
 
         // Messages

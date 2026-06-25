@@ -184,7 +184,7 @@ async Task RunChatAsync(
                         Console.WriteLine("[Saved]");
                         continue;
                     case "/help":
-                        Console.WriteLine("/model /list-models /provider /save /exit");
+                        Console.WriteLine("/model /list-models /provider /thinking /save /exit");
                         continue;
                     case "/model":
                         if (!string.IsNullOrWhiteSpace(arg))
@@ -212,6 +212,22 @@ async Task RunChatAsync(
                             m.Provider = arg;
                             Console.WriteLine($"[Provider: {m.Provider}]");
                         }
+                        continue;
+                    case "/thinking":
+                        if (string.IsNullOrWhiteSpace(arg) || arg == "on" || arg == "true")
+                        {
+                            m.Reasoning = !m.Reasoning;
+                        }
+                        else if (arg == "off" || arg == "false")
+                        {
+                            m.Reasoning = false;
+                        }
+                        else
+                        {
+                            Console.WriteLine("Usage: /thinking [on|off]");
+                            continue;
+                        }
+                        Console.WriteLine($"[Thinking: {(m.Reasoning ? "on" : "off")}]");
                         continue;
                 }
             }
