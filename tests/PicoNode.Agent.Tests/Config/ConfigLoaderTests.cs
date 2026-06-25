@@ -40,4 +40,29 @@ public class ConfigLoaderTests
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
+
+    [Test]
+    public async Task Validate_EmptyProviders_ReturnsError()
+    {
+        var result = ConfigLoader.Validate(new AgentConfig());
+        await Assert.That(result.IsValid).IsFalse();
+        await Assert.That(result.Errors[0]).Contains("No providers configured");
+    }
+
+    [Test]
+    public async Task Validate_MissingApiKey_ReturnsError()
+    {
+        var config = new AgentConfig { Providers = new() { ["x"] = new ProviderEntry { ApiKey = "" } } };
+        var result = ConfigLoader.Validate(config);
+        await Assert.That(result.IsValid).IsFalse();
+        await Assert.That(result.Errors[0]).Contains("apiKey");
+    }
+
+    [Test]
+    public async Task Validate_ValidConfig_Passes()
+    {
+        var config = new AgentConfig { Providers = new() { ["x"] = new ProviderEntry { ApiKey = "sk-xxx" } } };
+        var result = ConfigLoader.Validate(config);
+        await Assert.That(result.IsValid).IsTrue();
+    }
 }

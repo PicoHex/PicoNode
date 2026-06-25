@@ -5,6 +5,9 @@ using PicoNode.AI;
 public sealed class AgentConfig
 {
     public Dictionary<string, ProviderEntry> Providers { get; set; } = [];
+    public string? Model { get; set; }
+    public string? ThinkingLevel { get; set; }
+    public int? MaxTokens { get; set; }
 }
 
 public sealed class ProviderEntry
@@ -23,14 +26,13 @@ public static class ConfigLoader
             var template = """
             {
               "providers": {
-                "anthropic": { "apiKey": "$ANTHROPIC_API_KEY" },
-                "openai":    { "apiKey": "$OPENAI_API_KEY" }
+                "anthropic": { "apiKey": "$ANTHROPIC_API_KEY" }
               }
             }
             """;
             File.WriteAllText(path, template);
-            Console.Error.WriteLine($"Config template created at {path}");
-            Console.Error.WriteLine("Edit this file, set your API keys, then restart.");
+            Console.Error.WriteLine($"Settings template created at {path}");
+            Console.Error.WriteLine("Configure your providers, then restart.");
             return null;
         }
 
@@ -86,6 +88,28 @@ public static class ConfigLoader
     {
         public string ApiFormat { get; set; } = "openai";
         public string BaseUrl { get; set; } = "";
+    }
+
+    public sealed class ValidateResult
+    {
+        public bool IsValid { get; set; }
+        public string[] Errors { get; set; } = [];
+    }
+
+    public static ValidateResult Validate(AgentConfig config)
+    {
+        var errors = new List<string>();
+        if (config.Providers.Count == 0)
+            errors.Add("No providers configured. Add at least one provider to ~/.pico-agent/settings.json → providers");
+        else
+        {
+            foreach (var (name, entry) in config.Providers)
+            {
+                if (string.IsNullOrWhiteSpace(entry.ApiKey))
+                    errors.Add($"Missing apiKey for provider '{name}'. Set providers.{name}.apiKey in ~/.pico-agent/settings.json");
+            }
+        }
+        return new ValidateResult { IsValid = errors.Count == 0, Errors = errors.ToArray() };
     }
 
     private static string ExpandEnvVars(string json)

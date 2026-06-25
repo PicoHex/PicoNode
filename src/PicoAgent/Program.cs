@@ -13,25 +13,29 @@ var homeDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.U
 Directory.CreateDirectory(homeDir);
 Directory.CreateDirectory(Path.Combine(homeDir, SessionsDir));
 
-var configPath = Path.Combine(homeDir, "config.json");
+var settingsPath = Path.Combine(homeDir, "settings.json");
 var presetsPath = Path.Combine(homeDir, "provider-presets.json");
-var config = ConfigLoader.Load(configPath);
+var settings = ConfigLoader.Load(settingsPath);
 var presets = ConfigLoader.LoadPresets(presetsPath);
-if (config == null) return;
+if (settings == null) return;
+
+var validation = ConfigLoader.Validate(settings);
+if (!validation.IsValid)
+{
+    foreach (var err in validation.Errors) Console.Error.WriteLine(err);
+    return;
+}
 
 var clients = new Dictionary<string, ILLmClient>();
 var breakers = new Dictionary<string, ICircuitBreaker>();
 var providerConfigs = new List<ProviderConfig>();
 var http = new HttpClient();
 
-foreach (var (name, entry) in config.Providers)
+foreach (var (name, entry) in settings.Providers)
 {
     presets.TryGetValue(name, out var p);
     if (p == null && entry.ApiFormat == null)
-    {
-        Console.Error.WriteLine($"Unknown provider '{name}' and no apiFormat. Skipping.");
-        continue;
-    }
+    { Console.Error.WriteLine($"Unknown provider '{name}' and no apiFormat. Skipping."); continue; }
     var apiFormat = entry.ApiFormat?.ToLowerInvariant() switch
     {
         "openai" => AiApiFormat.OpenAIChatCompletions,
@@ -57,24 +61,19 @@ var registry = new CapabilityRegistry();
 registry.Scan(homeDir);
 var runner = new CapabilityRunner();
 
-var defaultProvider = config.Providers.Keys.FirstOrDefault() ?? "anthropic";
+var defaultProvider = settings.Providers.Keys.FirstOrDefault() ?? "anthropic";
 var defPreset = presets.GetValueOrDefault(defaultProvider);
-string? defaultModelId = null;
-if (defPreset != null)
+string? defaultModelId = settings.Model;
+if (defaultModelId == null && defPreset != null)
 {
     var df = defPreset.ApiFormat?.ToLowerInvariant() == "anthropic" ? AiApiFormat.AnthropicMessages : AiApiFormat.OpenAIChatCompletions;
-    var pc = new ProviderConfig { Name = defaultProvider, BaseUrl = defPreset.BaseUrl ?? "", ApiFormat = df, ApiKey = config.Providers.Values.FirstOrDefault()?.ApiKey ?? "", Priority = 1 };
+    var pc = new ProviderConfig { Name = defaultProvider, BaseUrl = defPreset.BaseUrl ?? "", ApiFormat = df, ApiKey = settings.Providers.Values.FirstOrDefault()?.ApiKey ?? "", Priority = 1 };
     var discovered = await ModelDiscovery.DiscoverAsync(http, pc, CancellationToken.None);
     defaultModelId = discovered.FirstOrDefault()?.Id;
 }
+if (defaultModelId == null) { Console.Error.WriteLine("Could not determine model. Set 'model' in settings.json."); return; }
 
-if (defaultModelId == null)
-{
-    Console.Error.WriteLine($"Error: Could not discover models from {defaultProvider}. Check API key.");
-    return;
-}
-
-var model = new Model { Id = defaultModelId, BaseUrl = "", Api = defPreset?.ApiFormat?.ToLowerInvariant() == "anthropic" ? AiApiFormat.AnthropicMessages : AiApiFormat.OpenAIChatCompletions, Provider = defaultProvider, MaxTokens = 4096 };
+var model = new Model { Id = defaultModelId, BaseUrl = "", Api = defPreset?.ApiFormat?.ToLowerInvariant() == "anthropic" ? AiApiFormat.AnthropicMessages : AiApiFormat.OpenAIChatCompletions, Provider = defaultProvider, MaxTokens = settings.MaxTokens ?? 4096 };
 var loop = new AgentLoop(resilientClient, registry, runner, model);
 var host = new AgentHost(loop);
 
@@ -84,53 +83,52 @@ var skillsPrompt = skills.Count > 0 ? KnowledgeScanner.BuildSkillsPrompt(skills)
 
 var sessionPath = Path.Combine(homeDir, SessionsDir, "default.jsonl");
 var sessionMessages = await SessionStore.LoadAsync(sessionPath);
-if (sessionMessages.Count > 0) Console.WriteLine($"[Loaded {sessionMessages.Count} messages from session]");
+if (sessionMessages.Count > 0) Console.WriteLine($"[Loaded {sessionMessages.Count} messages]");
 
 var cmd = args.Length > 0 ? args[0] : "chat";
 if (cmd == "serve") { await RunServeAsync(args.Length > 1 && int.TryParse(args[1], out var prt) ? prt : 8080, host, registry, homeDir); }
 else { await RunChatAsync(host, sessionPath, sessionMessages, skillsPrompt, model, providerConfigs); }
 
-async Task RunChatAsync(AgentHost host, string sessionPath, List<Message> messages, string skillsPrompt, Model model, List<ProviderConfig> providers)
+async Task RunChatAsync(AgentHost host, string sp, List<Message> msgs, string sprompt, Model m, List<ProviderConfig> provs)
 {
     Console.WriteLine("PicoAgent chat.");
-    Console.WriteLine($"Providers: {string.Join(", ", providers.Select(p => p.Name))}");
-    Console.WriteLine($"Model: {model.Id} | Provider: {model.Provider}");
+    Console.WriteLine($"Providers: {string.Join(", ", provs.Select(p => p.Name))}");
+    Console.WriteLine($"Model: {m.Id} | Provider: {m.Provider}");
     Console.WriteLine("Type /help for commands.\n");
     var cts = new CancellationTokenSource();
     Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
     try
     {
         while (!cts.Token.IsCancellationRequested) { Console.Write("> "); var input = Console.ReadLine(); if (input == null) break;
-            if (input.StartsWith('/')) { var parts = input.Split(' ', 2); var command = parts[0]; var arg = parts.Length > 1 ? parts[1] : "";
-                switch (command) {
+            if (input.StartsWith('/')) { var parts = input.Split(' ', 2); var c2 = parts[0]; var arg = parts.Length > 1 ? parts[1] : "";
+                switch (c2) {
                     case "/exit": goto exit;
-                    case "/save": await SessionStore.SaveAsync(sessionPath, messages); Console.WriteLine("[Saved]"); continue;
-                    case "/help": Console.WriteLine("/model <name>  /thinking <lvl>  /list-models  /provider <name>  /save  /exit"); continue;
-                    case "/model": if (!string.IsNullOrWhiteSpace(arg)) { model.Id = arg; Console.WriteLine($"[Model: {model.Id}]"); } continue;
+                    case "/save": await SessionStore.SaveAsync(sp, msgs); Console.WriteLine("[Saved]"); continue;
+                    case "/help": Console.WriteLine("/model /thinking /list-models /provider /save /exit"); continue;
+                    case "/model": if (!string.IsNullOrWhiteSpace(arg)) { m.Id = arg; Console.WriteLine($"[Model: {m.Id}]"); } continue;
                     case "/thinking": if (!string.IsNullOrWhiteSpace(arg)) Console.WriteLine($"[Thinking: {arg}]"); continue;
-                    case "/list-models": foreach (var p in providers) { var ms = await ModelDiscovery.DiscoverAsync(new HttpClient { Timeout = TimeSpan.FromSeconds(10) }, p, CancellationToken.None); Console.WriteLine($"{p.Name}:"); foreach (var m in ms) Console.WriteLine($"  {m.Id}"); } continue;
-                    case "/provider": if (!string.IsNullOrWhiteSpace(arg)) { model.Provider = arg; Console.WriteLine($"[Provider: {model.Provider}, Model: {model.Id}]"); } continue;
+                    case "/list-models": foreach (var p in provs) { var ms = await ModelDiscovery.DiscoverAsync(new HttpClient { Timeout = TimeSpan.FromSeconds(10) }, p, CancellationToken.None); Console.WriteLine($"{p.Name}:"); foreach (var mm in ms) Console.WriteLine($"  {mm.Id}"); } continue;
+                    case "/provider": if (!string.IsNullOrWhiteSpace(arg)) { m.Provider = arg; Console.WriteLine($"[Provider: {m.Provider}]"); } continue;
                 }
             }
             if (string.IsNullOrWhiteSpace(input)) continue;
-            if (!string.IsNullOrEmpty(skillsPrompt) && !messages.Any(m => m.Role == RoleAssistant && m.ContentBlocks != null))
-                messages.Insert(0, new Message { Role = RoleUser, Content = $"[System]\n{skillsPrompt}", Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
+            if (!string.IsNullOrEmpty(sprompt) && !msgs.Any(x => x.Role == RoleAssistant && x.ContentBlocks != null))
+                msgs.Insert(0, new Message { Role = RoleUser, Content = $"[System]\n{sprompt}", Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
             Console.WriteLine();
             await host.ProcessMessageAsync(input, cts.Token, onEvent: evt => { if (evt is AssistantMessageEvent.TextDelta td) Console.Write(td.Delta); else if (evt is AssistantMessageEvent.Error err) Console.Write($"\n[Error: {err.Message.ErrorMessage}]"); });
             Console.WriteLine("\n");
         }
     } catch (OperationCanceledException) { }
-exit: await SessionStore.SaveAsync(sessionPath, messages); Console.WriteLine("[Session saved]");
+exit: await SessionStore.SaveAsync(sp, msgs); Console.WriteLine("[Session saved]");
 }
 
-async Task RunServeAsync(int port, AgentHost host, CapabilityRegistry registry, string homeDir)
+async Task RunServeAsync(int port, AgentHost host, CapabilityRegistry reg, string hd)
 {
-    Console.WriteLine($"PicoAgent serve on port {port}...");
     var api = new WebApiBuilder().ConfigureApp(o => new WebAppOptions { ServerHeader = "PicoAgent" }).Build();
-    api.MapPost("/session/{id}/message", async (WebContext ctx, CancellationToken ct) => { using var r = new StreamReader(ctx.Request.BodyStream); var b = await r.ReadToEndAsync(ct); var resp = await host.ProcessMessageAsync(b, ct, ctx.RouteValues["id"]); return new HttpResponse { StatusCode = 200, Headers = [new("Content-Type", "application/json")], Body = Encoding.UTF8.GetBytes($"{{\"response\":\"{EscapeJson(resp)}\"}}") }; });
+    api.MapPost("/session/{id}/message", async (WebContext ctx, CancellationToken ct) => { using var r = new StreamReader(ctx.Request.BodyStream); var b = await r.ReadToEndAsync(ct); var resp = await host.ProcessMessageAsync(b, ct, ctx.RouteValues["id"]); return new HttpResponse { StatusCode = 200, Headers = [new("Content-Type", "application/json")], Body = Encoding.UTF8.GetBytes($"{{\"response\":\"{Esc(resp)}\"}}") }; });
     api.MapGet("/session/{id}/events", (_, __) => ValueTask.FromResult(new HttpResponse { StatusCode = 200, Headers = [new("Content-Type", "text/event-stream")], Body = "data: {\"type\":\"ready\"}\n\n"u8.ToArray() }));
-    api.MapPost("/reload", (_, __) => { registry.Scan(homeDir); return ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = "{\"status\":\"reloaded\"}"u8.ToArray() }); });
+    api.MapPost("/reload", (_, __) => { reg.Scan(hd); return ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = "{\"status\":\"reloaded\"}"u8.ToArray() }); });
     await api.RunAsync($"http://+:{port}");
 }
 
-static string EscapeJson(string s) { var sb = new StringBuilder(s.Length + 2); foreach (var c in s) { switch (c) { case '"': sb.Append("\\\""); break; case '\\': sb.Append("\\\\"); break; case '\n': sb.Append("\\n"); break; case '\r': sb.Append("\\r"); break; case '\t': sb.Append("\\t"); break; default: if (c < 0x20) sb.Append($"\\u{(int)c:X4}"); else sb.Append(c); break; } } return sb.ToString(); }
+static string Esc(string s) { var sb = new StringBuilder(s.Length + 2); foreach (var c in s) { switch (c) { case '"': sb.Append("\\\""); break; case '\\': sb.Append("\\\\"); break; case '\n': sb.Append("\\n"); break; case '\r': sb.Append("\\r"); break; case '\t': sb.Append("\\t"); break; default: if (c < 0x20) sb.Append($"\\u{(int)c:X4}"); else sb.Append(c); break; } } return sb.ToString(); }
