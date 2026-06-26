@@ -268,7 +268,8 @@ async Task RunChatAsync(
                     }
                 );
             Console.WriteLine();
-            var inThinking = false;
+            var thinkingActive = false;
+            var answerStarted = false;
             await host.ProcessMessageAsync(
                 input,
                 cts.Token,
@@ -276,21 +277,23 @@ async Task RunChatAsync(
                 {
                     if (evt is AssistantMessageEvent.TextDelta td)
                     {
-                        if (inThinking)
+                        if (thinkingActive && !answerStarted)
                         {
                             Console.WriteLine("\n---");
-                            inThinking = false;
+                            thinkingActive = false;
+                            answerStarted = true;
                         }
                         Console.Write(td.Delta);
                     }
                     else if (evt is AssistantMessageEvent.ThinkingDelta th)
                     {
-                        if (!inThinking)
+                        if (!thinkingActive && !answerStarted)
                         {
                             Console.WriteLine("\n--- thinking ---");
-                            inThinking = true;
+                            thinkingActive = true;
                         }
-                        Console.Write(th.Delta);
+                        if (thinkingActive)
+                            Console.Write(th.Delta);
                     }
                     else if (evt is AssistantMessageEvent.Error err)
                         Console.Write($"\n[Error: {err.Message.ErrorMessage}]");
