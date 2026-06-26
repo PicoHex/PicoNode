@@ -98,4 +98,34 @@ public sealed class OpenAILlmClientThinkingTests
 
         await Assert.That(handler.CapturedRequestBody!).DoesNotContain("reasoning_effort");
     }
+
+    [Test]
+    public async Task ParseStream_ParsesReasoningContent_as_thinking_deltas()
+    {
+        var sseData =
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"Let me think\"},\"index\":0}]}\n\n"
+            + "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\" about this\"},\"index\":0}]}\n\n"
+            + "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"},\"index\":0}]}\n\n"
+            + "data: {\"choices\":[{\"finish_reason\":\"stop\"},\"index\":0}]}\n\n";
+
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(sseData));
+        var events = new List<AssistantMessageEvent>();
+
+        await foreach (
+            var evt in OpenAISseParser.ParseStreamAsync(
+                stream,
+                "deepseek-v4-flash",
+                CancellationToken.None
+            )
+        )
+        {
+            events.Add(evt);
+        }
+
+        var thinkingEvents = events.OfType<AssistantMessageEvent.ThinkingDelta>().ToArray();
+        await Assert
+            .That(thinkingEvents.Length)
+            .IsGreaterThanOrEqualTo(1)
+            .Because("reasoning_content should produce ThinkingDelta events");
+    }
 }
