@@ -56,7 +56,7 @@
 |------|------|------|
 | `thinkingEnabled` | 全局 / model 级 | 是否默认启用思维模式 |
 | `thinkingLevel` | 全局 / model 级 | 默认思维级别（`minimal`/`low`/`medium`/`high`/`xhigh`） |
-| `thinking` | provider 级 | `ThinkingLevel` → provider 特定 API 参数映射表 |
+| `thinking` | provider 级 | `ThinkingLevel` → provider 特定 API 参数映射表（key 是 level 的小写名） |
 
 ### 回退链
 
@@ -65,7 +65,7 @@ thinkingEnabled : models.{id}.thinkingEnabled → 全局 thinkingEnabled → tru
 thinkingLevel   : models.{id}.thinkingLevel   → 全局 thinkingLevel   → Medium
 thinking (map)  : provider.thinking（仅 provider 级，model 间不区分）
 
-map 缺 level    : mapper 自动找最近级别
+map 缺 level    : MapResolver 自动找最近级别（见下文）
 map 为 null     : 此 provider 不支持 thinking
 ```
 
@@ -73,9 +73,23 @@ map 为 null     : 此 provider 不支持 thinking
 
 ## 数据模型
 
-### `AgentConfig.cs`
+### 拆分：`AgentConfig.cs`（从 `ConfigLoader.cs` 拆出数据类）
 
 ```csharp
+// 新文件：src/PicoNode.Agent/Config/AgentConfig.cs
+// 原数据类 AgentConfig, ProviderEntry 从 ConfigLoader.cs 移到此文件
+
+[PicoJsonSerializable]
+public sealed class AgentConfig
+{
+    public Dictionary<string, ProviderEntry> Providers { get; set; } = [];
+    public string? Model { get; set; }
+    public string? ThinkingLevel { get; set; }          // 对应 thinkingLevel
+    public bool ThinkingEnabled { get; set; } = true;   // 对应 thinkingEnabled
+    public int? MaxTokens { get; set; }
+}
+
+[PicoJsonSerializable]
 public sealed class ProviderEntry
 {
     public string ApiKey { get; set; } = "";
@@ -85,11 +99,28 @@ public sealed class ProviderEntry
     public Dictionary<string, ModelThinkingOverride>? Models { get; set; }  // 新增
 }
 
-public sealed class ModelThinkingOverride                                 // 新类
+[PicoJsonSerializable]
+public sealed class ModelThinkingOverride                                 // 新增
 {
     public bool ThinkingEnabled { get; set; }
     public string ThinkingLevel { get; set; } = "";
 }
+```
+
+`ConfigLoader.cs` 只保留 `Load`、`Validate`、`ExpandEnvVars` 方法，导入 `AgentConfig` 等类型。
+
+`ModelThinkingOverride.ThinkingLevel` 是字符串，需在启动时解析为 `ThinkingLevel` 枚举：
+
+```csharp
+static ThinkingLevel? ParseThinkingLevel(string? s) => s?.ToLower() switch
+{
+    "minimal" => ThinkingLevel.Minimal,
+    "low"     => ThinkingLevel.Low,
+    "medium"  => ThinkingLevel.Medium,
+    "high"    => ThinkingLevel.High,
+    "xhigh"   => ThinkingLevel.XHigh,
+    _         => null
+};
 ```
 
 ### `Model.cs`
@@ -99,10 +130,13 @@ public sealed class Model
 {
     // 现有属性...
     public bool ThinkingEnabled { get; set; }               // 重命名自 Reasoning
-    public ThinkingLevel ThinkingLevel { get; set; }        // 新增（enum，非 nullable）
+    public ThinkingLevel ThinkingLevel { get; set; }        // 新增（非 nullable；初始化时显式赋值）
     public Dictionary<string, string>? ThinkingLevelMap { get; set; }  // 新增
 }
 ```
+
+- `ThinkingLevel` 非 nullable，由配置或命令显式赋值，**不依赖 `default(ThinkingLevel)`**
+- `ThinkingLevelMap` 为 null 表示此 provider 不支持 thinking
 
 ### `StreamOptions.cs`
 
@@ -115,9 +149,11 @@ public sealed class StreamOptions
 }
 ```
 
-### `SessionData.cs`（新类）
+### `SessionData.cs`（新文件）
 
 ```csharp
+// 新文件：src/PicoNode.Agent/Session/SessionData.cs
+
 public sealed class SessionData
 {
     public List<Message> Messages { get; set; } = [];
@@ -134,10 +170,13 @@ public sealed class SessionData
 
 ```
 settings.json
-  → AgentConfig.ThinkingEnabled / ThinkingLevel
+  → AgentConfig.ThinkingEnabled → Model.ThinkingEnabled
+  → AgentConfig.ThinkingLevel → ParseThinkingLevel → Model.ThinkingLevel（null → Medium）
   → 当前 provider.Thinking → Model.ThinkingLevelMap
-  → 当前 model 有 models.{id} 覆盖 → 覆盖 Model.ThinkingEnabled / ThinkingLevel
-  → resume session → SessionData.ThinkingEnabled / ThinkingLevel 覆盖 Model
+  → 当前 model 设了 models.{id}:
+       models.{id}.ThinkingEnabled 覆写 Model.ThinkingEnabled
+       models.{id}.ThinkingLevel → ParseThinkingLevel → 覆写 Model.ThinkingLevel
+  → resume session → SessionData 覆写 Model.ThinkingEnabled / ThinkingLevel
 ```
 
 ### CLI 命令
@@ -155,8 +194,8 @@ settings.json
 
 | 命令 | 行为 |
 |------|------|
-| `/model X` | 查 `models.X` 覆盖 `ThinkingEnabled`/`ThinkingLevel`（有则覆盖，无则保留当前） |
-| `/provider Y` | 查 `providers.Y.Thinking` → `Model.ThinkingLevelMap`。如果新 provider 无 thinking → map = null |
+| `/model X` | 查 `models.X`，有则覆写 Model.ThinkingEnabled / ThinkingLevel；无则保留当前值 |
+| `/provider Y` | 查 `providers.Y.Thinking` → Model.ThinkingLevelMap（不存在 → null） |
 
 ### LLM 调用
 
@@ -175,27 +214,41 @@ AgentLoop.CallLLMAsync:
       }
 ```
 
-### LLM Client 序列化
+`StreamOptions.ThinkingLevelMap` 传给 LLM Client 作为数据载体；`MapResolver` 在 AgentLoop 调用一次完成值解析，LLM Client 只负责拼接 JSON。
+
+具体来说：`AgentLoop` 中调用 `MapResolver.Resolve` 得到具体 API 值，直接设进 `StreamOptions.Reasoning`（值变为 `string`？）或放在新字段里？
+
+有两种实现路径：
+
+**A) `Reasoning` 保持 `ThinkingLevel?`，LLM Client 内部再调 `MapResolver.Resolve`**
+
+AgentLoop 只传 `ThinkingLevelMap`，MapResolver 的调用推迟到 LLM Client 的 `BuildRequestJson` 内部。
+
+**B) AgentLoop 调用一次 Resolve，结果直接传给 LLM Client（via 新字段）**
+
+AgentLoop 调用 `MapResolver.Resolve`，把结果（如 `"16000"` 或 `"medium"`）放进 `StreamOptions` 的现有字段。
+
+> **选择 A** — 因为 LLM Client 知道自己的 API 格式（Anthropic 要 int，OpenAI 要 string），在 Client 内部做 resolve + int.Parse 更自然。AgentLoop 不关心 API 参数的具体值。
+
+修正后的 LLM Client 序列化：
 
 ```
 AnthropicLLmClient.BuildRequestJson:
-  if Reasoning != null && ThinkingLevelMap != null:
-    value = MapResolver.Resolve(Reasoning, ThinkingLevelMap)
-    if value == null → 不拼 thinking
-    else → 拼接: "thinking":{"type":"enabled","budget_tokens":{int.Parse(value)}}
-  else → 不拼
+  if options?.Reasoning != null && options?.ThinkingLevelMap != null:
+    value = MapResolver.Resolve(options.Reasoning, options.ThinkingLevelMap)
+    if value != null:
+      JSON += "thinking":{"type":"enabled","budget_tokens":{int.Parse(value)}}
 
 OpenAILlmClient.BuildRequestJson:
-  if Reasoning != null && ThinkingLevelMap != null:
-    value = MapResolver.Resolve(Reasoning, ThinkingLevelMap)
-    if value == null → 不拼 reasoning_effort
-    else → 拼接: "reasoning_effort":"{value}"
-  else → 不拼
+  if options?.Reasoning != null && options?.ThinkingLevelMap != null:
+    value = MapResolver.Resolve(options.Reasoning, options.ThinkingLevelMap)
+    if value != null:
+      JSON += "reasoning_effort":"{value}"
 ```
 
 ---
 
-## Level 映射器（MapResolver）
+## Level 映射器（`MapResolver.cs`）
 
 `ThinkingLevel` 枚举值有大小顺序：
 
@@ -206,7 +259,7 @@ Minimal (0) < Low (1) < Medium (2) < High (3) < XHigh (4)
 ### 匹配算法
 
 ```
-输入: requestedLevel, map (Dictionary<string,string>)
+输入: requestedLevel (ThinkingLevel), map (Dictionary<string,string>)
 
 1. 精确匹配 → requestedLevel.ToString().ToLower()
 2. 向下找最近的（优先省钱）→ 遍历所有小于当前级别的值
@@ -219,9 +272,9 @@ Minimal (0) < Low (1) < Medium (2) < High (3) < XHigh (4)
 | map 配置 | 请求级别 | 匹配结果 |
 |---------|:--:|:--:|
 | `{minimal,low,medium}` | `high` | `medium`（向下） |
-| `{minimal,low,medium}` | `xhigh` | `medium`（向下到最低） |
+| `{minimal,low,medium}` | `xhigh` | `medium`（优先向下，没钱才向上 ） |
 | `{low,high}` | `medium` | `low`（向下） |
-| `{low,high}` | `minimal` | `low`（向上，no smaller） |
+| `{low,high}` | `minimal` | `low`（向上，没有更小的） |
 | `{low,high}` | `xhigh` | `high`（向下） |
 | `{}` | any | `null` |
 | `null` | any | `null` |
@@ -240,12 +293,12 @@ JSONL，首行为 metadata：
 {"Role":"assistant","Content":"Hi","Timestamp":2}
 ```
 
-### 加载
+### 加载行为
 
 1. 读写通过 `SessionStore.LoadAsync(path)` / `SaveAsync(path, SessionData)`
-2. 如果首行不含 `"$meta"` → 旧格式 → `ThinkingEnabled=false`, `ThinkingLevel=Medium`（默认值）
+2. 如果首行不含 `"$meta"` → 旧格式 → `ThinkingEnabled=true`, `ThinkingLevel=Medium`（用配置默认）
 3. `/save` 时写当前 `ThinkingEnabled`/`ThinkingLevel` 到 $meta
-4. resume 时从 $meta 恢复
+4. resume 时从 $meta 恢复（覆写 Model）
 
 ---
 
@@ -271,20 +324,22 @@ JSONL，首行为 metadata：
 
 | # | 文件 | 改动 |
 |---|------|------|
-| 1 | `src/PicoNode.Agent/Config/AgentConfig.cs` | `ProviderEntry` + `Thinking`, `Models`；新增 `ModelThinkingOverride` |
-| 2 | `src/PicoNode.AI/Types/Model.cs` | `Reasoning` → `ThinkingEnabled`；+ `ThinkingLevel`, `ThinkingLevelMap` |
-| 3 | `src/PicoNode.AI/Types/StreamOptions.cs` | + `ThinkingLevelMap` |
-| 4 | `src/PicoNode.Agent/ThinkingCommand.cs` | 支持 level 参数，操作 `ThinkingEnabled` + `ThinkingLevel` |
-| 5 | `src/PicoNode.Agent/Agent/AgentLoop.cs` | `CallLLMAsync` 判断 + 传 map + mapper 调用 |
-| 6 | `src/PicoNode.AI/LLm/AnthropicLLmClient.cs` | `BuildRequestJson` 从 map + mapper 取值 |
-| 7 | `src/PicoNode.AI/LLm/OpenAILlmClient.cs` | `BuildRequestJson` + `reasoning_effort` 序列化 |
-| 8 | `src/PicoNode.Agent/Host/AgentHost.cs` | session 维度管理 `ThinkingEnabled`/`ThinkingLevel`，代理 `SessionStore` |
-| 9 | `src/PicoNode.Agent/Session/SessionStore.cs` | API → `SessionData`；`$meta` 行读写 |
-| 10 | `src/PicoAgent/Program.cs` | 启动装配置，`/model`/`/provider` 更新 Model，命令行为更新 |
-| 11 | `src/PicoAgent/PicoAgent.csproj` | + `<Content>` for example |
-| 12 | `src/PicoAgent/settings.example.json` | **新建** |
-| 13 | `src/PicoNode.AI/LLm/MapResolver.cs` | **新建**（level→value 匹配器） |
-| 14 | 测试文件 | 重命名 `Reasoning`，mapper 测试，LLM Client 序列化测试 |
+| 1 | `src/PicoNode.Agent/Config/AgentConfig.cs` | **新建**：从 `ConfigLoader.cs` 移出数据类；`ProviderEntry` + `Thinking` + `Models`；新增 `ModelThinkingOverride` |
+| 2 | `src/PicoNode.Agent/Config/ConfigLoader.cs` | 移除数据类（移入 AgentConfig.cs）；Load 方法加 thinking 默认值解析 |
+| 3 | `src/PicoNode.AI/Types/Model.cs` | `Reasoning` → `ThinkingEnabled`；+ `ThinkingLevel`；+ `ThinkingLevelMap` |
+| 4 | `src/PicoNode.AI/Types/StreamOptions.cs` | + `ThinkingLevelMap` |
+| 5 | `src/PicoNode.Agent/ThinkingCommand.cs` | 支持 level 参数；操作 `ThinkingEnabled` + `ThinkingLevel` |
+| 6 | `src/PicoNode.Agent/Agent/AgentLoop.cs` | `CallLLMAsync` 判断 `ThinkingEnabled`；传 `ThinkingLevelMap` |
+| 7 | `src/PicoNode.AI/LLm/AnthropicLLmClient.cs` | `BuildRequestJson` 从 map + MapResolver 取 budget_tokens |
+| 8 | `src/PicoNode.AI/LLm/OpenAILlmClient.cs` | `BuildRequestJson` + `reasoning_effort` 序列化 + MapResolver |
+| 9 | `src/PicoNode.AI/LLm/MapResolver.cs` | **新建**：level→value 匹配器 |
+| 10 | `src/PicoNode.Agent/Host/AgentHost.cs` | session 维度管理 `ThinkingEnabled`/`ThinkingLevel`；代理 `SessionStore` |
+| 11 | `src/PicoNode.Agent/Session/SessionStore.cs` | API → `SessionData`；`$meta` 行读写 |
+| 12 | `src/PicoNode.Agent/Session/SessionData.cs` | **新建**：session 元数据包装类 |
+| 13 | `src/PicoAgent/Program.cs` | 启动装配置；`/model`/`/provider` 更新 Model；命令行为更新；删除模板字符串 |
+| 14 | `src/PicoAgent/PicoAgent.csproj` | + `<Content>` for example |
+| 15 | `src/PicoAgent/settings.example.json` | **新建**，含所有内置 provider 默认 thinking 配置 |
+| 16 | 测试文件 | 重命名 `Reasoning` 引用；mapper 测试；LLM Client thinking 序列化测试 |
 
 ---
 
