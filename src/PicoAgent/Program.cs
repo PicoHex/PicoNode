@@ -268,15 +268,30 @@ async Task RunChatAsync(
                     }
                 );
             Console.WriteLine();
+            var inThinking = false;
             await host.ProcessMessageAsync(
                 input,
                 cts.Token,
                 onEvent: async (evt, _) =>
                 {
                     if (evt is AssistantMessageEvent.TextDelta td)
+                    {
+                        if (inThinking)
+                        {
+                            Console.WriteLine("\n---");
+                            inThinking = false;
+                        }
                         Console.Write(td.Delta);
+                    }
                     else if (evt is AssistantMessageEvent.ThinkingDelta th)
+                    {
+                        if (!inThinking)
+                        {
+                            Console.WriteLine("\n--- thinking ---");
+                            inThinking = true;
+                        }
                         Console.Write(th.Delta);
+                    }
                     else if (evt is AssistantMessageEvent.Error err)
                         Console.Write($"\n[Error: {err.Message.ErrorMessage}]");
                 }
