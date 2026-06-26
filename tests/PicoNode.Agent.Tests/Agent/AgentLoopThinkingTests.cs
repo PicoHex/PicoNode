@@ -60,7 +60,7 @@ public sealed class AgentLoopThinkingTests
             .That(capturedOptions!.Reasoning)
             .IsNotNull()
             .Because(
-                "StreamOptions.ThinkingEnabled should be set when Model.ThinkingEnabled is true"
+                "StreamOptions.Reasoning should be set when Model.ThinkingEnabled is true"
             );
     }
 
