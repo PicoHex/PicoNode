@@ -77,4 +77,23 @@ public class ConfigLoaderTests
         var result = ConfigLoader.Validate(config);
         await Assert.That(result.IsValid).IsTrue();
     }
+
+    [Test]
+    public async Task Load_NoPrefixEnvVar_ResolvesViaFallback()
+    {
+        Environment.SetEnvironmentVariable("RAW_API_KEY", "sk-raw-999");
+        var json = """{"providers":{"test":{"apiKey":"$RAW_API_KEY","apiFormat":"openai","baseUrl":""}}}""";
+        var path = Path.GetTempFileName();
+        await File.WriteAllTextAsync(path, json);
+        try
+        {
+            var config = await ConfigLoader.LoadAsync(path);
+            await Assert.That(config.Providers["test"].ApiKey).IsEqualTo("sk-raw-999");
+        }
+        finally
+        {
+            File.Delete(path);
+            Environment.SetEnvironmentVariable("RAW_API_KEY", null);
+        }
+    }
 }
