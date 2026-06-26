@@ -59,9 +59,7 @@ public sealed class AgentLoopThinkingTests
         await Assert
             .That(capturedOptions!.Reasoning)
             .IsNotNull()
-            .Because(
-                "StreamOptions.Reasoning should be set when Model.ThinkingEnabled is true"
-            );
+            .Because("StreamOptions.Reasoning should be set when Model.ThinkingEnabled is true");
     }
 
     /// <summary>
@@ -213,6 +211,42 @@ public sealed class AgentLoopThinkingTests
             .That(model.ThinkingEnabled)
             .IsFalse()
             .Because("null argument should not change reasoning state");
+    }
+
+    /// <summary>
+    /// /thinking high sets Enabled=true and Level=High.
+    /// </summary>
+    [Test]
+    public async Task Command_thinking_high_sets_enabled_and_level()
+    {
+        var model = new Model { ThinkingEnabled = false, ThinkingLevel = ThinkingLevel.Medium };
+        ThinkingCommand.Apply(model, "high");
+        await Assert.That(model.ThinkingEnabled).IsTrue();
+        await Assert.That(model.ThinkingLevel).IsEqualTo(ThinkingLevel.High);
+    }
+
+    /// <summary>
+    /// /thinking on preserves current level (doesn't reset).
+    /// </summary>
+    [Test]
+    public async Task Command_thinking_on_preserves_existing_level()
+    {
+        var model = new Model { ThinkingEnabled = false, ThinkingLevel = ThinkingLevel.Low };
+        ThinkingCommand.Apply(model, "on");
+        await Assert.That(model.ThinkingEnabled).IsTrue();
+        await Assert.That(model.ThinkingLevel).IsEqualTo(ThinkingLevel.Low);
+    }
+
+    /// <summary>
+    /// /thinking off preserves current level (just disables).
+    /// </summary>
+    [Test]
+    public async Task Command_thinking_off_preserves_existing_level()
+    {
+        var model = new Model { ThinkingEnabled = true, ThinkingLevel = ThinkingLevel.High };
+        ThinkingCommand.Apply(model, "off");
+        await Assert.That(model.ThinkingEnabled).IsFalse();
+        await Assert.That(model.ThinkingLevel).IsEqualTo(ThinkingLevel.High);
     }
 
     // ── onEvent await bug test ───────────────────────────────────
