@@ -6,7 +6,7 @@ Directory.CreateDirectory(homeDir);
 Directory.CreateDirectory(Path.Combine(homeDir, SessionsDir));
 
 var settingsPath = Path.Combine(homeDir, "settings.json");
-var settings = ConfigLoader.Load(settingsPath);
+var settings = await ConfigLoader.LoadAsync(settingsPath);
 if (settings == null)
 {
     Console.Error.WriteLine($"Settings file not found: {settingsPath}");
