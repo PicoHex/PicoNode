@@ -21,6 +21,12 @@ public sealed class AgentLoop
         _model = model;
     }
 
+    public void UpdateThinking(bool enabled, ThinkingLevel level)
+    {
+        _model.ThinkingEnabled = enabled;
+        _model.ThinkingLevel = level;
+    }
+
     /// v1: truncate to last N messages. v2: LLM-based summary.
     public static List<Message> Compact(List<Message> messages, int keepLast = 20)
     {
@@ -174,9 +180,14 @@ public sealed class AgentLoop
 
         if (onEvent is not null) { }
 
-        var streamOptions = model.ThinkingEnabled
-            ? new StreamOptions { Reasoning = ThinkingLevel.Medium }
-            : null;
+        var streamOptions =
+            _model.ThinkingEnabled && _model.ThinkingLevelMap is { Count: > 0 }
+                ? new StreamOptions
+                {
+                    Reasoning = _model.ThinkingLevel,
+                    ThinkingLevelMap = _model.ThinkingLevelMap,
+                }
+                : null;
 
         await foreach (var evt in _llm.StreamAsync(model, context, streamOptions, ct))
         {

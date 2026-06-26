@@ -34,6 +34,7 @@ public sealed class AgentLoopThinkingTests
             Provider = "anthropic",
             MaxTokens = 4096,
             ThinkingEnabled = true,
+            ThinkingLevelMap = new Dictionary<string, string> { ["medium"] = "16000" },
         };
 
         var loop = new AgentLoop(mockLlm, registry, runner, model);
@@ -249,6 +250,83 @@ public sealed class AgentLoopThinkingTests
         await Assert.That(model.ThinkingLevel).IsEqualTo(ThinkingLevel.High);
     }
 
+    // ── ThinkingLevelMap propagation tests ──────────────────────────
+
+    [Test]
+    public async Task WithThinkingMap_passes_map_to_stream_options()
+    {
+        Dictionary<string, string>? capturedMap = null;
+
+        var mockLlm = new CapturingOptionsLLmClient
+        {
+            OnStreamAsync = (_, _, options, _) => capturedMap = options?.ThinkingLevelMap,
+        };
+
+        var model = new Model
+        {
+            Id = "test",
+            BaseUrl = "",
+            Api = AiApiFormat.AnthropicMessages,
+            Provider = "anthropic",
+            MaxTokens = 4096,
+            ThinkingEnabled = true,
+            ThinkingLevel = ThinkingLevel.High,
+            ThinkingLevelMap = new Dictionary<string, string> { ["high"] = "32000" },
+        };
+
+        var loop = new AgentLoop(mockLlm, new CapabilityRegistry(), new CapabilityRunner(), model);
+        await loop.RunTurnAsync(
+            [
+                new Message
+                {
+                    Role = "user",
+                    Content = "Hi",
+                    Timestamp = 1,
+                },
+            ],
+            CancellationToken.None
+        );
+
+        await Assert.That(capturedMap).IsNotNull();
+        await Assert.That(capturedMap!["high"]).IsEqualTo("32000");
+    }
+
+    [Test]
+    public async Task ThinkingEnabled_false_passes_null_options()
+    {
+        StreamOptions? capturedOptions = new();
+        var mockLlm = new CapturingOptionsLLmClient
+        {
+            OnStreamAsync = (_, _, options, _) => capturedOptions = options,
+        };
+
+        var model = new Model
+        {
+            Id = "test",
+            BaseUrl = "",
+            Api = AiApiFormat.AnthropicMessages,
+            Provider = "anthropic",
+            MaxTokens = 4096,
+            ThinkingEnabled = false,
+            ThinkingLevelMap = new Dictionary<string, string> { ["high"] = "32000" },
+        };
+
+        var loop = new AgentLoop(mockLlm, new CapabilityRegistry(), new CapabilityRunner(), model);
+        await loop.RunTurnAsync(
+            [
+                new Message
+                {
+                    Role = "user",
+                    Content = "Hi",
+                    Timestamp = 1,
+                },
+            ],
+            CancellationToken.None
+        );
+
+        await Assert.That(capturedOptions).IsNull();
+    }
+
     // ── onEvent await bug test ───────────────────────────────────
 
     /// <summary>
@@ -359,6 +437,38 @@ file sealed class SequentialMockLLmClient : ILLmClient
         {
             yield return evt;
         }
+    }
+}
+
+/// <summary>
+/// Mock LLM client that captures StreamOptions (including ThinkingLevelMap).
+/// </summary>
+file sealed class CapturingOptionsLLmClient : ILLmClient
+{
+    public Action<
+        Model,
+        ChatContext,
+        StreamOptions?,
+        CancellationToken
+    >? OnStreamAsync { get; set; }
+
+    public async IAsyncEnumerable<AssistantMessageEvent> StreamAsync(
+        Model model,
+        ChatContext context,
+        StreamOptions? options,
+        [EnumeratorCancellation] CancellationToken ct
+    )
+    {
+        OnStreamAsync?.Invoke(model, context, options, ct);
+        yield return new AssistantMessageEvent.Done
+        {
+            Message = new Message
+            {
+                Role = "assistant",
+                ContentBlocks = [new ContentBlock { Type = "text", Text = "ok" }],
+                StopReason = "end_turn",
+            },
+        };
     }
 }
 
