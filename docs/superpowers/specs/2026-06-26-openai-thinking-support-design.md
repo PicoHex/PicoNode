@@ -204,33 +204,15 @@ AgentLoop.CallLLMAsync:
   if !model.ThinkingEnabled || model.ThinkingLevelMap == null:
     StreamOptions = null  （不传 thinking）
   else:
-    value = MapResolver.Resolve(model.ThinkingLevel, model.ThinkingLevelMap)
-    if value == null:
-      StreamOptions = null
-    else:
-      StreamOptions {
-        Reasoning = model.ThinkingLevel,
-        ThinkingLevelMap = model.ThinkingLevelMap
-      }
+    StreamOptions {
+      Reasoning = model.ThinkingLevel,
+      ThinkingLevelMap = model.ThinkingLevelMap
+    }
 ```
 
-`StreamOptions.ThinkingLevelMap` 传给 LLM Client 作为数据载体；`MapResolver` 在 AgentLoop 调用一次完成值解析，LLM Client 只负责拼接 JSON。
+AgentLoop 不调用 MapResolver，只把 `ThinkingLevel` 和 `ThinkingLevelMap` 打包进 `StreamOptions` 传给 LLM Client。Resolve 推迟到各 LLM Client 的 `BuildRequestJson` 内部——因为 Anthropic 要对 value 做 `int.Parse`，OpenAI 要直接当字符串用，AgentLoop 不应关心 API 参数的格式差异。
 
-具体来说：`AgentLoop` 中调用 `MapResolver.Resolve` 得到具体 API 值，直接设进 `StreamOptions.Reasoning`（值变为 `string`？）或放在新字段里？
-
-有两种实现路径：
-
-**A) `Reasoning` 保持 `ThinkingLevel?`，LLM Client 内部再调 `MapResolver.Resolve`**
-
-AgentLoop 只传 `ThinkingLevelMap`，MapResolver 的调用推迟到 LLM Client 的 `BuildRequestJson` 内部。
-
-**B) AgentLoop 调用一次 Resolve，结果直接传给 LLM Client（via 新字段）**
-
-AgentLoop 调用 `MapResolver.Resolve`，把结果（如 `"16000"` 或 `"medium"`）放进 `StreamOptions` 的现有字段。
-
-> **选择 A** — 因为 LLM Client 知道自己的 API 格式（Anthropic 要 int，OpenAI 要 string），在 Client 内部做 resolve + int.Parse 更自然。AgentLoop 不关心 API 参数的具体值。
-
-修正后的 LLM Client 序列化：
+### LLM Client 序列化
 
 ```
 AnthropicLLmClient.BuildRequestJson:
@@ -238,12 +220,16 @@ AnthropicLLmClient.BuildRequestJson:
     value = MapResolver.Resolve(options.Reasoning, options.ThinkingLevelMap)
     if value != null:
       JSON += "thinking":{"type":"enabled","budget_tokens":{int.Parse(value)}}
+    // value == null → map 为空 → 不拼 thinking 参数
+  // Reasoning == null || ThinkingLevelMap == null → 不拼
 
 OpenAILlmClient.BuildRequestJson:
   if options?.Reasoning != null && options?.ThinkingLevelMap != null:
     value = MapResolver.Resolve(options.Reasoning, options.ThinkingLevelMap)
     if value != null:
       JSON += "reasoning_effort":"{value}"
+    // value == null → map 为空 → 不拼 reasoning_effort
+  // Reasoning == null || ThinkingLevelMap == null → 不拼
 ```
 
 ---
@@ -272,7 +258,7 @@ Minimal (0) < Low (1) < Medium (2) < High (3) < XHigh (4)
 | map 配置 | 请求级别 | 匹配结果 |
 |---------|:--:|:--:|
 | `{minimal,low,medium}` | `high` | `medium`（向下） |
-| `{minimal,low,medium}` | `xhigh` | `medium`（优先向下，没钱才向上 ） |
+| `{minimal,low,medium}` | `xhigh` | `medium`（向下找，优先省钱） |
 | `{low,high}` | `medium` | `low`（向下） |
 | `{low,high}` | `minimal` | `low`（向上，没有更小的） |
 | `{low,high}` | `xhigh` | `high`（向下） |
