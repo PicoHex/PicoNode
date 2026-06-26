@@ -15,4 +15,5 @@ public sealed class StreamOptions
     public int? MaxTokens { get; set; }
     public float? Temperature { get; set; }
     public ThinkingLevel? Reasoning { get; set; }
+    public Dictionary<string, string>? ThinkingLevelMap { get; set; }
 }

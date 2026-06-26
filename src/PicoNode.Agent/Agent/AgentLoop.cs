@@ -174,7 +174,7 @@ public sealed class AgentLoop
 
         if (onEvent is not null) { }
 
-        var streamOptions = model.Reasoning
+        var streamOptions = model.ThinkingEnabled
             ? new StreamOptions { Reasoning = ThinkingLevel.Medium }
             : null;
 

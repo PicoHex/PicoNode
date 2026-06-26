@@ -14,7 +14,7 @@ public class ModelSerializationTests
             Provider = "anthropic",
             Api = AiApiFormat.AnthropicMessages,
             BaseUrl = "https://api.anthropic.com",
-            Reasoning = true,
+            ThinkingEnabled = true,
             Cost = new ModelCost
             {
                 Input = 3.0m,

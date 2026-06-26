@@ -1,7 +1,7 @@
 namespace PicoNode.Agent;
 
 /// <summary>
-/// Handles the /thinking command parsing and Model.Reasoning state transitions.
+/// Handles the /thinking command parsing and Model.ThinkingEnabled state transitions.
 /// Extracted from Program.cs for testability.
 /// </summary>
 public static class ThinkingCommand
@@ -20,21 +20,21 @@ public static class ThinkingCommand
         if (string.IsNullOrWhiteSpace(arg))
         {
             // Bare /thinking — toggle
-            model.Reasoning = !model.Reasoning;
+            model.ThinkingEnabled = !model.ThinkingEnabled;
             return null;
         }
 
         if (arg is "on" or "true")
         {
             // /thinking on  or  /thinking true — always set true
-            model.Reasoning = true;
+            model.ThinkingEnabled = true;
             return null;
         }
 
         if (arg is "off" or "false")
         {
             // /thinking off  or  /thinking false — always set false
-            model.Reasoning = false;
+            model.ThinkingEnabled = false;
             return null;
         }
 

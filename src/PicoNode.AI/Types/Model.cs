@@ -7,7 +7,9 @@ public sealed class Model
     public string Provider { get; set; } = "";
     public AiApiFormat Api { get; set; }
     public string BaseUrl { get; set; } = "";
-    public bool Reasoning { get; set; }
+    public bool ThinkingEnabled { get; set; }
+    public ThinkingLevel ThinkingLevel { get; set; }
+    public Dictionary<string, string>? ThinkingLevelMap { get; set; }
     public ModelCost Cost { get; set; } = new();
     public int ContextWindow { get; set; }
     public int MaxTokens { get; set; }

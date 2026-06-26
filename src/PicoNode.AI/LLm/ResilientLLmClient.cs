@@ -36,7 +36,7 @@ public sealed class ResilientLLmClient : ILLmClient
             Provider = provider.Name,
             Api = provider.ApiFormat,
             BaseUrl = provider.BaseUrl,
-            Reasoning = model.Reasoning,
+            ThinkingEnabled = model.ThinkingEnabled,
             Cost = model.Cost,
             ContextWindow = model.ContextWindow,
             MaxTokens = model.MaxTokens,

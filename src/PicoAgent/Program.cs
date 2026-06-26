@@ -220,7 +220,7 @@ async Task RunChatAsync(
                             Console.WriteLine(err);
                             continue;
                         }
-                        Console.WriteLine($"[Thinking: {(m.Reasoning ? "on" : "off")}]");
+                        Console.WriteLine($"[Thinking: {(m.ThinkingEnabled ? "on" : "off")}]");
                         continue;
                 }
             }
