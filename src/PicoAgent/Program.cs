@@ -275,6 +275,8 @@ async Task RunChatAsync(
                 {
                     if (evt is AssistantMessageEvent.TextDelta td)
                         Console.Write(td.Delta);
+                    else if (evt is AssistantMessageEvent.ThinkingDelta th)
+                        Console.Write(th.Delta);
                     else if (evt is AssistantMessageEvent.Error err)
                         Console.Write($"\n[Error: {err.Message.ErrorMessage}]");
                 }
@@ -374,6 +376,11 @@ static async Task WriteSseStreamAsync(
                 if (evt is AssistantMessageEvent.TextDelta td)
                     await sse.WriteAsync(
                         $"data: {PicoJetson.JsonSerializer.Serialize(new { type = "delta", content = td.Delta })}\n\n",
+                        ct2
+                    );
+                else if (evt is AssistantMessageEvent.ThinkingDelta th)
+                    await sse.WriteAsync(
+                        $"data: {PicoJetson.JsonSerializer.Serialize(new { type = "thinking", content = th.Delta })}\n\n",
                         ct2
                     );
                 else if (evt is AssistantMessageEvent.Done d)
