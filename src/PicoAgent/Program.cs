@@ -280,6 +280,7 @@ async Task RunChatAsync(
                             return;
                         if (phase == 1)
                         {
+                            Console.WriteLine();
                             Console.WriteLine("---");
                             phase = 2;
                         }
