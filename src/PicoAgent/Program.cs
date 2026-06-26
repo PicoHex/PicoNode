@@ -277,6 +277,8 @@ async Task RunChatAsync(
                 {
                     if (evt is AssistantMessageEvent.TextDelta td)
                     {
+                        if (string.IsNullOrEmpty(td.Delta))
+                            return;
                         if (thinkingActive && !answerStarted)
                         {
                             Console.WriteLine("\n---");
@@ -293,7 +295,7 @@ async Task RunChatAsync(
                             thinkingActive = true;
                         }
                         if (thinkingActive)
-                            Console.Write(th.Delta);
+                            Console.Error.Write(th.Delta);
                     }
                     else if (evt is AssistantMessageEvent.Error err)
                         Console.Write($"\n[Error: {err.Message.ErrorMessage}]");
