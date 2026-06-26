@@ -1,0 +1,54 @@
+{
+  "thinkingEnabled": true,
+  "thinkingLevel": "medium",
+  "model": null,
+  "maxTokens": 4096,
+  "contextWindow": 128000,
+  "compactThreshold": 100,
+  "providers": {
+    "anthropic": {
+      "apiKey": "$ANTHROPIC_API_KEY",
+      "baseUrl": "https://api.anthropic.com",
+      "apiFormat": "anthropic",
+      "thinking": {
+        "minimal": "2000",
+        "low": "8000",
+        "medium": "16000",
+        "high": "32000",
+        "xhigh": "64000"
+      }
+    },
+    "openai": {
+      "apiKey": "$OPENAI_API_KEY",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiFormat": "openai",
+      "thinking": {
+        "minimal": "low",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "high"
+      }
+    },
+    "deepseek": {
+      "apiKey": "$DEEPSEEK_API_KEY",
+      "baseUrl": "https://api.deepseek.com/v1",
+      "apiFormat": "openai"
+    },
+    "kimi": {
+      "apiKey": "$KIMI_API_KEY",
+      "baseUrl": "https://api.moonshot.cn/v1",
+      "apiFormat": "openai"
+    },
+    "glm": {
+      "apiKey": "$GLM_API_KEY",
+      "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+      "apiFormat": "openai"
+    },
+    "groq": {
+      "apiKey": "$GROQ_API_KEY",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "apiFormat": "openai"
+    }
+  }
+}

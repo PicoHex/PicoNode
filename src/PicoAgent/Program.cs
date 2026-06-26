@@ -9,25 +9,10 @@ var settingsPath = Path.Combine(homeDir, "settings.json");
 var settings = ConfigLoader.Load(settingsPath);
 if (settings == null)
 {
-    var template = """
-        {
-          "model": null,
-          "maxTokens": 4096,
-          "contextWindow": 128000,
-          "compactThreshold": 100,
-          "providers": {
-            "anthropic": { "apiKey": "$ANTHROPIC_API_KEY", "baseUrl": "https://api.anthropic.com", "apiFormat": "anthropic" },
-            "openai":    { "apiKey": "$OPENAI_API_KEY",    "baseUrl": "https://api.openai.com/v1",       "apiFormat": "openai" },
-            "deepseek":  { "apiKey": "$DEEPSEEK_API_KEY",  "baseUrl": "https://api.deepseek.com/v1",     "apiFormat": "openai" },
-            "kimi":      { "apiKey": "$KIMI_API_KEY",      "baseUrl": "https://api.moonshot.cn/v1",      "apiFormat": "openai" },
-            "glm":       { "apiKey": "$GLM_API_KEY",       "baseUrl": "https://open.bigmodel.cn/api/paas/v4", "apiFormat": "openai" },
-            "groq":      { "apiKey": "$GROQ_API_KEY",      "baseUrl": "https://api.groq.com/openai/v1",  "apiFormat": "openai" }
-          }
-        }
-        """;
-    File.WriteAllText(settingsPath, template);
-    Console.Error.WriteLine($"Settings template created at {settingsPath}");
-    Console.Error.WriteLine("Set your apiKey values, then restart.");
+    Console.Error.WriteLine($"Settings file not found: {settingsPath}");
+    Console.Error.WriteLine(
+        "Copy settings.example.json from the publish directory to this path and edit it."
+    );
     return;
 }
 
@@ -116,6 +101,23 @@ var model = new Model
     Provider = defaultProvider,
     MaxTokens = settings.MaxTokens ?? 4096,
 };
+
+// Apply global thinking defaults from config
+model.ThinkingEnabled = settings.ThinkingEnabled;
+model.ThinkingLevel = AgentConfig.ParseLevel(settings.ThinkingLevel) ?? ThinkingLevel.Medium;
+
+// Apply per-provider thinking map
+if (defaultPreset?.Thinking is { Count: > 0 } map)
+    model.ThinkingLevelMap = map;
+
+// Apply model-level override if present
+if (defaultPreset?.Models is { } models && models.TryGetValue(modelId, out var modelOverride))
+{
+    model.ThinkingEnabled = modelOverride.ThinkingEnabled;
+    if (modelOverride.ThinkingLevel is { Length: > 0 } tl)
+        model.ThinkingLevel = AgentConfig.ParseLevel(tl) ?? model.ThinkingLevel;
+}
+
 var loop = new AgentLoop(resilientClient, registry, runner, model);
 var host = new AgentHost(loop);
 
@@ -126,6 +128,7 @@ var skillsPrompt = skills.Count > 0 ? KnowledgeScanner.BuildSkillsPrompt(skills)
 var sessionPath = Path.Combine(homeDir, SessionsDir, "default.jsonl");
 var sessionData = await SessionStore.LoadAsync(sessionPath);
 var sessionMessages = sessionData.Messages;
+host.RestoreSession("default", sessionData);
 if (sessionMessages.Count > 0)
     Console.WriteLine($"[Loaded {sessionMessages.Count} messages]");
 
@@ -192,6 +195,18 @@ async Task RunChatAsync(
                         {
                             m.Id = arg;
                             Console.WriteLine($"[Model: {m.Id}]");
+
+                            // Apply model-level thinking override
+                            if (
+                                settings.Providers.TryGetValue(m.Provider, out var provEntry)
+                                && provEntry.Models is { } models
+                                && models.TryGetValue(arg, out var modelOverride)
+                            )
+                            {
+                                m.ThinkingEnabled = modelOverride.ThinkingEnabled;
+                                if (modelOverride.ThinkingLevel is { Length: > 0 } tl)
+                                    m.ThinkingLevel = AgentConfig.ParseLevel(tl) ?? m.ThinkingLevel;
+                            }
                         }
                         continue;
                     case "/list-models":
@@ -212,6 +227,15 @@ async Task RunChatAsync(
                         {
                             m.Provider = arg;
                             Console.WriteLine($"[Provider: {m.Provider}]");
+
+                            // Update per-provider thinking map
+                            if (
+                                settings.Providers.TryGetValue(arg, out var newProv)
+                                && newProv.Thinking is { Count: > 0 } newMap
+                            )
+                                m.ThinkingLevelMap = newMap;
+                            else
+                                m.ThinkingLevelMap = null;
                         }
                         continue;
                     case "/thinking":
@@ -221,7 +245,9 @@ async Task RunChatAsync(
                             Console.WriteLine(err);
                             continue;
                         }
-                        Console.WriteLine($"[Thinking: {(m.ThinkingEnabled ? "on" : "off")}]");
+                        Console.WriteLine(
+                            $"[Thinking: {(m.ThinkingEnabled ? m.ThinkingLevel.ToString().ToLower() : "off")}]"
+                        );
                         continue;
                 }
             }
