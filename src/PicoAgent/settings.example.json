@@ -33,7 +33,14 @@
     "deepseek": {
       "apiKey": "$DEEPSEEK_API_KEY",
       "baseUrl": "https://api.deepseek.com/v1",
-      "apiFormat": "openai"
+      "apiFormat": "openai",
+      "thinking": {
+        "minimal": "low",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "high"
+      }
     },
     "kimi": {
       "apiKey": "$KIMI_API_KEY",
