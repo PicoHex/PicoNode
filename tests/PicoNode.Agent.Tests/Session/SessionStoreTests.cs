@@ -42,16 +42,17 @@ public class SessionStoreTests
 
         try
         {
-            await SessionStore.SaveAsync(path, messages);
+            await SessionStore.SaveAsync(path, new SessionData { Messages = messages });
 
             await Assert.That(File.Exists(path)).IsTrue();
 
             var loaded = await SessionStore.LoadAsync(path);
+            var loadedMsgs = loaded.Messages;
 
-            await Assert.That(loaded.Count).IsEqualTo(2);
-            await Assert.That(loaded[0].Role).IsEqualTo("user");
-            await Assert.That(loaded[0].Content).IsEqualTo("Hello");
-            await Assert.That(loaded[1].ContentBlocks![0].Text).IsEqualTo("Hi!");
+            await Assert.That(loadedMsgs.Count).IsEqualTo(2);
+            await Assert.That(loadedMsgs[0].Role).IsEqualTo("user");
+            await Assert.That(loadedMsgs[0].Content).IsEqualTo("Hello");
+            await Assert.That(loadedMsgs[1].ContentBlocks![0].Text).IsEqualTo("Hi!");
         }
         finally
         {

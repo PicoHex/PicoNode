@@ -124,7 +124,8 @@ var skills = scanner.Scan(homeDir);
 var skillsPrompt = skills.Count > 0 ? KnowledgeScanner.BuildSkillsPrompt(skills) : "";
 
 var sessionPath = Path.Combine(homeDir, SessionsDir, "default.jsonl");
-var sessionMessages = await SessionStore.LoadAsync(sessionPath);
+var sessionData = await SessionStore.LoadAsync(sessionPath);
+var sessionMessages = sessionData.Messages;
 if (sessionMessages.Count > 0)
     Console.WriteLine($"[Loaded {sessionMessages.Count} messages]");
 
@@ -180,7 +181,7 @@ async Task RunChatAsync(
                     case "/exit":
                         goto exit;
                     case "/save":
-                        await SessionStore.SaveAsync(sp, msgs);
+                        await SessionStore.SaveAsync(sp, new SessionData { Messages = msgs });
                         Console.WriteLine("[Saved]");
                         continue;
                     case "/help":
@@ -256,7 +257,7 @@ async Task RunChatAsync(
     }
     catch (OperationCanceledException) { }
     exit:
-    await SessionStore.SaveAsync(sp, msgs);
+    await SessionStore.SaveAsync(sp, new SessionData { Messages = msgs });
     Console.WriteLine("[Session saved]");
 }
 
