@@ -268,8 +268,7 @@ async Task RunChatAsync(
                     }
                 );
             Console.WriteLine();
-            var thinkingActive = false;
-            var answerStarted = false;
+            var phase = 0; // 0=init, 1=thinking, 2=answer
             await host.ProcessMessageAsync(
                 input,
                 cts.Token,
@@ -279,22 +278,23 @@ async Task RunChatAsync(
                     {
                         if (string.IsNullOrEmpty(td.Delta))
                             return;
-                        if (thinkingActive && !answerStarted)
+                        if (phase == 1)
                         {
                             Console.WriteLine("\n---");
-                            thinkingActive = false;
-                            answerStarted = true;
+                            phase = 2;
                         }
+                        else
+                            phase = 2;
                         Console.Write(td.Delta);
                     }
                     else if (evt is AssistantMessageEvent.ThinkingDelta th)
                     {
-                        if (!thinkingActive && !answerStarted)
+                        if (phase == 0)
                         {
                             Console.WriteLine("\n--- thinking ---");
-                            thinkingActive = true;
+                            phase = 1;
                         }
-                        if (thinkingActive)
+                        if (phase == 1)
                             Console.Write(th.Delta);
                     }
                     else if (evt is AssistantMessageEvent.Error err)
