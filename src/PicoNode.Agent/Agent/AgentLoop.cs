@@ -52,11 +52,10 @@ public sealed class AgentLoop
         {
             iterations++;
 
-            // Call LLM
-            var msgArr = new Message[messages.Count];
-            messages.CopyTo(msgArr);
+            // Filter out messages with empty roles (defense against corrupted sessions)
+            var valid = messages.Where(m => !string.IsNullOrEmpty(m.Role)).ToArray();
 
-            var context = new ChatContext { Messages = msgArr };
+            var context = new ChatContext { Messages = valid };
             var assistantMsg = await CallLLMAsync(model, context, ct, onEvent);
 
             if (assistantMsg == null)
