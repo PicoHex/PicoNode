@@ -280,7 +280,7 @@ async Task RunChatAsync(
                             return;
                         if (phase == 1)
                         {
-                            Console.WriteLine("\n---");
+                            Console.WriteLine("---");
                             phase = 2;
                         }
                         else
@@ -291,7 +291,7 @@ async Task RunChatAsync(
                     {
                         if (phase == 0)
                         {
-                            Console.WriteLine("\n--- thinking ---");
+                            Console.WriteLine("--- thinking ---");
                             phase = 1;
                         }
                         if (phase == 1)
