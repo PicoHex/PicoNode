@@ -67,8 +67,10 @@ public sealed class ConfigLoader
                 var varName = json[start..end];
                 var refText = json[i..end];
 
-                // Lookup via PicoCfg — supports both file values and env var overrides
-                var resolved = root.TryGetValue(varName, out var value) ? value : refText;
+                // Lookup via PicoCfg first, then fall back to direct env var
+                var resolved = root.TryGetValue(varName, out var value)
+                    ? value
+                    : Environment.GetEnvironmentVariable(varName) ?? refText;
                 result.Append(resolved);
                 i = end;
             }
