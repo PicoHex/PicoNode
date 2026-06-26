@@ -94,19 +94,26 @@ public sealed class AnthropicLLmClient : ILLmClient
         // Thinking block
         if (options?.Reasoning is { } level)
         {
-            var budget = level switch
+            var levelMap = options.ThinkingLevelMap;
+            var budget = levelMap is not null
+                ? MapResolver.Resolve(level, levelMap)
+                : level switch
+                {
+                    ThinkingLevel.Minimal => "2000",
+                    ThinkingLevel.Low => "8000",
+                    ThinkingLevel.Medium => "16000",
+                    ThinkingLevel.High => "32000",
+                    ThinkingLevel.XHigh => "64000",
+                    _ => "16000",
+                };
+
+            if (budget is not null)
             {
-                ThinkingLevel.Minimal => 2000,
-                ThinkingLevel.Low => 8000,
-                ThinkingLevel.Medium => 16000,
-                ThinkingLevel.High => 32000,
-                ThinkingLevel.XHigh => 64000,
-                _ => 16000,
-            };
-            sb.Append(',');
-            sb.Append("\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":");
-            sb.Append(budget);
-            sb.Append('}');
+                sb.Append(',');
+                sb.Append("\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":");
+                sb.Append(budget);
+                sb.Append('}');
+            }
         }
 
         sb.Append(',');

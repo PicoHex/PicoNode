@@ -82,6 +82,31 @@ public sealed class OpenAILlmClient : ILLmClient
         sb.Append($"\"max_tokens\":{options?.MaxTokens ?? model.MaxTokens}");
         sb.Append(',');
         sb.Append("\"stream\":true");
+
+        // Reasoning effort (OpenAI thinkin)
+        if (options?.Reasoning is { } level)
+        {
+            var levelMap = options.ThinkingLevelMap;
+            var effort = levelMap is not null
+                ? MapResolver.Resolve(level, levelMap)
+                : level switch
+                {
+                    ThinkingLevel.Minimal => "low",
+                    ThinkingLevel.Low => "low",
+                    ThinkingLevel.Medium => "medium",
+                    ThinkingLevel.High => "high",
+                    ThinkingLevel.XHigh => "high",
+                    _ => "medium",
+                };
+
+            if (effort is not null)
+            {
+                sb.Append(",\"reasoning_effort\":\"");
+                sb.Append(effort);
+                sb.Append('"');
+            }
+        }
+
         sb.Append(',');
         sb.Append("\"messages\":[");
         for (int i = 0; i < context.Messages.Length; i++)
