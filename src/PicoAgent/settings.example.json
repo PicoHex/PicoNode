@@ -39,7 +39,7 @@
         "low": "low",
         "medium": "medium",
         "high": "high",
-        "xhigh": "high"
+        "xhigh": "max"
       }
     },
     "kimi": {
