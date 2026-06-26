@@ -95,4 +95,55 @@ public sealed class MockLLmClient : ILLmClient
 
         await Task.WhenAll(tasks);
     }
+
+    [Test]
+    public async Task Set_and_get_thinking_state_per_session()
+    {
+        var loop = new AgentLoop(
+            new MockLLmClient(),
+            new CapabilityRegistry(),
+            new CapabilityRunner(),
+            new Model { Id = "test", MaxTokens = 4096 }
+        );
+        var host = new AgentHost(loop);
+
+        host.SetThinkingState("s1", enabled: false, ThinkingLevel.High);
+        var state = host.GetThinkingState("s1", defaultEnabled: true, ThinkingLevel.Medium);
+
+        await Assert.That(state.ThinkingEnabled).IsFalse();
+        await Assert.That(state.ThinkingLevel).IsEqualTo(ThinkingLevel.High);
+    }
+
+    [Test]
+    public async Task Restore_session_preserves_thinking_state()
+    {
+        var loop = new AgentLoop(
+            new MockLLmClient(),
+            new CapabilityRegistry(),
+            new CapabilityRunner(),
+            new Model { Id = "test", MaxTokens = 4096 }
+        );
+        var host = new AgentHost(loop);
+
+        var data = new SessionData
+        {
+            Messages =
+            [
+                new Message
+                {
+                    Role = "user",
+                    Content = "Hi",
+                    Timestamp = 1,
+                },
+            ],
+            ThinkingEnabled = false,
+            ThinkingLevel = ThinkingLevel.XHigh,
+        };
+        host.RestoreSession("s1", data);
+
+        var restored = host.GetSessionData("s1");
+        await Assert.That(restored.ThinkingEnabled).IsFalse();
+        await Assert.That(restored.ThinkingLevel).IsEqualTo(ThinkingLevel.XHigh);
+        await Assert.That(restored.Messages.Count).IsEqualTo(1);
+    }
 }
