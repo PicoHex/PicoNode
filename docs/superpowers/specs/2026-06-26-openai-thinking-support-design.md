@@ -112,7 +112,8 @@ public sealed class ModelThinkingOverride                                 // 新
 `ModelThinkingOverride.ThinkingLevel` 是字符串，需在启动时解析为 `ThinkingLevel` 枚举：
 
 ```csharp
-static ThinkingLevel? ParseThinkingLevel(string? s) => s?.ToLower() switch
+// AgentConfig.cs 内的静态方法
+public static ThinkingLevel? ParseLevel(string? s) => s?.ToLower() switch
 {
     "minimal" => ThinkingLevel.Minimal,
     "low"     => ThinkingLevel.Low,
@@ -171,11 +172,14 @@ public sealed class SessionData
 ```
 settings.json
   → AgentConfig.ThinkingEnabled → Model.ThinkingEnabled
-  → AgentConfig.ThinkingLevel → ParseThinkingLevel → Model.ThinkingLevel（null → Medium）
+  → AgentConfig.ThinkingLevel → AgentConfig.ParseLevel → Model.ThinkingLevel（null → Medium）
   → 当前 provider.Thinking → Model.ThinkingLevelMap
+     （空 dict {} 和 null 等效：都视为不支持 thinking，ThinkLevelMap = null）
   → 当前 model 设了 models.{id}:
-       models.{id}.ThinkingEnabled 覆写 Model.ThinkingEnabled
-       models.{id}.ThinkingLevel → ParseThinkingLevel → 覆写 Model.ThinkingLevel
+       models.{id}.ThinkingEnabled → 覆写 Model.ThinkingEnabled
+       models.{id}.ThinkingLevel → AgentConfig.ParseLevel
+         → 非 null → 覆写 Model.ThinkingLevel
+         → null → 保持 Model.ThinkingLevel 不变（不覆写）
   → resume session → SessionData 覆写 Model.ThinkingEnabled / ThinkingLevel
 ```
 
@@ -201,7 +205,7 @@ settings.json
 
 ```
 AgentLoop.CallLLMAsync:
-  if !model.ThinkingEnabled || model.ThinkingLevelMap == null:
+  if !model.ThinkingEnabled || model.ThinkingLevelMap is null or { Count: 0 }:
     StreamOptions = null  （不传 thinking）
   else:
     StreamOptions {
