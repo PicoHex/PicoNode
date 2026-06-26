@@ -295,7 +295,7 @@ async Task RunChatAsync(
                             thinkingActive = true;
                         }
                         if (thinkingActive)
-                            Console.Error.Write(th.Delta);
+                            Console.Write(th.Delta);
                     }
                     else if (evt is AssistantMessageEvent.Error err)
                         Console.Write($"\n[Error: {err.Message.ErrorMessage}]");
