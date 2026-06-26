@@ -1,22 +1,5 @@
 namespace PicoNode.Agent;
 
-[PicoJsonSerializable]
-public sealed class AgentConfig
-{
-    public Dictionary<string, ProviderEntry> Providers { get; set; } = [];
-    public string? Model { get; set; }
-    public string? ThinkingLevel { get; set; }
-    public int? MaxTokens { get; set; }
-}
-
-[PicoJsonSerializable]
-public sealed class ProviderEntry
-{
-    public string ApiKey { get; set; } = "";
-    public string? ApiFormat { get; set; }
-    public string? BaseUrl { get; set; }
-}
-
 public sealed class ConfigLoader
 {
     public static AgentConfig? Load(string path)
