@@ -83,7 +83,7 @@ public sealed class OpenAILlmClient : ILLmClient
         sb.Append(',');
         sb.Append("\"stream\":true");
 
-        // Reasoning effort (OpenAI thinkin)
+        // Reasoning effort (OpenAI thinking)
         if (options?.Reasoning is { } level)
         {
             var levelMap = options.ThinkingLevelMap;
