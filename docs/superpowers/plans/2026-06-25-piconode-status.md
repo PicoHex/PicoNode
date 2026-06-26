@@ -1,6 +1,6 @@
 # PicoNode Project Status
 
-> 2026-06-25
+> 2026-06-26 (updated)
 
 ---
 
@@ -35,7 +35,7 @@ PicoAgent               PicoNode.Agent          PicoNode
 |------|:--:|------|
 | HTTP 请求解析 | ✅ | Span-based 零拷贝 |
 | HTTP 响应序列化 | ✅ | 含 chunked transfer |
-| SSE 流式响应 | ⚠️ | `SendStreamingResponseAsync` 存在，但 Pipe → BodyStream 未完全验证 |
+| SSE 流式响应 | ✅ | `SendStreamingResponseAsync` + Pipe + BodyStream 全链路已验证 |
 | `BufferStreamResponseAsync` | ⚠️ | HTTP/1.0 回退路径，缓冲整个 BodyStream 再返回 |
 
 ### PicoNode.Web (应用层 — Web)
@@ -75,7 +75,7 @@ PicoAgent               PicoNode.Agent          PicoNode
 | CapabilityRunner | ✅ | 子进程 stdin/stdout JSONL |
 | KnowledgeScanner | ✅ | SKILL.md 解析 + system prompt |
 | SessionStore | ✅ | JSONL 持久化 |
-| `onEvent` 回调 | ✅ | `Func<..., ValueTask>` 异步支持 |
+| `onEvent` 回调 | ✅ | `Func<..., CancellationToken, ValueTask>` 异步支持，已修复 ValueTask 未 await bug |
 
 ### PicoAgent (宿主 — CLI)
 
@@ -84,7 +84,7 @@ PicoAgent               PicoNode.Agent          PicoNode
 | CLI chat | ✅ | stdin/stdout 流式 text_delta |
 | `/model` | ✅ | 切换模型 |
 | `/list-models` | ✅ | 从 API 发现模型 |
-| `/thinking` | ⚠️ | 接受命令但不生效 |
+| `/thinking` | ✅ | 开启/关闭 Anthropic Extended Thinking，`ThinkingCommand.Apply` 可测试 |
 | `/provider` | ✅ | 切换 Provider |
 | `/help` | ✅ | 命令列表 |
 | `/save`, `/exit` | ✅ | 会话持久化 |
@@ -93,47 +93,54 @@ PicoAgent               PicoNode.Agent          PicoNode
 
 | 端点 | 状态 | 说明 |
 |------|:--:|------|
-| `POST /session/{id}/message` | ⚠️ | 完整 SSE 事件但不流式（MemoryStream 收集后一次性返回） |
+| `POST /session/{id}/message` | ✅ | Pipe + BodyStream 真流式 SSE，逐 token 推送 |
 | `GET /session/{id}/events` | ⏭ | 桩 |
 | `POST /reload` | ✅ | 重扫 capabilities |
 
 ---
 
-## 已知问题
+## 已修复问题
 
 ### P0
 
-| 问题 | 模块 | 说明 |
-|------|------|------|
-| SSE 流式不工作 | PicoAgent.Http + PicoAgent | `Pipe` + `BodyStream` 写后数据不送达。HTTP/1.1 用 `SendStreamingResponseAsync`，但 Pipe writer 数据未被 reader 消费。需排查 CT 取消时机或 Pipe flush 行为 |
+| 问题 | 提交 | 说明 |
+|------|:----:|------|
+| SSE 流式不工作 | `8cef7ea` | Pipe 读取用 CancellationToken.None（CT 触发时仍返回缓冲数据），RunSseWriterAsync 所有退出路径 complete pipe |
 
 ### P1
 
-| 问题 | 说明 |
-|------|------|
-| `/thinking` 不生效 | chat 模式接受命令但未传给 StreamOptions |
-| ConfigLoader 重复 | `PicoAgent/ConfigLoader.cs`（namespace PicoNode.Agent）与 `PicoNode.Agent/Config/ConfigLoader.cs` 冲突——已删除但 git 残留 |
-| System.Text.Json 在 AOT 下 | ConfigLoader 用 STJ 解析配置——不是性能路径，可接受 |
+| 问题 | 提交 | 说明 |
+|------|:----:|------|
+| `/thinking` 不生效 | `026ea0d` | AgentLoop 传 StreamOptions，AnthropicLLmClient 序列化 thinking block，三层链路打通 |
+| `/thinking on` 切换而非设置 | `dadc6a1` | 提取 `ThinkingCommand.Apply`，裸命令切换，`/thinking on|true` 强制设 true |
+| `onEvent` ValueTask 未 await | `d896a47` | `onEvent?.Invoke` 改为 `await handler(evt, ct)`，修复 serve 模式 SSE 事件丢失 |
+| 500 error 污染 chunked 响应 | `6d22fc0` | 流式开始后 pipe 异常吞掉，不发 HTTP 错误 |
+| ConfigLoader STJ → PicoJetson | `fc0a566` | 消除 IL2026/IL3050 AOT 告警 |
+| AOT publishing | `fc0a566` | PicoAgent.csproj 添加 PublishAot=true，验证通过（6.5MB 单文件） |
 
-### P2
+## 剩余问题（P2）
 
 | 问题 | 说明 |
 |------|------|
 | 无内置工具 | 没有 bash/read/write 作为默认 Capability |
 | 无包管理 CLI | install/remove/list/update 未实现 |
 | 无 TUI | 只有终端 cli |
-| serve mode GET /events | 返回桩，不推实时事件 |
-
----
+| serve mode GET /events | 返回桩 `{"type":"ready"}`，不推实时事件 |
+| OpenAILlmClient 不支持 thinking | `StreamOptions.Reasoning` 已传入但 `BuildRequestJson` 没序列化 `reasoning_effort` |
 
 ## 测试
 
 | 项目 | 测试数 | 状态 |
 |------|:-----:|:--:|
 | PicoNode.AI | 42 | ✅ |
-| PicoNode.Agent | 28 | ✅ |
-| 其他 | 838 | ✅ |
-| **总计** | **908** | ✅ |
+| PicoNode.Agent | 37 | ✅ |
+| PicoNode.Http | 295 | ✅ |
+| PicoNode.Web | 254 | ✅ |
+| PicoWeb | 150 | ✅ |
+| PicoWeb.DI | 9 | ✅ |
+| PicoWeb.Integration | 56 | ✅ |
+| PicoNode | 82 | ✅ |
+| **总计** | **925** | ✅ |
 
 ---
 
