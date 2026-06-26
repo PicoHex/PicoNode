@@ -243,6 +243,13 @@ async Task RunChatAsync(
                             $"[Thinking: {(m.ThinkingEnabled ? m.ThinkingLevel.ToString().ToLower() : "off")}]"
                         );
                         continue;
+                    default:
+                        if (c2.StartsWith('/'))
+                        {
+                            Console.WriteLine($"Unknown command: {c2}. Type /help for available commands.");
+                            continue;
+                        }
+                        break;
                 }
             }
             if (string.IsNullOrWhiteSpace(input))
