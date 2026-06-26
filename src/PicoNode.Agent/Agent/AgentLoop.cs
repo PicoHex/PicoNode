@@ -178,8 +178,6 @@ public sealed class AgentLoop
     {
         Message? finalMessage = null;
 
-        if (onEvent is not null) { }
-
         var streamOptions =
             _model.ThinkingEnabled && _model.ThinkingLevelMap is { Count: > 0 }
                 ? new StreamOptions

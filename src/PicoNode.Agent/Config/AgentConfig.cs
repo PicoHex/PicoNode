@@ -19,6 +19,15 @@ public sealed class AgentConfig
             "xhigh" => PicoNode.AI.ThinkingLevel.XHigh,
             _ => null,
         };
+
+    public static void ApplyModelOverride(Model model, ModelThinkingOverride? modelOverride)
+    {
+        if (modelOverride is null)
+            return;
+        model.ThinkingEnabled = modelOverride.ThinkingEnabled;
+        if (modelOverride.ThinkingLevel is { Length: > 0 } tl)
+            model.ThinkingLevel = ParseLevel(tl) ?? model.ThinkingLevel;
+    }
 }
 
 [PicoJsonSerializable]

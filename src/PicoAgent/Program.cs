@@ -112,11 +112,7 @@ if (defaultPreset?.Thinking is { Count: > 0 } map)
 
 // Apply model-level override if present
 if (defaultPreset?.Models is { } models && models.TryGetValue(modelId, out var modelOverride))
-{
-    model.ThinkingEnabled = modelOverride.ThinkingEnabled;
-    if (modelOverride.ThinkingLevel is { Length: > 0 } tl)
-        model.ThinkingLevel = AgentConfig.ParseLevel(tl) ?? model.ThinkingLevel;
-}
+    AgentConfig.ApplyModelOverride(model, modelOverride);
 
 var loop = new AgentLoop(resilientClient, registry, runner, model);
 var host = new AgentHost(loop);
@@ -203,9 +199,7 @@ async Task RunChatAsync(
                                 && models.TryGetValue(arg, out var modelOverride)
                             )
                             {
-                                m.ThinkingEnabled = modelOverride.ThinkingEnabled;
-                                if (modelOverride.ThinkingLevel is { Length: > 0 } tl)
-                                    m.ThinkingLevel = AgentConfig.ParseLevel(tl) ?? m.ThinkingLevel;
+                                AgentConfig.ApplyModelOverride(m, modelOverride);
                             }
                         }
                         continue;
