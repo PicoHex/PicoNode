@@ -432,18 +432,9 @@ public static async Task<SessionData> LoadAsync(string path)
 
 public static async Task SaveAsync(string path, SessionData data)
 {
-    var sb = new StringBuilder();
-    sb.Append("{\"$meta\":{");
-    sb.Append($"\"thinkingEnabled\":{data.ThinkingEnabled.ToString().ToLower()},");
-    sb.Append($"\"thinkingLevel\":\"{data.ThinkingLevel.ToString().ToLower()}\"");
-    sb.AppendLine("}}");
-
-    foreach (var msg in data.Messages)
-    {
-        sb.AppendLine(PicoJetson.JsonSerializer.Serialize(msg));
-    }
-
-    await File.WriteAllTextAsync(path, sb.ToString());
+    var meta = $"{{\"$meta\":{{\"thinkingEnabled\":{data.ThinkingEnabled.ToString().ToLower()},\"thinkingLevel\":\"{data.ThinkingLevel.ToString().ToLower()}\"}}}}";
+    var messages = PicoJetson.JsonSerializer.SerializeLines(data.Messages);
+    await File.WriteAllTextAsync(path, meta + Environment.NewLine + messages);
 }
 ```
 
@@ -960,6 +951,11 @@ Run: `dotnet test --solution PicoNode.slnx`
 Expected: PASS
 
 - [ ] **Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "feat: AgentHost per-session thinking state with RestoreSession"
+```
 
 ---
 
