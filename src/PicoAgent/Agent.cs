@@ -321,7 +321,8 @@ public sealed partial class Agent : IAsyncDisposable
             async (ctx, ct) =>
             {
                 var json = await ReadJsonBodyAsync(ctx, ct);
-                var modelId = json?.GetProperty("modelId").GetString();
+                var modelId =
+                    json?.TryGetProperty("modelId", out var mid) == true ? mid.GetString() : null;
                 if (string.IsNullOrWhiteSpace(modelId))
                     return JsonError(400, "INVALID_ARGUMENT", "modelId is required");
                 SwitchModel(modelId);
@@ -335,7 +336,8 @@ public sealed partial class Agent : IAsyncDisposable
             async (ctx, ct) =>
             {
                 var json = await ReadJsonBodyAsync(ctx, ct);
-                var provider = json?.GetProperty("provider").GetString();
+                var provider =
+                    json?.TryGetProperty("provider", out var pv) == true ? pv.GetString() : null;
                 if (string.IsNullOrWhiteSpace(provider))
                     return JsonError(400, "INVALID_ARGUMENT", "provider is required");
                 return SwitchProvider(provider)
@@ -350,8 +352,10 @@ public sealed partial class Agent : IAsyncDisposable
             async (ctx, ct) =>
             {
                 var json = await ReadJsonBodyAsync(ctx, ct);
-                var enabled = json?.GetProperty("enabled").GetBoolean() ?? true;
-                var levelStr = json?.GetProperty("level").GetString() ?? "medium";
+                var enabled =
+                    json?.TryGetProperty("enabled", out var en) == true ? en.GetBoolean() : true;
+                var levelStr =
+                    json?.TryGetProperty("level", out var lv) == true ? lv.GetString() : "medium";
                 var level = AgentConfig.ParseLevel(levelStr);
                 if (level is null)
                     return JsonError(400, "INVALID_ARGUMENT", $"Invalid level: {levelStr}");
@@ -367,11 +371,20 @@ public sealed partial class Agent : IAsyncDisposable
             {
                 var provider = ctx.Query.GetValueOrDefault("provider");
                 var models = await ListModelsAsync(provider, ct);
-                return JsonResponse(200, PicoJetson.JsonSerializer.SerializeToUtf8Bytes(models));
+                var json =
+                    "["
+                    + string.Join(
+                        ",",
+                        models.Select(m =>
+                            $"{{\"id\":\"{EscapeJsonString(m.Id)}\",\"ownedBy\":\"{EscapeJsonString(m.OwnedBy)}\"}}"
+                        )
+                    )
+                    + "]";
+                return JsonResponse(200, json);
             }
         );
 
-        // GET /health (sync) — uses PicoJetson to avoid JSON injection
+        // GET /health (sync) — manual JSON to avoid PicoJetson cross-assembly source-gen limitation
         app.MapGet(
             "/health",
             (_, _) =>
@@ -381,14 +394,7 @@ public sealed partial class Agent : IAsyncDisposable
                         var model = SnapshotModel();
                         return JsonResponse(
                             200,
-                            PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
-                                new
-                                {
-                                    status = "ok",
-                                    model = model.Id,
-                                    provider = model.Provider,
-                                }
-                            )
+                            $"{{\"status\":\"ok\",\"model\":\"{EscapeJsonString(model.Id)}\",\"provider\":\"{EscapeJsonString(model.Provider)}\"}}"
                         );
                     })()
                 )
@@ -400,7 +406,11 @@ public sealed partial class Agent : IAsyncDisposable
             async (_, ct) =>
             {
                 var sessions = await ListSessionsAsync(ct);
-                return JsonResponse(200, PicoJetson.JsonSerializer.SerializeToUtf8Bytes(sessions));
+                var json =
+                    "["
+                    + string.Join(",", sessions.Select(s => $"\"{EscapeJsonString(s)}\""))
+                    + "]";
+                return JsonResponse(200, json);
             }
         );
 
@@ -450,10 +460,14 @@ public sealed partial class Agent : IAsyncDisposable
                         var msgs = _host.GetSessionMessages(id);
                         if (msgs.Count == 0 && id != "default")
                             return JsonError(404, "NOT_FOUND", $"Session not found: {id}");
-                        return JsonResponse(
-                            200,
-                            PicoJetson.JsonSerializer.SerializeToUtf8Bytes(msgs)
-                        );
+                        var json =
+                            "["
+                            + string.Join(
+                                ",",
+                                msgs.Select(m => PicoJetson.JsonSerializer.Serialize(m))
+                            )
+                            + "]";
+                        return JsonResponse(200, json);
                     })()
                 )
         );
@@ -506,6 +520,38 @@ public sealed partial class Agent : IAsyncDisposable
         return doc.RootElement.Clone();
     }
 
+    private static string EscapeJsonString(string s)
+    {
+        if (string.IsNullOrEmpty(s))
+            return s;
+        var sb = new StringBuilder(s.Length + 2);
+        foreach (var c in s)
+        {
+            switch (c)
+            {
+                case '\\':
+                    sb.Append("\\\\");
+                    break;
+                case '\"':
+                    sb.Append("\\\"");
+                    break;
+                case '\n':
+                    sb.Append("\\n");
+                    break;
+                case '\r':
+                    sb.Append("\\r");
+                    break;
+                case '\t':
+                    sb.Append("\\t");
+                    break;
+                default:
+                    sb.Append(c);
+                    break;
+            }
+        }
+        return sb.ToString();
+    }
+
     private static HttpResponse JsonOk() =>
         new()
         {
@@ -518,16 +564,14 @@ public sealed partial class Agent : IAsyncDisposable
         new()
         {
             StatusCode = code,
-            Body = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
-                new
-                {
-                    type = "error",
-                    code = errorCode,
-                    message,
-                }
+            Body = Encoding.UTF8.GetBytes(
+                $"{{\"type\":\"error\",\"code\":\"{EscapeJsonString(errorCode)}\",\"message\":\"{EscapeJsonString(message)}\"}}"
             ),
             Headers = [new("Content-Type", "application/json; charset=utf-8")],
         };
+
+    private static HttpResponse JsonResponse(int code, string json) =>
+        JsonResponse(code, Encoding.UTF8.GetBytes(json));
 
     private static HttpResponse JsonResponse(int code, byte[] body) =>
         new()
@@ -559,38 +603,25 @@ public sealed partial class Agent : IAsyncDisposable
                     {
                         case AssistantMessageEvent.TextDelta td:
                             await sse.WriteJsonAsync(
-                                PicoJetson.JsonSerializer.Serialize(
-                                    new { type = "delta", content = td.Delta }
-                                ),
+                                $"{{\"type\":\"delta\",\"content\":\"{EscapeJsonString(td.Delta)}\"}}",
                                 ct2
                             );
                             break;
                         case AssistantMessageEvent.ThinkingDelta th:
                             await sse.WriteJsonAsync(
-                                PicoJetson.JsonSerializer.Serialize(
-                                    new { type = "thinking", content = th.Delta }
-                                ),
+                                $"{{\"type\":\"thinking\",\"content\":\"{EscapeJsonString(th.Delta)}\"}}",
                                 ct2
                             );
                             break;
                         case AssistantMessageEvent.Done d:
                             await sse.WriteJsonAsync(
-                                PicoJetson.JsonSerializer.Serialize(
-                                    new { type = "done", stopReason = d.Message.StopReason }
-                                ),
+                                $"{{\"type\":\"done\",\"stopReason\":\"{EscapeJsonString(d.Message.StopReason ?? "")}\"}}",
                                 ct2
                             );
                             break;
                         case AssistantMessageEvent.Error e:
                             await sse.WriteJsonAsync(
-                                PicoJetson.JsonSerializer.Serialize(
-                                    new
-                                    {
-                                        type = "error",
-                                        code = "PROVIDER_UNAVAILABLE",
-                                        message = e.Message.ErrorMessage,
-                                    }
-                                ),
+                                $"{{\"type\":\"error\",\"message\":\"{EscapeJsonString(e.Message.ErrorMessage ?? "")}\"}}",
                                 ct2
                             );
                             break;
