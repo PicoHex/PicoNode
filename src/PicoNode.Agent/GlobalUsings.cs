@@ -10,6 +10,7 @@ global using PicoCfg.Abs;
 global using PicoCfg.Extensions;
 global using PicoCfg.Json;
 global using PicoJetson;
+global using PicoSerDe.Core;
 global using PicoLog;
 global using static PicoNode.Agent.FileSystemConstants;
 global using static PicoNode.Agent.ProtocolConstants;
