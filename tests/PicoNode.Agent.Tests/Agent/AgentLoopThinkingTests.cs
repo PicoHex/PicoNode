@@ -1,14 +1,14 @@
 namespace PicoNode.Agent.Tests.Agent;
 
 /// <summary>
-/// Tests for Model.Reasoning → StreamOptions.Reasoning propagation
+/// Tests for Model.ThinkingEnabled → StreamOptions.Reasoning propagation
 /// through AgentLoop, and for ThinkingCommand.Apply parsing.
 /// Also tests that onEvent callback ValueTask is properly awaited.
 /// </summary>
 public sealed class AgentLoopThinkingTests
 {
     /// <summary>
-    /// When Model.Reasoning is true, AgentLoop should pass StreamOptions
+    /// When Model.ThinkingEnabled is true, AgentLoop should pass StreamOptions
     /// with Reasoning set, not null.
     /// </summary>
     [Test]
@@ -33,7 +33,8 @@ public sealed class AgentLoopThinkingTests
             Api = AiApiFormat.AnthropicMessages,
             Provider = "anthropic",
             MaxTokens = 4096,
-            Reasoning = true,
+            ThinkingEnabled = true,
+            ThinkingLevelMap = new Dictionary<string, string> { ["medium"] = "16000" },
         };
 
         var loop = new AgentLoop(mockLlm, registry, runner, model);
@@ -52,16 +53,18 @@ public sealed class AgentLoopThinkingTests
         await Assert
             .That(capturedOptions)
             .IsNotNull()
-            .Because("AgentLoop should pass StreamOptions (not null) when Model.Reasoning is true");
+            .Because(
+                "AgentLoop should pass StreamOptions (not null) when Model.ThinkingEnabled is true"
+            );
 
         await Assert
             .That(capturedOptions!.Reasoning)
             .IsNotNull()
-            .Because("StreamOptions.Reasoning should be set when Model.Reasoning is true");
+            .Because("StreamOptions.Reasoning should be set when Model.ThinkingEnabled is true");
     }
 
     /// <summary>
-    /// When Model.Reasoning is false, AgentLoop should pass null options.
+    /// When Model.ThinkingEnabled is false, AgentLoop should pass null options.
     /// </summary>
     [Test]
     public async Task RunTurnAsync_WithoutReasoning_PassesNullOptions()
@@ -85,7 +88,7 @@ public sealed class AgentLoopThinkingTests
             Api = AiApiFormat.AnthropicMessages,
             Provider = "anthropic",
             MaxTokens = 4096,
-            Reasoning = false,
+            ThinkingEnabled = false,
         };
 
         var loop = new AgentLoop(mockLlm, registry, runner, model);
@@ -104,7 +107,9 @@ public sealed class AgentLoopThinkingTests
         await Assert
             .That(capturedOptions)
             .IsNull()
-            .Because("AgentLoop should pass null StreamOptions when Model.Reasoning is false");
+            .Because(
+                "AgentLoop should pass null StreamOptions when Model.ThinkingEnabled is false"
+            );
     }
 
     // ── ThinkingCommand.Apply tests ──────────────────────────────────
@@ -112,10 +117,10 @@ public sealed class AgentLoopThinkingTests
     [Test]
     public async Task Command_thinking_on_sets_true_when_already_true()
     {
-        var model = new Model { Reasoning = true };
+        var model = new Model { ThinkingEnabled = true };
         ThinkingCommand.Apply(model, "on");
         await Assert
-            .That(model.Reasoning)
+            .That(model.ThinkingEnabled)
             .IsTrue()
             .Because("/thinking on when already true should stay true");
     }
@@ -123,15 +128,15 @@ public sealed class AgentLoopThinkingTests
     [Test]
     public async Task Command_thinking_bare_toggles()
     {
-        var model = new Model { Reasoning = false };
+        var model = new Model { ThinkingEnabled = false };
         ThinkingCommand.Apply(model, "");
         await Assert
-            .That(model.Reasoning)
+            .That(model.ThinkingEnabled)
             .IsTrue()
             .Because("bare /thinking should toggle from false to true");
         ThinkingCommand.Apply(model, "");
         await Assert
-            .That(model.Reasoning)
+            .That(model.ThinkingEnabled)
             .IsFalse()
             .Because("bare /thinking should toggle from true to false");
     }
@@ -139,10 +144,10 @@ public sealed class AgentLoopThinkingTests
     [Test]
     public async Task Command_thinking_off_sets_false()
     {
-        var model = new Model { Reasoning = true };
+        var model = new Model { ThinkingEnabled = true };
         ThinkingCommand.Apply(model, "off");
         await Assert
-            .That(model.Reasoning)
+            .That(model.ThinkingEnabled)
             .IsFalse()
             .Because("/thinking off should set reasoning to false");
     }
@@ -150,15 +155,15 @@ public sealed class AgentLoopThinkingTests
     [Test]
     public async Task Command_thinking_true_sets_true()
     {
-        var model = new Model { Reasoning = false };
+        var model = new Model { ThinkingEnabled = false };
         ThinkingCommand.Apply(model, "true");
         await Assert
-            .That(model.Reasoning)
+            .That(model.ThinkingEnabled)
             .IsTrue()
             .Because("/thinking true should set reasoning to true");
         ThinkingCommand.Apply(model, "true");
         await Assert
-            .That(model.Reasoning)
+            .That(model.ThinkingEnabled)
             .IsTrue()
             .Because("/thinking true twice should stay true");
     }
@@ -166,15 +171,15 @@ public sealed class AgentLoopThinkingTests
     [Test]
     public async Task Command_thinking_false_sets_false()
     {
-        var model = new Model { Reasoning = true };
+        var model = new Model { ThinkingEnabled = true };
         ThinkingCommand.Apply(model, "false");
         await Assert
-            .That(model.Reasoning)
+            .That(model.ThinkingEnabled)
             .IsFalse()
             .Because("/thinking false should set reasoning to false");
         ThinkingCommand.Apply(model, "false");
         await Assert
-            .That(model.Reasoning)
+            .That(model.ThinkingEnabled)
             .IsFalse()
             .Because("/thinking false twice should stay false");
     }
@@ -182,14 +187,14 @@ public sealed class AgentLoopThinkingTests
     [Test]
     public async Task Command_thinking_unknown_arg_returns_error()
     {
-        var model = new Model { Reasoning = false };
+        var model = new Model { ThinkingEnabled = false };
         var result = ThinkingCommand.Apply(model, "unknown");
         await Assert
             .That(result)
             .IsNotNull()
             .Because("unknown argument should return an error message");
         await Assert
-            .That(model.Reasoning)
+            .That(model.ThinkingEnabled)
             .IsFalse()
             .Because("unknown argument should not change reasoning state");
     }
@@ -197,16 +202,129 @@ public sealed class AgentLoopThinkingTests
     [Test]
     public async Task Command_thinking_null_returns_error()
     {
-        var model = new Model { Reasoning = false };
+        var model = new Model { ThinkingEnabled = false };
         var result = ThinkingCommand.Apply(model, null!);
         await Assert
             .That(result)
             .IsNotNull()
             .Because("null argument should return an error message");
         await Assert
-            .That(model.Reasoning)
+            .That(model.ThinkingEnabled)
             .IsFalse()
             .Because("null argument should not change reasoning state");
+    }
+
+    /// <summary>
+    /// /thinking high sets Enabled=true and Level=High.
+    /// </summary>
+    [Test]
+    public async Task Command_thinking_high_sets_enabled_and_level()
+    {
+        var model = new Model { ThinkingEnabled = false, ThinkingLevel = ThinkingLevel.Medium };
+        ThinkingCommand.Apply(model, "high");
+        await Assert.That(model.ThinkingEnabled).IsTrue();
+        await Assert.That(model.ThinkingLevel).IsEqualTo(ThinkingLevel.High);
+    }
+
+    /// <summary>
+    /// /thinking on preserves current level (doesn't reset).
+    /// </summary>
+    [Test]
+    public async Task Command_thinking_on_preserves_existing_level()
+    {
+        var model = new Model { ThinkingEnabled = false, ThinkingLevel = ThinkingLevel.Low };
+        ThinkingCommand.Apply(model, "on");
+        await Assert.That(model.ThinkingEnabled).IsTrue();
+        await Assert.That(model.ThinkingLevel).IsEqualTo(ThinkingLevel.Low);
+    }
+
+    /// <summary>
+    /// /thinking off preserves current level (just disables).
+    /// </summary>
+    [Test]
+    public async Task Command_thinking_off_preserves_existing_level()
+    {
+        var model = new Model { ThinkingEnabled = true, ThinkingLevel = ThinkingLevel.High };
+        ThinkingCommand.Apply(model, "off");
+        await Assert.That(model.ThinkingEnabled).IsFalse();
+        await Assert.That(model.ThinkingLevel).IsEqualTo(ThinkingLevel.High);
+    }
+
+    // ── ThinkingLevelMap propagation tests ──────────────────────────
+
+    [Test]
+    public async Task WithThinkingMap_passes_map_to_stream_options()
+    {
+        Dictionary<string, string>? capturedMap = null;
+
+        var mockLlm = new CapturingOptionsLLmClient
+        {
+            OnStreamAsync = (_, _, options, _) => capturedMap = options?.ThinkingLevelMap,
+        };
+
+        var model = new Model
+        {
+            Id = "test",
+            BaseUrl = "",
+            Api = AiApiFormat.AnthropicMessages,
+            Provider = "anthropic",
+            MaxTokens = 4096,
+            ThinkingEnabled = true,
+            ThinkingLevel = ThinkingLevel.High,
+            ThinkingLevelMap = new Dictionary<string, string> { ["high"] = "32000" },
+        };
+
+        var loop = new AgentLoop(mockLlm, new CapabilityRegistry(), new CapabilityRunner(), model);
+        await loop.RunTurnAsync(
+            [
+                new Message
+                {
+                    Role = "user",
+                    Content = "Hi",
+                    Timestamp = 1,
+                },
+            ],
+            CancellationToken.None
+        );
+
+        await Assert.That(capturedMap).IsNotNull();
+        await Assert.That(capturedMap!["high"]).IsEqualTo("32000");
+    }
+
+    [Test]
+    public async Task ThinkingEnabled_false_passes_null_options()
+    {
+        StreamOptions? capturedOptions = new();
+        var mockLlm = new CapturingOptionsLLmClient
+        {
+            OnStreamAsync = (_, _, options, _) => capturedOptions = options,
+        };
+
+        var model = new Model
+        {
+            Id = "test",
+            BaseUrl = "",
+            Api = AiApiFormat.AnthropicMessages,
+            Provider = "anthropic",
+            MaxTokens = 4096,
+            ThinkingEnabled = false,
+            ThinkingLevelMap = new Dictionary<string, string> { ["high"] = "32000" },
+        };
+
+        var loop = new AgentLoop(mockLlm, new CapabilityRegistry(), new CapabilityRunner(), model);
+        await loop.RunTurnAsync(
+            [
+                new Message
+                {
+                    Role = "user",
+                    Content = "Hi",
+                    Timestamp = 1,
+                },
+            ],
+            CancellationToken.None
+        );
+
+        await Assert.That(capturedOptions).IsNull();
     }
 
     // ── onEvent await bug test ───────────────────────────────────
@@ -319,6 +437,38 @@ file sealed class SequentialMockLLmClient : ILLmClient
         {
             yield return evt;
         }
+    }
+}
+
+/// <summary>
+/// Mock LLM client that captures StreamOptions (including ThinkingLevelMap).
+/// </summary>
+file sealed class CapturingOptionsLLmClient : ILLmClient
+{
+    public Action<
+        Model,
+        ChatContext,
+        StreamOptions?,
+        CancellationToken
+    >? OnStreamAsync { get; set; }
+
+    public async IAsyncEnumerable<AssistantMessageEvent> StreamAsync(
+        Model model,
+        ChatContext context,
+        StreamOptions? options,
+        [EnumeratorCancellation] CancellationToken ct
+    )
+    {
+        OnStreamAsync?.Invoke(model, context, options, ct);
+        yield return new AssistantMessageEvent.Done
+        {
+            Message = new Message
+            {
+                Role = "assistant",
+                ContentBlocks = [new ContentBlock { Type = "text", Text = "ok" }],
+                StopReason = "end_turn",
+            },
+        };
     }
 }
 

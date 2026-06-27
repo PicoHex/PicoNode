@@ -6,6 +6,7 @@
     <Project Path="samples/PicoWeb.Samples/PicoWeb.Samples.csproj" />
     <Project Path="samples/PicoWeb.Samples.Abs/PicoWeb.Samples.Abs.csproj" />
     <Project Path="samples/PicoNode.Samples.Https/PicoNode.Samples.Https.csproj" />
+    <Project Path="samples/PicoAgent.Cli/PicoAgent.Cli.csproj" />
   </Folder>
   <Folder Name="/src/">
     <File Path="src\README.md" />

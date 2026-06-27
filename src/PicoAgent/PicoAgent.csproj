@@ -4,15 +4,12 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <OutputType>Exe</OutputType>
-    <PublishAot>true</PublishAot>
-    <StripSymbols>true</StripSymbols>
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
     <IsPackable>true</IsPackable>
     <PackageId>PicoAgent</PackageId>
-    <Description>PicoAgent Host — HTTP/SSE server for the PicoAgent framework</Description>
-    <PackageTags>PicoHex;PicoAgent;AI;Agent;AOT;Host</PackageTags>
+    <Description>PicoAgent Hosting — Agent server with built-in SSE endpoints for the PicoAgent framework</Description>
+    <PackageTags>PicoHex;PicoAgent;AI;Agent;AOT;Hosting</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
@@ -22,7 +19,6 @@
     <ProjectReference Include="..\PicoWeb\PicoWeb.csproj" />
     <PackageReference Include="PicoJetson" />
     <PackageReference Include="PicoDI" />
-    <PackageReference Include="PicoLog" />
   </ItemGroup>
 
   <ItemGroup>

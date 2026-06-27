@@ -412,5 +412,5 @@ FodyWeavers.xsd
 *.log
 
 .sisyphus/
-superpowers/
+**/superpowers/
 .omo/

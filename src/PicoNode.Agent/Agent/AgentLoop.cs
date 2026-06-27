@@ -21,6 +21,12 @@ public sealed class AgentLoop
         _model = model;
     }
 
+    public void UpdateThinking(bool enabled, ThinkingLevel level)
+    {
+        _model.ThinkingEnabled = enabled;
+        _model.ThinkingLevel = level;
+    }
+
     /// v1: truncate to last N messages. v2: LLM-based summary.
     public static List<Message> Compact(List<Message> messages, int keepLast = 20)
     {
@@ -46,11 +52,10 @@ public sealed class AgentLoop
         {
             iterations++;
 
-            // Call LLM
-            var msgArr = new Message[messages.Count];
-            messages.CopyTo(msgArr);
+            // Filter out messages with empty roles (defense against corrupted sessions)
+            var valid = messages.Where(m => !string.IsNullOrEmpty(m.Role)).ToArray();
 
-            var context = new ChatContext { Messages = msgArr };
+            var context = new ChatContext { Messages = valid };
             var assistantMsg = await CallLLMAsync(model, context, ct, onEvent);
 
             if (assistantMsg == null)
@@ -172,11 +177,14 @@ public sealed class AgentLoop
     {
         Message? finalMessage = null;
 
-        if (onEvent is not null) { }
-
-        var streamOptions = model.Reasoning
-            ? new StreamOptions { Reasoning = ThinkingLevel.Medium }
-            : null;
+        var streamOptions =
+            _model.ThinkingEnabled && _model.ThinkingLevelMap is { Count: > 0 }
+                ? new StreamOptions
+                {
+                    Reasoning = _model.ThinkingLevel,
+                    ThinkingLevelMap = _model.ThinkingLevelMap,
+                }
+                : null;
 
         await foreach (var evt in _llm.StreamAsync(model, context, streamOptions, ct))
         {

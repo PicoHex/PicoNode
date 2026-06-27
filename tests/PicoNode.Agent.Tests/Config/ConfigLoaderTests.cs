@@ -12,21 +12,21 @@ public class ConfigLoaderTests
     }
 
     [Test]
-    public async Task Load_WithEnvVarExpansion_ResolvesKey()
+    public async Task Load_WithPicoCfgEnvVar_ResolvesKey()
     {
-        Environment.SetEnvironmentVariable("MY_KEY", "sk-test-123");
-        var json = """{"providers":{"test":{"apiKey":"$MY_KEY"}}}""";
+        Environment.SetEnvironmentVariable("PICO_DEEPSEEK_API_KEY", "sk-test-123");
+        var json = """{"providers":{"test":{"apiKey":"$DEEPSEEK_API_KEY","apiFormat":"openai","baseUrl":""}}}""";
         var path = Path.GetTempFileName();
         await File.WriteAllTextAsync(path, json);
         try
         {
-            var config = ConfigLoader.Load(path);
+            var config = await ConfigLoader.LoadAsync(path);
             await Assert.That(config.Providers["test"].ApiKey).IsEqualTo("sk-test-123");
         }
         finally
         {
             File.Delete(path);
-            Environment.SetEnvironmentVariable("MY_KEY", null);
+            Environment.SetEnvironmentVariable("PICO_DEEPSEEK_API_KEY", null);
         }
     }
 
@@ -36,7 +36,7 @@ public class ConfigLoaderTests
         var path = Path.Combine(Path.GetTempPath(), $"pico-missing-{Guid.NewGuid()}.json");
         try
         {
-            var config = ConfigLoader.Load(path);
+            var config = await ConfigLoader.LoadAsync(path);
             await Assert.That(config).IsNull();
             await Assert.That(File.Exists(path)).IsFalse();
         }
@@ -76,5 +76,24 @@ public class ConfigLoaderTests
         };
         var result = ConfigLoader.Validate(config);
         await Assert.That(result.IsValid).IsTrue();
+    }
+
+    [Test]
+    public async Task Load_NoPrefixEnvVar_ResolvesViaFallback()
+    {
+        Environment.SetEnvironmentVariable("RAW_API_KEY", "sk-raw-999");
+        var json = """{"providers":{"test":{"apiKey":"$RAW_API_KEY","apiFormat":"openai","baseUrl":""}}}""";
+        var path = Path.GetTempFileName();
+        await File.WriteAllTextAsync(path, json);
+        try
+        {
+            var config = await ConfigLoader.LoadAsync(path);
+            await Assert.That(config.Providers["test"].ApiKey).IsEqualTo("sk-raw-999");
+        }
+        finally
+        {
+            File.Delete(path);
+            Environment.SetEnvironmentVariable("RAW_API_KEY", null);
+        }
     }
 }

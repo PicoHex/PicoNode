@@ -15,6 +15,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PicoNode.AI\PicoNode.AI.csproj" />
+    <PackageReference Include="PicoCfg" />
+    <PackageReference Include="PicoCfg.Json" />
     <PackageReference Include="PicoJetson" />
     <PackageReference Include="PicoDI" />
     <PackageReference Include="PicoLog" />

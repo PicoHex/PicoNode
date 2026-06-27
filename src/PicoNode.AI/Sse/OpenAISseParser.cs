@@ -7,6 +7,7 @@ public static class OpenAISseParser
     private const string JsonPropChoices = "choices";
     private const string JsonPropDelta = "delta";
     private const string JsonPropContent = "content";
+    private const string JsonPropReasoningContent = "reasoning_content";
     private const string JsonPropFinishReason = "finish_reason";
 
     public static async IAsyncEnumerable<AssistantMessageEvent> ParseStreamAsync(
@@ -71,6 +72,12 @@ public static class OpenAISseParser
             var choice = choices[0];
             if (!choice.TryGetProperty(JsonPropDelta, out var delta))
                 continue;
+
+            if (delta.TryGetProperty(JsonPropReasoningContent, out var reasoning))
+            {
+                var text = reasoning.GetString()!;
+                yield return new AssistantMessageEvent.ThinkingDelta { Index = 0, Delta = text };
+            }
 
             if (delta.TryGetProperty(JsonPropContent, out var content))
             {

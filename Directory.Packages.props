@@ -6,14 +6,14 @@
 
   <ItemGroup>
     <!-- PicoHex ecosystem -->
-    <PackageVersion Include="PicoCfg" Version="2026.6.14" />
-    <PackageVersion Include="PicoCfg.Abs" Version="2026.6.14" />
-    <PackageVersion Include="PicoCfg.Gen" Version="2026.6.0" />
-    <PackageVersion Include="PicoDI" Version="2026.6.14" />
-    <PackageVersion Include="PicoDI.Abs" Version="2026.6.14" />
+    <PackageVersion Include="PicoCfg" Version="2026.6.15" />
+    <PackageVersion Include="PicoCfg.Abs" Version="2026.6.15" />
+    <PackageVersion Include="PicoCfg.Json" Version="2026.6.15" />
+    <PackageVersion Include="PicoDI" Version="2026.6.15" />
+    <PackageVersion Include="PicoDI.Abs" Version="2026.6.15" />
     <PackageVersion Include="PicoJetson" Version="2026.2.7" />
-    <PackageVersion Include="PicoLog" Version="2026.6.14" />
-    <PackageVersion Include="PicoLog.Abs" Version="2026.6.14" />
+    <PackageVersion Include="PicoLog" Version="2026.6.15" />
+    <PackageVersion Include="PicoLog.Abs" Version="2026.6.15" />
 
     <!-- PicoNode internal (conditional package refs for NuGet publish) -->
     <PackageVersion Include="PicoNode" Version="$(Version)" />
