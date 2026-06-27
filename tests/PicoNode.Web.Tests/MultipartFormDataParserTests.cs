@@ -37,7 +37,7 @@ public sealed class MultipartFormDataParserTests
             + "--boundary--\r\n";
 
         var request = CreateMultipartRequest("boundary", body);
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Fields.Count).IsEqualTo(1);
@@ -61,7 +61,7 @@ public sealed class MultipartFormDataParserTests
             + "--boundary--\r\n";
 
         var request = CreateMultipartRequest("boundary", body);
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Fields.Count).IsEqualTo(2);
@@ -85,7 +85,7 @@ public sealed class MultipartFormDataParserTests
             + "--boundary--\r\n";
 
         var request = CreateMultipartRequest("boundary", body);
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Fields.Count).IsEqualTo(0);
@@ -114,7 +114,7 @@ public sealed class MultipartFormDataParserTests
             + "--boundary--\r\n";
 
         var request = CreateMultipartRequest("boundary", body);
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Fields.Count).IsEqualTo(1);
@@ -143,7 +143,7 @@ public sealed class MultipartFormDataParserTests
             + "--boundary--\r\n";
 
         var request = CreateMultipartRequest("boundary", body);
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Files.Count).IsEqualTo(1);
@@ -166,7 +166,7 @@ public sealed class MultipartFormDataParserTests
             + "--boundary--\r\n";
 
         var request = CreateMultipartRequest("boundary", body);
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Files.Count).IsEqualTo(1);
@@ -187,7 +187,7 @@ public sealed class MultipartFormDataParserTests
             + "ignored trailer";
 
         var request = CreateMultipartRequest("boundary", body);
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Fields.Count).IsEqualTo(1);
@@ -212,7 +212,7 @@ public sealed class MultipartFormDataParserTests
             Body = "{}"u8.ToArray(),
         };
 
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNull();
     }
@@ -230,7 +230,7 @@ public sealed class MultipartFormDataParserTests
             Body = ReadOnlyMemory<byte>.Empty,
         };
 
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNull();
     }
@@ -246,7 +246,7 @@ public sealed class MultipartFormDataParserTests
             + "--boundary--\r\n";
 
         var request = CreateMultipartRequest("boundary", body);
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Files.Count).IsEqualTo(1);
@@ -311,8 +311,8 @@ public sealed class MultipartFormDataParserTests
         );
 
         await Assert
-            .That(() =>
-                MultipartFormDataParser.Parse(
+            .That(async () =>
+                await MultipartFormDataParser.ParseAsync(
                     request,
                     new MultipartFormDataParserOptions { MaxBoundaryLength = 0 }
                 )
@@ -320,8 +320,8 @@ public sealed class MultipartFormDataParserTests
             .Throws<ArgumentOutOfRangeException>();
 
         await Assert
-            .That(() =>
-                MultipartFormDataParser.Parse(
+            .That(async () =>
+                await MultipartFormDataParser.ParseAsync(
                     request,
                     new MultipartFormDataParserOptions
                     {
@@ -340,7 +340,7 @@ public sealed class MultipartFormDataParserTests
             "--boundary\r\nContent-Disposition: form-data; name=\"username\"\r\n\r\nalice\r\n--boundary--\r\n";
         var request = CreateMultipartRequest("boundary", body);
 
-        var result = MultipartFormDataParser.Parse(
+        var result = await MultipartFormDataParser.ParseAsync(
             request,
             new MultipartFormDataParserOptions { MaxBoundaryLength = 5 }
         );
@@ -367,7 +367,7 @@ public sealed class MultipartFormDataParserTests
             new string(boundary.Select(static b => (char)b).ToArray()),
             bodyBytes
         );
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Fields.Count).IsEqualTo(0);
@@ -388,7 +388,7 @@ public sealed class MultipartFormDataParserTests
         headerSuffix.CopyTo(bodyBytes, headerPrefix.Length + 1);
 
         var request = CreateMultipartRequest("boundary", bodyBytes);
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Fields.Count).IsEqualTo(0);
@@ -450,7 +450,7 @@ public sealed class MultipartFormDataParserTests
             BodyStream = new MemoryStream(bodyBytes, writable: false),
         };
 
-        var result = MultipartFormDataParser.Parse(request);
+        var result = await MultipartFormDataParser.ParseAsync(request);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Fields.Count).IsEqualTo(1);

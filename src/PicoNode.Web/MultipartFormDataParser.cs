@@ -18,41 +18,6 @@ public static class MultipartFormDataParser
     private static ReadOnlySpan<byte> DoubleCrLf => "\r\n\r\n"u8;
     private static ReadOnlySpan<byte> DashDash => "--"u8;
 
-    public static MultipartFormData? Parse(HttpRequest request, ILogger? logger = null)
-    {
-        return Parse(request, new MultipartFormDataParserOptions(), logger);
-    }
-
-    public static MultipartFormData? Parse(
-        HttpRequest request,
-        MultipartFormDataParserOptions options,
-        ILogger? logger = null
-    )
-    {
-        var boundary = ResolveBoundary(request, options);
-        if (boundary is null)
-            return null;
-
-        if (request.Body.Length > 0)
-        {
-            var boundaryBytes = Encoding.UTF8.GetBytes(boundary);
-            return ParseBody(request.Body, boundaryBytes, logger);
-        }
-
-        var bodyStream = request.BodyStream;
-        if (bodyStream != Stream.Null)
-        {
-            return Task.Run(async () =>
-                    await StreamingMultipartParser.ParseAsync(bodyStream, boundary)
-                )
-                .GetAwaiter()
-                .GetResult();
-        }
-
-        return null;
-    }
-
-    /// <summary>Async variant. Prefer this for streaming scenarios.</summary>
     public static async ValueTask<MultipartFormData?> ParseAsync(
         HttpRequest request,
         MultipartFormDataParserOptions? options = null,

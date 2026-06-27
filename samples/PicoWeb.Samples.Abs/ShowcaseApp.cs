@@ -237,26 +237,24 @@ public static class ShowcaseApp
 
         app.MapPost(
             "/api/uploads",
-            (WebContext context, CancellationToken _) =>
+            async (WebContext context, CancellationToken ct) =>
             {
-                var multipart = MultipartFormDataParser.Parse(context.Request);
+                var multipart = await MultipartFormDataParser.ParseAsync(context.Request, ct: ct);
                 if (multipart is null)
                 {
-                    return ValueTask.FromResult(
-                        WebResults.Json(
-                            415,
-                            """
-                            {
-                              "error":"expected-multipart-form-data"
-                            }
-                            """,
-                            "Unsupported Media Type"
-                        )
+                    return WebResults.Json(
+                        415,
+                        """
+                        {
+                          "error":"expected-multipart-form-data"
+                        }
+                        """,
+                        "Unsupported Media Type"
                     );
                 }
 
                 var json = BuildUploadPayload(multipart);
-                return ValueTask.FromResult(WebResults.Json(200, json, "OK"));
+                return WebResults.Json(200, json, "OK");
             }
         );
 
