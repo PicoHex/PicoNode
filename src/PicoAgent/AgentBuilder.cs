@@ -25,16 +25,19 @@ public sealed class AgentBuilder
         return this;
     }
 
-    public AgentHost BuildHost()
+    public async Task<AgentHost> BuildHostAsync(CancellationToken ct = default)
     {
         Validate();
-        return BuildAgentHost();
+        return await BuildAgentHostAsync(ct);
     }
 
-    public AgentServer BuildServer(AgentServerOptions options)
+    public async Task<AgentServer> BuildServerAsync(
+        AgentServerOptions options,
+        CancellationToken ct = default
+    )
     {
         Validate();
-        var host = BuildAgentHost();
+        var host = await BuildAgentHostAsync(ct);
         return new AgentServer(host, _registry!, _capabilitiesRoot ?? "", options);
     }
 
@@ -52,7 +55,7 @@ public sealed class AgentBuilder
             );
     }
 
-    private AgentHost BuildAgentHost()
+    private async Task<AgentHost> BuildAgentHostAsync(CancellationToken ct)
     {
         var http = _http ?? new HttpClient();
         var clients = new Dictionary<string, ILLmClient>();
@@ -92,17 +95,21 @@ public sealed class AgentBuilder
             _registry.Scan(_capabilitiesRoot);
 
         var runner = new CapabilityRunner();
-        var model = ResolveModel(http, providerConfigs);
+        var model = await ResolveModelAsync(http, providerConfigs, ct);
         var loop = new AgentLoop(resilientClient, _registry, runner, model);
         var host = new AgentHost(loop);
 
         if (_capabilitiesRoot is { Length: > 0 })
-            TryRestoreSession(host, _capabilitiesRoot);
+            await TryRestoreSessionAsync(host, _capabilitiesRoot, ct);
 
         return host;
     }
 
-    private Model ResolveModel(HttpClient http, List<ProviderConfig> providerConfigs)
+    private async Task<Model> ResolveModelAsync(
+        HttpClient http,
+        List<ProviderConfig> providerConfigs,
+        CancellationToken ct
+    )
     {
         var defaultProvider = _config!.Providers.Keys.FirstOrDefault() ?? "unknown";
         var defaultPreset = _config.Providers.GetValueOrDefault(defaultProvider);
@@ -123,11 +130,7 @@ public sealed class AgentBuilder
                 ApiKey = defaultPreset.ApiKey,
                 Priority = 1,
             };
-            // Sync-over-async is acceptable during startup (not on hot path).
-            var discovered = ModelDiscovery
-                .DiscoverAsync(http, pc, CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
+            var discovered = await ModelDiscovery.DiscoverAsync(http, pc, ct);
             modelId = discovered.FirstOrDefault()?.Id;
         }
 
@@ -147,23 +150,27 @@ public sealed class AgentBuilder
         if (defaultPreset?.Thinking is { Count: > 0 } map)
             model.ThinkingLevelMap = map;
 
-        if (defaultPreset?.Models is { } models && models.TryGetValue(modelId, out var modelOverride))
+        if (
+            defaultPreset?.Models is { } models
+            && models.TryGetValue(modelId, out var modelOverride)
+        )
             AgentConfig.ApplyModelOverride(model, modelOverride);
 
         return model;
     }
 
-    private static void TryRestoreSession(AgentHost host, string root)
+    private static async Task TryRestoreSessionAsync(
+        AgentHost host,
+        string root,
+        CancellationToken ct
+    )
     {
         try
         {
             var sessionPath = Path.Combine(root, "sessions", "default.jsonl");
             if (File.Exists(sessionPath))
             {
-                var sessionData = SessionStore
-                    .LoadAsync(sessionPath, CancellationToken.None)
-                    .GetAwaiter()
-                    .GetResult();
+                var sessionData = await SessionStore.LoadAsync(sessionPath, ct);
                 host.RestoreSession("default", sessionData);
             }
         }

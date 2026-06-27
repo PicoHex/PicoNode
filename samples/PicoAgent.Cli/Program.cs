@@ -40,7 +40,7 @@ var cmd = args.Length > 0 ? args[0] : "chat";
 if (cmd == "serve")
 {
     var port = args.Length > 1 && int.TryParse(args[1], out var p) ? p : 8080;
-    await using var server = builder.BuildServer(new AgentServerOptions
+    await using var server = await builder.BuildServerAsync(new AgentServerOptions
     {
         Endpoint = new IPEndPoint(IPAddress.Loopback, port),
         ServerHeader = "PicoAgent",
@@ -50,7 +50,7 @@ if (cmd == "serve")
 }
 else
 {
-    var host = builder.BuildHost();
+    var host = await builder.BuildHostAsync();
     var scanner = new KnowledgeScanner();
     var skills = scanner.Scan(homeDir);
     var skillsPrompt = skills.Count > 0 ? KnowledgeScanner.BuildSkillsPrompt(skills) : "";

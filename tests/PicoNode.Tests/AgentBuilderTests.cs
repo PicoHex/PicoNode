@@ -21,9 +21,9 @@ public sealed class AgentBuilderTests
             Model = "gpt-4",
         };
 
-        var host = new AgentBuilder()
+        var host = await new AgentBuilder()
             .WithConfig(config)
-            .BuildHost();
+            .BuildHostAsync();
 
         await Assert.That((object?)host).IsNotNull();
     }
@@ -31,10 +31,9 @@ public sealed class AgentBuilderTests
     [Test]
     public async Task BuildHost_WithoutConfig_Throws()
     {
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
-            new AgentBuilder().BuildHost();
-            return Task.CompletedTask;
+            await new AgentBuilder().BuildHostAsync();
         });
     }
 
@@ -55,9 +54,9 @@ public sealed class AgentBuilderTests
             Model = "gpt-4",
         };
 
-        await using var server = new AgentBuilder()
+        await using var server = await new AgentBuilder()
             .WithConfig(config)
-            .BuildServer(new AgentServerOptions
+            .BuildServerAsync(new AgentServerOptions
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, 52525),
             });
