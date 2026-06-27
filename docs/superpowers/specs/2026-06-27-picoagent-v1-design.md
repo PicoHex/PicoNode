@@ -126,7 +126,9 @@ Agent
 └── WebApp (PicoNode.Web)          ← HTTP 路由注册
 ```
 
-AgentLoop 修改：`Model` 从构造参数改为 `RunTurnAsync` 参数，每次调用拍快照，保证 `SwitchModel` 并发安全。
+AgentLoop 修改：`Model` 从构造参数改为 `RunTurnAsync` 参数，每次调用拍快照，保证 `SwitchModel` 并发安全。`UpdateThinking` 方法移除——思考状态由 Agent 通过 `_pendingModel` 统一管理，传入 Model 时已包含 `ThinkingEnabled`/`ThinkingLevel`。
+
+AgentHost 简化：移除 `_thinkingState` 和 `UpdateThinking`——思考状态已上移到 Agent 的 `_pendingModel`。
 
 并发安全：
 - `SwitchModel` / `SwitchProvider` / `SwitchThinking` 写 `_pendingModel` 字段（带锁）

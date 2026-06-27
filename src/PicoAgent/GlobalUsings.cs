@@ -1,7 +1,10 @@
 global using System.IO.Pipelines;
 global using System.Net;
 global using System.Net.Security;
+global using System.Runtime.CompilerServices;
 global using System.Text;
+global using System.Text.Json;
+global using System.Text.RegularExpressions;
 global using PicoDI;
 global using PicoJetson;
 global using PicoLog.Abs;

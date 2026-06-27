@@ -5,26 +5,13 @@ public sealed class AgentLoop
     private readonly ILLmClient _llm;
     private readonly CapabilityRegistry _registry;
     private readonly CapabilityRunner _runner;
-    private readonly Model _model;
     private const int MaxToolIterations = 20;
 
-    public AgentLoop(
-        ILLmClient llm,
-        CapabilityRegistry registry,
-        CapabilityRunner runner,
-        Model model
-    )
+    public AgentLoop(ILLmClient llm, CapabilityRegistry registry, CapabilityRunner runner)
     {
         _llm = llm;
         _registry = registry;
         _runner = runner;
-        _model = model;
-    }
-
-    public void UpdateThinking(bool enabled, ThinkingLevel level)
-    {
-        _model.ThinkingEnabled = enabled;
-        _model.ThinkingLevel = level;
     }
 
     /// v1: truncate to last N messages. v2: LLM-based summary.
@@ -37,13 +24,13 @@ public sealed class AgentLoop
 
     // v1: exceptions propagate to caller. v2: wrap in agent-level error handling.
     public async Task<List<Message>> RunTurnAsync(
+        Model model,
         List<Message> messages,
         CancellationToken ct,
         Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
     )
     {
         var result = new List<Message>();
-        var model = _model;
 
         var iterations = 0;
         bool hasTools;
@@ -178,11 +165,11 @@ public sealed class AgentLoop
         Message? finalMessage = null;
 
         var streamOptions =
-            _model.ThinkingEnabled && _model.ThinkingLevelMap is { Count: > 0 }
+            model.ThinkingEnabled && model.ThinkingLevelMap is { Count: > 0 }
                 ? new StreamOptions
                 {
-                    Reasoning = _model.ThinkingLevel,
-                    ThinkingLevelMap = _model.ThinkingLevelMap,
+                    Reasoning = model.ThinkingLevel,
+                    ThinkingLevelMap = model.ThinkingLevelMap,
                 }
                 : null;
 

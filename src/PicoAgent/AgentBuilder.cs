@@ -2,10 +2,15 @@ namespace PicoAgent;
 
 public sealed class AgentBuilder
 {
+    private bool _ownsHttpClient; // true when AgentBuilder auto-created the HttpClient
     private AgentConfig? _config;
     private HttpClient? _http;
     private string? _capabilitiesRoot;
     private CapabilityRegistry? _registry;
+    private Dictionary<string, ICircuitBreaker>? _breakers;
+    private Dictionary<string, ILLmClient>? _clients;
+    private Dictionary<string, ProviderConfig>? _providerConfigs;
+    private Model? _initialModel;
 
     public AgentBuilder WithConfig(AgentConfig config)
     {
@@ -25,22 +30,6 @@ public sealed class AgentBuilder
         return this;
     }
 
-    public async Task<AgentHost> BuildHostAsync(CancellationToken ct = default)
-    {
-        Validate();
-        return await BuildAgentHostAsync(ct);
-    }
-
-    public async Task<AgentServer> BuildServerAsync(
-        AgentServerOptions options,
-        CancellationToken ct = default
-    )
-    {
-        Validate();
-        var host = await BuildAgentHostAsync(ct);
-        return new AgentServer(host, _registry!, _capabilitiesRoot ?? "", options);
-    }
-
     private void Validate()
     {
         if (_config is null)
@@ -58,6 +47,11 @@ public sealed class AgentBuilder
     private async Task<AgentHost> BuildAgentHostAsync(CancellationToken ct)
     {
         var http = _http ?? new HttpClient();
+        if (_http is null)
+        {
+            _http = http;
+            _ownsHttpClient = true;
+        }
         var clients = new Dictionary<string, ILLmClient>();
         var breakers = new Dictionary<string, ICircuitBreaker>();
         var providerConfigs = new List<ProviderConfig>();
@@ -71,21 +65,28 @@ public sealed class AgentBuilder
                 _ => AiApiFormat.OpenAIChatCompletions,
             };
 
-            providerConfigs.Add(new ProviderConfig
-            {
-                Name = name,
-                BaseUrl = entry.BaseUrl ?? "",
-                ApiFormat = apiFormat,
-                ApiKey = entry.ApiKey,
-                Priority = 1,
-            });
+            providerConfigs.Add(
+                new ProviderConfig
+                {
+                    Name = name,
+                    BaseUrl = entry.BaseUrl ?? "",
+                    ApiFormat = apiFormat,
+                    ApiKey = entry.ApiKey,
+                    Priority = 1,
+                }
+            );
 
-            clients[name] = apiFormat == AiApiFormat.AnthropicMessages
-                ? new AnthropicLLmClient(http)
-                : new OpenAILlmClient(http);
+            clients[name] =
+                apiFormat == AiApiFormat.AnthropicMessages
+                    ? new AnthropicLLmClient(http)
+                    : new OpenAILlmClient(http);
 
             breakers[name] = new CircuitBreaker();
         }
+
+        _providerConfigs = providerConfigs.ToDictionary(p => p.Name, p => p);
+        _breakers = breakers;
+        _clients = clients;
 
         var router = new ProviderRouter(providerConfigs);
         var resilientClient = new ResilientLLmClient(router, breakers, clients);
@@ -96,7 +97,8 @@ public sealed class AgentBuilder
 
         var runner = new CapabilityRunner();
         var model = await ResolveModelAsync(http, providerConfigs, ct);
-        var loop = new AgentLoop(resilientClient, _registry, runner, model);
+        _initialModel = model;
+        var loop = new AgentLoop(resilientClient, _registry, runner);
         var host = new AgentHost(loop);
 
         if (_capabilitiesRoot is { Length: > 0 })
@@ -179,4 +181,26 @@ public sealed class AgentBuilder
             // Session restore is best-effort
         }
     }
+
+    // ── Internal accessors for Agent.CreateAsync ──
+
+    internal async Task<AgentHost> BuildAgentHostInternalAsync()
+    {
+        Validate();
+        return await BuildAgentHostAsync(CancellationToken.None);
+    }
+
+    internal CapabilityRegistry GetRegistry() => _registry!;
+
+    internal HttpClient GetHttpClient() => _http ?? new HttpClient();
+
+    internal IReadOnlyDictionary<string, ProviderConfig> GetProviderConfigs() => _providerConfigs!;
+
+    internal IReadOnlyDictionary<string, ICircuitBreaker> GetBreakers() => _breakers!;
+
+    internal IReadOnlyDictionary<string, ILLmClient> GetClients() => _clients!;
+
+    internal Model GetInitialModel() => _initialModel!;
+
+    internal bool GetHttpClientIsOwned() => _ownsHttpClient;
 }

@@ -73,7 +73,7 @@ public class DeepSeekIntegrationTests
             Provider = "deepseek",
             MaxTokens = 256,
         };
-        var loop = new AgentLoop(llmClient, registry, runner, model);
+        var loop = new AgentLoop(llmClient, registry, runner);
 
         var messages = new List<Message>
         {
@@ -84,7 +84,7 @@ public class DeepSeekIntegrationTests
                 Timestamp = 1,
             },
         };
-        var result = await loop.RunTurnAsync(messages, CancellationToken.None);
+        var result = await loop.RunTurnAsync(model, messages, CancellationToken.None);
 
         await Assert.That(result.Count).IsGreaterThan(0);
         var assistant = result.LastOrDefault(m => m.Role == "assistant");

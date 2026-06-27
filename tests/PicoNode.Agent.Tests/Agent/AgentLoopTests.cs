@@ -16,7 +16,7 @@ public class AgentLoopTests
             Provider = "anthropic",
             MaxTokens = 4096,
         };
-        var loop = new AgentLoop(llmClient, registry, runner, model);
+        var loop = new AgentLoop(llmClient, registry, runner);
 
         var messages = new List<Message>
         {
@@ -28,7 +28,7 @@ public class AgentLoopTests
             },
         };
 
-        var result = await loop.RunTurnAsync(messages, CancellationToken.None);
+        var result = await loop.RunTurnAsync(model, messages, CancellationToken.None);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result.Count).IsGreaterThan(0);
@@ -51,12 +51,13 @@ public class AgentLoopTests
             Provider = "anthropic",
             MaxTokens = 4096,
         };
-        var loop = new AgentLoop(llmClient, registry, runner, model);
+        var loop = new AgentLoop(llmClient, registry, runner);
 
         var events = new List<AssistantMessageEvent>();
-        Func<AssistantMessageEvent, CancellationToken, ValueTask> onEvent = async (e, _) =>
+        Func<AssistantMessageEvent, CancellationToken, ValueTask> onEvent = (e, _) =>
         {
             events.Add(e);
+            return ValueTask.CompletedTask;
         };
 
         var messages = new List<Message>
@@ -69,7 +70,7 @@ public class AgentLoopTests
             },
         };
 
-        await loop.RunTurnAsync(messages, CancellationToken.None, onEvent);
+        await loop.RunTurnAsync(model, messages, CancellationToken.None, onEvent);
 
         // Should have received TextDelta and Done events
         await Assert.That(events.Count).IsGreaterThan(0);

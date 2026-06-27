@@ -1,10 +1,11 @@
 namespace PicoNode.Tests;
 
+using Agent = PicoAgent.Agent;
 
 public sealed class AgentBuilderTests
 {
     [Test]
-    public async Task BuildHost_WithValidConfig_ReturnsAgentHost()
+    public async Task CreateAsync_WithValidConfig_ReturnsAgent()
     {
         var config = new AgentConfig
         {
@@ -20,46 +21,16 @@ public sealed class AgentBuilderTests
             Model = "gpt-4",
         };
 
-        var host = await new AgentBuilder()
-            .WithConfig(config)
-            .BuildHostAsync();
-
-        await Assert.That((object?)host).IsNotNull();
+        await using var agent = await Agent.CreateAsync(config);
+        await Assert.That((object?)agent).IsNotNull();
     }
 
     [Test]
-    public async Task BuildHost_WithoutConfig_Throws()
+    public async Task CreateAsync_WithoutConfig_Throws()
     {
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
-            await new AgentBuilder().BuildHostAsync();
+            await Agent.CreateAsync(new AgentConfig { Providers = new() });
         });
-    }
-
-    [Test]
-    public async Task BuildServer_WithValidConfig_ReturnsAgentServer()
-    {
-        var config = new AgentConfig
-        {
-            Providers = new()
-            {
-                ["test"] = new ProviderEntry
-                {
-                    ApiKey = "sk-test",
-                    ApiFormat = "openai",
-                    BaseUrl = "https://api.openai.com/v1",
-                },
-            },
-            Model = "gpt-4",
-        };
-
-        await using var server = await new AgentBuilder()
-            .WithConfig(config)
-            .BuildServerAsync(new AgentServerOptions
-            {
-                Endpoint = new IPEndPoint(IPAddress.Loopback, 52525),
-            });
-
-        await Assert.That((object?)server).IsNotNull();
     }
 }

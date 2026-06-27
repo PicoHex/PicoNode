@@ -16,7 +16,7 @@ public class AgentLoopStreamingTests
             Provider = "anthropic",
             MaxTokens = 4096,
         };
-        var loop = new AgentLoop(llmClient, registry, runner, model);
+        var loop = new AgentLoop(llmClient, registry, runner);
 
         var events = new List<AssistantMessageEvent>();
         var messages = new List<Message>
@@ -30,6 +30,7 @@ public class AgentLoopStreamingTests
         };
 
         await loop.RunTurnAsync(
+            model,
             messages,
             CancellationToken.None,
             onEvent: async (evt, ct) =>

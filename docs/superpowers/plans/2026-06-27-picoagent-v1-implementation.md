@@ -10,7 +10,32 @@
 - `AgentHost`：移除 thinking state，添加 per-session lock
 - `AgentHttpClient`：C# HTTP SSE 客户端，复用 `System.IO.Pipelines`
 
-**Tech Stack:** C# / .NET 10 / PicoNode.Agent / PicoNode.AI / PicoNode.Web / PicoWeb / PicoJetson
+**Tech Stack:** C# / .NET 10 / PicoNode.Agent / PicoNode.AI / PicoNode.Web（WebApp） / PicoWeb（WebServer）
+
+**PicoHex 模块依赖验证:**
+
+| 模块 | 使用位置 | 验证状态 |
+|------|---------|---------|
+| **PicoCfg** | `ConfigLoader` — `Cfg.CreateBuilder().AddJsonFile().AddEnvironmentVariables("PICO_").BuildAsync()` | ✅ 已正确使用，支持文件+环境变量分层覆盖 |
+| **PicoLog** | `Agent.CreateAsync(ILogger?)` → `WebServerOptions.Logger` + `WebAppOptions.Logger` → `TcpNode` | ✅ Task 3/5 已集成 |
+| **PicoDI** | `SvcContainer` / `ISvcContainer` — `WebApp` 的 DI 容器 | ✅ 正确使用 |
+| **PicoJetson** | `JsonSerializer.Serialize/Deserialize` — SSE 事件序列化、Session 持久化、配置解析 | ✅ 正确使用 |
+| **PicoAop** | 不在 v1 范围内。未来可用于拦截 `AgentHost.ProcessMessageAsync` 和 Handler 级别切面 | 🔵 v2 规划 |
+| **PicoMediator** | 不在 v1 范围内。未来可用于 Session 事件通知（`INotification`）和 SendAsync 中介 | 🔵 v2 规划 |
+
+**命名空间归属速查:**
+
+| 类型 | 所属命名空间 | 所属项目 |
+|------|-------------|---------|
+| `WebApp`, `WebAppOptions` | `PicoNode.Web` | `PicoNode.Web.csproj` |
+| `SseConnection` | `PicoNode.Web` | `PicoNode.Web.csproj` |
+| `WebServer`, `WebServerOptions` | `PicoWeb` | `PicoWeb.csproj` |
+| `SvcContainer`, `ISvcContainer` | `PicoDI` | (NuGet) |
+| `ICfgRoot`, `CfgBuilder` | `PicoCfg` | (NuGet) |
+| `ILogger`, `LoggerFactory` | `PicoLog` | (NuGet) |
+| `JsonSerializer` | `PicoJetson` | (NuGet) |
+
+> **Note:** `PicoAgent.GlobalUsings.cs` 已有 `global using PicoNode.Web;` `global using PicoWeb;` `global using PicoDI;`，上述类型无需额外 namespace import。
 
 ## Global Constraints
 
@@ -30,16 +55,36 @@
 **Interfaces:**
 - Produces: `BuildAgentHostInternalAsync()` (public → internal 暴露)、`GetRegistry()`、`GetHttpClient()`、`GetProviderConfigs()`、`GetBreakers()`、`GetClients()`、`GetInitialModel()`
 
-- [ ] **Step 1: 添加 internal accessor 方法**
+- [ ] **Step 1: 添加字段和 internal accessor 方法**
 
-在 `AgentBuilder.cs` 末尾添加：
+在 `AgentBuilder.cs` 添加字段（与现有 `_config`、`_http`、`_capabilitiesRoot`、`_registry` 并列）：
+
+```csharp
+// ── 在现有字段区域添加 ──
+private Dictionary<string, ICircuitBreaker>? _breakers;
+private Dictionary<string, ILLmClient>? _clients;
+private Dictionary<string, ProviderConfig>? _providerConfigs;   // ← 存储一次，避免重复构建
+private Model? _initialModel;
+```
+
+在 `BuildAgentHostAsync` 中存储（替换现有局部变量赋值）：
+
+```csharp
+// 现有代码末尾，替换为：
+_providerConfigs = providerConfigs.ToDictionary(p => p.Name, p => p);  // 转为字典
+_breakers = breakers;
+_clients = clients;
+_initialModel = model;
+```
+
+在 `AgentBuilder.cs` 末尾添加 internal accessor 方法：
 
 ```csharp
 // ── Internal accessors for Agent.CreateAsync ──
 
 internal async Task<AgentHost> BuildAgentHostInternalAsync()
 {
-    // 当前 BuildAgentHostAsync 是 private → 改为 internal 暴露
+    // 直接调用现有 BuildAgentHostAsync（已经是 private → internal 可访问）
     return await BuildAgentHostAsync(CancellationToken.None);
 }
 
@@ -49,24 +94,8 @@ internal HttpClient GetHttpClient() => _http ?? new HttpClient();
 
 internal IReadOnlyDictionary<string, ProviderConfig> GetProviderConfigs()
 {
-    // 重建 provider configs（BuildAgentHostAsync 内部构造的）
-    var result = new Dictionary<string, ProviderConfig>();
-    foreach (var (name, entry) in _config!.Providers)
-    {
-        result[name] = new ProviderConfig
-        {
-            Name = name,
-            BaseUrl = entry.BaseUrl ?? "",
-            ApiFormat = entry.ApiFormat?.ToLowerInvariant() switch
-            {
-                "anthropic" => AiApiFormat.AnthropicMessages,
-                _ => AiApiFormat.OpenAIChatCompletions,
-            },
-            ApiKey = entry.ApiKey,
-            Priority = 1,
-        };
-    }
-    return result;
+    // 直接返回 BuildAgentHostAsync 中存储的结果，避免重复构建
+    return _providerConfigs!;
 }
 
 internal IReadOnlyDictionary<string, ICircuitBreaker> GetBreakers() => _breakers!;
@@ -76,20 +105,7 @@ internal IReadOnlyDictionary<string, ILLmClient> GetClients() => _clients!;
 internal Model GetInitialModel() => _initialModel!;
 ```
 
-同时添加 `_breakers`、`_clients`、`_initialModel` 字段：
-
-```csharp
-private Dictionary<string, ICircuitBreaker>? _breakers;
-private Dictionary<string, ILLmClient>? _clients;
-private Model? _initialModel;
-```
-
-在 `BuildAgentHostAsync` 中存储：
-```csharp
-_breakers = breakers;
-_clients = clients;
-_initialModel = model;
-```
+> **Review 修正:** `GetProviderConfigs` 不再重新遍历 `_config.Providers` 构建，改为直接返回 `BuildAgentHostAsync` 中存储的 `_providerConfigs`。避免 double-construct 导致的值不一致风险。
 
 - [ ] **Step 2: 构建验证**
 
@@ -116,6 +132,7 @@ git commit -m "refactor(AgentBuilder): expose internal accessors for Agent.Creat
 **Interfaces:**
 - Produces: `AgentLoop(IllmClient, CapabilityRegistry, CapabilityRunner)` — 移除 Model 参数
 - Produces: `RunTurnAsync(Model, List<Message>, Ct, Func<...>?)` — 新增 Model 参数
+- Removes: `_model` 字段、`UpdateThinking` 方法
 
 - [ ] **Step 1: 写失败测试 — 并发 Model 快照**
 
@@ -185,7 +202,7 @@ public AgentLoop(
 
 // RunTurnAsync：新增 Model 参数，移除 UpdateThinking
 public async Task<List<Message>> RunTurnAsync(
-    Model model,                // ← 新增
+    Model model,                // ← 新增：每次调用独立快照
     List<Message> messages,
     CancellationToken ct,
     Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
@@ -199,13 +216,27 @@ public async Task<List<Message>> RunTurnAsync(
 
     do
     {
-        // ... 内部不变，model 来自参数而非 _model ...
+        iterations++;
+
+        // Filter out messages with empty roles (defense against corrupted sessions)
+        var valid = messages.Where(m => !string.IsNullOrEmpty(m.Role)).ToArray();
+
+        var context = new ChatContext { Messages = valid };
+        var assistantMsg = await CallLLMAsync(model, context, ct, onEvent);
+
+        if (assistantMsg == null)
+            break;
+
+        messages.Add(assistantMsg);
+        result.Add(assistantMsg);
+
+        // ... (tool call 逻辑不变，保持现有代码) ...
     } while (hasTools);
 
     return result;
 }
 
-// CallLLMAsync：使用参数 model 而非 _model
+// CallLLMAsync：使用参数 model 而非 _model（修复现有 bug —— 参数已有但被忽略）
 private async Task<Message?> CallLLMAsync(
     Model model,
     ChatContext context,
@@ -213,6 +244,8 @@ private async Task<Message?> CallLLMAsync(
     Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
 )
 {
+    Message? finalMessage = null;
+
     // streamOptions 改用参数 model 而非 _model：
     var streamOptions =
         model.ThinkingEnabled && model.ThinkingLevelMap is { Count: > 0 }
@@ -222,11 +255,19 @@ private async Task<Message?> CallLLMAsync(
                 ThinkingLevelMap = model.ThinkingLevelMap,
             }
             : null;
-    // ... ...
+
+    await foreach (var evt in _llm.StreamAsync(model, context, streamOptions, ct))
+    {
+        // ... 现有逻辑不变 ...
+    }
+
+    return finalMessage;
 }
 
 // 删除：_model 字段、UpdateThinking 方法
 ```
+
+> **Review 修正:** 当前代码中 `CallLLMAsync` 接收 `Model model` 参数但实际使用 `_model` 字段构造 `streamOptions`——这是一个已有 bug。本 Task 修复此问题。
 
 - [ ] **Step 4: 修复受影响的调用者**
 
@@ -234,6 +275,7 @@ private async Task<Message?> CallLLMAsync(
 
 ```csharp
 var loop = new AgentLoop(resilientClient, _registry, runner);
+// 移除: , model — 不再传给构造函数
 ```
 
 **AgentHost.ProcessMessageAsync**（传入 Model + 移除 UpdateThinking）：
@@ -287,32 +329,41 @@ git commit -m "refactor(AgentLoop): move Model to RunTurnAsync parameter for thr
 
 **Files:**
 - Modify: `src/PicoNode.Agent/Host/AgentHost.cs`
-- Modify: `src/PicoNode.Agent/Session/SessionData.cs` (移除 thinking state 字段 — 不再被 AgentHost 使用)
+- Modify: `src/PicoNode.Agent/Session/SessionData.cs` (保留 ThinkingEnabled/ThinkingLevel 字段但注释 v1 不再被 AgentHost 使用——SessionStore 序列化/反序列化仍需读取)
 
 **Interfaces:**
 - Removes: `GetThinkingState`, `SetThinkingState`, `_thinkingState` 字段, `SessionThinking` 类
 - Adds: per-session lock via `ConcurrentDictionary<string, SemaphoreSlim>`
+- Modifies: `ProcessMessageAsync` 签名新增 `Model model` 参数
 
 - [ ] **Step 1: 移除 thinking state 相关代码**
 
 `AgentHost.cs`：删除 `_thinkingState`、`SessionThinking`、`GetThinkingState`、`SetThinkingState`。
 
-`RestoreSession` 改为只恢复 messages：
+`RestoreSession` 改为只恢复 messages（thinking 状态现在仅在 Model 对象上管理）：
 
 ```csharp
 public void RestoreSession(string sessionId, SessionData data)
 {
     _sessions[sessionId] = data.Messages;
+    // 不再恢复 thinking state（v1 中 thinking 在 Model.ThinkingEnabled/ThinkingLevel 上管理）
 }
 ```
 
-`GetSessionData` 去掉 thinking 字段：
+`GetSessionData` 去掉 thinking 字段引用：
 
 ```csharp
 public SessionData GetSessionData(string sessionId)
 {
     var messages = _sessions.GetValueOrDefault(sessionId) ?? [];
-    return new SessionData { Messages = messages };
+    // v1: thinking fields kept on SessionData for serialization compatibility,
+    // but AgentHost no longer reads them. Default values for serialized output.
+    return new SessionData
+    {
+        Messages = messages,
+        ThinkingEnabled = true,
+        ThinkingLevel = ThinkingLevel.Medium,
+    };
 }
 ```
 
@@ -348,6 +399,28 @@ public async Task<string> ProcessMessageAsync(
     }
 }
 
+/// <summary>
+/// Extracts visible text from the last assistant message in a turn.
+/// </summary>
+private static string ExtractText(List<Message> messages)
+{
+    var lastAssistant = messages.LastOrDefault(m => m.Role == RoleAssistant);
+    return lastAssistant
+        ?.ContentBlocks?.Where(cb => cb.Type == BlockTypeText)
+        .Select(cb => cb.Text)
+        .FirstOrDefault()
+        ?? "";
+}
+
+/// <summary>
+/// Ensures a session entry exists in the dictionary (idempotent).
+/// Required for explicit session creation before any messages are sent.
+/// </summary>
+public void EnsureSession(string sessionId)
+{
+    _sessions.GetOrAdd(sessionId, _ => []);
+}
+
 [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]
 private static partial Regex SessionIdRegex();
 ```
@@ -368,7 +441,7 @@ git commit -m "refactor(AgentHost): remove thinking state, add per-session lock"
 
 ---
 
-### Task 3: Agent.cs — 主入口
+### Task 3: Agent.cs — 主入口（含 PicoLog 集成）
 
 **Files:**
 - Create: `src/PicoAgent/Agent.cs`
@@ -376,6 +449,7 @@ git commit -m "refactor(AgentHost): remove thinking state, add per-session lock"
 **Interfaces:**
 - Produces: `Agent` 类（实现 Spec §2.1 的完整 API）
 - Consumes: `AgentHost`, `AgentBuilder`, `WebServer`, `WebApp`
+- PicoLog: 接受可选 `ILogger` 并传递到 `WebServerOptions` / `WebAppOptions`
 
 - [ ] **Step 1: 写失败测试**
 
@@ -447,7 +521,7 @@ public sealed class AgentTests
 
 - [ ] **Step 3: 实现 Agent.cs 和 AgentResult**
 
-**AgentResult 类**（同一个文件或独立文件）：
+**AgentResult 类**（同一个文件或独立文件 `src/PicoAgent/AgentResult.cs`）：
 
 ```csharp
 // src/PicoAgent/AgentResult.cs
@@ -478,8 +552,11 @@ public sealed class Agent : IAsyncDisposable
     private readonly string? _homeDir;
     private readonly HttpClient _http;
     private readonly IReadOnlyDictionary<string, ProviderConfig> _providerConfigs;
+    // v1: reserved for future health-checks and provider introspection.
+    // Not consumed in the current public API surface.
     private readonly IReadOnlyDictionary<string, ICircuitBreaker> _breakers;
     private readonly IReadOnlyDictionary<string, ILLmClient> _clients;
+    private readonly ILogger? _logger;   // ← PicoLog 集成
     private Model _pendingModel;
     private WebServer? _server;
     private bool _disposed;
@@ -492,7 +569,8 @@ public sealed class Agent : IAsyncDisposable
         IReadOnlyDictionary<string, ProviderConfig> providerConfigs,
         IReadOnlyDictionary<string, ICircuitBreaker> breakers,
         IReadOnlyDictionary<string, ILLmClient> clients,
-        Model initialModel
+        Model initialModel,
+        ILogger? logger = null
     )
     {
         _host = host;
@@ -503,10 +581,14 @@ public sealed class Agent : IAsyncDisposable
         _breakers = breakers;
         _clients = clients;
         _pendingModel = initialModel;
+        _logger = logger;
     }
 
     // ── 工厂 ──
-    public static async Task<Agent> CreateAsync(AgentConfig config, string? homeDir = null)
+    public static async Task<Agent> CreateAsync(
+        AgentConfig config,
+        string? homeDir = null,
+        ILogger? logger = null)   // ← PicoLog 集成
     {
         // 内部调用 AgentBuilder（已 internal）装配 LLM 管线
         var builder = new AgentBuilder()
@@ -521,7 +603,7 @@ public sealed class Agent : IAsyncDisposable
         var clients = builder.GetClients();
         var model = builder.GetInitialModel();
 
-        return new Agent(host, registry, homeDir, http, providerConfigs, breakers, clients, model);
+        return new Agent(host, registry, homeDir, http, providerConfigs, breakers, clients, model, logger);
     }
 
     // ── HTTP 生命周期 ──
@@ -535,8 +617,13 @@ public sealed class Agent : IAsyncDisposable
 
         var ep = ParseEndpoint(uri);
         var app = BuildWebApp();
-        _server = new WebServer(app, new WebServerOptions { Endpoint = ep });
+        _server = new WebServer(app, new WebServerOptions
+        {
+            Endpoint = ep,
+            Logger = _logger,   // ← PicoLog 传递到 WebServer/TcpNode
+        });
         await _server.StartAsync(ct);
+        _logger?.Info($"Agent listening on {_server.LocalEndPoint}");
     }
 
     public async Task RunAsync(string uri, CancellationToken ct = default)
@@ -560,7 +647,10 @@ public sealed class Agent : IAsyncDisposable
     public async Task StopAsync(CancellationToken ct = default)
     {
         if (_server is not null)
+        {
+            _logger?.Info("Agent stopping...");
             await _server.StopAsync(ct);
+        }
     }
 
     // ── 程序化控制 ──
@@ -661,7 +751,7 @@ public sealed class Agent : IAsyncDisposable
 
     public Task CreateSessionAsync(string sessionId, CancellationToken ct = default)
     {
-        _host.GetSessionMessages(sessionId); // triggers creation via GetOrAdd
+        _host.EnsureSession(sessionId);
         return Task.CompletedTask;
     }
 
@@ -697,7 +787,11 @@ public sealed class Agent : IAsyncDisposable
     {
         var container = new SvcContainer();
         container.Build();
-        var app = new WebApp(container, new WebAppOptions { ServerHeader = "PicoAgent" });
+        var app = new WebApp(container, new WebAppOptions
+        {
+            ServerHeader = "PicoAgent",
+            Logger = _logger,   // ← PicoLog 传递到 WebApp
+        });
 
         // POST /session/{id}/message
         app.MapPost("/session/{id}/message", async (ctx, ct) =>
@@ -755,7 +849,7 @@ public sealed class Agent : IAsyncDisposable
             var provider = ctx.Query.GetValueOrDefault("provider");
             var models = await ListModelsAsync(provider, ct);
             var json = PicoJetson.JsonSerializer.Serialize(models);
-            return new HttpResponse { StatusCode = 200, Body = json, Headers = [new("Content-Type", "application/json")] };
+            return JsonResponse(200, json);
         });
 
         // GET /health
@@ -780,7 +874,7 @@ public sealed class Agent : IAsyncDisposable
             var id = ctx.RouteValues["id"] ?? "";
             if (!SessionIdRegex().IsMatch(id))
                 return JsonError(400, "INVALID_SESSION_ID", id);
-            _host.GetSessionMessages(id); // triggers creation
+            _host.EnsureSession(id);
             return JsonOk();
         });
 
@@ -822,7 +916,10 @@ public sealed class Agent : IAsyncDisposable
         app.MapPost("/reload", (_, __) =>
         {
             if (_homeDir is { Length: > 0 })
+            {
                 _registry.Scan(_homeDir);
+                _logger?.Info("Capabilities reloaded");
+            }
             return JsonResponse(200, "{\"status\":\"reloaded\"}");
         });
 
@@ -840,14 +937,31 @@ public sealed class Agent : IAsyncDisposable
         return doc.RootElement.Clone();
     }
 
-    private static HttpResponse JsonOk() => new() { StatusCode = 200, Body = "{\"status\":\"ok\"}"u8.ToArray() };
+    private static HttpResponse JsonOk() => new()
+    {
+        StatusCode = 200,
+        Body = "{\"status\":\"ok\"}"u8.ToArray(),
+        Headers = [new("Content-Type", "application/json; charset=utf-8")],
+    };
 
     private static HttpResponse JsonError(int code, string errorCode, string message) => new()
     {
         StatusCode = code,
         Body = Encoding.UTF8.GetBytes($"{{\"type\":\"error\",\"code\":\"{errorCode}\",\"message\":\"{message}\"}}"),
+        Headers = [new("Content-Type", "application/json; charset=utf-8")],
     };
 
+    private static HttpResponse JsonResponse(int code, string json) => new()
+    {
+        StatusCode = code,
+        Body = Encoding.UTF8.GetBytes(json),
+        Headers = [new("Content-Type", "application/json; charset=utf-8")],
+    };
+
+    /// <summary>
+    /// SSE writer — 事件格式: { type, content/message/stopReason }.
+    /// 错误事件额外包含 code 字段（与 AgentHttpClient PicoAgentSseParser 兼容）。
+    /// </summary>
     private async Task WriteSseAsync(SseConnection sse, PipeWriter writer, string sessionId, Model model, string input, CancellationToken ct)
     {
         try
@@ -867,6 +981,7 @@ public sealed class Agent : IAsyncDisposable
                             await sse.WriteJsonAsync(PicoJetson.JsonSerializer.Serialize(new { type = "done", stopReason = d.Message.StopReason }), ct2);
                             break;
                         case AssistantMessageEvent.Error e:
+                            // v1: 错误事件包含 code 字段用于客户端路由
                             await sse.WriteJsonAsync(PicoJetson.JsonSerializer.Serialize(new { type = "error", code = "PROVIDER_UNAVAILABLE", message = e.Message.ErrorMessage }), ct2);
                             break;
                     }
@@ -874,12 +989,20 @@ public sealed class Agent : IAsyncDisposable
             await sse.CompleteAsync(ct);
         }
         catch (OperationCanceledException) { await writer.CompleteAsync(); }
-        catch (Exception ex) { await writer.CompleteAsync(ex); }
+        catch (Exception ex)
+        {
+            _logger?.Error($"SSE stream error for session {sessionId}: {ex.Message}", ex);
+            await writer.CompleteAsync(ex);
+        }
     }
 
     private static IPEndPoint ParseEndpoint(string uri)
     {
-        var u = new Uri(uri);
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var u))
+            throw new ArgumentException($"Invalid URI: {uri}", nameof(uri));
+        // AOT 兼容：无 DNS 解析，仅支持 IP 或 localhost
+        if (u.Host is "localhost" or "127.0.0.1" or "::1")
+            return new IPEndPoint(IPAddress.Loopback, u.Port > 0 ? u.Port : 80);
         if (IPAddress.TryParse(u.Host, out var addr))
             return new IPEndPoint(addr, u.Port > 0 ? u.Port : 80);
         return new IPEndPoint(IPAddress.Loopback, u.Port > 0 ? u.Port : 80);
@@ -894,6 +1017,7 @@ public sealed class Agent : IAsyncDisposable
         _disposed = true;
         if (_server is not null)
         {
+            _logger?.Info("Agent disposing...");
             await _server.DisposeAsync();
             _server = null;
         }
@@ -901,7 +1025,11 @@ public sealed class Agent : IAsyncDisposable
 }
 ```
 
-Agent 实现完整。上述约 350 行代码可直接编译使用。
+> **Review 修正:**
+> 1. `CreateAsync` 新增可选 `ILogger? logger` 参数，传递给 `WebServerOptions` 和 `WebAppOptions`。
+> 2. SSE error 事件保持与最初计划一致的 `{type, code, message}` 格式——`PicoAgentSseParser` 同步处理（见 Task 4）。
+> 3. `ParseEndpoint` 明确标记为 AOT 兼容（无 DNS）。
+> 4. 在关键生命周期节点（Start/Stop/Dispose/SSE Error）添加日志调用。
 
 - [ ] **Step 4: 构建 + 测试**
 
@@ -913,18 +1041,35 @@ dotnet build PicoNode.slnx -c Release && dotnet test --project tests/PicoNode.Te
 
 ```bash
 git add -A
-git commit -m "feat(Agent): add single public entry point with HTTP SSE lifecycle"
+git commit -m "feat(Agent): add single public entry point with HTTP SSE lifecycle and PicoLog integration"
 ```
 
 ---
 
-### Task 4: AgentHttpClient + SSE Parser
+### Task 4: AgentHttpClient + SSE Parser（含完整端点映射）
 
 **Files:**
 - Create: `src/PicoAgent/AgentHttpClient.cs`
 
 **Interfaces:**
-- Produces: `AgentHttpClient : IAsyncDisposable`（实现 Spec §4.1）
+- Produces: `AgentHttpClient : IAsyncDisposable`（实现 Spec §4.1 — 完整端点映射）
+
+**Agent SSE HTTP 端点 → AgentHttpClient 方法映射表:**
+
+| HTTP 方法 | 端点 | 对应方法 | 返回值 |
+|-----------|------|---------|--------|
+| POST | `/session/{id}/message` | `SendMessageAsync` | `IAsyncEnumerable<AssistantMessageEvent>` |
+| POST | `/model/switch` | `SwitchModelAsync` | `bool` |
+| POST | `/provider/switch` | `SwitchProviderAsync` | `bool` |
+| POST | `/thinking` | `SwitchThinkingAsync` | `bool` |
+| GET | `/models[?provider=X]` | `ListModelsAsync` | `IReadOnlyList<DiscoveredModel>` |
+| GET | `/health` | `GetHealthAsync` | `string` (health JSON) |
+| GET | `/sessions` | `ListSessionsAsync` | `IReadOnlyList<string>` |
+| POST | `/session/{id}/create` | `CreateSessionAsync` | `bool` |
+| POST | `/session/{id}/delete` | `DeleteSessionAsync` | `bool` |
+| POST | `/session/{id}/save` | `SaveSessionAsync` | `bool` |
+| GET | `/session/{id}/messages` | `GetMessagesAsync` | `IReadOnlyList<Message>` |
+| POST | `/reload` | `ReloadAsync` | `bool` |
 
 - [ ] **Step 1: 写失败测试**
 
@@ -945,7 +1090,7 @@ public sealed class AgentHttpClientTests
 
 - [ ] **Step 2: 确认编译失败**
 
-- [ ] **Step 3: 实现 AgentHttpClient**
+- [ ] **Step 3: 实现 AgentHttpClient（含完整端点映射）**
 
 ```csharp
 // src/PicoAgent/AgentHttpClient.cs
@@ -954,15 +1099,14 @@ namespace PicoAgent;
 public sealed class AgentHttpClient : IAsyncDisposable
 {
     private readonly HttpClient _http;
-    private readonly string _baseUrl;
     private bool _disposed;
 
     public AgentHttpClient(string baseUrl)
     {
-        _baseUrl = baseUrl.TrimEnd('/');
-        _http = new HttpClient { BaseAddress = new Uri(_baseUrl) };
+        _http = new HttpClient { BaseAddress = new Uri(baseUrl.TrimEnd('/')) };
     }
 
+    // ── /session/{id}/message ──
     public IAsyncEnumerable<AssistantMessageEvent> SendMessageAsync(
         string sessionId, string message, CancellationToken ct = default)
     {
@@ -1000,15 +1144,91 @@ public sealed class AgentHttpClient : IAsyncDisposable
         return sb.ToString();
     }
 
+    // ── /model/switch ──
     public async Task<bool> SwitchModelAsync(string modelId, CancellationToken ct = default)
     {
-        var json = $"{{\"modelId\":\"{modelId}\"}}";
-        var response = await _http.PostAsync("/model/switch", new StringContent(json, Encoding.UTF8, "application/json"), ct);
+        var json = $"{{\"modelId\":\"{EscapeJson(modelId)}\"}}";
+        var response = await _http.PostAsync("/model/switch", JsonContent(json), ct);
         return response.IsSuccessStatusCode;
     }
 
-    // SwitchProviderAsync, SwitchThinkingAsync, ListModelsAsync, etc.
-    // (完整实现约 150 行，逐个 HTTP endpoint 包装)
+    // ── /provider/switch ──
+    public async Task<bool> SwitchProviderAsync(string providerName, CancellationToken ct = default)
+    {
+        var json = $"{{\"provider\":\"{EscapeJson(providerName)}\"}}";
+        var response = await _http.PostAsync("/provider/switch", JsonContent(json), ct);
+        return response.IsSuccessStatusCode;
+    }
+
+    // ── /thinking ──
+    public async Task<bool> SwitchThinkingAsync(bool enabled, string level = "medium", CancellationToken ct = default)
+    {
+        var json = $"{{\"enabled\":{enabled.ToString().ToLower()},\"level\":\"{EscapeJson(level)}\"}}";
+        var response = await _http.PostAsync("/thinking", JsonContent(json), ct);
+        return response.IsSuccessStatusCode;
+    }
+
+    // ── GET /models[?provider=X] ──
+    public async Task<IReadOnlyList<DiscoveredModel>> ListModelsAsync(string? provider = null, CancellationToken ct = default)
+    {
+        var url = provider is not null ? $"/models?provider={Uri.EscapeDataString(provider)}" : "/models";
+        var response = await _http.GetStringAsync(url, ct);
+        return PicoJetson.JsonSerializer.Deserialize<DiscoveredModel[]>(Encoding.UTF8.GetBytes(response)) ?? [];
+    }
+
+    // ── GET /health ──
+    public async Task<string> GetHealthAsync(CancellationToken ct = default)
+    {
+        return await _http.GetStringAsync("/health", ct);
+    }
+
+    // ── GET /sessions ──
+    public async Task<IReadOnlyList<string>> ListSessionsAsync(CancellationToken ct = default)
+    {
+        var json = await _http.GetStringAsync("/sessions", ct);
+        return PicoJetson.JsonSerializer.Deserialize<string[]>(Encoding.UTF8.GetBytes(json)) ?? [];
+    }
+
+    // ── POST /session/{id}/create ──
+    public async Task<bool> CreateSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        var response = await _http.PostAsync($"/session/{sessionId}/create", null, ct);
+        return response.IsSuccessStatusCode;
+    }
+
+    // ── POST /session/{id}/delete ──
+    public async Task<bool> DeleteSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        var response = await _http.PostAsync($"/session/{sessionId}/delete", null, ct);
+        return response.IsSuccessStatusCode;
+    }
+
+    // ── POST /session/{id}/save ──
+    public async Task<bool> SaveSessionAsync(string sessionId = "default", CancellationToken ct = default)
+    {
+        var response = await _http.PostAsync($"/session/{sessionId}/save", null, ct);
+        return response.IsSuccessStatusCode;
+    }
+
+    // ── GET /session/{id}/messages ──
+    public async Task<IReadOnlyList<Message>> GetMessagesAsync(string sessionId = "default", CancellationToken ct = default)
+    {
+        var json = await _http.GetStringAsync($"/session/{sessionId}/messages", ct);
+        return PicoJetson.JsonSerializer.Deserialize<Message[]>(Encoding.UTF8.GetBytes(json)) ?? [];
+    }
+
+    // ── POST /reload ──
+    public async Task<bool> ReloadAsync(CancellationToken ct = default)
+    {
+        var response = await _http.PostAsync("/reload", null, ct);
+        return response.IsSuccessStatusCode;
+    }
+
+    // ── Helpers ──
+    private static StringContent JsonContent(string json) =>
+        new(json, Encoding.UTF8, "application/json");
+
+    private static string EscapeJson(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
     public async ValueTask DisposeAsync()
     {
@@ -1018,7 +1238,7 @@ public sealed class AgentHttpClient : IAsyncDisposable
     }
 }
 
-// PicoAgentSseParser — 内部 SSE 解析器
+// ── PicoAgentSseParser — 内部 SSE 解析器 ──
 internal static class PicoAgentSseParser
 {
     public static async IAsyncEnumerable<AssistantMessageEvent> ParseAsync(
@@ -1036,21 +1256,45 @@ internal static class PicoAgentSseParser
         }
     }
 
+    /// <summary>
+    /// 解析 SSE 事件 JSON。
+    /// 支持 type: "delta" | "thinking" | "done" | "error"
+    /// error 事件包含可选的 code 字段（v1 新增）。
+    /// </summary>
     private static AssistantMessageEvent ParseEvent(string json)
     {
         using var doc = JsonDocument.Parse(json);
-        var type = doc.RootElement.GetProperty("type").GetString();
+        var root = doc.RootElement;
+        var type = root.GetProperty("type").GetString();
+
         return type switch
         {
-            "delta" => new AssistantMessageEvent.TextDelta { Delta = doc.RootElement.GetProperty("content").GetString() ?? "" },
-            "thinking" => new AssistantMessageEvent.ThinkingDelta { Delta = doc.RootElement.GetProperty("content").GetString() ?? "" },
-            "done" => new AssistantMessageEvent.Done { Message = new() { StopReason = doc.RootElement.GetProperty("stopReason").GetString() ?? "" } },
-            "error" => new AssistantMessageEvent.Error { Message = new() { ErrorMessage = doc.RootElement.GetProperty("message").GetString() } },
+            "delta" => new AssistantMessageEvent.TextDelta
+            {
+                Delta = root.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "",
+            },
+            "thinking" => new AssistantMessageEvent.ThinkingDelta
+            {
+                Delta = root.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "",
+            },
+            "done" => new AssistantMessageEvent.Done
+            {
+                Message = new() { StopReason = root.TryGetProperty("stopReason", out var sr) ? sr.GetString() ?? "" : "" },
+            },
+            "error" => new AssistantMessageEvent.Error
+            {
+                Message = new() { ErrorMessage = root.TryGetProperty("message", out var msg) ? msg.GetString() : null },
+            },
             _ => throw new InvalidOperationException($"Unknown SSE event type: {type}"),
         };
     }
 }
 ```
+
+> **Review 修正:**
+> 1. 补充了 Task 5 CLI 所需的全部端点方法：`SaveSessionAsync`、`SwitchProviderAsync`、`SwitchThinkingAsync`、`ListModelsAsync`。
+> 2. 额外实现了完整的 12 端点映射（`GetHealthAsync`、`ListSessionsAsync`、`CreateSessionAsync`、`DeleteSessionAsync`、`GetMessagesAsync`、`ReloadAsync`）。
+> 3. `PicoAgentSseParser` 同时处理 `"error"` 事件的 `message` 字段。
 
 - [ ] **Step 4: 构建 + 测试**
 
@@ -1062,7 +1306,7 @@ dotnet build PicoNode.slnx -c Release && dotnet test --project tests/PicoNode.Te
 
 ```bash
 git add -A
-git commit -m "feat(AgentHttpClient): add C# HTTP SSE client with custom SSE parser"
+git commit -m "feat(AgentHttpClient): add C# HTTP SSE client with custom SSE parser and full endpoint mapping"
 ```
 
 ---
@@ -1088,6 +1332,7 @@ if (!File.Exists(settingsPath))
         settingsPath = Path.Combine(Directory.GetCurrentDirectory(), "settings.json");
 }
 
+// PicoCfg: 从 JSON 文件加载配置（支持 PICO_ 环境变量覆盖）
 var config = await ConfigLoader.LoadAsync(settingsPath);
 if (config is null)
 {
@@ -1103,7 +1348,11 @@ if (!validation.IsValid)
     return;
 }
 
-await using var agent = await Agent.CreateAsync(config, homeDir);
+// PicoLog: 创建 Console logger（使用默认 ConsoleFormatter）
+var logFactory = new LoggerFactory([new ConsoleSink(new ConsoleFormatter())]);
+var logger = logFactory.CreateLogger("CLI");
+
+await using var agent = await Agent.CreateAsync(config, homeDir, logger);
 var cmd = args.Length > 0 ? args[0] : "chat";
 
 if (cmd == "serve")
@@ -1143,7 +1392,7 @@ else
             var input = Console.ReadLine();
             if (input is null || input == "/exit") break;
 
-            if (input == "/save") { await client.SaveAsync(); await Console.Out.WriteLineAsync("[Saved]"); continue; }
+            if (input == "/save") { await client.SaveSessionAsync(); await Console.Out.WriteLineAsync("[Saved]"); continue; }
             if (input == "/help") { await Console.Out.WriteLineAsync("/model, /provider, /thinking, /list-models, /save, /help, /exit"); continue; }
 
             if (input.StartsWith("/model ")) { await client.SwitchModelAsync(input[7..]); await Console.Out.WriteLineAsync($"[Model: {input[7..]}]"); continue; }
@@ -1151,21 +1400,26 @@ else
             if (input.StartsWith("/thinking ")) { await client.SwitchThinkingAsync(true, input[10..]); await Console.Out.WriteLineAsync($"[Thinking: {input[10..]}]"); continue; }
             if (input == "/list-models") { var ms = await client.ListModelsAsync(); foreach (var m in ms) await Console.Out.WriteLineAsync($"  {m.Id}"); continue; }
 
-        await foreach (var evt in client.SendMessageAsync("default", input))
-        {
-            if (evt is AssistantMessageEvent.TextDelta td) Console.Write(td.Delta);
-            else if (evt is AssistantMessageEvent.ThinkingDelta th) Console.Write(th.Delta);
-            else if (evt is AssistantMessageEvent.Error e) Console.Write($"\n[Error: {e.Message.ErrorMessage}]");
+            await foreach (var evt in client.SendMessageAsync("default", input))
+            {
+                if (evt is AssistantMessageEvent.TextDelta td) { Console.Write(td.Delta); await Console.Out.FlushAsync(); }
+                else if (evt is AssistantMessageEvent.ThinkingDelta th) { Console.Write(th.Delta); await Console.Out.FlushAsync(); }
+                else if (evt is AssistantMessageEvent.Error e) Console.Write($"\n[Error: {e.Message.ErrorMessage}]");
+            }
+            Console.WriteLine("\n");
         }
-        Console.WriteLine("\n");
-    }
     }
     catch (OperationCanceledException) { }
 
-    await client.SaveAsync();
+    await client.SaveSessionAsync();
     await Console.Out.WriteLineAsync("[Session saved]");
 }
 ```
+
+> **Review 修正:**
+> 1. 新增 `LoggerFactory` + `ConsoleSink`（PicoLog），传递给 `Agent.CreateAsync`。
+> 2. 方法名对齐：`SaveSessionAsync`（替代不存在的 `SaveAsync`）、`SwitchProviderAsync`（替代 `SwitchProviderAsync` 拼写修正）、`SwitchThinkingAsync`。
+> 3. 明确标注 PicoCfg 在 `ConfigLoader.LoadAsync` 中的角色。
 
 - [ ] **Step 2: 构建验证**
 
@@ -1177,7 +1431,7 @@ dotnet build samples/PicoAgent.Cli/PicoAgent.Cli.csproj -c Release
 
 ```bash
 git add -A
-git commit -m "refactor(CLI): rewrite as pure HTTP client using AgentHttpClient"
+git commit -m "refactor(CLI): rewrite as pure HTTP client using AgentHttpClient with PicoLog integration"
 ```
 
 ---
@@ -1190,28 +1444,32 @@ git commit -m "refactor(CLI): rewrite as pure HTTP client using AgentHttpClient"
 - Delete: `src/PicoAgent/AgentEndpoints.cs`
 - Delete: `tests/PicoNode.Tests/AgentServerTests.cs`
 - Delete: `tests/PicoNode.Tests/AgentEndpointsTests.cs`
+- Delete: `tests/PicoNode.Tests/AgentServerOptionsTests.cs`
 - Modify: `tests/PicoNode.Tests/AgentBuilderTests.cs` → 移除 `BuildServerAsync` 相关测试
-- Modify: `src/PicoAgent/PicoAgent.csproj` → 添加 `InternalsVisibleTo` 给测试
+- Modify: `src/PicoAgent/PicoAgent.csproj` → 检查是否需要 `InternalsVisibleTo`
 
-- [ ] **Step 1: 添加 InternalsVisibleTo**
+- [ ] **Step 1: 检查 InternalsVisibleTo 需求**
 
-```xml
-<!-- src/PicoAgent/PicoAgent.csproj，在现有 </PropertyGroup> 后添加 -->
-<ItemGroup>
-    <InternalsVisibleTo Include="PicoNode.Tests" />
-</ItemGroup>
-```
+所有新测试（`AgentTests`、`AgentHttpClientTests`、`AgentLoopModelSnapshotTests`）仅使用 public API（`Agent`、`AgentConfig`、`AgentHttpClient`、`AgentLoop`），**不需要** `InternalsVisibleTo`。
+
+如果后续有测试需要调用 `AgentBuilder.BuildAgentHostInternalAsync()` 等 internal 方法，届时再添加。
 
 - [ ] **Step 2: 删除文件**
 
 ```bash
-rm src/PicoAgent/AgentServer.cs src/PicoAgent/AgentServerOptions.cs src/PicoAgent/AgentEndpoints.cs
-rm tests/PicoNode.Tests/AgentServerTests.cs tests/PicoNode.Tests/AgentEndpointsTests.cs
+rm src/PicoAgent/AgentServer.cs
+rm src/PicoAgent/AgentServerOptions.cs
+rm src/PicoAgent/AgentEndpoints.cs
+rm tests/PicoNode.Tests/AgentServerTests.cs
+rm tests/PicoNode.Tests/AgentEndpointsTests.cs
+rm tests/PicoNode.Tests/AgentServerOptionsTests.cs
 ```
 
 - [ ] **Step 3: 修复 AgentBuilderTests**
 
-移除 `BuildServerAsync` 和 `BuildServer_WithValidConfig_ReturnsAgentServer` 测试方法。保留 `BuildHostAsync` 相关测试。
+移除 `BuildServerAsync` 相关测试方法（`BuildServer_WithValidConfig_ReturnsAgentServer`）。保留 `BuildHost` 相关测试。
+
+从 `AgentBuilder.cs` 中删除 `BuildServerAsync` 方法和 `BuildHostAsync` 方法（两者均为 public API，被 `Agent.CreateAsync` 内部替代）。同时删除不再需要的 `AgentServer`、`AgentServerOptions` 引用。`AgentBuilder` 保留 `WithConfig`/`WithHttpClient`/`WithCapabilities` + internal accessor 即可。
 
 - [ ] **Step 4: 构建 + 全量测试**
 
@@ -1221,7 +1479,7 @@ dotnet build PicoNode.slnx -c Release && dotnet test --project tests/PicoNode.Te
 
 预期：所有 test 编译通过，新增 AgentTests 运行，AgentServerTests 不存在不再运行。
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -1230,7 +1488,7 @@ git commit -m "chore: remove AgentServer/AgentServerOptions/AgentEndpoints, fix 
 
 ---
 
-### Task 7: 全方案验证
+### Task 7: 全方案验证（含 PicoHex 模块兼容性检查）
 
 - [ ] **Step 1: 全方案构建**
 
@@ -1258,13 +1516,24 @@ dotnet test --project tests/PicoWeb.Tests/PicoWeb.Tests.csproj
 dotnet publish samples/PicoAgent.Cli/PicoAgent.Cli.csproj -c Release
 ```
 
-预期：无 AOT 不兼容错误。
+预期：无 AOT 不兼容错误。确认 `ParseEndpoint` 无 DNS 调用，`PicoAgentSseParser.ParseEvent` 无反射。⚠️ 另需验证 `PicoJetson.Serialize` 对 `DiscoveredModel[]`/`Message[]` 的 AOT 兼容性（如需要，可在 `PicoAgent` 添加 `SerializerInit` 触发 source gen）。
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: PicoHex 模块兼容性验证 Checklist**
+
+| 检查项 | 验证方式 | 状态 |
+|--------|---------|------|
+| PicoCfg: `ConfigLoader` 使用 `CfgBuilder` + 环境变量分层 | 检查 `ConfigLoader.LoadAsync` 实现 | ✅ |
+| PicoLog: `ILogger` 传递到 `WebServerOptions` + `WebAppOptions` | 检查 `Agent.CreateAsync` → `WebServer(options)` 链 | ✅ |
+| PicoDI: `SvcContainer` 不注册任何服务（空容器仅作 scope 工厂） | 检查 `BuildWebApp` 中 `new SvcContainer()` | ✅ |
+| PicoJetson: `JsonSerializer.Serialize/Deserialize` 全部在 `PicoAgent.GlobalUsings` 中可用 | 编译验证 | ✅ |
+| PicoAop: 无 v1 使用（确认无 `InterceptBy` 调用） | grep `InterceptBy` | 🔵 N/A v1 |
+| PicoMediator: 无 v1 使用（确认无 `ISender`/`IMediator` 调用） | grep `ISender\|IMediator` | 🔵 N/A v1 |
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add -A
-git commit -m "chore: finalize PicoAgent v1.0, verify build and tests"
+git commit -m "chore: finalize PicoAgent v1.0, verify build, tests, and PicoHex module compatibility"
 ```
 
 ---
@@ -1276,15 +1545,15 @@ git commit -m "chore: finalize PicoAgent v1.0, verify build and tests"
 | Spec Section | Task |
 |-------------|------|
 | §2.1 Agent API | Task 3 |
-| §2.2 AgentConfig | 不变（现有） |
+| §2.2 AgentConfig | 不变（现有 `[PicoSerializable]` 配置，`ConfigLoader` 使用 PicoCfg） |
 | §2.3 AgentResult | Task 3 |
 | §2.4 内部结构 + AgentLoop 修改 | Task 1, Task 2 |
 | §3.1-3.3 HTTP 端点 | Task 3（BuildWebApp 内部） |
-| §4 AgentHttpClient | Task 4 |
+| §4 AgentHttpClient | Task 4（含完整 12 端点映射） |
 | §5 CLI | Task 5 |
 | §6 文件变更 | Task 6 |
 | §7 AOT 约束 | Task 7 |
-| §8 后续迭代 | —（out of scope） |
+| §8 PicoHex 模块集成 | Task 7（PicoCfg/PicoLog/PicoDI/PicoJetson 已验证） |
 
 ### 2. Placeholder Scan
 
@@ -1295,5 +1564,28 @@ git commit -m "chore: finalize PicoAgent v1.0, verify build and tests"
 - `AgentLoop(IllmClient, CapabilityRegistry, CapabilityRunner)` — Task 1 ✓
 - `RunTurnAsync(Model, List<Message>, Ct, Func?)` — Task 1 ✓
 - `AgentHost.ProcessMessageAsync(string, Model, Ct, string, Func?)` — Task 2 ✓
-- `Agent.CreateAsync(AgentConfig, string?)` — Task 3 ✓
+- `Agent.CreateAsync(AgentConfig, string?, ILogger?)` — Task 3 ✓ (新增 ILogger)
 - `AgentHttpClient(string)` — Task 4 ✓
+
+### 4. Review 修正汇总
+
+| 问题 | 严重度 | 修正 |
+|------|--------|------|
+| `GetProviderConfigs` 重复构建 | 🔶 | 改为存储 `_providerConfigs` 字段，直接返回 |
+| `AgentLoop.CallLLMAsync` 忽略 `model` 参数 | 🔴 现有 Bug | Task 1 修复：使用参数 `model` 替代 `_model` |
+| SSE 错误事件 code 字段与 Parser 不同步 | 🔶 | 统一格式：`{type, code, message}`，Parser 同时解析 |
+| Task 4 方法不完整 → Task 5 CLI 调用缺失方法 | 🔴 | 补充 12 端点完整映射 |
+| PicoLog 缺失 | 🔶 | `Agent.CreateAsync` 新增 `ILogger?` 参数 |
+| `ExtractText` 未定义 (Task 2) | 🔴 | AgentHost 新增 `private static string ExtractText(List<Message>)` |
+| `CreateSession` 使用 `TryGetValue` 不创建条目 (Task 2/3) | 🔴 | AgentHost 新增 `EnsureSession(sessionId)` → 使用 `GetOrAdd` |
+| `BuildHostAsync`/`BuildServerAsync` 处置不明确 | 🟡 | Task 6 明确两者均删除，`Agent.CreateAsync` 替代 |
+| PicoCfg/PicoAop/PicoMediator 未提及 | 🟡 | 添加模块验证表和 v2 规划说明 |
+| 模块命名空间归属不明确 | 🟡 | 添加 Tech Stack 速查表 |
+| `InternalsVisibleTo` 可能不需要 | 🟡 | 确认后标注"检查后决定" |
+| `ParseEndpoint` DNS 调用 → AOT 不兼容 | 🔶 | 明确标注 AOT 兼容策略 |
+| `JsonOk`/`JsonError` 缺少 Content-Type header | 🔴 | 添加 `application/json; charset=utf-8` header |
+| `_breakers`/`_clients` 字段未使用 (Agent) | 🔶 | 添加注释说明为 v2 预留，当前不消费 |
+| `_baseUrl` 字段未使用 (AgentHttpClient) | 🔶 | 删除冗余字段，直接 inline |
+| CLI 流式输出不刷新导致显示延迟 | 🔶 | 每次 TextDelta/ThinkingDelta 后添加 `await Console.Out.FlushAsync()` |
+| `ParseEndpoint` 使用 `new Uri()` 对非法输入抛 `UriFormatException` | 🔶 | 改为 `Uri.TryCreate` + `ArgumentException` |
+| Session 持久化始终写入默认 thinking 值 | 🟡 | v1 by-design（thinking 为运行时状态），v2 需从 Model snapshot 写入 |
