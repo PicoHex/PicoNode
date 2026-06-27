@@ -123,6 +123,7 @@ public sealed class AgentBuilder
                 ApiKey = defaultPreset.ApiKey,
                 Priority = 1,
             };
+            // Sync-over-async is acceptable during startup (not on hot path).
             var discovered = ModelDiscovery
                 .DiscoverAsync(http, pc, CancellationToken.None)
                 .GetAwaiter()

@@ -10,6 +10,15 @@ public static class AgentEndpoints
             using var reader = new StreamReader(context.Request.BodyStream);
             var input = await reader.ReadToEndAsync(ct);
 
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return new HttpResponse
+                {
+                    StatusCode = 400,
+                    Body = "{\"error\":\"empty input\"}"u8.ToArray(),
+                };
+            }
+
             var pipe = new Pipe();
             var sse = new SseConnection(pipe.Writer);
 
@@ -35,7 +44,9 @@ public static class AgentEndpoints
         string capabilitiesRoot
     ) => (_, _) =>
     {
-        registry.Scan(capabilitiesRoot);
+        if (capabilitiesRoot is { Length: > 0 })
+            registry.Scan(capabilitiesRoot);
+
         var response = new HttpResponse
         {
             StatusCode = 200,
