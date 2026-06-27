@@ -22,6 +22,90 @@
 
 ---
 
+### Task 0: AgentBuilder — 暴露 internal accessor
+
+**Files:**
+- Modify: `src/PicoAgent/AgentBuilder.cs`
+
+**Interfaces:**
+- Produces: `BuildAgentHostInternalAsync()` (public → internal 暴露)、`GetRegistry()`、`GetHttpClient()`、`GetProviderConfigs()`、`GetBreakers()`、`GetClients()`、`GetInitialModel()`
+
+- [ ] **Step 1: 添加 internal accessor 方法**
+
+在 `AgentBuilder.cs` 末尾添加：
+
+```csharp
+// ── Internal accessors for Agent.CreateAsync ──
+
+internal async Task<AgentHost> BuildAgentHostInternalAsync()
+{
+    // 当前 BuildAgentHostAsync 是 private → 改为 internal 暴露
+    return await BuildAgentHostAsync(CancellationToken.None);
+}
+
+internal CapabilityRegistry GetRegistry() => _registry!;
+
+internal HttpClient GetHttpClient() => _http ?? new HttpClient();
+
+internal IReadOnlyDictionary<string, ProviderConfig> GetProviderConfigs()
+{
+    // 重建 provider configs（BuildAgentHostAsync 内部构造的）
+    var result = new Dictionary<string, ProviderConfig>();
+    foreach (var (name, entry) in _config!.Providers)
+    {
+        result[name] = new ProviderConfig
+        {
+            Name = name,
+            BaseUrl = entry.BaseUrl ?? "",
+            ApiFormat = entry.ApiFormat?.ToLowerInvariant() switch
+            {
+                "anthropic" => AiApiFormat.AnthropicMessages,
+                _ => AiApiFormat.OpenAIChatCompletions,
+            },
+            ApiKey = entry.ApiKey,
+            Priority = 1,
+        };
+    }
+    return result;
+}
+
+internal IReadOnlyDictionary<string, ICircuitBreaker> GetBreakers() => _breakers!;
+
+internal IReadOnlyDictionary<string, ILLmClient> GetClients() => _clients!;
+
+internal Model GetInitialModel() => _initialModel!;
+```
+
+同时添加 `_breakers`、`_clients`、`_initialModel` 字段：
+
+```csharp
+private Dictionary<string, ICircuitBreaker>? _breakers;
+private Dictionary<string, ILLmClient>? _clients;
+private Model? _initialModel;
+```
+
+在 `BuildAgentHostAsync` 中存储：
+```csharp
+_breakers = breakers;
+_clients = clients;
+_initialModel = model;
+```
+
+- [ ] **Step 2: 构建验证**
+
+```bash
+dotnet build src/PicoAgent/PicoAgent.csproj -c Release
+```
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "refactor(AgentBuilder): expose internal accessors for Agent.CreateAsync"
+```
+
+---
+
 ### Task 1: AgentLoop — Model 参数化
 
 **Files:**
@@ -457,7 +541,6 @@ public sealed class Agent : IAsyncDisposable
         var model = SnapshotModel();
         var msgs = new List<Message>();
         var hostResult = await _host.ProcessMessageAsync(message, model, ct, sessionId);
-        // Get messages from host
         var allMsgs = _host.GetSessionMessages(sessionId);
         return new AgentResult
         {
@@ -485,8 +568,8 @@ public sealed class Agent : IAsyncDisposable
     {
         lock (_lock)
         {
-            var found = _providerConfigs.Values.Any(p => p.ModelMapping.ContainsKey(modelId));
-            if (!found) return false;
+            // v1: 直接设置 modelId，让 ProviderRouter 在实际调用时解析
+            // 失败会在 LLM 调用时体现（throw InvalidOperationException）
             _pendingModel.Id = modelId;
             return true;
         }
@@ -620,6 +703,98 @@ public sealed class Agent : IAsyncDisposable
 
         // POST /provider/switch, /thinking, GET /models, GET /health, etc.
         // (完整实现见 spec §3.2)
+
+        // POST /provider/switch
+        app.MapPost("/provider/switch", (ctx, _) =>
+        {
+            var json = ReadJsonBody(ctx);
+            var provider = json?.GetProperty("provider").GetString() ?? "";
+            return SwitchProvider(provider)
+                ? JsonOk()
+                : JsonError(404, "NOT_FOUND", "Provider not configured");
+        });
+
+        // POST /thinking
+        app.MapPost("/thinking", (ctx, _) =>
+        {
+            var json = ReadJsonBody(ctx);
+            var enabled = json?.GetProperty("enabled").GetBoolean() ?? true;
+            var levelStr = json?.GetProperty("level").GetString() ?? "medium";
+            var level = AgentConfig.ParseLevel(levelStr);
+            if (level is null)
+                return JsonError(400, "INVALID_ARGUMENT", $"Invalid level: {levelStr}");
+            SwitchThinking(enabled, level.Value);
+            return JsonOk();
+        });
+
+        // GET /models[?provider=X]
+        app.MapGet("/models", async (ctx, ct) =>
+        {
+            var provider = ctx.Query.GetValueOrDefault("provider");
+            var models = await ListModelsAsync(provider, ct);
+            var json = PicoJetson.JsonSerializer.Serialize(models);
+            return new HttpResponse { StatusCode = 200, Body = json, Headers = [new("Content-Type", "application/json")] };
+        });
+
+        // GET /health
+        app.MapGet("/health", (_, __) =>
+        {
+            var model = SnapshotModel();
+            var json = $"{{\"status\":\"ok\",\"model\":\"{model.Id}\",\"provider\":\"{model.Provider}\"}}";
+            return JsonResponse(200, json);
+        });
+
+        // GET /sessions
+        app.MapGet("/sessions", async (_, ct) =>
+        {
+            var sessions = await ListSessionsAsync(ct);
+            var json = PicoJetson.JsonSerializer.Serialize(sessions);
+            return new HttpResponse { StatusCode = 200, Body = json, Headers = [new("Content-Type", "application/json")] };
+        });
+
+        // POST /session/{id}/create
+        app.MapPost("/session/{id}/create", (ctx, _) =>
+        {
+            var id = ctx.RouteValues["id"] ?? "";
+            if (!SessionIdRegex().IsMatch(id))
+                return JsonError(400, "INVALID_SESSION_ID", id);
+            _host.GetSessionMessages(id); // triggers creation
+            return JsonOk();
+        });
+
+        // POST /session/{id}/delete
+        app.MapPost("/session/{id}/delete", (ctx, _) =>
+        {
+            var id = ctx.RouteValues["id"] ?? "";
+            if (_homeDir is not { Length: > 0 })
+                return JsonError(400, "NO_HOME_DIR", "homeDir not configured");
+            var path = Path.Combine(_homeDir, "sessions", $"{id}.jsonl");
+            if (!File.Exists(path))
+                return JsonError(404, "NOT_FOUND", $"Session not found: {id}");
+            File.Delete(path);
+            return JsonOk();
+        });
+
+        // GET /session/{id}/messages
+        app.MapGet("/session/{id}/messages", (ctx, _) =>
+        {
+            var id = ctx.RouteValues["id"] ?? "";
+            var msgs = _host.GetSessionMessages(id);
+            if (msgs.Count == 0 && id != "default")
+                return JsonError(404, "NOT_FOUND", $"Session not found: {id}");
+            var json = PicoJetson.JsonSerializer.Serialize(msgs);
+            return new HttpResponse { StatusCode = 200, Body = json, Headers = [new("Content-Type", "application/json")] };
+        });
+
+        // POST /session/{id}/save
+        app.MapPost("/session/{id}/save", async (ctx, ct) =>
+        {
+            var id = ctx.RouteValues["id"] ?? "";
+            if (_homeDir is not { Length: > 0 })
+                return JsonError(400, "NO_HOME_DIR", "homeDir not configured");
+            await SaveAsync(id, ct);
+            return JsonOk();
+        });
 
         // POST /reload
         app.MapPost("/reload", (_, __) =>
@@ -835,12 +1010,27 @@ Directory.CreateDirectory(homeDir);
 Directory.CreateDirectory(Path.Combine(homeDir, FileSystemConstants.SessionsDir));
 
 var settingsPath = Path.Combine(homeDir, "settings.json");
-if (!File.Exists(settingsPath)) /* fallback chain... */ ;
+if (!File.Exists(settingsPath))
+{
+    settingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
+    if (!File.Exists(settingsPath))
+        settingsPath = Path.Combine(Directory.GetCurrentDirectory(), "settings.json");
+}
 
 var config = await ConfigLoader.LoadAsync(settingsPath);
-if (config is null) { /* error + exit */ return; }
+if (config is null)
+{
+    await Console.Error.WriteLineAsync($"Settings file not found: {settingsPath}");
+    await Console.Error.WriteLineAsync("Copy settings.example.json to this path and edit it.");
+    return;
+}
 var validation = ConfigLoader.Validate(config);
-if (!validation.IsValid) { /* error + exit */ return; }
+if (!validation.IsValid)
+{
+    foreach (var err in validation.Errors)
+        await Console.Error.WriteLineAsync(err);
+    return;
+}
 
 await using var agent = await Agent.CreateAsync(config, homeDir);
 var cmd = args.Length > 0 ? args[0] : "chat";
@@ -859,19 +1049,36 @@ else
 
     var scanner = new KnowledgeScanner();
     var skills = scanner.Scan(homeDir);
-    // ... notifications ...
+    var skillsPrompt = skills.Count > 0 ? KnowledgeScanner.BuildSkillsPrompt(skills) : "";
 
-    Console.CancelKeyPress += (_, e) => { e.Cancel = true; /* graceful exit */ };
+    if (skills.Count > 0)
+        await Console.Out.WriteLineAsync($"[Loaded {skills.Count} skills]");
 
-    while (true)
+    await Console.Out.WriteLineAsync("PicoAgent chat.");
+    await Console.Out.WriteLineAsync(
+        $"Providers: {string.Join(", ", config.Providers.Keys)}"
+    );
+    await Console.Out.WriteLineAsync($"Model: {config.Model}");
+    await Console.Out.WriteLineAsync("Commands: /model, /provider, /thinking, /list-models, /save, /help, /exit\n");
+
+    var exitCts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) => { e.Cancel = true; exitCts.Cancel(); };
+
+    try
     {
-        Console.Write("> ");
-        var input = Console.ReadLine();
-        if (input is null || input == "/exit") break;
-        if (input == "/save") { await client.SaveAsync(); continue; }
-        if (input == "/help") { /* help */ continue; }
+        while (!exitCts.Token.IsCancellationRequested)
+        {
+            Console.Write("> ");
+            var input = Console.ReadLine();
+            if (input is null || input == "/exit") break;
 
-        if (input.StartsWith("/")) { /* switch on commands */ }
+            if (input == "/save") { await client.SaveAsync(); await Console.Out.WriteLineAsync("[Saved]"); continue; }
+            if (input == "/help") { await Console.Out.WriteLineAsync("/model, /provider, /thinking, /list-models, /save, /help, /exit"); continue; }
+
+            if (input.StartsWith("/model ")) { await client.SwitchModelAsync(input[7..]); await Console.Out.WriteLineAsync($"[Model: {input[7..]}]"); continue; }
+            if (input.StartsWith("/provider ")) { await client.SwitchProviderAsync(input[10..]); await Console.Out.WriteLineAsync($"[Provider: {input[10..]}]"); continue; }
+            if (input.StartsWith("/thinking ")) { await client.SwitchThinkingAsync(true, input[10..]); await Console.Out.WriteLineAsync($"[Thinking: {input[10..]}]"); continue; }
+            if (input == "/list-models") { var ms = await client.ListModelsAsync(); foreach (var m in ms) await Console.Out.WriteLineAsync($"  {m.Id}"); continue; }
 
         await foreach (var evt in client.SendMessageAsync("default", input))
         {
@@ -881,9 +1088,11 @@ else
         }
         Console.WriteLine("\n");
     }
+    }
+    catch (OperationCanceledException) { }
 
     await client.SaveAsync();
-    Console.WriteLine("[Session saved]");
+    await Console.Out.WriteLineAsync("[Session saved]");
 }
 ```
 
@@ -908,21 +1117,22 @@ git commit -m "refactor(CLI): rewrite as pure HTTP client using AgentHttpClient"
 - Delete: `src/PicoAgent/AgentServer.cs`
 - Delete: `src/PicoAgent/AgentServerOptions.cs`
 - Delete: `src/PicoAgent/AgentEndpoints.cs`
-- Modify: `tests/PicoNode.Tests/AgentServerTests.cs` → 删除（AgentServer 已不存在）
-- Modify: `tests/PicoNode.Tests/AgentBuilderTests.cs` → 适配新 API
+- Modify: `tests/PicoNode.Tests/AgentServerTests.cs` → 删除
+- Modify: `tests/PicoNode.Tests/AgentEndpointsTests.cs` → 删除
+- Modify: `tests/PicoNode.Tests/AgentBuilderTests.cs` → 移除 `BuildServerAsync` 测试，保留 `BuildHostAsync` 相关测试
 
 - [ ] **Step 1: 删除文件**
 
 ```bash
 rm src/PicoAgent/AgentServer.cs src/PicoAgent/AgentServerOptions.cs src/PicoAgent/AgentEndpoints.cs
-rm tests/PicoNode.Tests/AgentServerTests.cs
+rm tests/PicoNode.Tests/AgentServerTests.cs tests/PicoNode.Tests/AgentEndpointsTests.cs
 ```
 
 - [ ] **Step 2: 修复测试编译错误**
 
-AgentBuilderTests：移除 `BuildServerAsync` 测试（AgentBuilder → internal 不再 public 暴露）。
-AgentEndpointsTests：移除（AgentEndpoints 已删除）。
-取代为新 AgentTests。
+AgentBuilderTests：移除 `BuildServerAsync` 和 `BuildServer_WithValidConfig_ReturnsAgentServer` 测试（AgentBuilder → internal）。
+AgentEndpointsTests：删除文件（AgentEndpoints 已移除）。
+AgentServerTests：删除文件（AgentServer 已移除）。
 
 - [ ] **Step 3: 构建 + 全量测试**
 
