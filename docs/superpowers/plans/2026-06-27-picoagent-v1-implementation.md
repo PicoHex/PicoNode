@@ -447,9 +447,9 @@ public sealed class Agent : IAsyncDisposable
     private readonly CapabilityRegistry _registry;
     private readonly string? _homeDir;
     private readonly HttpClient _http;
-    private readonly Dictionary<string, ProviderConfig> _providerConfigs = [];
-    private readonly Dictionary<string, ICircuitBreaker> _breakers = [];
-    private readonly Dictionary<string, ILLmClient> _clients = [];
+    private readonly IReadOnlyDictionary<string, ProviderConfig> _providerConfigs;
+    private readonly IReadOnlyDictionary<string, ICircuitBreaker> _breakers;
+    private readonly IReadOnlyDictionary<string, ILLmClient> _clients;
     private Model _pendingModel;
     private WebServer? _server;
     private bool _disposed;
@@ -459,9 +459,9 @@ public sealed class Agent : IAsyncDisposable
         CapabilityRegistry registry,
         string? homeDir,
         HttpClient http,
-        Dictionary<string, ProviderConfig> providerConfigs,
-        Dictionary<string, ICircuitBreaker> breakers,
-        Dictionary<string, ILLmClient> clients,
+        IReadOnlyDictionary<string, ProviderConfig> providerConfigs,
+        IReadOnlyDictionary<string, ICircuitBreaker> breakers,
+        IReadOnlyDictionary<string, ILLmClient> clients,
         Model initialModel
     )
     {
