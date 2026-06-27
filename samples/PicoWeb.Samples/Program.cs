@@ -1,6 +1,3 @@
-using PicoLog;
-using PicoLog.Abs;
-
 var container = new SvcContainer();
 
 // Session store
@@ -197,7 +194,7 @@ static X509Certificate2 CreateFreshCert()
         }
         rootStore.Close();
     }
-    catch { }
+    catch { /* best-effort cleanup */ }
 
     Console.Error.WriteLine(
         $"Created fresh dev cert: {loaded.Subject}, key={loaded.GetKeyAlgorithm()}"

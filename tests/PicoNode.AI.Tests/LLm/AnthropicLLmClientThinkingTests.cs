@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.LLm;
 
-using System.Net;
 
 /// <summary>
 /// Tests for StreamOptions.Reasoning → thinking block serialization

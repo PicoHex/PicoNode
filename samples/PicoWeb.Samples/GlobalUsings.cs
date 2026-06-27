@@ -6,6 +6,8 @@ global using System.Text;
 global using PicoDI;
 global using PicoDI.Abs;
 global using PicoJetson;
+global using PicoLog;
+global using PicoLog.Abs;
 global using PicoNode.Http;
 global using PicoNode.Web;
 global using PicoNode.Web.Session.Abs;

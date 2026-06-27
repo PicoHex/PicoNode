@@ -1,4 +1,5 @@
 global using System.IO.Pipelines;
+global using System.Net;
 global using System.Net.Security;
 global using System.Text;
 global using PicoDI;

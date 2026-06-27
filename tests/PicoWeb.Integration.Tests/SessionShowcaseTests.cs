@@ -148,7 +148,7 @@ public sealed class SessionShowcaseTests
             {
                 Directory.Delete(tempRoot, recursive: true);
             }
-            catch { }
+            catch { /* intentional */ }
         }
     }
 }

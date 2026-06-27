@@ -1,5 +1,4 @@
 global using System.Buffers;
-global using System.Collections.Generic;
 global using System.Net;
 global using System.Reflection;
 global using System.Text;

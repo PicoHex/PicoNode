@@ -1,6 +1,5 @@
 namespace PicoNode.Tests;
 
-using System.Net;
 
 public sealed class AgentServerOptionsTests
 {

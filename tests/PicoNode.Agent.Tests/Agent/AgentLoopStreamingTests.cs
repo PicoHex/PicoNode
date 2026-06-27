@@ -1,8 +1,5 @@
 namespace PicoNode.Agent.Tests.Agent;
 
-using PicoNode.Agent;
-using PicoNode.AI;
-
 public class AgentLoopStreamingTests
 {
     [Test]
