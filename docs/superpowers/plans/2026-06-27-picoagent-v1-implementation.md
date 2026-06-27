@@ -539,7 +539,6 @@ public sealed class Agent : IAsyncDisposable
         if (_server is null)
             throw new InvalidOperationException("Not listening. Call ListenAsync first.");
         var model = SnapshotModel();
-        var msgs = new List<Message>();
         var hostResult = await _host.ProcessMessageAsync(message, model, ct, sessionId);
         var allMsgs = _host.GetSessionMessages(sessionId);
         return new AgentResult
@@ -692,32 +691,25 @@ public sealed class Agent : IAsyncDisposable
         });
 
         // POST /model/switch
-        app.MapPost("/model/switch", (ctx, _) =>
+        app.MapPost("/model/switch", async (ctx, ct) =>
         {
-            var json = ReadJsonBody(ctx);
+            var json = await ReadJsonBodyAsync(ctx, ct);
             var modelId = json?.GetProperty("modelId").GetString() ?? "";
-            return SwitchModel(modelId)
-                ? JsonResponse(200, "{\"status\":\"ok\"}")
-                : JsonResponse(404, "{\"type\":\"error\",\"code\":\"NOT_FOUND\",\"message\":\"Model not found\"}");
+            return SwitchModel(modelId) ? JsonOk() : JsonError(404, "NOT_FOUND", "Model not found");
         });
 
-        // POST /provider/switch, /thinking, GET /models, GET /health, etc.
-        // (完整实现见 spec §3.2)
-
         // POST /provider/switch
-        app.MapPost("/provider/switch", (ctx, _) =>
+        app.MapPost("/provider/switch", async (ctx, ct) =>
         {
-            var json = ReadJsonBody(ctx);
+            var json = await ReadJsonBodyAsync(ctx, ct);
             var provider = json?.GetProperty("provider").GetString() ?? "";
-            return SwitchProvider(provider)
-                ? JsonOk()
-                : JsonError(404, "NOT_FOUND", "Provider not configured");
+            return SwitchProvider(provider) ? JsonOk() : JsonError(404, "NOT_FOUND", "Provider not configured");
         });
 
         // POST /thinking
-        app.MapPost("/thinking", (ctx, _) =>
+        app.MapPost("/thinking", async (ctx, ct) =>
         {
-            var json = ReadJsonBody(ctx);
+            var json = await ReadJsonBodyAsync(ctx, ct);
             var enabled = json?.GetProperty("enabled").GetBoolean() ?? true;
             var levelStr = json?.GetProperty("level").GetString() ?? "medium";
             var level = AgentConfig.ParseLevel(levelStr);
@@ -807,8 +799,64 @@ public sealed class Agent : IAsyncDisposable
         return app;
     }
 
-    // SSE writer, JsonResponse, ParseEndpoint helpers...
-    // (完整实现参考现有 AgentEndpoints)
+    // ── Private helpers ──
+
+    private static async Task<JsonElement?> ReadJsonBodyAsync(WebContext ctx, CancellationToken ct)
+    {
+        using var reader = new StreamReader(ctx.Request.BodyStream);
+        var text = await reader.ReadToEndAsync(ct);
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        using var doc = JsonDocument.Parse(text);
+        return doc.RootElement.Clone();
+    }
+
+    private static HttpResponse JsonOk() => new() { StatusCode = 200, Body = "{\"status\":\"ok\"}"u8.ToArray() };
+
+    private static HttpResponse JsonError(int code, string errorCode, string message) => new()
+    {
+        StatusCode = code,
+        Body = Encoding.UTF8.GetBytes($"{{\"type\":\"error\",\"code\":\"{errorCode}\",\"message\":\"{message}\"}}"),
+    };
+
+    private async Task WriteSseAsync(SseConnection sse, PipeWriter writer, string sessionId, Model model, string input, CancellationToken ct)
+    {
+        try
+        {
+            await _host.ProcessMessageAsync(input, model, ct, sessionId,
+                onEvent: async (evt, ct2) =>
+                {
+                    switch (evt)
+                    {
+                        case AssistantMessageEvent.TextDelta td:
+                            await sse.WriteJsonAsync(PicoJetson.JsonSerializer.Serialize(new { type = "delta", content = td.Delta }), ct2);
+                            break;
+                        case AssistantMessageEvent.ThinkingDelta th:
+                            await sse.WriteJsonAsync(PicoJetson.JsonSerializer.Serialize(new { type = "thinking", content = th.Delta }), ct2);
+                            break;
+                        case AssistantMessageEvent.Done d:
+                            await sse.WriteJsonAsync(PicoJetson.JsonSerializer.Serialize(new { type = "done", stopReason = d.Message.StopReason }), ct2);
+                            break;
+                        case AssistantMessageEvent.Error e:
+                            await sse.WriteJsonAsync(PicoJetson.JsonSerializer.Serialize(new { type = "error", code = "PROVIDER_UNAVAILABLE", message = e.Message.ErrorMessage }), ct2);
+                            break;
+                    }
+                });
+            await sse.CompleteAsync(ct);
+        }
+        catch (OperationCanceledException) { await writer.CompleteAsync(); }
+        catch (Exception ex) { await writer.CompleteAsync(ex); }
+    }
+
+    private static IPEndPoint ParseEndpoint(string uri)
+    {
+        var u = new Uri(uri);
+        if (IPAddress.TryParse(u.Host, out var addr))
+            return new IPEndPoint(addr, u.Port > 0 ? u.Port : 80);
+        return new IPEndPoint(IPAddress.Loopback, u.Port > 0 ? u.Port : 80);
+    }
+
+    [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]
+    private static partial Regex SessionIdRegex();
 
     public async ValueTask DisposeAsync()
     {
@@ -1117,22 +1165,30 @@ git commit -m "refactor(CLI): rewrite as pure HTTP client using AgentHttpClient"
 - Delete: `src/PicoAgent/AgentServer.cs`
 - Delete: `src/PicoAgent/AgentServerOptions.cs`
 - Delete: `src/PicoAgent/AgentEndpoints.cs`
-- Modify: `tests/PicoNode.Tests/AgentServerTests.cs` → 删除
-- Modify: `tests/PicoNode.Tests/AgentEndpointsTests.cs` → 删除
-- Modify: `tests/PicoNode.Tests/AgentBuilderTests.cs` → 移除 `BuildServerAsync` 测试，保留 `BuildHostAsync` 相关测试
+- Delete: `tests/PicoNode.Tests/AgentServerTests.cs`
+- Delete: `tests/PicoNode.Tests/AgentEndpointsTests.cs`
+- Modify: `tests/PicoNode.Tests/AgentBuilderTests.cs` → 移除 `BuildServerAsync` 相关测试
+- Modify: `src/PicoAgent/PicoAgent.csproj` → 添加 `InternalsVisibleTo` 给测试
 
-- [ ] **Step 1: 删除文件**
+- [ ] **Step 1: 添加 InternalsVisibleTo**
+
+```xml
+<!-- src/PicoAgent/PicoAgent.csproj，在现有 </PropertyGroup> 后添加 -->
+<ItemGroup>
+    <InternalsVisibleTo Include="PicoNode.Tests" />
+</ItemGroup>
+```
+
+- [ ] **Step 2: 删除文件**
 
 ```bash
 rm src/PicoAgent/AgentServer.cs src/PicoAgent/AgentServerOptions.cs src/PicoAgent/AgentEndpoints.cs
 rm tests/PicoNode.Tests/AgentServerTests.cs tests/PicoNode.Tests/AgentEndpointsTests.cs
 ```
 
-- [ ] **Step 2: 修复测试编译错误**
+- [ ] **Step 3: 修复 AgentBuilderTests**
 
-AgentBuilderTests：移除 `BuildServerAsync` 和 `BuildServer_WithValidConfig_ReturnsAgentServer` 测试（AgentBuilder → internal）。
-AgentEndpointsTests：删除文件（AgentEndpoints 已移除）。
-AgentServerTests：删除文件（AgentServer 已移除）。
+移除 `BuildServerAsync` 和 `BuildServer_WithValidConfig_ReturnsAgentServer` 测试方法。保留 `BuildHostAsync` 相关测试。
 
 - [ ] **Step 3: 构建 + 全量测试**
 
