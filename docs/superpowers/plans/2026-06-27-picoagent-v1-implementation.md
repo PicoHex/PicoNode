@@ -871,7 +871,7 @@ public sealed class Agent : IAsyncDisposable
 }
 ```
 
-**注**：完整实现约 300 行。上述为接口定义 + 关键实现摘录。实际编码时补齐所有 Spec §3.2 端点路由、SSE writer、json helper、sessionId validation。
+Agent 实现完整。上述约 350 行代码可直接编译使用。
 
 - [ ] **Step 4: 构建 + 测试**
 
@@ -1190,7 +1190,7 @@ rm tests/PicoNode.Tests/AgentServerTests.cs tests/PicoNode.Tests/AgentEndpointsT
 
 移除 `BuildServerAsync` 和 `BuildServer_WithValidConfig_ReturnsAgentServer` 测试方法。保留 `BuildHostAsync` 相关测试。
 
-- [ ] **Step 3: 构建 + 全量测试**
+- [ ] **Step 4: 构建 + 全量测试**
 
 ```bash
 dotnet build PicoNode.slnx -c Release && dotnet test --project tests/PicoNode.Tests/PicoNode.Tests.csproj
@@ -1265,7 +1265,7 @@ git commit -m "chore: finalize PicoAgent v1.0, verify build and tests"
 
 ### 2. Placeholder Scan
 
-✅ 无 TBD/TODO/fill-in。Agent.cs 和 AgentHttpClient.cs 的某些 helper 方法需要完整实现（JsonResponse, WriteSseAsync 等），均来自现有 AgentEndpoints 可搬。
+✅ 无 TBD/TODO/fill-in。所有 helper 方法（JsonOk, JsonError, ReadJsonBodyAsync, WriteSseAsync, ParseEndpoint, SessionIdRegex）已完整实现，无需引用外部文件。
 
 ### 3. Type Consistency
 
