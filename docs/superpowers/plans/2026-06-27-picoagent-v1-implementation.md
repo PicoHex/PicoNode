@@ -400,7 +400,7 @@ public sealed class AgentTests
     }
 
     [Test]
-    public async Task SwitchModel_Invalid_ReturnsFalse()
+    public async Task SwitchModel_AlwaysSucceeds()
     {
         var config = new AgentConfig
         {
@@ -408,7 +408,20 @@ public sealed class AgentTests
             Model = "gpt-4",
         };
         await using var agent = await Agent.CreateAsync(config);
-        var result = agent.SwitchModel("nonexistent");
+        var result = agent.SwitchModel("any-model-id");
+        await Assert.That(result).IsTrue(); // v1: always succeeds, routing deferred to ProviderRouter
+    }
+
+    [Test]
+    public async Task SwitchProvider_Invalid_ReturnsFalse()
+    {
+        var config = new AgentConfig
+        {
+            Providers = new() { ["test"] = new ProviderEntry { ApiKey = "sk-test", ApiFormat = "openai", BaseUrl = "https://api.test/v1" } },
+            Model = "gpt-4",
+        };
+        await using var agent = await Agent.CreateAsync(config);
+        var result = agent.SwitchProvider("nonexistent");
         await Assert.That(result).IsFalse();
     }
 
@@ -432,7 +445,24 @@ public sealed class AgentTests
 
 `Agent` 类型不存在。
 
-- [ ] **Step 3: 实现 Agent.cs**
+- [ ] **Step 3: 实现 Agent.cs 和 AgentResult**
+
+**AgentResult 类**（同一个文件或独立文件）：
+
+```csharp
+// src/PicoAgent/AgentResult.cs
+namespace PicoAgent;
+
+public sealed class AgentResult
+{
+    public required string Text { get; init; }
+    public required IReadOnlyList<Message> NewMessages { get; init; }
+    public string? StopReason { get; init; }
+    public TokenUsage? Usage { get; init; }
+}
+```
+
+**Agent 类**：
 
 ```csharp
 // src/PicoAgent/Agent.cs
@@ -909,13 +939,6 @@ public sealed class AgentHttpClientTests
     {
         await using var client = new AgentHttpClient("http://localhost:12345");
         await Assert.That((object?)client).IsNotNull();
-    }
-
-    [Test]
-    public async Task SwitchModelAsync_Invalid_ReturnsFalse()
-    {
-        // 需要 mock HTTP 响应...
-        // v1: 跳过 HTTP mock 测试，改为集成测试
     }
 }
 ```
