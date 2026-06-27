@@ -9,7 +9,7 @@ public sealed class MockHttpHandler : HttpMessageHandler
     public HttpRequestMessage? LastRequest { get; private set; }
     public string? CapturedRequestBody { get; private set; }
 
-    protected override Task<HttpResponseMessage> SendAsync(
+    protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken ct
     )
@@ -17,14 +17,12 @@ public sealed class MockHttpHandler : HttpMessageHandler
         LastRequest = request;
         if (request.Content != null)
         {
-            CapturedRequestBody = request.Content.ReadAsStringAsync(ct).GetAwaiter().GetResult();
+            CapturedRequestBody = await request.Content.ReadAsStringAsync(ct);
         }
-        return Task.FromResult(
-            NextResponse
-                ?? new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-                {
-                    Content = new StringContent(""),
-                }
-        );
+        return NextResponse
+            ?? new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(""),
+            };
     }
 }
