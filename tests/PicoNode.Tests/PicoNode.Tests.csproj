@@ -16,5 +16,8 @@
     <ProjectReference Include="..\..\src\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />
     <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
+    <ProjectReference Include="..\..\src\PicoNode.Agent\PicoNode.Agent.csproj" />
+    <ProjectReference Include="..\..\src\PicoNode.AI\PicoNode.AI.csproj" />
+    <ProjectReference Include="..\..\src\PicoAgent\PicoAgent.csproj" />
   </ItemGroup>
 </Project>
