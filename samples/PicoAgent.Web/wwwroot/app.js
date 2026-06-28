@@ -41,13 +41,13 @@ async function sendMessage() {
             const evt = JSON.parse(data);
             switch (evt.type) {
                 case 'delta':
-                    currentAssistant.textContent += evt.content;
+                    currentAssistant.querySelector('.msg-text').textContent += evt.content;
                     break;
                 case 'thinking':
                     thinkingBlock.querySelector('.think-content').textContent += evt.content;
                     break;
                 case 'error':
-                    currentAssistant.textContent += `\n[Error: ${evt.message}]`;
+                    currentAssistant.querySelector('.msg-text').textContent += `\n[Error: ${evt.message}]`;
                     break;
             }
             messages.scrollTop = messages.scrollHeight;
@@ -58,7 +58,10 @@ async function sendMessage() {
 function appendMessage(role, text) {
     const el = document.createElement('div');
     el.className = `message ${role}`;
-    el.textContent = text;
+    const textSpan = document.createElement('span');
+    textSpan.className = 'msg-text';
+    textSpan.textContent = text;
+    el.appendChild(textSpan);
     messages.appendChild(el);
     return el;
 }
