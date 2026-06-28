@@ -70,7 +70,8 @@ function appendThinkingBlock(parent) {
     const el = document.createElement('details');
     el.className = 'thinking';
     el.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>';
-    parent.appendChild(el);
+    // Insert before the text span so thinking renders above the response
+    parent.insertBefore(el, parent.querySelector('.msg-text'));
     return el;
 }
 
