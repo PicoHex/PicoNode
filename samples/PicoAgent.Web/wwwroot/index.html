@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PicoAgent</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div id="app">
+        <aside id="sidebar">
+            <div class="logo">PicoAgent</div>
+            <div id="session-list"><div class="session active">default</div></div>
+            <div id="status">model: --</div>
+        </aside>
+        <main id="chat">
+            <div id="messages"></div>
+            <div id="input-area">
+                <textarea id="input" placeholder="Type a message..." rows="1"></textarea>
+                <button id="send">Send</button>
+            </div>
+        </main>
+    </div>
+    <script src="/app.js"></script>
+</body>
+</html>
