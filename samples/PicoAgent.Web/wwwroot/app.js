@@ -4,7 +4,7 @@ const messages = document.getElementById('messages');
 const status = document.getElementById('status');
 
 fetch('/api/health').then(r => r.json()).then(h => {
-    status.textContent = `model: ${h.model}`;
+    status.querySelector('span').textContent = h.model;
 });
 
 let currentAssistant = null;
@@ -77,3 +77,16 @@ function appendThinkingBlock(parent) {
 
 sendBtn.addEventListener('click', sendMessage);
 input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+
+// ── Theme Switcher ──
+const themeKey = localStorage.getItem('picoagent-theme') || 'warm-charcoal';
+document.documentElement.setAttribute('data-theme', themeKey);
+document.querySelectorAll('#theme-switcher button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.themeKey === themeKey);
+    btn.addEventListener('click', () => {
+        const key = btn.dataset.themeKey;
+        document.documentElement.setAttribute('data-theme', key);
+        localStorage.setItem('picoagent-theme', key);
+        document.querySelectorAll('#theme-switcher button').forEach(b => b.classList.toggle('active', b === btn));
+    });
+});

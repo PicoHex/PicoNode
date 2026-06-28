@@ -4,14 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PicoAgent</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
     <div id="app">
         <aside id="sidebar">
             <div class="logo">PicoAgent</div>
+            <div id="theme-switcher">
+                <button data-theme-key="warm-charcoal" class="active" title="暖炭墨绿"></button>
+                <button data-theme-key="warm-amber" title="深空暖橙"></button>
+                <button data-theme-key="ivory-paper" title="象牙纸墨"></button>
+            </div>
             <div id="session-list"><div class="session active">default</div></div>
-            <div id="status">model: --</div>
+            <div id="status">model: <span>--</span></div>
         </aside>
         <main id="chat">
             <div id="messages"></div>
