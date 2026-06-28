@@ -71,6 +71,30 @@ body { font-family: var(--font-display), system-ui, sans-serif; background: var(
 #status { font-size: 0.78em; color: var(--fg-muted); margin-top: auto; }
 #status span { color: var(--fg); }
 
+/* ── Markdown content ── */
+.msg-content h1, .msg-content h2, .msg-content h3 { margin: .6em 0 .3em; font-weight: 600; }
+.msg-content h1 { font-size: 1.3em; }
+.msg-content h2 { font-size: 1.15em; }
+.msg-content h3 { font-size: 1.05em; }
+.msg-content p { margin: .4em 0; }
+.msg-content ul, .msg-content ol { padding-left: 1.4em; margin: .4em 0; }
+.msg-content li { margin: .15em 0; }
+.msg-content code { background: var(--bg-input); padding: 1px 5px; border-radius: 4px; font-family: ui-monospace, 'Cascadia Code', monospace; font-size: .88em; }
+.msg-content pre { background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 12px; overflow-x: auto; margin: .6em 0; }
+.msg-content pre code { background: none; padding: 0; }
+.msg-content blockquote { border-left: 3px solid var(--accent); padding-left: 12px; margin: .5em 0; color: var(--fg-muted); }
+.msg-content table { border-collapse: collapse; margin: .5em 0; font-size: .9em; }
+.msg-content th, .msg-content td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.msg-content th { background: var(--bg-input); }
+.msg-content a { color: var(--accent); }
+.msg-content hr { border: none; border-top: 1px solid var(--border); margin: .8em 0; }
+.msg-content img { max-width: 100%; border-radius: 6px; }
+
+/* ── Mermaid ── */
+.mermaid-rendered { display: flex; justify-content: center; margin: .8em 0; overflow-x: auto; }
+.mermaid-rendered svg { max-width: 100%; height: auto; }
+pre.mermaid-error { color: var(--accent); font-size: .85em; }
+
 /* ── Chat ── */
 #chat { flex: 1; display: flex; flex-direction: column; }
 #messages { flex: 1; overflow-y: auto; padding: 16px; }

@@ -8,6 +8,7 @@ fetch('/api/health').then(r => r.json()).then(h => {
 });
 
 let currentAssistant = null;
+let renderTimer = null;
 
 async function sendMessage() {
     const text = input.value.trim();
@@ -26,6 +27,9 @@ async function sendMessage() {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let rawText = '';
+    let rawThinking = '';
+    const contentEl = currentAssistant.querySelector('.msg-content');
 
     while (true) {
         const { done, value } = await reader.read();
@@ -37,17 +41,28 @@ async function sendMessage() {
         for (const line of lines) {
             if (!line.startsWith('data: ')) continue;
             const data = line.slice(6);
-            if (data === '[DONE]') { currentAssistant = null; return; }
+            if (data === '[DONE]') {
+                flushRender(contentEl, rawText);
+                if (rawThinking) {
+                    thinkingBlock.querySelector('.think-content').innerHTML =
+                        marked.parse(rawThinking);
+                }
+                currentAssistant = null;
+                return;
+            }
             const evt = JSON.parse(data);
             switch (evt.type) {
                 case 'delta':
-                    currentAssistant.querySelector('.msg-text').textContent += evt.content;
+                    rawText += evt.content;
+                    debouncedRender(contentEl, rawText);
                     break;
                 case 'thinking':
-                    thinkingBlock.querySelector('.think-content').textContent += evt.content;
+                    rawThinking += evt.content;
+                    thinkingBlock.querySelector('.think-content').textContent = rawThinking;
                     break;
                 case 'error':
-                    currentAssistant.querySelector('.msg-text').textContent += `\n[Error: ${evt.message}]`;
+                    rawText += `\n\n> ⚠️ ${evt.message}`;
+                    debouncedRender(contentEl, rawText);
                     break;
             }
             messages.scrollTop = messages.scrollHeight;
@@ -55,13 +70,43 @@ async function sendMessage() {
     }
 }
 
+function debouncedRender(el, raw) {
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(() => flushRender(el, raw), 80);
+}
+
+function flushRender(el, raw) {
+    clearTimeout(renderTimer);
+    el.innerHTML = marked.parse(raw);
+    // Hide Mermaid placeholder divs before init
+    el.querySelectorAll('pre.mermaid-placeholder').forEach(async pre => {
+        const code = pre.textContent;
+        try {
+            const { svg } = await mermaid.render('mermaid-' + Math.random().toString(36).slice(2), code);
+            pre.outerHTML = `<div class="mermaid-rendered">${svg}</div>`;
+        } catch {
+            pre.classList.add('mermaid-error');
+            pre.textContent = '[Mermaid render error]\n' + code;
+        }
+    });
+}
+
 function appendMessage(role, text) {
     const el = document.createElement('div');
     el.className = `message ${role}`;
-    const textSpan = document.createElement('span');
-    textSpan.className = 'msg-text';
-    textSpan.textContent = text;
-    el.appendChild(textSpan);
+    const content = document.createElement('div');
+    content.className = 'msg-content';
+    content.innerHTML = marked.parse(text);
+    content.querySelectorAll('pre.mermaid-placeholder').forEach(async pre => {
+        const code = pre.textContent;
+        try {
+            const { svg } = await mermaid.render('mermaid-' + Math.random().toString(36).slice(2), code);
+            pre.outerHTML = `<div class="mermaid-rendered">${svg}</div>`;
+        } catch {
+            pre.classList.add('mermaid-error');
+        }
+    });
+    el.appendChild(content);
     messages.appendChild(el);
     return el;
 }
@@ -70,10 +115,20 @@ function appendThinkingBlock(parent) {
     const el = document.createElement('details');
     el.className = 'thinking';
     el.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>';
-    // Insert before the text span so thinking renders above the response
-    parent.insertBefore(el, parent.querySelector('.msg-text'));
+    parent.insertBefore(el, parent.querySelector('.msg-content'));
     return el;
 }
+
+// ── Mermaid init: handle mermaid code blocks via marked's renderer ──
+const renderer = new marked.Renderer();
+const origCode = renderer.code.bind(renderer);
+renderer.code = function({ text, lang }) {
+    if (lang === 'mermaid') {
+        return `<pre class="mermaid-placeholder">${text}</pre>`;
+    }
+    return origCode({ text, lang });
+};
+marked.setOptions({ renderer, breaks: true });
 
 sendBtn.addEventListener('click', sendMessage);
 input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
