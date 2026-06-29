@@ -71,4 +71,32 @@ public class KnowledgeScannerTests
         await Assert.That(prompt).Contains("<name>pdf-tools</name>");
         await Assert.That(prompt).Contains("<name>web-search</name>");
     }
+
+    [Test]
+    public async Task ParseSkillMarkdown_InvalidName_ReturnsNull()
+    {
+        var content = "---\nname: INVALID NAME\ndescription: test\n---\n# Body";
+        var scanner = new KnowledgeScanner();
+        var result = scanner.ParseForTest(content);
+        await Assert.That(result).IsNull();
+    }
+
+    [Test]
+    public async Task ParseSkillMarkdown_EmptyDescription_ReturnsNull()
+    {
+        var content = "---\nname: test\ndescription: \n---\n# Body";
+        var scanner = new KnowledgeScanner();
+        var result = scanner.ParseForTest(content);
+        await Assert.That(result).IsNull();
+    }
+
+    [Test]
+    public async Task ParseSkillMarkdown_DisableModelInvocation_IsParsed()
+    {
+        var content = "---\nname: hidden-skill\ndescription: A hidden skill\ndisable-model-invocation: true\n---\n# Body";
+        var scanner = new KnowledgeScanner();
+        var result = scanner.ParseForTest(content);
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.DisableModelInvocation).IsTrue();
+    }
 }

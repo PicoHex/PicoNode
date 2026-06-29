@@ -5,19 +5,53 @@ public sealed class SkillInfo
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
     public string Path { get; set; } = "";
+    public bool DisableModelInvocation { get; set; }
+}
+
+public sealed class SkillSource
+{
+    public string Path { get; init; } = "";
+    public string SourceTag { get; init; } = "";
 }
 
 public sealed class KnowledgeScanner
 {
+    private static readonly Regex ValidNameRegex = new(@"^[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.Compiled);
+    private const int MaxNameLength = 64;
+    private const int MaxDescriptionLength = 1024;
+
     public List<SkillInfo> Scan(string root)
     {
-        var skills = new List<SkillInfo>();
-        var knowledgeDir = Path.Combine(root, KnowledgeDir);
+        var knowledgeDir = Path.Combine(root, FileSystemConstants.KnowledgeDir);
         if (!Directory.Exists(knowledgeDir))
-            return skills;
+            return [];
 
-        // Find all SKILL.md files recursively under knowledge/
-        var skillFiles = Directory.GetFiles(knowledgeDir, SkillFile, SearchOption.AllDirectories);
+        return ScanDirectory(knowledgeDir);
+    }
+
+    public List<SkillInfo> Scan(IEnumerable<SkillSource> sources)
+    {
+        var seen = new HashSet<string>();
+        var skills = new List<SkillInfo>();
+
+        foreach (var source in sources)
+        {
+            if (!Directory.Exists(source.Path))
+                continue;
+            var dirSkills = ScanDirectory(source.Path);
+            foreach (var skill in dirSkills)
+            {
+                if (seen.Add(skill.Name))
+                    skills.Add(skill);
+            }
+        }
+        return skills.OrderBy(s => s.Name).ToList();
+    }
+
+    private static List<SkillInfo> ScanDirectory(string dir)
+    {
+        var skills = new List<SkillInfo>();
+        var skillFiles = Directory.GetFiles(dir, FileSystemConstants.SkillFile, SearchOption.AllDirectories);
 
         foreach (var skillPath in skillFiles)
         {
@@ -29,49 +63,49 @@ public sealed class KnowledgeScanner
                 skills.Add(skill);
             }
         }
-
-        return skills.OrderBy(s => s.Name).ToList();
+        return skills;
     }
 
     private static SkillInfo? ParseSkillMarkdown(string content)
     {
         var lines = content.Replace("\r", "").Split('\n');
-        if (lines.Length < 3 || lines[0].Trim() != FrontmatterDelim)
+        if (lines.Length < 3 || lines[0].Trim() != YmlConstants.FrontmatterDelim)
             return null;
 
         var skill = new SkillInfo();
-        bool inFrontmatter = true; // First --- already skipped by Skip(1)
+        bool inFrontmatter = true;
 
         foreach (var line in lines.Skip(1))
         {
             var trimmed = line.Trim();
-            if (trimmed == FrontmatterDelim)
+            if (trimmed == YmlConstants.FrontmatterDelim)
             {
-                if (!inFrontmatter)
-                {
-                    inFrontmatter = true;
-                    continue;
-                }
+                if (!inFrontmatter) { inFrontmatter = true; continue; }
                 break;
             }
 
-            if (!inFrontmatter)
-                continue;
+            if (!inFrontmatter) continue;
 
             var colonIdx = trimmed.IndexOf(':');
-            if (colonIdx < 0)
-                continue;
+            if (colonIdx < 0) continue;
 
             var key = trimmed[..colonIdx].Trim();
             var value = trimmed[(colonIdx + 1)..].Trim();
 
-            if (key == KeyName)
+            if (key == YmlConstants.KeyName)
                 skill.Name = value;
-            else if (key == KeyDescription)
+            else if (key == YmlConstants.KeyDescription)
                 skill.Description = value;
+            else if (key == "disable-model-invocation")
+                skill.DisableModelInvocation = string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
         }
 
-        return string.IsNullOrEmpty(skill.Name) ? null : skill;
+        // Validation
+        if (string.IsNullOrWhiteSpace(skill.Name)) return null;
+        if (!ValidNameRegex.IsMatch(skill.Name) || skill.Name.Length > MaxNameLength) return null;
+        if (string.IsNullOrWhiteSpace(skill.Description) || skill.Description.Length > MaxDescriptionLength) return null;
+
+        return skill;
     }
 
     public static string BuildSkillsPrompt(List<SkillInfo> skills)
@@ -80,6 +114,7 @@ public sealed class KnowledgeScanner
         sb.AppendLine("<available_skills>");
         foreach (var skill in skills)
         {
+            if (skill.DisableModelInvocation) continue;
             sb.AppendLine("  <skill>");
             sb.AppendLine($"    <name>{skill.Name}</name>");
             sb.AppendLine($"    <description>{skill.Description}</description>");
