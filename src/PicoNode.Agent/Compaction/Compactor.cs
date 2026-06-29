@@ -21,7 +21,7 @@ public sealed class Compactor
         var path = entries.Where(e => e is not LeafEntry).ToArray();
 
         // Find cut point: walk from the end, accumulating tokens until we reach KeepRecentTokens
-        var cutIndex = path.Length;
+        var cutIndex = 0;
         long accumulated = 0;
         for (int i = path.Length - 1; i >= 0; i--)
         {
@@ -33,6 +33,8 @@ public sealed class Compactor
             }
             cutIndex = i;
         }
+        // If all messages fit within KeepRecentTokens, no compaction needed
+        if (cutIndex == 0) return null;
         // Ensure cutIndex doesn't point to the middle of a compaction
         if (cutIndex > 0 && path[cutIndex - 1] is CompactionEntry)
             cutIndex = Math.Max(0, cutIndex - 1);
