@@ -108,21 +108,5 @@ public sealed class KnowledgeScanner
         return skill;
     }
 
-    public static string BuildSkillsPrompt(List<SkillInfo> skills)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("<available_skills>");
-        foreach (var skill in skills)
-        {
-            if (skill.DisableModelInvocation) continue;
-            sb.AppendLine("  <skill>");
-            sb.AppendLine($"    <name>{skill.Name}</name>");
-            sb.AppendLine($"    <description>{skill.Description}</description>");
-            sb.AppendLine("  </skill>");
-        }
-        sb.AppendLine("</available_skills>");
-        return sb.ToString();
-    }
-
     public SkillInfo? ParseForTest(string content) => ParseSkillMarkdown(content);
 }

@@ -65,11 +65,10 @@ public class KnowledgeScannerTests
             new() { Name = "web-search", Description = "Search the web" },
         };
 
-        var prompt = KnowledgeScanner.BuildSkillsPrompt(skills);
+        var prompt = SkillFormatter.FormatSkillsPrompt(skills);
 
-        await Assert.That(prompt).Contains("<available_skills>");
-        await Assert.That(prompt).Contains("<name>pdf-tools</name>");
-        await Assert.That(prompt).Contains("<name>web-search</name>");
+        await Assert.That(prompt).Contains("pdf-tools");
+        await Assert.That(prompt).Contains("web-search");
     }
 
     [Test]
