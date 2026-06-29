@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PicoNode.Agent\PicoNode.Agent.csproj" />
+    <ProjectReference Include="..\..\src\PicoAgent\PicoAgent.csproj" />
     <PackageReference Include="PicoJetson" />
     <PackageReference Include="TUnit" />
   </ItemGroup>
