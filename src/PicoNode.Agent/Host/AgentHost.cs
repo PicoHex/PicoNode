@@ -3,7 +3,7 @@ namespace PicoNode.Agent;
 public sealed partial class AgentHost
 {
     private readonly AgentLoop _loop;
-    private readonly ConcurrentDictionary<string, List<Message>> _sessions = [];
+    private readonly ConcurrentDictionary<string, Session> _sessions = [];
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = [];
 
     public AgentHost(AgentLoop loop)
@@ -12,27 +12,20 @@ public sealed partial class AgentHost
     }
 
     /// <summary>
-    /// Restore session state from persisted SessionData.
-    /// v1: only restores messages. Thinking state is managed on the Model object.
+    /// Restore session state from persisted entries.
     /// </summary>
-    public void RestoreSession(string sessionId, SessionData data)
+    public async Task RestoreSessionAsync(string sessionId, Session session)
     {
-        _sessions[sessionId] = data.Messages;
+        _sessions[sessionId] = session;
+        await Task.CompletedTask;
     }
 
     /// <summary>
-    /// Build a SessionData snapshot of the current session state.
-    /// v1: thinking fields kept for serialization compatibility, always default values.
+    /// Get or create a Session for the given ID.
     /// </summary>
-    public SessionData GetSessionData(string sessionId)
+    public Session GetOrCreateSession(string sessionId)
     {
-        var messages = _sessions.GetValueOrDefault(sessionId) ?? [];
-        return new SessionData
-        {
-            Messages = messages,
-            ThinkingEnabled = true,
-            ThinkingLevel = ThinkingLevel.Medium,
-        };
+        return _sessions.GetOrAdd(sessionId, _ => new Session(new InMemorySessionStorage()));
     }
 
     /// <summary>
@@ -40,7 +33,7 @@ public sealed partial class AgentHost
     /// </summary>
     public void EnsureSession(string sessionId)
     {
-        _sessions.GetOrAdd(sessionId, _ => []);
+        _sessions.GetOrAdd(sessionId, _ => new Session(new InMemorySessionStorage()));
     }
 
     public async Task<string> ProcessMessageAsync(
@@ -58,16 +51,15 @@ public sealed partial class AgentHost
         await sessionLock.WaitAsync(ct);
         try
         {
-            var messages = _sessions.GetOrAdd(sessionId, _ => []);
-            messages.Add(
-                new Message
-                {
-                    Role = RoleUser,
-                    Content = content,
-                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                }
-            );
+            var session = _sessions.GetOrAdd(sessionId, _ => new Session(new InMemorySessionStorage()));
+            await session.AppendMessage(new Message
+            {
+                Role = RoleUser,
+                Content = content,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            });
 
+            var messages = await session.BuildContext();
             var result = await _loop.RunTurnAsync(model, messages, ct, onEvent);
             return ExtractText(result);
         }
@@ -81,8 +73,12 @@ public sealed partial class AgentHost
         }
     }
 
-    public IReadOnlyList<Message> GetSessionMessages(string sessionId = "default") =>
-        _sessions.TryGetValue(sessionId, out var msgs) ? msgs : [];
+    public async Task<IReadOnlyList<Message>> GetSessionMessagesAsync(string sessionId = "default")
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+            return await session.BuildContext();
+        return [];
+    }
 
     /// <summary>
     /// Extracts visible text from the last assistant message in a turn.

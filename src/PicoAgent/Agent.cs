@@ -144,8 +144,8 @@ public sealed partial class Agent : IAsyncDisposable
             throw new InvalidOperationException("Not listening. Call ListenAsync first.");
         var model = SnapshotModel();
         var hostResult = await _host.ProcessMessageAsync(message, model, ct, sessionId);
-        var allMsgs = _host.GetSessionMessages(sessionId);
-        return new AgentResult(hostResult, allMsgs);
+        var allMsgs = await _host.GetSessionMessagesAsync(sessionId);
+        return new AgentResult(hostResult, [.. allMsgs]);
     }
 
     public async Task<AgentResult> SendAsync(
@@ -159,8 +159,8 @@ public sealed partial class Agent : IAsyncDisposable
             throw new InvalidOperationException("Not listening. Call ListenAsync first.");
         var model = SnapshotModel();
         var hostResult = await _host.ProcessMessageAsync(message, model, ct, sessionId, onEvent);
-        var allMsgs = _host.GetSessionMessages(sessionId);
-        return new AgentResult(hostResult, allMsgs);
+        var allMsgs = await _host.GetSessionMessagesAsync(sessionId);
+        return new AgentResult(hostResult, [.. allMsgs]);
     }
 
     public bool SwitchModel(string modelId)

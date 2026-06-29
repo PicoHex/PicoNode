@@ -172,8 +172,8 @@ public sealed class AgentBuilder
             var sessionPath = Path.Combine(root, "sessions", "default.jsonl");
             if (File.Exists(sessionPath))
             {
-                var sessionData = await SessionStore.LoadAsync(sessionPath, ct);
-                host.RestoreSession("default", sessionData);
+                var session = await JsonlSessionStorage.OpenAsync(sessionPath);
+                await host.RestoreSessionAsync("default", new Session(session));
             }
         }
         catch

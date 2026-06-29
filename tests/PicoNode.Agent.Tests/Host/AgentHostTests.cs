@@ -69,23 +69,12 @@ public class AgentHostTests
         var loop = new AgentLoop(llmClient, new CapabilityRegistry(), new CapabilityRunner());
         var host = new AgentHost(loop);
 
-        var data = new SessionData
-        {
-            Messages =
-            [
-                new Message
-                {
-                    Role = "user",
-                    Content = "Hi",
-                    Timestamp = 1,
-                },
-            ],
-        };
-        host.RestoreSession("s1", data);
+        var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
+        await session.AppendMessage(new Message { Role = "user", Content = "Hi", Timestamp = 1 });
+        await host.RestoreSessionAsync("s1", session);
 
-        var restored = host.GetSessionData("s1");
-        // v1: thinking fields are always defaults (not restored from session)
-        await Assert.That(restored.Messages.Count).IsEqualTo(1);
+        var msgs = await host.GetSessionMessagesAsync("s1");
+        await Assert.That(msgs.Count).IsEqualTo(1);
     }
 }
 

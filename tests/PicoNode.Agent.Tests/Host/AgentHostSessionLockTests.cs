@@ -18,7 +18,7 @@ public sealed class AgentHostSessionLockTests
         // and ready for cleanup. We verify by calling EnsureSession first
         // (to pre-create the session entry for GetSessionMessages).
         host.EnsureSession("s1");
-        var msgs = host.GetSessionMessages("s1");
+        var msgs = await host.GetSessionMessagesAsync("s1");
         // Session exists and has messages from the call above
         await Assert.That(msgs.Count).IsGreaterThan(0);
     }
@@ -55,7 +55,7 @@ public sealed class AgentHostSessionLockTests
         // All sessions should have messages
         for (int i = 0; i < 10; i++)
         {
-            var msgs = host.GetSessionMessages($"s{i}");
+            var msgs = await host.GetSessionMessagesAsync($"s{i}");
             await Assert.That(msgs.Count).IsGreaterThan(0);
         }
     }
