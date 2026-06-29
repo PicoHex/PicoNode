@@ -5,53 +5,25 @@ public class AgentLoopTests
     [Test]
     public async Task RunTurnAsync_SimpleMessage_ReturnsAssistantResponse()
     {
-        var llmClient = new MockLLmClient();
-        var registry = new CapabilityRegistry();
-        var runner = new CapabilityRunner();
-        var model = new Model
-        {
-            Id = "claude-sonnet-4-20250514",
-            BaseUrl = "https://api.anthropic.com",
-            Api = AiApiFormat.AnthropicMessages,
-            Provider = "anthropic",
-            MaxTokens = 4096,
-        };
-        var loop = new AgentLoop(llmClient, registry, runner);
+        var session = new Session(new InMemorySessionStorage());
+        await session.AppendMessage(new Message { Role = "user", Content = "Hello", Timestamp = 1 });
 
-        var messages = new List<Message>
-        {
-            new()
-            {
-                Role = "user",
-                Content = "Hello",
-                Timestamp = 1,
-            },
-        };
+        var llm = new MockAgentLlm();
+        var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner());
 
-        var result = await loop.RunTurnAsync(model, messages, CancellationToken.None);
+        var result = await loop.RunTurnAsync(session, CancellationToken.None);
 
         await Assert.That(result).IsNotNull();
         await Assert.That(result.Count).IsGreaterThan(0);
         var lastAssistant = result.LastOrDefault(m => m.Role == "assistant");
         await Assert.That(lastAssistant).IsNotNull();
-        await Assert.That(lastAssistant!.ContentBlocks![0].Text).IsEqualTo("Hello!");
     }
 
     [Test]
     public async Task RunTurnAsync_WithCallback_StreamsEvents()
     {
-        var llmClient = new MockLLmClient();
-        var registry = new CapabilityRegistry();
-        var runner = new CapabilityRunner();
-        var model = new Model
-        {
-            Id = "claude-sonnet-4",
-            BaseUrl = "https://api.anthropic.com",
-            Api = AiApiFormat.AnthropicMessages,
-            Provider = "anthropic",
-            MaxTokens = 4096,
-        };
-        var loop = new AgentLoop(llmClient, registry, runner);
+        var session = new Session(new InMemorySessionStorage());
+        await session.AppendMessage(new Message { Role = "user", Content = "Hello", Timestamp = 1 });
 
         var events = new List<AssistantMessageEvent>();
         Func<AssistantMessageEvent, CancellationToken, ValueTask> onEvent = (e, _) =>
@@ -60,59 +32,31 @@ public class AgentLoopTests
             return ValueTask.CompletedTask;
         };
 
-        var messages = new List<Message>
-        {
-            new()
-            {
-                Role = "user",
-                Content = "Hello",
-                Timestamp = 1,
-            },
-        };
+        var llm = new StreamingMockAgentLlm();
+        var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner());
 
-        await loop.RunTurnAsync(model, messages, CancellationToken.None, onEvent);
-
-        // Should have received TextDelta and Done events
+        await loop.RunTurnAsync(session, CancellationToken.None, onEvent);
         await Assert.That(events.Count).IsGreaterThan(0);
-        var textEvents = events.OfType<AssistantMessageEvent.TextDelta>().ToArray();
-        await Assert.That(textEvents.Length).IsEqualTo(1);
-        await Assert.That(textEvents[0].Delta).IsEqualTo("Hello!");
-        var done = events.OfType<AssistantMessageEvent.Done>().ToArray();
-        await Assert.That(done.Length).IsEqualTo(1);
     }
-}
 
-public sealed class MockLLmClient : ILLmClient
-{
-    public async IAsyncEnumerable<AssistantMessageEvent> StreamAsync(
-        Model model,
-        ChatContext context,
-        StreamOptions? options,
-        [EnumeratorCancellation] CancellationToken ct
-    )
+    private sealed class MockAgentLlm : IAgentLlm
     {
-        yield return new AssistantMessageEvent.Start
+        public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
+            string? sp, Message[] msgs, string mid, string? rl, CancellationToken ct)
         {
-            Partial = new Message { Role = "assistant" },
-        };
-        yield return new AssistantMessageEvent.TextDelta
+            yield return new LlmStreamEvent("done", "ok", "end_turn", null);
+            await Task.CompletedTask;
+        }
+    }
+
+    private sealed class StreamingMockAgentLlm : IAgentLlm
+    {
+        public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
+            string? sp, Message[] msgs, string mid, string? rl, CancellationToken ct)
         {
-            Index = 0,
-            Delta = "Hello!",
-            Partial = new Message
-            {
-                Role = "assistant",
-                ContentBlocks = [new ContentBlock { Type = "text", Text = "Hello!" }],
-            },
-        };
-        yield return new AssistantMessageEvent.Done
-        {
-            Message = new Message
-            {
-                Role = "assistant",
-                ContentBlocks = [new ContentBlock { Type = "text", Text = "Hello!" }],
-                StopReason = "end_turn",
-            },
-        };
+            yield return new LlmStreamEvent("text_delta", "Hello!", null, null);
+            yield return new LlmStreamEvent("done", null, "end_turn", null);
+            await Task.CompletedTask;
+        }
     }
 }

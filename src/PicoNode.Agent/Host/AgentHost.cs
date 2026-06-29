@@ -50,8 +50,7 @@ public sealed partial class AgentHost
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
 
-            var messages = await session.BuildContext();
-            var result = await _loop.RunTurnAsync(model, messages, ct, onEvent);
+            var result = await _loop.RunTurnAsync(session, ct, onEvent);
             return ExtractText(result);
         }
         finally

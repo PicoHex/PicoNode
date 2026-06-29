@@ -2,36 +2,31 @@ namespace PicoNode.Agent;
 
 public sealed class AgentLoop
 {
-    private readonly ILLmClient _llm;
+    private readonly IAgentLlm _llm;
     private readonly CapabilityRegistry _registry;
     private readonly CapabilityRunner _runner;
     private const int MaxToolIterations = 20;
 
-    public AgentLoop(ILLmClient llm, CapabilityRegistry registry, CapabilityRunner runner)
+    public AgentLoop(IAgentLlm llm, CapabilityRegistry registry, CapabilityRunner runner)
     {
         _llm = llm;
         _registry = registry;
         _runner = runner;
     }
 
-    /// v1: truncate to last N messages. v2: LLM-based summary.
+    /// <summary>LLM-based summary compaction — v2 target.</summary>
     public static List<Message> Compact(List<Message> messages, int keepLast = 20)
     {
-        if (messages.Count <= keepLast)
-            return [.. messages];
+        if (messages.Count <= keepLast) return [.. messages];
         return messages.Skip(messages.Count - keepLast).ToList();
     }
 
-    // v1: exceptions propagate to caller. v2: wrap in agent-level error handling.
     public async Task<List<Message>> RunTurnAsync(
-        Model model,
-        List<Message> messages,
+        Session session,
         CancellationToken ct,
-        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
-    )
+        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null)
     {
         var result = new List<Message>();
-
         var iterations = 0;
         bool hasTools;
 
@@ -39,22 +34,19 @@ public sealed class AgentLoop
         {
             iterations++;
 
-            // Filter out messages with empty roles (defense against corrupted sessions)
+            var messages = await session.BuildContext();
             var valid = messages.Where(m => !string.IsNullOrEmpty(m.Role)).ToArray();
 
-            var context = new ChatContext { Messages = valid };
-            var assistantMsg = await CallLLMAsync(model, context, ct, onEvent);
+            var context = new ChatContext { SystemPrompt = null, Messages = valid };
+            var assistantMsg = await CallLLMAsync(context, ct, onEvent);
 
-            if (assistantMsg == null)
-                break;
+            if (assistantMsg == null) break;
 
-            messages.Add(assistantMsg);
+            await session.AppendMessage(assistantMsg);
             result.Add(assistantMsg);
 
-            // Check for tool calls in ContentBlocks
-            var toolCallBlocks = assistantMsg
-                .ContentBlocks?.Where(cb => cb.Type == BlockTypeToolCall)
-                .ToArray();
+            var toolCallBlocks = assistantMsg.ContentBlocks
+                ?.Where(cb => cb.Type == BlockTypeToolCall).ToArray();
             hasTools = toolCallBlocks is { Length: > 0 };
 
             if (hasTools)
@@ -65,145 +57,86 @@ public sealed class AgentLoop
 
                     if (capConfig == null)
                     {
-                        messages.Add(
-                            new Message
-                            {
-                                Role = RoleToolResult,
-                                ToolCallId = tc.Id,
-                                ToolName = tc.Name,
-                                ContentBlocks =
-                                [
-                                    new ContentBlock
-                                    {
-                                        Type = BlockTypeText,
-                                        Text = $"Tool not found: {tc.Name}",
-                                    },
-                                ],
-                                IsError = true,
-                                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                            }
-                        );
+                        var notFound = new Message
+                        {
+                            Role = RoleToolResult,
+                            ToolCallId = tc.Id,
+                            ToolName = tc.Name,
+                            ContentBlocks = [new ContentBlock { Type = BlockTypeText, Text = $"Tool not found: {tc.Name}" }],
+                            IsError = true,
+                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        };
+                        await session.AppendMessage(notFound);
+                        result.Add(notFound);
                         continue;
                     }
 
-                    // Run hooks before tool execution
+                    // Hook: OnToolCall
                     var hookInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
-                        new
-                        {
-                            kind = KindHook,
-                            eventName = HookEventToolCall,
-                            toolName = tc.Name,
-                            args = tc.Arguments,
-                        }
-                    );
-
+                        new { kind = KindHook, eventName = HookEventToolCall, toolName = tc.Name, args = tc.Arguments });
                     var hookResult = await RunHooksAsync(TriggerKind.OnToolCall, hookInput, ct);
-
-                    if (hookResult is { } h && h.TryGetProperty("action", out var action))
-                    {
-                        if (action.GetString() == ActionBlock)
-                            break;
-                    }
+                    if (hookResult is { } h && h.TryGetProperty("action", out var action) && action.GetString() == ActionBlock)
+                        continue;
 
                     // Execute tool
                     var toolInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
-                        new
-                        {
-                            kind = KindToolCall,
-                            toolCallId = tc.Id,
-                            toolName = tc.Name,
-                            args = tc.Arguments,
-                        }
-                    );
-
-                    var toolResponse = await _runner.ExecuteAsync(
-                        capConfig,
-                        KindToolCall,
-                        toolInput,
-                        ct
-                    );
+                        new { kind = KindToolCall, toolCallId = tc.Id, toolName = tc.Name, args = tc.Arguments });
+                    var toolResponse = await _runner.ExecuteAsync(capConfig, KindToolCall, toolInput, ct);
 
                     var toolMsg = new Message
                     {
                         Role = RoleToolResult,
                         ToolCallId = tc.Id,
                         ToolName = tc.Name,
-                        ContentBlocks =
-                        [
-                            new ContentBlock
-                            {
-                                Type = BlockTypeText,
-                                Text = toolResponse.TryGetProperty(FieldContent, out var c)
-                                    ? c.ToString()
-                                    : "",
-                            },
-                        ],
-                        IsError =
-                            toolResponse.TryGetProperty(FieldIsError, out var isErr)
-                            && isErr.GetBoolean(),
+                        ContentBlocks = [new ContentBlock { Type = BlockTypeText, Text = toolResponse.TryGetProperty(FieldContent, out var c) ? c.ToString() : "" }],
+                        IsError = toolResponse.TryGetProperty(FieldIsError, out var isErr) && isErr.GetBoolean(),
                         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     };
-                    messages.Add(toolMsg);
+                    await session.AppendMessage(toolMsg);
                     result.Add(toolMsg);
                 }
             }
 
-            if (iterations >= MaxToolIterations)
-                break;
+            if (iterations >= MaxToolIterations) break;
         } while (hasTools);
 
         return result;
     }
 
     private async Task<Message?> CallLLMAsync(
-        Model model,
         ChatContext context,
         CancellationToken ct,
-        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
-    )
+        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null)
     {
+        // Hook: OnModelPreRequest
         Message? finalMessage = null;
-
-        var streamOptions =
-            model.ThinkingEnabled && model.ThinkingLevelMap is { Count: > 0 }
-                ? new StreamOptions
-                {
-                    Reasoning = model.ThinkingLevel,
-                    ThinkingLevelMap = model.ThinkingLevelMap,
-                }
-                : null;
-
-        await foreach (var evt in _llm.StreamAsync(model, context, streamOptions, ct))
+        await foreach (var evt in _llm.StreamAsync(context.SystemPrompt, context.Messages, "default", null, ct))
         {
-            if (onEvent is { } handler)
-                await handler(evt, ct);
-            if (evt is AssistantMessageEvent.Done d)
-                finalMessage = d.Message;
-            else if (evt is AssistantMessageEvent.Error e)
-                finalMessage = e.Message;
+            switch (evt.Type)
+            {
+                case "text_delta" when onEvent is not null:
+                    await onEvent(new AssistantMessageEvent.TextDelta { Index = 0, Delta = evt.Text ?? "", Partial = new() }, ct);
+                    break;
+                case "done":
+                    finalMessage = new Message { Role = "assistant", StopReason = evt.StopReason ?? "end_turn", ContentBlocks = [] };
+                    break;
+                case "error":
+                    finalMessage = new Message { Role = "assistant", StopReason = "error", ErrorMessage = evt.ErrorMessage };
+                    break;
+            }
         }
-
         return finalMessage;
     }
 
-    private async Task<JsonElement?> RunHooksAsync(
-        TriggerKind trigger,
-        byte[] input,
-        CancellationToken ct
-    )
+    private async Task<JsonElement?> RunHooksAsync(TriggerKind trigger, byte[] input, CancellationToken ct)
     {
         var hooks = _registry.GetByTrigger(trigger).OrderBy(c => c.Priority);
-
         foreach (var hook in hooks)
         {
             var result = await _runner.ExecuteAsync(hook, KindHook, input, ct);
-            if (result.TryGetProperty("action", out var action))
-            {
-                if (action.GetString() == ActionBlock)
-                    return result;
-            }
+            if (result.TryGetProperty("action", out var action) && action.GetString() == ActionBlock)
+                return result;
         }
-
         return null;
     }
 }
