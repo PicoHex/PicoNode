@@ -5,7 +5,7 @@ public class AgentLoopTests
     [Test]
     public async Task RunTurnAsync_SimpleMessage_ReturnsAssistantResponse()
     {
-        var session = new Session(new InMemorySessionStorage());
+        var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
         await session.AppendMessage(new Message { Role = "user", Content = "Hello", Timestamp = 1 });
 
         var llm = new MockAgentLlm();
@@ -22,7 +22,7 @@ public class AgentLoopTests
     [Test]
     public async Task RunTurnAsync_WithCallback_StreamsEvents()
     {
-        var session = new Session(new InMemorySessionStorage());
+        var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
         await session.AppendMessage(new Message { Role = "user", Content = "Hello", Timestamp = 1 });
 
         var events = new List<AssistantMessageEvent>();

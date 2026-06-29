@@ -38,7 +38,7 @@ public class AgentHostTests
         var host = new AgentHost(loop);
         var model = new Model { Id = "test", MaxTokens = 4096 };
 
-        var restored = new Session(new InMemorySessionStorage());
+        var restored = new PicoNode.Agent.Session(new InMemorySessionStorage());
         await restored.AppendMessage(new Message { Role = "user", Content = "previous", Timestamp = 1 });
         await host.RestoreSessionAsync("s1", restored);
         await host.ProcessMessageAsync("new", model, CancellationToken.None, "s1");
