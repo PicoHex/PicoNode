@@ -8,6 +8,9 @@ public sealed class AgentLoop
     private readonly HookRunner _hookRunner;
     private const int MaxToolIterations = 20;
 
+    public string? SystemPrompt { get; set; }
+    public string ModelId { get; set; } = "default";
+
     public AgentLoop(IAgentLlm llm, CapabilityRegistry registry, CapabilityRunner runner)
     {
         _llm = llm;
@@ -39,7 +42,7 @@ public sealed class AgentLoop
             var messages = await session.BuildContext();
             var valid = messages.Where(m => !string.IsNullOrEmpty(m.Role)).ToArray();
 
-            var context = new ChatContext { SystemPrompt = null, Messages = valid };
+            var context = new ChatContext { SystemPrompt = SystemPrompt, Messages = valid };
             var assistantMsg = await CallLLMAsync(context, ct, onEvent);
 
             if (assistantMsg == null) break;
@@ -113,7 +116,7 @@ public sealed class AgentLoop
         Message? finalMessage = null;
         var contentBlocks = new List<ContentBlock>();
 
-        await foreach (var evt in _llm.StreamAsync(context.SystemPrompt, context.Messages, "default", null, ct))
+        await foreach (var evt in _llm.StreamAsync(context.SystemPrompt, context.Messages, ModelId, null, ct))
         {
             switch (evt.Type)
             {
