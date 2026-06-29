@@ -205,16 +205,20 @@ public sealed partial class Agent : IAsyncDisposable
         return all;
     }
 
-    public Task SaveAsync(string sessionId = "default", CancellationToken ct = default)
+    public async Task SaveAsync(string sessionId = "default", CancellationToken ct = default)
     {
         if (_homeDir is not { Length: > 0 })
             throw new InvalidOperationException("No homeDir configured.");
         var path = Path.Combine(_homeDir, "sessions", $"{sessionId}.jsonl");
-        return SessionStore.SaveAsync(path, _host.GetSessionData(sessionId), ct);
+        var session = _host.GetOrCreateSession(sessionId);
+        var entries = await session.GetEntries();
+        await JsonlSessionStorage.SaveAsync(path, entries, ct);
     }
 
-    public Task<IReadOnlyList<Message>> GetMessagesAsync(string sessionId = "default") =>
-        Task.FromResult(_host.GetSessionMessages(sessionId));
+    public async Task<IReadOnlyList<Message>> GetMessagesAsync(string sessionId = "default")
+    {
+        return await _host.GetSessionMessagesAsync(sessionId);
+    }
 
     public async Task<List<string>> ListSessionsAsync(CancellationToken ct = default)
     {
@@ -449,17 +453,15 @@ public sealed partial class Agent : IAsyncDisposable
                 )
         );
 
-        // GET /session/{id}/messages (sync)
+        // GET /session/{id}/messages
         app.MapGet(
             "/session/{id}/messages",
-            (ctx, _) =>
-                ValueTask.FromResult(
-                    new Func<HttpResponse>(() =>
-                    {
-                        var id = ctx.RouteValues["id"] ?? "";
-                        var msgs = _host.GetSessionMessages(id);
-                        if (msgs.Count == 0 && id != "default")
-                            return JsonError(404, "NOT_FOUND", $"Session not found: {id}");
+            async (ctx, ct) =>
+            {
+                var id = ctx.RouteValues["id"] ?? "";
+                var msgs = await _host.GetSessionMessagesAsync(id);
+                if (msgs.Count == 0 && id != "default")
+                    return JsonError(404, "NOT_FOUND", $"Session not found: {id}");
                         var json =
                             "["
                             + string.Join(
@@ -468,9 +470,7 @@ public sealed partial class Agent : IAsyncDisposable
                             )
                             + "]";
                         return JsonResponse(200, json);
-                    })()
-                )
-        );
+                    });
 
         // POST /session/{id}/save (async)
         app.MapPost(
