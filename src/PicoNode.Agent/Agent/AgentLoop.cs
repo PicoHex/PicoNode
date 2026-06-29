@@ -5,6 +5,7 @@ public sealed class AgentLoop
     private readonly IAgentLlm _llm;
     private readonly CapabilityRegistry _registry;
     private readonly CapabilityRunner _runner;
+    private readonly HookRunner _hookRunner;
     private const int MaxToolIterations = 20;
 
     public AgentLoop(IAgentLlm llm, CapabilityRegistry registry, CapabilityRunner runner)
@@ -12,6 +13,7 @@ public sealed class AgentLoop
         _llm = llm;
         _registry = registry;
         _runner = runner;
+        _hookRunner = new HookRunner(registry, runner);
     }
 
     /// <summary>LLM-based summary compaction — v2 target.</summary>
@@ -74,7 +76,7 @@ public sealed class AgentLoop
                     // Hook: OnToolCall
                     var hookInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
                         new { kind = KindHook, eventName = HookEventToolCall, toolName = tc.Name, args = tc.Arguments });
-                    var hookResult = await RunHooksAsync(TriggerKind.OnToolCall, hookInput, ct);
+                    var hookResult = await _hookRunner.EmitAsync(TriggerKind.OnToolCall, hookInput, ct);
                     if (hookResult is { } h && h.TryGetProperty("action", out var action) && action.GetString() == ActionBlock)
                         continue;
 
@@ -128,15 +130,4 @@ public sealed class AgentLoop
         return finalMessage;
     }
 
-    private async Task<JsonElement?> RunHooksAsync(TriggerKind trigger, byte[] input, CancellationToken ct)
-    {
-        var hooks = _registry.GetByTrigger(trigger).OrderBy(c => c.Priority);
-        foreach (var hook in hooks)
-        {
-            var result = await _runner.ExecuteAsync(hook, KindHook, input, ct);
-            if (result.TryGetProperty("action", out var action) && action.GetString() == ActionBlock)
-                return result;
-        }
-        return null;
-    }
 }
