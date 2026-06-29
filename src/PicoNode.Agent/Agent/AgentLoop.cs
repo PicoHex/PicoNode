@@ -110,20 +110,23 @@ public sealed class AgentLoop
         CancellationToken ct,
         Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null)
     {
-        // Hook: OnModelPreRequest
         Message? finalMessage = null;
+        var contentBlocks = new List<ContentBlock>();
+
         await foreach (var evt in _llm.StreamAsync(context.SystemPrompt, context.Messages, "default", null, ct))
         {
             switch (evt.Type)
             {
-                case "text_delta" when onEvent is not null:
-                    await onEvent(new AssistantMessageEvent.TextDelta { Index = 0, Delta = evt.Text ?? "", Partial = new() }, ct);
+                case "text_delta":
+                    contentBlocks.Add(new ContentBlock { Type = "text", Text = evt.Text ?? "" });
+                    if (onEvent is not null)
+                        await onEvent(new AssistantMessageEvent.TextDelta { Index = 0, Delta = evt.Text ?? "", Partial = new() }, ct);
                     break;
                 case "done":
-                    finalMessage = new Message { Role = "assistant", StopReason = evt.StopReason ?? "end_turn", ContentBlocks = [] };
+                    finalMessage = new Message { Role = "assistant", StopReason = evt.StopReason ?? "end_turn", ContentBlocks = [.. contentBlocks] };
                     break;
                 case "error":
-                    finalMessage = new Message { Role = "assistant", StopReason = "error", ErrorMessage = evt.ErrorMessage };
+                    finalMessage = new Message { Role = "assistant", StopReason = "error", ErrorMessage = evt.ErrorMessage, ContentBlocks = [.. contentBlocks] };
                     break;
             }
         }

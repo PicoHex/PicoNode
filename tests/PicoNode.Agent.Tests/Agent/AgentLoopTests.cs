@@ -37,6 +37,13 @@ public class AgentLoopTests
 
         await loop.RunTurnAsync(session, CancellationToken.None, onEvent);
         await Assert.That(events.Count).IsGreaterThan(0);
+
+        // The returned assistant message should have ContentBlocks with the streamed text
+        var msgs = await session.BuildContext();
+        var assistant = msgs.LastOrDefault(m => m.Role == "assistant");
+        await Assert.That(assistant).IsNotNull();
+        await Assert.That(assistant!.ContentBlocks).IsNotNull();
+        await Assert.That(assistant.ContentBlocks![0].Text).IsEqualTo("Hello!");
     }
 
     private sealed class MockAgentLlm : IAgentLlm
