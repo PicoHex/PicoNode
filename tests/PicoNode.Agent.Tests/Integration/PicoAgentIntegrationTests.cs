@@ -14,6 +14,7 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
     private readonly WebServer _server;
     private readonly HttpClient _client;
     private readonly int _port;
+    private readonly AgentHost _host;
 
     public PicoAgentIntegrationTests()
     {
@@ -21,17 +22,15 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
         var container = new SvcContainer();
         container.Build();
 
-        // Build mock agent
         var llm = new MockAgentLlm();
         var registry = new CapabilityRegistry();
         var runner = new CapabilityRunner();
         var loop = new AgentLoop(llm, registry, runner);
         loop.SystemPrompt = "You are a test assistant.";
-        var host = new AgentHost(loop);
+        _host = new AgentHost(loop);
 
-        // Build HTTP endpoints (same as PicoAgent but with mock LLM)
         var app = new WebApp(container, new WebAppOptions { ServerHeader = "TestAgent" });
-        MapEndpoints(app, host);
+        MapEndpoints(app, _host);
 
         _server = new WebServer(app, new WebServerOptions
         {
@@ -41,21 +40,82 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
         _client = new HttpClient { BaseAddress = new Uri($"http://localhost:{_port}") };
     }
 
+    // ── Message ──
+
     [Test]
     public async Task PostMessage_ReturnsSseStream()
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/session/default/message")
+        var request = new HttpRequestMessage(HttpMethod.Post, "/session/s1/message")
         {
             Content = new StringContent("Hello", Encoding.UTF8, "text/plain"),
         };
         request.Headers.Accept.Add(new("text/event-stream"));
-
         var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         await Assert.That((int)response.StatusCode).IsEqualTo(200);
-
         var body = await response.Content.ReadAsStringAsync();
         await Assert.That(body).IsNotEmpty();
     }
+
+    // ── Model / Provider / Thinking ──
+
+    [Test]
+    public async Task SwitchModel_ReturnsOk()
+    {
+        var response = await _client.PostAsync("/model/switch",
+            new StringContent("{\"modelId\":\"gpt-4\"}", Encoding.UTF8, "application/json"));
+        await Assert.That((int)response.StatusCode).IsEqualTo(200);
+    }
+
+    [Test]
+    public async Task SwitchProvider_ReturnsOk()
+    {
+        var response = await _client.PostAsync("/provider/switch",
+            new StringContent("{\"provider\":\"openai\"}", Encoding.UTF8, "application/json"));
+        await Assert.That((int)response.StatusCode).IsEqualTo(200);
+    }
+
+    [Test]
+    public async Task SwitchThinking_ReturnsOk()
+    {
+        var response = await _client.PostAsync("/thinking",
+            new StringContent("{\"enabled\":true,\"level\":\"high\"}", Encoding.UTF8, "application/json"));
+        await Assert.That((int)response.StatusCode).IsEqualTo(200);
+    }
+
+    // ── Session CRUD ──
+
+    [Test]
+    public async Task CreateSession_ReturnsOk()
+    {
+        var response = await _client.PostAsync("/session/test-session/create", null);
+        await Assert.That((int)response.StatusCode).IsEqualTo(200);
+    }
+
+    [Test]
+    public async Task DeleteSession_ReturnsOk()
+    {
+        await _client.PostAsync("/session/del-session/create", null);
+        var response = await _client.PostAsync("/session/del-session/delete", null);
+        await Assert.That((int)response.StatusCode).IsEqualTo(200);
+    }
+
+    [Test]
+    public async Task GetSessionMessages_ReturnsJson()
+    {
+        await _host.ProcessMessageAsync("hello", new Model { Id = "test", MaxTokens = 4096 },
+            CancellationToken.None, "msg-session");
+        var response = await _client.GetStringAsync("/session/msg-session/messages");
+        await Assert.That(response).Contains("[");
+    }
+
+    [Test]
+    public async Task ListSessions_ReturnsJson()
+    {
+        var response = await _client.GetStringAsync("/sessions");
+        await Assert.That(response).IsNotNull();
+    }
+
+    // ── Health / Models / Reload ──
 
     [Test]
     public async Task GetHealth_ReturnsOk()
@@ -71,6 +131,22 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
         await Assert.That(response).IsNotNull();
     }
 
+    [Test]
+    public async Task Reload_ReturnsOk()
+    {
+        var response = await _client.PostAsync("/reload", null);
+        await Assert.That((int)response.StatusCode).IsEqualTo(200);
+    }
+
+    // ── Save (requires homeDir) ──
+
+    [Test]
+    public async Task SaveSession_ReturnsOk()
+    {
+        var response = await _client.PostAsync("/session/default/save", null);
+        await Assert.That((int)response.StatusCode).IsEqualTo(200);
+    }
+
     public async ValueTask DisposeAsync()
     {
         _client.Dispose();
@@ -78,19 +154,18 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
         await _server.DisposeAsync();
     }
 
-    // ── HTTP endpoint mapping (minimal subset of PicoAgent) ──
+    // ── HTTP endpoints ──
 
     private static void MapEndpoints(WebApp app, AgentHost host)
     {
+        // POST /session/{id}/message
         app.MapPost("/session/{id}/message", async (ctx, ct) =>
         {
             var sessionId = ctx.RouteValues["id"] ?? "default";
             using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
             var body = await reader.ReadToEndAsync(ct);
-
             var model = new Model { Id = "test", MaxTokens = 4096 };
             var pipe = new Pipe();
-
             _ = Task.Run(async () =>
             {
                 try
@@ -100,7 +175,7 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
                         {
                             var json = evt switch
                             {
-                                AssistantMessageEvent.TextDelta td => $"{{\"type\":\"delta\",\"content\":\"{Escape(td.Delta)}\"}}",
+                                AssistantMessageEvent.TextDelta td => $"{{\"type\":\"delta\",\"content\":\"{Esc(td.Delta)}\"}}",
                                 AssistantMessageEvent.Done d => $"{{\"type\":\"done\",\"stopReason\":\"{d.Message.StopReason}\"}}",
                                 _ => null,
                             };
@@ -112,40 +187,35 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
                         });
                     await pipe.Writer.CompleteAsync();
                 }
-                catch (Exception ex)
-                {
-                    await pipe.Writer.CompleteAsync(ex);
-                }
+                catch (Exception ex) { await pipe.Writer.CompleteAsync(ex); }
             }, ct);
-
-            return new HttpResponse
-            {
-                StatusCode = 200,
-                Headers = [new("Content-Type", "text/event-stream")],
-                BodyStream = pipe.Reader.AsStream(),
-            };
+            return new HttpResponse { StatusCode = 200, Headers = [new("Content-Type", "text/event-stream")], BodyStream = pipe.Reader.AsStream() };
         });
 
-        app.MapGet("/health", (_, _) =>
-            ValueTask.FromResult(new HttpResponse
-            {
-                StatusCode = 200,
-                Body = "{\"status\":\"ok\"}"u8.ToArray(),
-                Headers = [new("Content-Type", "application/json")],
-            }));
+        app.MapPost("/model/switch", (_, _) => Ok());
+        app.MapPost("/provider/switch", (_, _) => Ok());
+        app.MapPost("/thinking", (_, _) => Ok());
+        app.MapGet("/models", (_, _) => Ok("[{\"id\":\"test\"}]"));
+        app.MapGet("/health", (_, _) => Ok("{\"status\":\"ok\"}"));
+        app.MapGet("/sessions", (_, _) => Ok("[]"));
 
-        app.MapGet("/models", (_, _) =>
-            ValueTask.FromResult(new HttpResponse
-            {
-                StatusCode = 200,
-                Body = "[{\"id\":\"test-model\"}]"u8.ToArray(),
-                Headers = [new("Content-Type", "application/json")],
-            }));
+        app.MapPost("/session/{id}/create", (ctx, _) => { host.GetOrCreateSession(ctx.RouteValues["id"] ?? ""); return Ok(); });
+        app.MapPost("/session/{id}/delete", (ctx, _) => Ok());
+        app.MapGet("/session/{id}/messages", async (ctx, _) =>
+        {
+            var msgs = await host.GetSessionMessagesAsync(ctx.RouteValues["id"] ?? "default");
+            var json = "[" + string.Join(",", msgs.Select(m => PicoJetson.JsonSerializer.Serialize(m))) + "]";
+            return new HttpResponse { StatusCode = 200, Body = Encoding.UTF8.GetBytes(json), Headers = [new("Content-Type", "application/json")] };
+        });
+        app.MapPost("/session/{id}/save", (ctx, _) => Ok());
+        app.MapPost("/reload", (_, _) => Ok());
     }
 
-    private static string Escape(string s) =>
-        s.Replace("\\", "\\\\").Replace("\"", "\\\"")
-         .Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+    private static ValueTask<HttpResponse> Ok(string json = "{\"status\":\"ok\"}") =>
+        ValueTask.FromResult(new HttpResponse { StatusCode = 200, Body = Encoding.UTF8.GetBytes(json), Headers = [new("Content-Type", "application/json")] });
+
+    private static string Esc(string s) =>
+        s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
 
     private sealed class MockAgentLlm : IAgentLlm
     {
