@@ -5,8 +5,6 @@ namespace PicoNode.Agent;
 
 public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
 {
-    private static readonly SystemTextJson.JsonSerializerOptions _jsonOptions = SessionJsonContext.Default.Options;
-
     private readonly string _filePath;
     private readonly List<SessionTreeEntryBase> _entries = [];
     private readonly Dictionary<string, SessionTreeEntryBase> _byId = [];

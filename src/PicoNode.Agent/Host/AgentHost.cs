@@ -16,9 +16,10 @@ public sealed partial class AgentHost
     /// <summary>
     /// Restore session state from persisted entries.
     /// </summary>
-    public async Task RestoreSessionAsync(string sessionId, Session session)
+    public Task RestoreSessionAsync(string sessionId, Session session)
     {
         _sessions[sessionId] = session;
+        return Task.CompletedTask;
     }
 
     /// <summary>
