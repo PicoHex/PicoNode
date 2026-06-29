@@ -5,6 +5,8 @@ public sealed partial class AgentHost
     private readonly AgentLoop _loop;
     private readonly ConcurrentDictionary<string, Session> _sessions = [];
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = [];
+    private readonly ConcurrentDictionary<string, List<Message>> _steeringQueues = [];
+    private readonly ConcurrentDictionary<string, List<Message>> _followUpQueues = [];
 
     public AgentHost(AgentLoop loop)
     {
@@ -85,4 +87,46 @@ public sealed partial class AgentHost
 
     [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]
     private static partial Regex SessionIdRegex();
+
+    // ── Message queues ──
+
+    public void Steer(string sessionId, Message message)
+    {
+        var queue = _steeringQueues.GetOrAdd(sessionId, _ => []);
+        lock (queue) { queue.Add(message); }
+    }
+
+    public void FollowUp(string sessionId, Message message)
+    {
+        var queue = _followUpQueues.GetOrAdd(sessionId, _ => []);
+        lock (queue) { queue.Add(message); }
+    }
+
+    public bool HasQueuedMessages(string sessionId) =>
+        (_steeringQueues.TryGetValue(sessionId, out var s) && s.Count > 0)
+        || (_followUpQueues.TryGetValue(sessionId, out var f) && f.Count > 0);
+
+    internal List<Message> DrainSteering(string sessionId)
+    {
+        if (!_steeringQueues.TryGetValue(sessionId, out var queue) || queue.Count == 0)
+            return [];
+        lock (queue)
+        {
+            var drained = new List<Message>(queue);
+            queue.Clear();
+            return drained;
+        }
+    }
+
+    internal List<Message> DrainFollowUp(string sessionId)
+    {
+        if (!_followUpQueues.TryGetValue(sessionId, out var queue) || queue.Count == 0)
+            return [];
+        lock (queue)
+        {
+            var drained = new List<Message>(queue);
+            queue.Clear();
+            return drained;
+        }
+    }
 }
