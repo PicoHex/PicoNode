@@ -29,7 +29,10 @@ public sealed class ResilientLLmClient : ILLmClient
         if (_breakers.TryGetValue(provider.Name, out var breaker) && !breaker.TryAcquire())
         {
             if (TryFailover(provider.Name, out var fallback))
+            {
                 provider = fallback;
+                breaker = _breakers.GetValueOrDefault(provider.Name);
+            }
             else
                 throw new InvalidOperationException($"Provider '{provider.Name}' circuit is open, no failover available");
         }

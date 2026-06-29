@@ -3,8 +3,13 @@ namespace PicoNode.AI;
 public sealed class AgentLlmAdapter : IAgentLlm
 {
     private readonly ILLmClient _client;
+    private readonly string _provider;
 
-    public AgentLlmAdapter(ILLmClient client) => _client = client;
+    public AgentLlmAdapter(ILLmClient client, string provider = "unknown")
+    {
+        _client = client;
+        _provider = provider;
+    }
 
     public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
         string? systemPrompt,
@@ -16,7 +21,7 @@ public sealed class AgentLlmAdapter : IAgentLlm
         var model = new Model
         {
             Id = modelId,
-            Provider = "unknown",
+            Provider = _provider,
             Api = AiApiFormat.AnthropicMessages,
             MaxTokens = 4096,
         };
@@ -38,6 +43,8 @@ public sealed class AgentLlmAdapter : IAgentLlm
         {
             switch (evt)
             {
+                case AssistantMessageEvent.Start:
+                    break; // stream start marker — no LlmStreamEvent equivalent
                 case AssistantMessageEvent.TextDelta td:
                     yield return new LlmStreamEvent("text_delta", td.Delta, null, null);
                     break;
