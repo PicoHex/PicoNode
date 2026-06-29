@@ -4,6 +4,42 @@ public sealed class CapabilityRunner
 {
     private static readonly byte[] NewLine = "\n"u8.ToArray();
 
+    public static void ValidateArgs(ManifestCapability config, Dictionary<string, object> args)
+    {
+        if (config.Schema is null) return;
+        using var doc = JsonDocument.Parse(config.Schema);
+        var root = doc.RootElement;
+        if (root.TryGetProperty("required", out var required))
+        {
+            foreach (var field in required.EnumerateArray())
+            {
+                var name = field.GetString()!;
+                if (!args.ContainsKey(name))
+                    throw new ToolException(ToolErrorCode.SchemaValidationFailed,
+                        $"Missing required parameter: {name}");
+            }
+        }
+    }
+
+    public readonly record struct TruncationResult(string Content, bool Truncated, string? FullOutputPath);
+
+    public static TruncationResult TruncateOutput(string output, int maxBytes, int maxLines)
+    {
+        var lines = output.Split('\n');
+        if (output.Length <= maxBytes && lines.Length <= maxLines)
+            return new TruncationResult(output, false, null);
+
+        var truncatedLines = lines.Take(maxLines).ToArray();
+        var truncated = string.Join('\n', truncatedLines);
+        if (truncated.Length > maxBytes)
+            truncated = truncated[..maxBytes];
+
+        var tempPath = Path.GetTempFileName();
+        File.WriteAllText(tempPath, output);
+        var notice = $"[Output truncated: {truncated.Length} of {output.Length} bytes, {truncatedLines.Length} of {lines.Length} lines. Full output: {tempPath}]";
+        return new TruncationResult(truncated + "\n" + notice, true, tempPath);
+    }
+
     public async Task<JsonElement> ExecuteAsync(
         ManifestCapability config,
         string contextKind,
