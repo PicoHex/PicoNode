@@ -233,7 +233,7 @@ public sealed partial class Agent : IAsyncDisposable
 
     public Task CreateSessionAsync(string sessionId, CancellationToken ct = default)
     {
-        _host.EnsureSession(sessionId);
+        _host.GetOrCreateSession(sessionId);
         return Task.CompletedTask;
     }
 
@@ -424,7 +424,7 @@ public sealed partial class Agent : IAsyncDisposable
                         var id = ctx.RouteValues["id"] ?? "";
                         if (!SessionIdRegex().IsMatch(id))
                             return JsonError(400, "INVALID_SESSION_ID", id);
-                        _host.EnsureSession(id);
+                        _host.GetOrCreateSession(id);
                         return JsonOk();
                     })()
                 )

@@ -17,7 +17,6 @@ public sealed partial class AgentHost
     public async Task RestoreSessionAsync(string sessionId, Session session)
     {
         _sessions[sessionId] = session;
-        await Task.CompletedTask;
     }
 
     /// <summary>
@@ -26,14 +25,6 @@ public sealed partial class AgentHost
     public Session GetOrCreateSession(string sessionId)
     {
         return _sessions.GetOrAdd(sessionId, _ => new Session(new InMemorySessionStorage()));
-    }
-
-    /// <summary>
-    /// Ensures a session entry exists in the dictionary (idempotent).
-    /// </summary>
-    public void EnsureSession(string sessionId)
-    {
-        _sessions.GetOrAdd(sessionId, _ => new Session(new InMemorySessionStorage()));
     }
 
     public async Task<string> ProcessMessageAsync(

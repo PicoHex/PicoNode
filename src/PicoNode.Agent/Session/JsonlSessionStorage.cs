@@ -13,6 +13,7 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
     private readonly Dictionary<string, string> _labelsById = [];
     private string? _leafId;
     private Func<string> _idGenerator;
+    private bool _disposed;
 
     private JsonlSessionStorage(string filePath,
         List<SessionTreeEntryBase> entries, string? leafId)
@@ -24,7 +25,7 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
         _idGenerator = DefaultIdGenerator;
     }
 
-    public void SetEntryIdGenerator(Func<string> generator) => _idGenerator = generator;
+    internal void SetEntryIdGenerator(Func<string> generator) => _idGenerator = generator;
 
     public static async Task<JsonlSessionStorage> OpenAsync(string filePath)
     {
@@ -109,6 +110,8 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_disposed) return;
+        _disposed = true;
         if (_leafId is not null)
         {
             var leaf = new LeafEntry

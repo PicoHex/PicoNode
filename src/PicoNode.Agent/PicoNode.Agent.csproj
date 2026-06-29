@@ -14,6 +14,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="PicoNode.Agent.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\PicoNode.AI\PicoNode.AI.csproj" />
     <PackageReference Include="PicoCfg" />
     <PackageReference Include="PicoCfg.Json" />
