@@ -20,9 +20,23 @@ public sealed class Compactor
         var entries = await session.GetEntries();
         var path = entries.Where(e => e is not LeafEntry).ToArray();
 
-        // Find cut point: keep the last KeepRecentTokens worth of messages
-        var keepCount = Math.Min(path.Length, settings.KeepRecentTokens);
-        var cutIndex = path.Length - keepCount;
+        // Find cut point: walk from the end, accumulating tokens until we reach KeepRecentTokens
+        var cutIndex = path.Length;
+        long accumulated = 0;
+        for (int i = path.Length - 1; i >= 0; i--)
+        {
+            accumulated += EstimateEntryTokens(path[i]);
+            if (accumulated >= settings.KeepRecentTokens && i < path.Length - 1)
+            {
+                cutIndex = i + 1;
+                break;
+            }
+            cutIndex = i;
+        }
+        // Ensure cutIndex doesn't point to the middle of a compaction
+        if (cutIndex > 0 && path[cutIndex - 1] is CompactionEntry)
+            cutIndex = Math.Max(0, cutIndex - 1);
+
         var firstKept = path[cutIndex];
 
         // Build summary from messages before the cut point
@@ -62,9 +76,18 @@ public sealed class Compactor
     {
         long chars = 0;
         foreach (var entry in entries)
+            chars += EstimateEntryTokens(entry);
+        return chars / 4;
+    }
+
+    private static long EstimateEntryTokens(SessionTreeEntryBase entry)
+    {
+        if (entry is not MessageEntry me) return 0;
+        long chars = me.Message.Content?.Length ?? 0;
+        if (me.Message.ContentBlocks is not null)
         {
-            if (entry is MessageEntry me)
-                chars += me.Message.Content?.Length ?? 0;
+            foreach (var cb in me.Message.ContentBlocks)
+                chars += cb.Text?.Length ?? 0;
         }
         return chars / 4;
     }
