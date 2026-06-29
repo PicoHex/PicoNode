@@ -1,3 +1,4 @@
+using SystemTextJson = System.Text.Json;
 using PicoNode.Agent;
 
 namespace PicoNode.Agent.Tests.Session;
@@ -17,6 +18,28 @@ public class JsonlSessionStorageTests
     {
         if (File.Exists(_tempFile)) File.Delete(_tempFile);
     }
+
+    [Test]
+    public async Task AotContext_RoundTrip_PolymorphicEntry()
+    {
+        var entry = new MessageEntry
+        {
+            Id = "test0001",
+            ParentId = null,
+            Timestamp = DateTime.UtcNow.ToString("O"),
+            Message = new Message { Role = "user", Content = "hello" },
+        };
+
+        // Serialize via context — specifying the base type includes the $type discriminator
+        var json = SystemTextJson.JsonSerializer.Serialize(entry, SessionJsonContext.Default.SessionTreeEntryBase);
+        // Deserialize via context — verifies AOT-compatible polymorphism
+        var restored = SystemTextJson.JsonSerializer.Deserialize(json, SessionJsonContext.Default.SessionTreeEntryBase);
+        await Assert.That(restored).IsNotNull();
+        await Assert.That(restored).IsTypeOf<MessageEntry>();
+        await Assert.That(((MessageEntry)restored!).Message.Content).IsEqualTo("hello");
+    }
+
+    // (existing tests follow)
 
     [Test]
     public async Task Create_And_Reopen_ShouldRestoreEntries()

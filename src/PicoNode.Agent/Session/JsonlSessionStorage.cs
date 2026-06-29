@@ -5,11 +5,7 @@ namespace PicoNode.Agent;
 
 public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
 {
-    private static readonly SystemTextJson.JsonSerializerOptions _jsonOptions = new()
-    {
-        WriteIndented = false,
-        PropertyNamingPolicy = SystemTextJson.JsonNamingPolicy.CamelCase,
-    };
+    private static readonly SystemTextJson.JsonSerializerOptions _jsonOptions = SessionJsonContext.Default.Options;
 
     private readonly string _filePath;
     private readonly List<SessionTreeEntryBase> _entries = [];
@@ -44,7 +40,7 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
         string? leafId = null;
         for (int i = 1; i < lines.Length; i++)
         {
-            var entry = SystemTextJson.JsonSerializer.Deserialize<SessionTreeEntryBase>(lines[i], _jsonOptions)
+            var entry = SystemTextJson.JsonSerializer.Deserialize(lines[i], SessionJsonContext.Default.SessionTreeEntryBase)
                 ?? throw new SessionException(SessionErrorCode.InvalidEntry, $"Invalid entry at line {i + 1}");
             entries.Add(entry);
             leafId = entry is LeafEntry lf ? lf.TargetId : entry.Id;
@@ -73,7 +69,7 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
 
     public async Task AppendEntry(SessionTreeEntryBase entry)
     {
-        var line = SystemTextJson.JsonSerializer.Serialize(entry, _jsonOptions) + "\n";
+        var line = SystemTextJson.JsonSerializer.Serialize(entry, SessionJsonContext.Default.SessionTreeEntryBase) + "\n";
         await File.AppendAllTextAsync(_filePath, line);
         _entries.Add(entry);
         _byId[entry.Id] = entry;
@@ -134,7 +130,7 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
         var sb = new StringBuilder();
         sb.Append(header);
         foreach (var entry in entries)
-            sb.Append(SystemTextJson.JsonSerializer.Serialize(entry, _jsonOptions)).Append('\n');
+            sb.Append(SystemTextJson.JsonSerializer.Serialize(entry, SessionJsonContext.Default.SessionTreeEntryBase)).Append('\n');
         await File.WriteAllTextAsync(path, sb.ToString(), ct);
     }
 
