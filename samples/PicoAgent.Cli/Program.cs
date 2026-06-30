@@ -125,6 +125,17 @@ else
                     Console.Write(th.Delta);
                     await Console.Out.FlushAsync();
                 }
+                else if (evt is AssistantMessageEvent.ToolCallStart ts)
+                {
+                    var b = ts.Partial.ContentBlocks?.ElementAtOrDefault(ts.Index);
+                    Console.Write($"\n[Tool: {b?.Name ?? "?"}]");
+                }
+                else if (evt is AssistantMessageEvent.ToolCallDelta tcd)
+                    Console.Write(tcd.Delta);
+                else if (evt is AssistantMessageEvent.ToolCallEnd)
+                    Console.WriteLine();
+                else if (evt is AssistantMessageEvent.Done)
+                { /* stream completion handled by loop exit */ }
                 else if (evt is AssistantMessageEvent.Error e)
                     Console.Write($"\n[Error: {e.Message.ErrorMessage}]");
             }

@@ -30,6 +30,9 @@ public sealed partial class AgentHost
         return _sessions.GetOrAdd(sessionId, _ => new Session(new InMemorySessionStorage()));
     }
 
+    /// <summary>Returns the IDs of all sessions currently in memory.</summary>
+    public ICollection<string> GetActiveSessionIds() => _sessions.Keys;
+
     public async Task<string> ProcessMessageAsync(
         string content,
         Model model,
@@ -53,16 +56,13 @@ public sealed partial class AgentHost
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
 
+            _loop.ModelId = model.Id;
             var result = await _loop.RunTurnAsync(session, ct, onEvent);
             return ExtractText(result);
         }
         finally
         {
             sessionLock.Release();
-            // Best-effort cleanup: remove semaphore if no waiters to prevent unbounded growth.
-            // If another thread acquired it concurrently, TryRemove safely returns false.
-            if (sessionLock.CurrentCount > 0)
-                _sessionLocks.TryRemove(sessionId, out _);
         }
     }
 

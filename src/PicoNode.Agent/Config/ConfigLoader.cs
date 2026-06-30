@@ -2,6 +2,9 @@ namespace PicoNode.Agent;
 
 public sealed class ConfigLoader
 {
+    private static readonly AgentConfigJsonContext JsonContext = new(
+        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
     public static async Task<AgentConfig?> LoadAsync(string path)
     {
         if (!File.Exists(path))
@@ -17,9 +20,11 @@ public sealed class ConfigLoader
         var json = File.ReadAllText(path);
         var expanded = ExpandEnvVars(json, root);
 
-        // Step 3: Deserialize with PicoJetson (handles complex nested types)
-        return PicoJetson.JsonSerializer.Deserialize<AgentConfig>(
-            Encoding.UTF8.GetBytes(expanded));
+        // Step 3: Deserialize with System.Text.Json (case-insensitive, AOT-safe via source gen).
+        // PicoJetson source generator silently skips types with nested Dictionary<K,V>
+        // (AgentConfig → Dictionary<string, ProviderEntry> → Dictionary<string, string>),
+        // so we use System.Text.Json with a hand-written JsonSerializerContext.
+        return System.Text.Json.JsonSerializer.Deserialize(expanded, JsonContext.AgentConfig);
     }
 
     public sealed class ValidateResult

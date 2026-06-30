@@ -1,139 +1,327 @@
-const input = document.getElementById('input');
-const sendBtn = document.getElementById('send');
+// ── State ──
+let currentSession = 'default';
+let currentModel = '';
+let providers = [];
+
+// ── DOM refs ──
+const input    = document.getElementById('input');
+const sendBtn  = document.getElementById('send');
 const messages = document.getElementById('messages');
-const status = document.getElementById('status');
+const statusEl = document.getElementById('status').querySelector('span');
+const modelSel = document.getElementById('model-select');
+const provSel  = document.getElementById('provider-select');
+const thinkChk = document.getElementById('thinking-checkbox');
+const thinkLvl = document.getElementById('thinking-level');
+const sessionList = document.getElementById('session-list');
 
-fetch('/api/health').then(r => r.json()).then(h => {
-    status.querySelector('span').textContent = h.model;
-});
-
+// ── Stream state ──
 let currentAssistant = null;
-let renderTimer = null;
+let isStreaming = false;
 
-async function sendMessage() {
-    const text = input.value.trim();
-    if (!text) return;
-    input.value = '';
+// ── Init ──
+(async function init() {
+    await loadHealth();
+    await loadModels();
+    await loadSessions();
+    await loadMessages(currentSession);
+    switchSession(currentSession);
+})();
 
-    appendMessage('user', text);
-    currentAssistant = appendMessage('assistant', '');
-    const thinkingBlock = appendThinkingBlock(currentAssistant);
+// ── API helpers ──
+async function api(method, url, body) {
+    const opts = { method };
+    if (body !== undefined) {
+        opts.headers = { 'Content-Type': body instanceof FormData ? undefined : 'application/json' };
+        opts.body = body instanceof FormData ? body : JSON.stringify(body);
+    }
+    const r = await fetch(url, opts);
+    if (!r.ok) throw new Error(`${r.status}`);
+    return r.headers.get('content-type')?.includes('json') !== false ? r.json() : r.text();
+}
 
-    const response = await fetch('/api/session/default/message', {
-        method: 'POST',
-        body: text,
-    });
+async function loadHealth() {
+    try {
+        const h = await api('GET', '/api/health');
+        currentModel = h.model;
+        statusEl.textContent = `${h.model} @ ${h.provider}`;
+    } catch (e) { /* ignore */ }
+}
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let rawText = '';
-    let rawThinking = '';
-    const contentEl = currentAssistant.querySelector('.msg-content');
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const data = line.slice(6);
-            if (data === '[DONE]') {
-                flushRender(contentEl, rawText);
-                if (rawThinking) {
-                    thinkingBlock.querySelector('.think-content').innerHTML =
-                        marked.parse(rawThinking);
-                }
-                currentAssistant = null;
-                return;
+async function loadModels() {
+    try {
+        const models = await api('GET', '/api/models');
+        modelSel.innerHTML = '';
+        provSel.innerHTML = '';
+        const seenIds = new Set();
+        const seenProvs = new Set();
+        for (const m of (models || [])) {
+            if (!seenIds.has(m.id)) {
+                seenIds.add(m.id);
+                const opt = document.createElement('option');
+                opt.value = m.id;
+                opt.textContent = m.id;
+                if (m.id === currentModel) opt.selected = true;
+                modelSel.appendChild(opt);
             }
-            const evt = JSON.parse(data);
-            switch (evt.type) {
-                case 'delta':
-                    rawText += evt.content;
-                    debouncedRender(contentEl, rawText);
-                    break;
-                case 'thinking':
-                    rawThinking += evt.content;
-                    thinkingBlock.querySelector('.think-content').textContent = rawThinking;
-                    break;
-                case 'error':
-                    rawText += `\n\n> ⚠️ ${evt.message}`;
-                    debouncedRender(contentEl, rawText);
-                    break;
+            if (m.ownedBy && !seenProvs.has(m.ownedBy)) {
+                seenProvs.add(m.ownedBy);
+                const opt = document.createElement('option');
+                opt.value = m.ownedBy;
+                opt.textContent = m.ownedBy;
+                provSel.appendChild(opt);
             }
-            messages.scrollTop = messages.scrollHeight;
         }
+        if (modelSel.options.length === 0) {
+            modelSel.innerHTML = '<option value="">No models found</option>';
+        }
+        if (provSel.options.length === 0) {
+            provSel.innerHTML = '<option value="">No providers</option>';
+        }
+    } catch (e) {
+        modelSel.innerHTML = '<option value="">Failed to load</option>';
     }
 }
 
-function debouncedRender(el, raw) {
-    clearTimeout(renderTimer);
-    renderTimer = setTimeout(() => flushRender(el, raw), 80);
-}
-
-function flushRender(el, raw) {
-    clearTimeout(renderTimer);
-    el.innerHTML = marked.parse(raw);
-    // Hide Mermaid placeholder divs before init
-    el.querySelectorAll('pre.mermaid-placeholder').forEach(async pre => {
-        const code = pre.textContent;
-        try {
-            const { svg } = await mermaid.render('mermaid-' + Math.random().toString(36).slice(2), code);
-            pre.outerHTML = `<div class="mermaid-rendered">${svg}</div>`;
-        } catch {
-            pre.classList.add('mermaid-error');
-            pre.textContent = '[Mermaid render error]\n' + code;
+async function loadSessions() {
+    try {
+        const sessions = await api('GET', '/api/sessions');
+        sessionList.innerHTML = '';
+        for (const s of (sessions || [currentSession])) {
+            const div = document.createElement('div');
+            div.className = 'session' + (s === currentSession ? ' active' : '');
+            div.dataset.id = s;
+            div.textContent = s;
+            div.addEventListener('click', () => switchSession(s));
+            sessionList.appendChild(div);
         }
-    });
+    } catch (e) { /* ignore */ }
 }
 
-function appendMessage(role, text) {
+async function loadMessages(sessionId) {
+    try {
+        const msgs = await api('GET', `/api/session/${sessionId}/messages`);
+        messages.innerHTML = '';
+        if (msgs && Array.isArray(msgs)) {
+            for (const m of msgs) {
+                if (!m.role || m.role === 'system') continue;
+                const role = m.role === 'user' ? 'user' : 'assistant';
+                const text = m.content || (m.contentBlocks && m.contentBlocks[0]?.text) || '';
+                if (text) renderMessage(role, text);
+            }
+        }
+    } catch (e) { /* ignore */ }
+}
+
+async function switchSession(id) {
+    currentSession = id;
+    document.querySelectorAll('#session-list .session').forEach(el => {
+        el.classList.toggle('active', el.dataset.id === id);
+    });
+    await loadMessages(id);
+    messages.scrollTop = messages.scrollHeight;
+}
+
+async function createSession() {
+    const name = prompt('Session name:')?.trim();
+    if (!name) return;
+    try {
+        await api('POST', `/api/session/create/${name}`);
+        await loadSessions();
+        switchSession(name);
+    } catch (e) { alert('Failed: ' + e.message); }
+}
+
+async function saveSession() {
+    const btn = document.getElementById('btn-save-session');
+    btn.textContent = '...';
+    try {
+        await api('POST', `/api/session/save/${currentSession}`);
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = '💾'; }, 1500);
+    } catch (e) {
+        btn.textContent = '✗';
+        setTimeout(() => { btn.textContent = '💾'; }, 1500);
+    }
+}
+
+async function switchModel(modelId) {
+    try {
+        await api('POST', '/api/model/switch', { modelId });
+        currentModel = modelId;
+        statusEl.textContent = `${modelId}`;
+    } catch (e) { /* ignore */ }
+}
+
+async function switchProvider(provider) {
+    try {
+        await api('POST', '/api/provider/switch', { provider });
+        await loadHealth();
+        await loadModels();
+    } catch (e) { /* ignore */ }
+}
+
+async function switchThinking(enabled, level) {
+    try {
+        await api('POST', '/api/thinking', { enabled, level });
+    } catch (e) { /* ignore */ }
+}
+
+// ── Event bindings ──
+modelSel.addEventListener('change', () => switchModel(modelSel.value));
+provSel.addEventListener('change', () => switchProvider(provSel.value));
+thinkChk.addEventListener('change', () => switchThinking(thinkChk.checked, thinkLvl.value));
+thinkLvl.addEventListener('change', () => switchThinking(thinkChk.checked, thinkLvl.value));
+document.getElementById('btn-new-session').addEventListener('click', createSession);
+document.getElementById('btn-save-session').addEventListener('click', saveSession);
+
+// ── Send message ──
+sendBtn.addEventListener('click', sendMessage);
+input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+async function sendMessage() {
+    const text = input.value.trim();
+    if (!text || isStreaming) return;
+    input.value = '';
+    isStreaming = true;
+    sendBtn.disabled = true;
+
+    renderMessage('user', text);
+    currentAssistant = renderAssistantShell();
+    const contentEl = currentAssistant.querySelector('.msg-content');
+    const streamDot = currentAssistant.querySelector('.streaming-indicator');
+    const thinkingBlock = currentAssistant.querySelector('.thinking');
+
+    try {
+        const response = await fetch(`/api/session/${currentSession}/message`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: text,
+        });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let rawText = '';
+        let rawThinking = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const payload = line.slice(6);
+                if (payload === '[DONE]') {
+                    if (streamDot) streamDot.remove();
+                    contentEl.innerHTML = marked.parse(rawText);
+                    if (rawThinking) {
+                        thinkingBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking);
+                    }
+                    currentAssistant = null;
+                    break;
+                }
+                try {
+                    const evt = JSON.parse(payload);
+                    switch (evt.type) {
+                        case 'delta':
+                            rawText += evt.content;
+                            contentEl.innerText = rawText;
+                            break;
+                        case 'thinking':
+                            rawThinking += evt.content;
+                            thinkingBlock.querySelector('.think-content').textContent = rawThinking;
+                            break;
+                        case 'done':
+                            if (streamDot) streamDot.remove();
+                            contentEl.innerHTML = marked.parse(rawText);
+                            if (rawThinking) {
+                                thinkingBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking);
+                            }
+                            currentAssistant = null;
+                            break;
+                        case 'tool_call_start':
+                            rawText += `\n\n🔧 **${evt.toolName}**\n`;
+                            contentEl.innerHTML = marked.parse(rawText);
+                            break;
+                        case 'tool_call_delta':
+                            rawText += evt.content;
+                            contentEl.innerText = rawText;
+                            break;
+                        case 'tool_call_end':
+                            rawText += '\n';
+                            contentEl.innerText = rawText;
+                            break;
+                        case 'error':
+                            rawText += `\n\n> ⚠️ ${evt.message}`;
+                            contentEl.innerHTML = marked.parse(rawText);
+                            break;
+                    }
+                } catch { /* malformed JSON, skip */ }
+                messages.scrollTop = messages.scrollHeight;
+            }
+        }
+    } catch (err) {
+        contentEl.innerText = `[Error: ${err.message}]`;
+    } finally {
+        isStreaming = false;
+        sendBtn.disabled = false;
+        input.focus();
+        await loadSessions();
+    }
+}
+
+// ── Rendering ──
+function renderMessage(role, text) {
     const el = document.createElement('div');
     el.className = `message ${role}`;
     const content = document.createElement('div');
     content.className = 'msg-content';
     content.innerHTML = marked.parse(text);
+    // Mermaid lazy render
     content.querySelectorAll('pre.mermaid-placeholder').forEach(async pre => {
-        const code = pre.textContent;
         try {
-            const { svg } = await mermaid.render('mermaid-' + Math.random().toString(36).slice(2), code);
+            const { svg } = await mermaid.render('mermaid-' + Math.random().toString(36).slice(2), pre.textContent);
             pre.outerHTML = `<div class="mermaid-rendered">${svg}</div>`;
-        } catch {
-            pre.classList.add('mermaid-error');
-        }
+        } catch { pre.classList.add('mermaid-error'); }
     });
     el.appendChild(content);
     messages.appendChild(el);
     return el;
 }
 
-function appendThinkingBlock(parent) {
-    const el = document.createElement('details');
-    el.className = 'thinking';
-    el.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>';
-    parent.insertBefore(el, parent.querySelector('.msg-content'));
+function renderAssistantShell() {
+    const el = document.createElement('div');
+    el.className = 'message assistant';
+    const content = document.createElement('div');
+    content.className = 'msg-content';
+    content.innerHTML = '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span>';
+    el.appendChild(content);
+
+    // Thinking block (collapsible)
+    const think = document.createElement('details');
+    think.className = 'thinking';
+    think.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>';
+    el.insertBefore(think, content);
+
+    messages.appendChild(el);
+    messages.scrollTop = messages.scrollHeight;
     return el;
 }
 
-// ── Mermaid init: handle mermaid code blocks via marked's renderer ──
+// ── Marked + Mermaid ──
 const renderer = new marked.Renderer();
 const origCode = renderer.code.bind(renderer);
 renderer.code = function({ text, lang }) {
-    if (lang === 'mermaid') {
-        return `<pre class="mermaid-placeholder">${text}</pre>`;
-    }
+    if (lang === 'mermaid') return `<pre class="mermaid-placeholder">${text}</pre>`;
     return origCode({ text, lang });
 };
 marked.setOptions({ renderer, breaks: true });
 
-sendBtn.addEventListener('click', sendMessage);
-input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
-
-// ── Theme Switcher ──
+// ── Theme ──
 const themeKey = localStorage.getItem('picoagent-theme') || 'warm-charcoal';
 document.documentElement.setAttribute('data-theme', themeKey);
 document.querySelectorAll('#theme-switcher button').forEach(btn => {

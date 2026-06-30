@@ -16,7 +16,7 @@ public sealed class AgentLlmAdapter : IAgentLlm
         Message[] messages,
         string modelId,
         string? reasoningLevel,
-        CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct)
     {
         var model = new Model
         {

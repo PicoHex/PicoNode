@@ -115,20 +115,27 @@ public sealed class AgentLoop
     {
         Message? finalMessage = null;
         var contentBlocks = new List<ContentBlock>();
+        var textAccum = new StringBuilder();
 
         await foreach (var evt in _llm.StreamAsync(context.SystemPrompt, context.Messages, ModelId, null, ct))
         {
             switch (evt.Type)
             {
                 case "text_delta":
-                    contentBlocks.Add(new ContentBlock { Type = "text", Text = evt.Text ?? "" });
+                    textAccum.Append(evt.Text);
                     if (onEvent is not null)
                         await onEvent(new AssistantMessageEvent.TextDelta { Index = 0, Delta = evt.Text ?? "", Partial = new() }, ct);
                     break;
+                case "thinking_delta":
+                    if (onEvent is not null)
+                        await onEvent(new AssistantMessageEvent.ThinkingDelta { Index = 0, Delta = evt.Text ?? "" }, ct);
+                    break;
                 case "done":
+                    contentBlocks.Insert(0, new ContentBlock { Type = "text", Text = textAccum.ToString() });
                     finalMessage = new Message { Role = "assistant", StopReason = evt.StopReason ?? "end_turn", ContentBlocks = [.. contentBlocks] };
                     break;
                 case "error":
+                    contentBlocks.Insert(0, new ContentBlock { Type = "text", Text = textAccum.ToString() });
                     finalMessage = new Message { Role = "assistant", StopReason = "error", ErrorMessage = evt.ErrorMessage, ContentBlocks = [.. contentBlocks] };
                     break;
             }

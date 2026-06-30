@@ -105,10 +105,9 @@ public sealed class AgentHttpClient : IAsyncDisposable
         var url = provider is not null
             ? $"/models?provider={Uri.EscapeDataString(provider)}"
             : "/models";
-        var response = await _http.GetStringAsync(url, ct);
-        return PicoJetson.JsonSerializer.Deserialize<DiscoveredModel[]>(
-                Encoding.UTF8.GetBytes(response)
-            ) ?? [];
+        var json = await _http.GetStringAsync(url, ct);
+        return System.Text.Json.JsonSerializer.Deserialize<DiscoveredModel[]>(json,
+            SourceGenContext.Default.DiscoveredModelArray) ?? [];
     }
 
     public async Task<string> GetHealthAsync(CancellationToken ct = default) =>
@@ -117,7 +116,7 @@ public sealed class AgentHttpClient : IAsyncDisposable
     public async Task<IReadOnlyList<string>> ListSessionsAsync(CancellationToken ct = default)
     {
         var json = await _http.GetStringAsync("/sessions", ct);
-        return PicoJetson.JsonSerializer.Deserialize<string[]>(Encoding.UTF8.GetBytes(json)) ?? [];
+        return System.Text.Json.JsonSerializer.Deserialize(json, SourceGenContext.Default.StringArray) ?? [];
     }
 
     public async Task<bool> CreateSessionAsync(string sessionId, CancellationToken ct = default) =>
@@ -137,7 +136,7 @@ public sealed class AgentHttpClient : IAsyncDisposable
     )
     {
         var json = await _http.GetStringAsync($"/session/{sessionId}/messages", ct);
-        return PicoJetson.JsonSerializer.Deserialize<Message[]>(Encoding.UTF8.GetBytes(json)) ?? [];
+        return System.Text.Json.JsonSerializer.Deserialize(json, SourceGenContext.Default.MessageArray) ?? [];
     }
 
     public async Task<bool> ReloadAsync(CancellationToken ct = default) =>
@@ -230,6 +229,50 @@ internal static class PicoAgentSseParser
             "thinking" => new AssistantMessageEvent.ThinkingDelta
             {
                 Delta = root.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "",
+            },
+            "tool_call_start" => new AssistantMessageEvent.ToolCallStart
+            {
+                Index = 0,
+                Partial = new Message
+                {
+                    Role = "assistant",
+                    ContentBlocks =
+                    [
+                        new ContentBlock
+                        {
+                            Type = "tool_call",
+                            Id = root.TryGetProperty("toolCallId", out var tcid) ? tcid.GetString() ?? "" : "",
+                            Name = root.TryGetProperty("toolName", out var tn) ? tn.GetString() ?? "" : "",
+                        },
+                    ],
+                },
+            },
+            "tool_call_delta" => new AssistantMessageEvent.ToolCallDelta
+            {
+                Index = 0,
+                Delta = root.TryGetProperty("content", out var tdc) ? tdc.GetString() ?? "" : "",
+                Partial = new Message
+                {
+                    Role = "assistant",
+                    ContentBlocks =
+                    [
+                        new ContentBlock
+                        {
+                            Type = "tool_call",
+                            Id = root.TryGetProperty("toolCallId", out var tdId) ? tdId.GetString() ?? "" : "",
+                        },
+                    ],
+                },
+            },
+            "tool_call_end" => new AssistantMessageEvent.ToolCallEnd
+            {
+                Index = 0,
+                Call = new ContentBlock
+                {
+                    Type = "tool_call",
+                    Id = root.TryGetProperty("toolCallId", out var teId) ? teId.GetString() ?? "" : "",
+                },
+                Partial = new Message { Role = "assistant" },
             },
             "done" => new AssistantMessageEvent.Done
             {

@@ -19,13 +19,16 @@ public sealed class InMemorySessionStorage : ISessionStorage
 
     public Task<string> CreateEntryId()
     {
+        // Use the random suffix of a V7 GUID (last 12 chars), not the
+        // timestamp prefix (first 12 chars) which is identical within
+        // the same millisecond and causes collisions.
         for (int i = 0; i < 100; i++)
         {
-            var id = Guid.CreateVersion7().ToString("N")[..8];
+            var id = Guid.CreateVersion7().ToString("N")[^8..];
             if (!_byId.ContainsKey(id))
                 return Task.FromResult(id);
         }
-        return Task.FromResult(Guid.CreateVersion7().ToString("N")[..8]);
+        return Task.FromResult(Guid.NewGuid().ToString("N")[^8..]);
     }
 
     public Task AppendEntry(SessionTreeEntryBase entry)

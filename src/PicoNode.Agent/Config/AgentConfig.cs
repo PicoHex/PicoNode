@@ -1,6 +1,7 @@
 namespace PicoNode.Agent;
 
 [PicoSerializable]
+[PicoJetson.JsonCamelCase]
 public sealed class AgentConfig
 {
     public Dictionary<string, ProviderEntry> Providers { get; set; } = [];
@@ -31,6 +32,7 @@ public sealed class AgentConfig
 }
 
 [PicoSerializable]
+[PicoJetson.JsonCamelCase]
 public sealed class ProviderEntry
 {
     public string ApiKey { get; set; } = "";
@@ -41,6 +43,7 @@ public sealed class ProviderEntry
 }
 
 [PicoSerializable]
+[PicoJetson.JsonCamelCase]
 public sealed class ModelThinkingOverride
 {
     public bool ThinkingEnabled { get; set; }

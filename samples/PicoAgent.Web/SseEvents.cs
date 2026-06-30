@@ -23,3 +23,23 @@ internal sealed class SseErrorEvent
     public string type { get; set; } = "error";
     public string message { get; set; } = "";
 }
+
+internal sealed class SseToolCallStartEvent
+{
+    public string type { get; set; } = "tool_call_start";
+    public string toolCallId { get; set; } = "";
+    public string toolName { get; set; } = "";
+}
+
+internal sealed class SseToolCallDeltaEvent
+{
+    public string type { get; set; } = "tool_call_delta";
+    public string toolCallId { get; set; } = "";
+    public string content { get; set; } = "";
+}
+
+internal sealed class SseToolCallEndEvent
+{
+    public string type { get; set; } = "tool_call_end";
+    public string toolCallId { get; set; } = "";
+}

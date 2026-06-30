@@ -12,6 +12,42 @@ public class ConfigLoaderTests
     }
 
     [Test]
+    public async Task Deserialize_CamelCaseJson_LoadsProviders()
+    {
+        // Scenario: settings.json uses camelCase property names (standard JSON convention).
+        // PicoJetson source-generator silently skips types with nested Dictionary<K,V>,
+        // so we use System.Text.Json with a source-gen JsonSerializerContext for AOT safety.
+        var json = """
+        {
+          "providers": {
+            "deepseek": {
+              "apiKey": "sk-test-key",
+              "apiFormat": "openai",
+              "baseUrl": "https://api.deepseek.com/v1"
+            }
+          },
+          "model": "deepseek-chat",
+          "thinkingEnabled": true,
+          "thinkingLevel": "medium",
+          "maxTokens": 4096
+        }
+        """;
+        var config = System.Text.Json.JsonSerializer.Deserialize<AgentConfig>(
+            json,
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        await Assert.That(config).IsNotNull();
+        await Assert.That(config!.Providers.Count).IsEqualTo(1);
+        await Assert.That(config.Providers["deepseek"].ApiKey).IsEqualTo("sk-test-key");
+        await Assert.That(config.Providers["deepseek"].ApiFormat).IsEqualTo("openai");
+        await Assert.That(config.Providers["deepseek"].BaseUrl).IsEqualTo("https://api.deepseek.com/v1");
+        await Assert.That(config.Model).IsEqualTo("deepseek-chat");
+        await Assert.That(config.ThinkingEnabled).IsTrue();
+        await Assert.That(config.ThinkingLevel).IsEqualTo("medium");
+        await Assert.That(config.MaxTokens).IsEqualTo(4096);
+    }
+
+    [Test]
     public async Task Load_WithPicoCfgEnvVar_ResolvesKey()
     {
         Environment.SetEnvironmentVariable("PICO_DEEPSEEK_API_KEY", "sk-test-123");

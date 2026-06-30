@@ -222,17 +222,17 @@ public sealed partial class Agent : IAsyncDisposable
 
     public async Task<List<string>> ListSessionsAsync(CancellationToken ct = default)
     {
-        if (_homeDir is not { Length: > 0 })
-            return [];
-        var sessionsDir = Path.Combine(_homeDir, "sessions");
-        if (!Directory.Exists(sessionsDir))
-            return [];
-        return Directory
-            .GetFiles(sessionsDir, "*.jsonl")
-            .Select(Path.GetFileNameWithoutExtension)
-            .Where(n => n is not null)
-            .Select(n => n!)
-            .ToList();
+        var sessions = new HashSet<string>(_host.GetActiveSessionIds());
+        if (_homeDir is { Length: > 0 })
+        {
+            var sessionsDir = Path.Combine(_homeDir, "sessions");
+            if (Directory.Exists(sessionsDir))
+            {
+                foreach (var file in Directory.GetFiles(sessionsDir, "*.jsonl"))
+                    sessions.Add(Path.GetFileNameWithoutExtension(file)!);
+            }
+        }
+        return sessions.ToList();
     }
 
     public Task CreateSessionAsync(string sessionId, CancellationToken ct = default)
@@ -249,6 +249,28 @@ public sealed partial class Agent : IAsyncDisposable
         if (File.Exists(path))
             File.Delete(path);
         return Task.CompletedTask;
+    }
+
+    // ── Test support ──
+
+    /// <summary>
+    /// Creates an Agent wired to a pre-built AgentHost + mock dependencies for integration testing.
+    /// </summary>
+    internal static Agent CreateForTest(
+        AgentHost host,
+        CapabilityRegistry registry,
+        Model initialModel,
+        HttpClient? http = null,
+        IReadOnlyDictionary<string, ProviderConfig>? providerConfigs = null,
+        IReadOnlyDictionary<string, ICircuitBreaker>? breakers = null,
+        IReadOnlyDictionary<string, ILLmClient>? clients = null)
+    {
+        http ??= new HttpClient();
+        providerConfigs ??= new Dictionary<string, ProviderConfig>();
+        breakers ??= new Dictionary<string, ICircuitBreaker>();
+        clients ??= new Dictionary<string, ILLmClient>();
+        return new Agent(host, registry, null, http, ownsHttpClient: true,
+            providerConfigs, breakers, clients, initialModel);
     }
 
     // ── Private ──
@@ -271,7 +293,7 @@ public sealed partial class Agent : IAsyncDisposable
         }
     }
 
-    private WebApp BuildWebApp()
+    internal WebApp BuildWebApp()
     {
         var container = new SvcContainer();
         container.Build();

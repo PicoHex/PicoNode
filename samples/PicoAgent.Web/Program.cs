@@ -237,6 +237,36 @@ static async Task ForwardSseAsync(
                         ct
                     );
                     break;
+                case AssistantMessageEvent.ToolCallStart ts:
+                    {
+                        var b = ts.Partial.ContentBlocks?.ElementAtOrDefault(ts.Index);
+                        await sse.WriteJsonAsync(
+                            PicoJetson.JsonSerializer.Serialize(
+                                new SseToolCallStartEvent { toolCallId = b?.Id ?? "", toolName = b?.Name ?? "" }
+                            ),
+                            ct
+                        );
+                    }
+                    break;
+                case AssistantMessageEvent.ToolCallDelta td:
+                    {
+                        var b = td.Partial.ContentBlocks?.ElementAtOrDefault(td.Index);
+                        await sse.WriteJsonAsync(
+                            PicoJetson.JsonSerializer.Serialize(
+                                new SseToolCallDeltaEvent { toolCallId = b?.Id ?? "", content = td.Delta }
+                            ),
+                            ct
+                        );
+                    }
+                    break;
+                case AssistantMessageEvent.ToolCallEnd te:
+                    await sse.WriteJsonAsync(
+                        PicoJetson.JsonSerializer.Serialize(
+                            new SseToolCallEndEvent { toolCallId = te.Call.Id ?? "" }
+                        ),
+                        ct
+                    );
+                    break;
                 case AssistantMessageEvent.Done d:
                     await sse.WriteJsonAsync(
                         PicoJetson.JsonSerializer.Serialize(
