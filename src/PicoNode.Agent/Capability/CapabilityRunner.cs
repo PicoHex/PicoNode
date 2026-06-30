@@ -1,3 +1,6 @@
+using System.Text.Json;
+using PicoNode.AI;
+
 namespace PicoNode.Agent;
 
 public sealed class CapabilityRunner
@@ -6,7 +9,8 @@ public sealed class CapabilityRunner
 
     public static void ValidateArgs(ManifestCapability config, Dictionary<string, object> args)
     {
-        if (config.Schema is null) return;
+        if (config.Schema is null)
+            return;
         using var doc = JsonDocument.Parse(config.Schema);
         var root = doc.RootElement;
         if (root.TryGetProperty("required", out var required))
@@ -15,13 +19,19 @@ public sealed class CapabilityRunner
             {
                 var name = field.GetString()!;
                 if (!args.ContainsKey(name))
-                    throw new ToolException(ToolErrorCode.SchemaValidationFailed,
-                        $"Missing required parameter: {name}");
+                    throw new ToolException(
+                        ToolErrorCode.SchemaValidationFailed,
+                        $"Missing required parameter: {name}"
+                    );
             }
         }
     }
 
-    public readonly record struct TruncationResult(string Content, bool Truncated, string? FullOutputPath);
+    public readonly record struct TruncationResult(
+        string Content,
+        bool Truncated,
+        string? FullOutputPath
+    );
 
     public static TruncationResult TruncateOutput(string output, int maxBytes, int maxLines)
     {
@@ -36,7 +46,8 @@ public sealed class CapabilityRunner
 
         var tempPath = Path.GetTempFileName();
         File.WriteAllText(tempPath, output);
-        var notice = $"[Output truncated: {truncated.Length} of {output.Length} bytes, {truncatedLines.Length} of {lines.Length} lines. Full output: {tempPath}]";
+        var notice =
+            $"[Output truncated: {truncated.Length} of {output.Length} bytes, {truncatedLines.Length} of {lines.Length} lines. Full output: {tempPath}]";
         return new TruncationResult(truncated + "\n" + notice, true, tempPath);
     }
 

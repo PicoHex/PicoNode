@@ -1,3 +1,6 @@
+using System.Text.Json;
+using PicoNode.AI;
+
 namespace PicoNode.Agent;
 
 public sealed class HookRunner
@@ -11,7 +14,11 @@ public sealed class HookRunner
         _runner = runner;
     }
 
-    public async Task<JsonElement?> EmitAsync(TriggerKind trigger, byte[] input, CancellationToken ct)
+    public async Task<JsonElement?> EmitAsync(
+        TriggerKind trigger,
+        byte[] input,
+        CancellationToken ct
+    )
     {
         var hooks = _registry.GetByTrigger(trigger).OrderBy(c => c.Priority);
         foreach (var hook in hooks)

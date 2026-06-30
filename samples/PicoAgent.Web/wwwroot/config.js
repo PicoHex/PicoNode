@@ -113,7 +113,7 @@ btnSave.addEventListener('click', async () => {
         });
         if (r.ok) {
             setStatus('Saved! Redirecting...', false);
-            setTimeout(() => { window.location.href = '/'; }, 1000);
+            window.location.href = '/';
         } else {
             setStatus('Save failed', true);
         }

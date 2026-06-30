@@ -1,18 +1,5 @@
-using System.Text.Json.Serialization;
-
 namespace PicoNode.Agent;
 
-[JsonDerivedType(typeof(MessageEntry), "message")]
-[JsonDerivedType(typeof(CompactionEntry), "compaction")]
-[JsonDerivedType(typeof(BranchSummaryEntry), "branch_summary")]
-[JsonDerivedType(typeof(CustomEntry), "custom")]
-[JsonDerivedType(typeof(CustomMessageEntry), "custom_message")]
-[JsonDerivedType(typeof(LabelEntry), "label")]
-[JsonDerivedType(typeof(SessionInfoEntry), "session_info")]
-[JsonDerivedType(typeof(ModelChangeEntry), "model_change")]
-[JsonDerivedType(typeof(ThinkingLevelChangeEntry), "thinking_level_change")]
-[JsonDerivedType(typeof(ActiveToolsChangeEntry), "active_tools_change")]
-[JsonDerivedType(typeof(LeafEntry), "leaf")]
 public abstract record SessionTreeEntryBase
 {
     public string Id { get; init; } = "";

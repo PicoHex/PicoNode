@@ -1,3 +1,6 @@
+using System.Text.Json;
+using PicoNode.AI;
+
 namespace PicoNode.AI;
 
 public sealed class OpenAILlmClient : ILLmClient
@@ -42,14 +45,14 @@ public sealed class OpenAILlmClient : ILLmClient
             var errorMessage = $"HTTP {(int)response.StatusCode}";
             try
             {
-                using var errDoc = JsonDocument.Parse(errorBody);
+                using var doc = JsonDocument.Parse(errorBody);
                 if (
-                    errDoc.RootElement.TryGetProperty("error", out var err)
+                    doc.RootElement.TryGetProperty("error", out var err)
                     && err.TryGetProperty("message", out var msg)
                 )
                     errorMessage = msg.GetString() ?? errorBody;
             }
-            catch (JsonException)
+            catch
             {
                 errorMessage = errorBody;
             }

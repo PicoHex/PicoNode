@@ -1,5 +1,6 @@
 namespace PicoNode.AI;
 
+[PicoSerializable]
 /// <summary>
 /// Single concrete message type for LLM communication. Uses Role as discriminator.
 /// In session persistence (JSONL), each line is one of these with the role set accordingly.

@@ -1,7 +1,6 @@
 global using System.Diagnostics;
 global using System.Runtime.CompilerServices;
 global using System.Text;
-global using System.Text.Json;
 global using PicoNode.Agent;
 global using PicoNode.AI;
 global using TUnit.Assertions;

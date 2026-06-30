@@ -1,5 +1,4 @@
 using System.Text;
-using SystemTextJson = System.Text.Json;
 
 namespace PicoNode.Agent;
 
@@ -13,12 +12,12 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
     private Func<string> _idGenerator;
     private bool _disposed;
 
-    private JsonlSessionStorage(string filePath,
-        List<SessionTreeEntryBase> entries, string? leafId)
+    private JsonlSessionStorage(string filePath, List<SessionTreeEntryBase> entries, string? leafId)
     {
         _filePath = filePath;
         _entries = entries;
-        foreach (var e in entries) _byId[e.Id] = e;
+        foreach (var e in entries)
+            _byId[e.Id] = e;
         _leafId = leafId;
         _idGenerator = DefaultIdGenerator;
     }
@@ -28,7 +27,10 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
     public static async Task<JsonlSessionStorage> OpenAsync(string filePath)
     {
         if (!File.Exists(filePath))
-            throw new SessionException(SessionErrorCode.NotFound, $"Session file not found: {filePath}");
+            throw new SessionException(
+                SessionErrorCode.NotFound,
+                $"Session file not found: {filePath}"
+            );
 
         var content = await File.ReadAllTextAsync(filePath);
         var lines = content.Split('\n').Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
@@ -39,8 +41,12 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
         string? leafId = null;
         for (int i = 1; i < lines.Length; i++)
         {
-            var entry = SystemTextJson.JsonSerializer.Deserialize(lines[i], SessionJsonContext.Default.SessionTreeEntryBase)
-                ?? throw new SessionException(SessionErrorCode.InvalidEntry, $"Invalid entry at line {i + 1}");
+            var entry =
+                SessionEntrySerializer.Deserialize(lines[i])
+                ?? throw new SessionException(
+                    SessionErrorCode.InvalidEntry,
+                    $"Invalid entry at line {i + 1}"
+                );
             entries.Add(entry);
             leafId = entry is LeafEntry lf ? lf.TargetId : entry.Id;
         }
@@ -49,7 +55,8 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
 
     public static async Task<JsonlSessionStorage> CreateAsync(string filePath, string sessionId)
     {
-        var header = $"{{\"type\":\"session\",\"version\":3,\"id\":\"{sessionId}\",\"timestamp\":\"{DateTime.UtcNow:O}\"}}\n";
+        var header =
+            $"{{\"type\":\"session\",\"version\":3,\"id\":\"{sessionId}\",\"timestamp\":\"{DateTime.UtcNow:O}\"}}\n";
         await File.WriteAllTextAsync(filePath, header);
         return new JsonlSessionStorage(filePath, [], null);
     }
@@ -68,7 +75,7 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
 
     public async Task AppendEntry(SessionTreeEntryBase entry)
     {
-        var line = SystemTextJson.JsonSerializer.Serialize(entry, SessionJsonContext.Default.SessionTreeEntryBase) + "\n";
+        var line = SessionEntrySerializer.Serialize(entry) + "\n";
         await File.AppendAllTextAsync(_filePath, line);
         _entries.Add(entry);
         _byId[entry.Id] = entry;
@@ -86,29 +93,35 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
 
     public Task<SessionTreeEntryBase[]> GetPathToRoot(string? leafId)
     {
-        if (leafId is null) return Task.FromResult(Array.Empty<SessionTreeEntryBase>());
+        if (leafId is null)
+            return Task.FromResult(Array.Empty<SessionTreeEntryBase>());
         var path = new List<SessionTreeEntryBase>();
-        var current = _byId.GetValueOrDefault(leafId)
+        var current =
+            _byId.GetValueOrDefault(leafId)
             ?? throw new SessionException(SessionErrorCode.NotFound, $"Entry {leafId} not found");
         while (true)
         {
             path.Insert(0, current);
-            if (current.ParentId is null) break;
-            current = _byId.GetValueOrDefault(current.ParentId)
-                ?? throw new SessionException(SessionErrorCode.InvalidEntry, $"Parent {current.ParentId} not found");
+            if (current.ParentId is null)
+                break;
+            current =
+                _byId.GetValueOrDefault(current.ParentId)
+                ?? throw new SessionException(
+                    SessionErrorCode.InvalidEntry,
+                    $"Parent {current.ParentId} not found"
+                );
         }
         return Task.FromResult(path.ToArray());
     }
 
-    public Task<SessionTreeEntryBase[]> GetEntries() =>
-        Task.FromResult(_entries.ToArray());
+    public Task<SessionTreeEntryBase[]> GetEntries() => Task.FromResult(_entries.ToArray());
 
-    public Task<string?> GetLabel(string id) =>
-        Task.FromResult(_labelsById.GetValueOrDefault(id));
+    public Task<string?> GetLabel(string id) => Task.FromResult(_labelsById.GetValueOrDefault(id));
 
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return;
+        if (_disposed)
+            return;
         _disposed = true;
         if (_leafId is not null)
         {
@@ -123,20 +136,23 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
         }
     }
 
-    public static async Task SaveAsync(string path,
+    public static async Task SaveAsync(
+        string path,
         IReadOnlyList<SessionTreeEntryBase> entries,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var header = $"{{\"type\":\"session\",\"version\":3,\"timestamp\":\"{DateTime.UtcNow:O}\"}}\n";
+        var header =
+            $"{{\"type\":\"session\",\"version\":3,\"timestamp\":\"{DateTime.UtcNow:O}\"}}\n";
         var sb = new StringBuilder();
         sb.Append(header);
         foreach (var entry in entries)
-            sb.Append(SystemTextJson.JsonSerializer.Serialize(entry, SessionJsonContext.Default.SessionTreeEntryBase)).Append('\n');
+            sb.Append(SessionEntrySerializer.Serialize(entry)).Append('\n');
         await File.WriteAllTextAsync(path, sb.ToString(), ct);
     }
 
     private static string DefaultIdGenerator()
     {
-        return Guid.CreateVersion7().ToString("N")[..8];
+        return Guid.CreateVersion7().ToString("N")[^8..];
     }
 }

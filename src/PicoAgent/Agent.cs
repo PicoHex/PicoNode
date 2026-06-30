@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 // src/PicoAgent/Agent.cs
 namespace PicoAgent;
 
@@ -263,14 +265,24 @@ public sealed partial class Agent : IAsyncDisposable
         HttpClient? http = null,
         IReadOnlyDictionary<string, ProviderConfig>? providerConfigs = null,
         IReadOnlyDictionary<string, ICircuitBreaker>? breakers = null,
-        IReadOnlyDictionary<string, ILLmClient>? clients = null)
+        IReadOnlyDictionary<string, ILLmClient>? clients = null
+    )
     {
         http ??= new HttpClient();
         providerConfigs ??= new Dictionary<string, ProviderConfig>();
         breakers ??= new Dictionary<string, ICircuitBreaker>();
         clients ??= new Dictionary<string, ILLmClient>();
-        return new Agent(host, registry, null, http, ownsHttpClient: true,
-            providerConfigs, breakers, clients, initialModel);
+        return new Agent(
+            host,
+            registry,
+            null,
+            http,
+            ownsHttpClient: true,
+            providerConfigs,
+            breakers,
+            clients,
+            initialModel
+        );
     }
 
     // ── Private ──
@@ -484,15 +496,13 @@ public sealed partial class Agent : IAsyncDisposable
                 var msgs = await _host.GetSessionMessagesAsync(id);
                 if (msgs.Count == 0 && id != "default")
                     return JsonError(404, "NOT_FOUND", $"Session not found: {id}");
-                        var json =
-                            "["
-                            + string.Join(
-                                ",",
-                                msgs.Select(m => PicoJetson.JsonSerializer.Serialize(m))
-                            )
-                            + "]";
-                        return JsonResponse(200, json);
-                    });
+                var json =
+                    "["
+                    + string.Join(",", msgs.Select(m => PicoJetson.JsonSerializer.Serialize(m)))
+                    + "]";
+                return JsonResponse(200, json);
+            }
+        );
 
         // POST /session/{id}/save (async)
         app.MapPost(
@@ -536,7 +546,8 @@ public sealed partial class Agent : IAsyncDisposable
                 var path = Path.Combine(_homeDir, "settings.json");
                 var exists = File.Exists(path);
                 var model = SnapshotModel();
-                var json = $"{{\"configured\":true,\"model\":\"{EscapeJsonString(model.Id)}\",\"provider\":\"{EscapeJsonString(model.Provider)}\"}}";
+                var json =
+                    $"{{\"configured\":{(exists ? "true" : "false")},\"model\":\"{EscapeJsonString(model.Id)}\",\"provider\":\"{EscapeJsonString(model.Provider)}\"}}";
                 return ValueTask.FromResult(JsonResponse(200, json));
             }
         );
@@ -547,17 +558,36 @@ public sealed partial class Agent : IAsyncDisposable
             async (ctx, ct) =>
             {
                 var json = await ReadJsonBodyAsync(ctx, ct);
-                var provider = json?.TryGetProperty("provider", out var pv) == true ? pv.GetString() : null;
-                var apiKey = json?.TryGetProperty("apiKey", out var ak) == true ? ak.GetString() : null;
-                var baseUrl = json?.TryGetProperty("baseUrl", out var bu) == true ? bu.GetString() : null;
-                var apiFormat = json?.TryGetProperty("apiFormat", out var af) == true ? af.GetString() : "openai";
+                var provider =
+                    json?.TryGetProperty("provider", out var pv) == true ? pv.GetString() : null;
+                var apiKey =
+                    json?.TryGetProperty("apiKey", out var ak) == true ? ak.GetString() : null;
+                var baseUrl =
+                    json?.TryGetProperty("baseUrl", out var bu) == true ? bu.GetString() : null;
+                var apiFormat =
+                    json?.TryGetProperty("apiFormat", out var af) == true
+                        ? af.GetString()
+                        : "openai";
                 if (string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(apiKey))
                     return JsonError(400, "INVALID_ARGUMENT", "provider and apiKey required");
                 try
                 {
-                    var models = await ValidateProviderAsync(provider!, apiKey!, baseUrl, apiFormat!, ct);
-                    var result = "[" + string.Join(",", models.Select(m =>
-                        $"{{\"id\":\"{EscapeJsonString(m.Id)}\",\"ownedBy\":\"{EscapeJsonString(m.OwnedBy)}\"}}")) + "]";
+                    var models = await ValidateProviderAsync(
+                        provider!,
+                        apiKey!,
+                        baseUrl,
+                        apiFormat!,
+                        ct
+                    );
+                    var result =
+                        "["
+                        + string.Join(
+                            ",",
+                            models.Select(m =>
+                                $"{{\"id\":\"{EscapeJsonString(m.Id)}\",\"ownedBy\":\"{EscapeJsonString(m.OwnedBy)}\"}}"
+                            )
+                        )
+                        + "]";
                     return JsonResponse(200, result);
                 }
                 catch (Exception ex)
@@ -578,8 +608,9 @@ public sealed partial class Agent : IAsyncDisposable
                 var raw = json?.GetRawText();
                 if (string.IsNullOrWhiteSpace(raw))
                     return JsonError(400, "INVALID_ARGUMENT", "config body required");
-                var config = System.Text.Json.JsonSerializer.Deserialize<AgentConfig>(raw,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var config = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(
+                    Encoding.UTF8.GetBytes(raw)
+                );
                 if (config is null)
                     return JsonError(400, "INVALID_ARGUMENT", "malformed config");
                 var path = Path.Combine(_homeDir, "settings.json");
@@ -592,8 +623,8 @@ public sealed partial class Agent : IAsyncDisposable
         // GET /config/providers — list known provider templates for the UI
         app.MapGet(
             "/config/providers",
-            (_, _) =>
-                ValueTask.FromResult(JsonResponse(200, ProviderTemplates)));
+            (_, _) => ValueTask.FromResult(JsonResponse(200, ProviderTemplates))
+        );
 
         return app;
     }
@@ -646,7 +677,12 @@ public sealed partial class Agent : IAsyncDisposable
     }
 
     private async Task<List<DiscoveredModel>> ValidateProviderAsync(
-        string name, string apiKey, string? baseUrl, string apiFormat, CancellationToken ct)
+        string name,
+        string apiKey,
+        string? baseUrl,
+        string apiFormat,
+        CancellationToken ct
+    )
     {
         var fmt = apiFormat.ToLowerInvariant() switch
         {
@@ -655,29 +691,38 @@ public sealed partial class Agent : IAsyncDisposable
         };
         var pc = new ProviderConfig
         {
-            Name = name, ApiKey = apiKey, ApiFormat = fmt,
-            BaseUrl = baseUrl ?? (fmt == AiApiFormat.AnthropicMessages
-                ? "https://api.anthropic.com"
-                : "https://api.openai.com/v1"),
+            Name = name,
+            ApiKey = apiKey,
+            ApiFormat = fmt,
+            BaseUrl =
+                baseUrl
+                ?? (
+                    fmt == AiApiFormat.AnthropicMessages
+                        ? "https://api.anthropic.com"
+                        : "https://api.openai.com/v1"
+                ),
         };
-        return await ModelDiscovery.DiscoverAsync(_http, pc, ct) switch
+        var result = await ModelDiscovery.DiscoverAsync(_http, pc, ct);
+        return result switch
         {
-            { Length: 0 } => throw new InvalidOperationException("No models discovered — check API key and base URL"),
+            { Length: 0 } => throw new InvalidOperationException(
+                "No models discovered — check API key and base URL"
+            ),
             var models => models.ToList(),
         };
     }
 
     private static readonly string ProviderTemplates = """
-    [
-      {"name":"openai","label":"OpenAI","baseUrl":"https://api.openai.com/v1","apiFormat":"openai"},
-      {"name":"anthropic","label":"Anthropic","baseUrl":"https://api.anthropic.com","apiFormat":"anthropic"},
-      {"name":"deepseek","label":"DeepSeek","baseUrl":"https://api.deepseek.com/v1","apiFormat":"openai"},
-      {"name":"kimi","label":"Moonshot (Kimi)","baseUrl":"https://api.moonshot.cn/v1","apiFormat":"openai"},
-      {"name":"groq","label":"Groq","baseUrl":"https://api.groq.com/openai/v1","apiFormat":"openai"},
-      {"name":"glm","label":"Zhipu (GLM)","baseUrl":"https://open.bigmodel.cn/api/paas/v4","apiFormat":"openai"},
-      {"name":"ollama","label":"Ollama (local)","baseUrl":"http://localhost:11434/v1","apiFormat":"openai"}
-    ]
-    """;
+        [
+          {"name":"openai","label":"OpenAI","baseUrl":"https://api.openai.com/v1","apiFormat":"openai"},
+          {"name":"anthropic","label":"Anthropic","baseUrl":"https://api.anthropic.com","apiFormat":"anthropic"},
+          {"name":"deepseek","label":"DeepSeek","baseUrl":"https://api.deepseek.com/v1","apiFormat":"openai"},
+          {"name":"kimi","label":"Moonshot (Kimi)","baseUrl":"https://api.moonshot.cn/v1","apiFormat":"openai"},
+          {"name":"groq","label":"Groq","baseUrl":"https://api.groq.com/openai/v1","apiFormat":"openai"},
+          {"name":"glm","label":"Zhipu (GLM)","baseUrl":"https://open.bigmodel.cn/api/paas/v4","apiFormat":"openai"},
+          {"name":"ollama","label":"Ollama (local)","baseUrl":"http://localhost:11434/v1","apiFormat":"openai"}
+        ]
+        """;
 
     private static HttpResponse JsonOk() =>
         new()

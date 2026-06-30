@@ -1,5 +1,8 @@
+using System.Text.Json;
+
 namespace PicoNode.AI;
 
+[PicoSerializable]
 public sealed class DiscoveredModel
 {
     public string Id { get; set; } = "";

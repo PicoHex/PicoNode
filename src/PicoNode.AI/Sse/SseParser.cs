@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace PicoNode.AI;
 
 public static class SseParser

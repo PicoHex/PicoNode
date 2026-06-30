@@ -1,4 +1,3 @@
-using SystemTextJson = System.Text.Json;
 using PicoNode.Agent;
 
 namespace PicoNode.Agent.Tests.Session;
@@ -16,7 +15,8 @@ public class JsonlSessionStorageTests
     [After(Test)]
     public void Cleanup()
     {
-        if (File.Exists(_tempFile)) File.Delete(_tempFile);
+        if (File.Exists(_tempFile))
+            File.Delete(_tempFile);
     }
 
     [Test]
@@ -30,10 +30,8 @@ public class JsonlSessionStorageTests
             Message = new Message { Role = "user", Content = "hello" },
         };
 
-        // Serialize via context — specifying the base type includes the $type discriminator
-        var json = SystemTextJson.JsonSerializer.Serialize(entry, SessionJsonContext.Default.SessionTreeEntryBase);
-        // Deserialize via context — verifies AOT-compatible polymorphism
-        var restored = SystemTextJson.JsonSerializer.Deserialize(json, SessionJsonContext.Default.SessionTreeEntryBase);
+        var json = SessionEntrySerializer.Serialize(entry);
+        var restored = SessionEntrySerializer.Deserialize(json);
         await Assert.That(restored).IsNotNull();
         await Assert.That(restored).IsTypeOf<MessageEntry>();
         await Assert.That(((MessageEntry)restored!).Message.Content).IsEqualTo("hello");
@@ -44,7 +42,10 @@ public class JsonlSessionStorageTests
     [Test]
     public async Task Create_And_Reopen_ShouldRestoreEntries()
     {
-        var created = await JsonlSessionStorage.CreateAsync(_tempFile, Guid.NewGuid().ToString("N"));
+        var created = await JsonlSessionStorage.CreateAsync(
+            _tempFile,
+            Guid.NewGuid().ToString("N")
+        );
         created.SetEntryIdGenerator(() => "test0001");
         var entry = new MessageEntry
         {
@@ -62,7 +63,10 @@ public class JsonlSessionStorageTests
     [Test]
     public async Task AppendEntry_ShouldWriteToDisk()
     {
-        var storage = await JsonlSessionStorage.CreateAsync(_tempFile, Guid.NewGuid().ToString("N"));
+        var storage = await JsonlSessionStorage.CreateAsync(
+            _tempFile,
+            Guid.NewGuid().ToString("N")
+        );
         storage.SetEntryIdGenerator(() => "test0001");
         var entry = new MessageEntry
         {

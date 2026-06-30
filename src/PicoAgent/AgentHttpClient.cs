@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 // src/PicoAgent/AgentHttpClient.cs
 namespace PicoAgent;
 
@@ -106,8 +108,10 @@ public sealed class AgentHttpClient : IAsyncDisposable
             ? $"/models?provider={Uri.EscapeDataString(provider)}"
             : "/models";
         var json = await _http.GetStringAsync(url, ct);
-        return System.Text.Json.JsonSerializer.Deserialize<DiscoveredModel[]>(json,
-            SourceGenContext.Default.DiscoveredModelArray) ?? [];
+        return System.Text.Json.JsonSerializer.Deserialize<DiscoveredModel[]>(
+                json,
+                SourceGenContext.Default.DiscoveredModelArray
+            ) ?? [];
     }
 
     public async Task<string> GetHealthAsync(CancellationToken ct = default) =>
@@ -116,7 +120,10 @@ public sealed class AgentHttpClient : IAsyncDisposable
     public async Task<IReadOnlyList<string>> ListSessionsAsync(CancellationToken ct = default)
     {
         var json = await _http.GetStringAsync("/sessions", ct);
-        return System.Text.Json.JsonSerializer.Deserialize(json, SourceGenContext.Default.StringArray) ?? [];
+        return System.Text.Json.JsonSerializer.Deserialize(
+                json,
+                SourceGenContext.Default.StringArray
+            ) ?? [];
     }
 
     public async Task<bool> CreateSessionAsync(string sessionId, CancellationToken ct = default) =>
@@ -138,7 +145,10 @@ public sealed class AgentHttpClient : IAsyncDisposable
         try
         {
             var json = await _http.GetStringAsync($"/session/{sessionId}/messages", ct);
-            return System.Text.Json.JsonSerializer.Deserialize(json, SourceGenContext.Default.MessageArray) ?? [];
+            return System.Text.Json.JsonSerializer.Deserialize(
+                    json,
+                    SourceGenContext.Default.MessageArray
+                ) ?? [];
         }
         catch (HttpRequestException)
         {
@@ -248,8 +258,12 @@ internal static class PicoAgentSseParser
                         new ContentBlock
                         {
                             Type = "tool_call",
-                            Id = root.TryGetProperty("toolCallId", out var tcid) ? tcid.GetString() ?? "" : "",
-                            Name = root.TryGetProperty("toolName", out var tn) ? tn.GetString() ?? "" : "",
+                            Id = root.TryGetProperty("toolCallId", out var tcid)
+                                ? tcid.GetString() ?? ""
+                                : "",
+                            Name = root.TryGetProperty("toolName", out var tn)
+                                ? tn.GetString() ?? ""
+                                : "",
                         },
                     ],
                 },
@@ -266,7 +280,9 @@ internal static class PicoAgentSseParser
                         new ContentBlock
                         {
                             Type = "tool_call",
-                            Id = root.TryGetProperty("toolCallId", out var tdId) ? tdId.GetString() ?? "" : "",
+                            Id = root.TryGetProperty("toolCallId", out var tdId)
+                                ? tdId.GetString() ?? ""
+                                : "",
                         },
                     ],
                 },
@@ -277,7 +293,9 @@ internal static class PicoAgentSseParser
                 Call = new ContentBlock
                 {
                     Type = "tool_call",
-                    Id = root.TryGetProperty("toolCallId", out var teId) ? teId.GetString() ?? "" : "",
+                    Id = root.TryGetProperty("toolCallId", out var teId)
+                        ? teId.GetString() ?? ""
+                        : "",
                 },
                 Partial = new Message { Role = "assistant" },
             },
