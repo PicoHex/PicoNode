@@ -13,9 +13,10 @@ public sealed partial class Agent : IAsyncDisposable
     private readonly string? _homeDir;
     private readonly HttpClient _http;
     private readonly bool _ownsHttpClient;
-    private readonly IReadOnlyDictionary<string, ProviderConfig> _providerConfigs;
-    private readonly IReadOnlyDictionary<string, ICircuitBreaker> _breakers;
-    private readonly IReadOnlyDictionary<string, ILLmClient> _clients;
+    private readonly ProviderRouter _router;
+    private IReadOnlyDictionary<string, ProviderConfig> _providerConfigs;
+    private IReadOnlyDictionary<string, ICircuitBreaker> _breakers;
+    private IReadOnlyDictionary<string, ILLmClient> _clients;
     private readonly ILogger? _logger;
     private Model _pendingModel;
     private WebServer? _server;
@@ -27,6 +28,7 @@ public sealed partial class Agent : IAsyncDisposable
         string? homeDir,
         HttpClient http,
         bool ownsHttpClient,
+        ProviderRouter router,
         IReadOnlyDictionary<string, ProviderConfig> providerConfigs,
         IReadOnlyDictionary<string, ICircuitBreaker> breakers,
         IReadOnlyDictionary<string, ILLmClient> clients,
@@ -39,6 +41,7 @@ public sealed partial class Agent : IAsyncDisposable
         _homeDir = homeDir;
         _http = http;
         _ownsHttpClient = ownsHttpClient;
+        _router = router;
         _providerConfigs = providerConfigs;
         _breakers = breakers;
         _clients = clients;
@@ -59,6 +62,7 @@ public sealed partial class Agent : IAsyncDisposable
         var registry = builder.GetRegistry();
         var http = builder.GetHttpClient();
         var ownsHttp = builder.GetHttpClientIsOwned();
+        var router = builder.GetRouter();
         var providerConfigs = builder.GetProviderConfigs();
         var breakers = builder.GetBreakers();
         var clients = builder.GetClients();
@@ -70,6 +74,7 @@ public sealed partial class Agent : IAsyncDisposable
             homeDir,
             http,
             ownsHttp,
+            router,
             providerConfigs,
             breakers,
             clients,
@@ -272,12 +277,14 @@ public sealed partial class Agent : IAsyncDisposable
         providerConfigs ??= new Dictionary<string, ProviderConfig>();
         breakers ??= new Dictionary<string, ICircuitBreaker>();
         clients ??= new Dictionary<string, ILLmClient>();
+        var router = new ProviderRouter(providerConfigs.Values);
         return new Agent(
             host,
             registry,
             null,
             http,
             ownsHttpClient: true,
+            router,
             providerConfigs,
             breakers,
             clients,
@@ -286,6 +293,56 @@ public sealed partial class Agent : IAsyncDisposable
     }
 
     // ── Private ──
+
+    private void ReloadProviderConfigs(AgentConfig config)
+    {
+        var providerList = new List<ProviderConfig>();
+
+        lock (_lock)
+        {
+            // Mutate existing dicts in-place (shared with ResilientLLmClient via reference)
+            var pcDict = (Dictionary<string, ProviderConfig>)_providerConfigs;
+            var brDict = (Dictionary<string, ICircuitBreaker>)_breakers;
+            var clDict = (Dictionary<string, ILLmClient>)_clients;
+            pcDict.Clear();
+            brDict.Clear();
+            clDict.Clear();
+
+            foreach (var (name, entry) in config.Providers)
+            {
+                var apiFormat = entry.ApiFormat?.ToLowerInvariant() switch
+                {
+                    "anthropic" => AiApiFormat.AnthropicMessages,
+                    _ => AiApiFormat.OpenAIChatCompletions,
+                };
+                var pc = new ProviderConfig
+                {
+                    Name = name,
+                    BaseUrl = entry.BaseUrl ?? "",
+                    ApiFormat = apiFormat,
+                    ApiKey = entry.ApiKey,
+                    Priority = 1,
+                };
+                pcDict[name] = pc;
+                providerList.Add(pc);
+                brDict[name] = new CircuitBreaker();
+                clDict[name] =
+                    apiFormat == AiApiFormat.AnthropicMessages
+                        ? new AnthropicLLmClient(_http)
+                        : new OpenAILlmClient(_http);
+            }
+
+            _router.UpdateProviders(providerList);
+            if (providerList.Count > 0)
+            {
+                _pendingModel.Provider = pcDict.Keys.First();
+                _pendingModel.Api = providerList[0].ApiFormat;
+                _pendingModel.Id = config.Model ?? providerList[0].Name;
+                if (config.Model is { Length: > 0 })
+                    _pendingModel.Id = config.Model;
+            }
+        }
+    }
 
     private Model SnapshotModel()
     {
@@ -544,10 +601,24 @@ public sealed partial class Agent : IAsyncDisposable
                 if (_homeDir is not { Length: > 0 })
                     return ValueTask.FromResult(JsonResponse(200, "{\"configured\":false}"));
                 var path = Path.Combine(_homeDir, "settings.json");
-                var exists = File.Exists(path);
+                var configured = false;
+                if (File.Exists(path))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                        configured =
+                            doc.RootElement.TryGetProperty("Providers", out var pv)
+                            && pv.ValueKind == JsonValueKind.Object
+                            && pv.EnumerateObject().Any();
+                    }
+                    catch
+                    { /* ignore parse errors, configured stays false */
+                    }
+                }
                 var model = SnapshotModel();
                 var json =
-                    $"{{\"configured\":{(exists ? "true" : "false")},\"model\":\"{EscapeJsonString(model.Id)}\",\"provider\":\"{EscapeJsonString(model.Provider)}\"}}";
+                    $"{{\"configured\":{(configured ? "true" : "false")},\"model\":\"{EscapeJsonString(model.Id)}\",\"provider\":\"{EscapeJsonString(model.Provider)}\"}}";
                 return ValueTask.FromResult(JsonResponse(200, json));
             }
         );
@@ -615,7 +686,8 @@ public sealed partial class Agent : IAsyncDisposable
                     return JsonError(400, "INVALID_ARGUMENT", "malformed config");
                 var path = Path.Combine(_homeDir, "settings.json");
                 await ConfigLoader.SaveAsync(path, config, ct);
-                _logger?.Info("Configuration saved, restart required for full reload");
+                ReloadProviderConfigs(config);
+                _logger?.Info("Configuration saved and reloaded");
                 return JsonResponse(200, "{\"status\":\"saved\"}");
             }
         );

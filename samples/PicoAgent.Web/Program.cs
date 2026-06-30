@@ -1,25 +1,32 @@
 using System.Text.Json;
 using PicoNode.AI;
 
-var homeDir = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-    FileSystemConstants.AgentHomeDir
-);
+var homeDir = Path.Combine(AppContext.BaseDirectory, "data");
 Directory.CreateDirectory(homeDir);
 Directory.CreateDirectory(Path.Combine(homeDir, FileSystemConstants.SessionsDir));
 
 var settingsPath = Path.Combine(homeDir, "settings.json");
 if (!File.Exists(settingsPath))
 {
-    settingsPath = Path.Combine(AppContext.BaseDirectory, "settings.json");
-    if (!File.Exists(settingsPath))
-        settingsPath = Path.Combine(Directory.GetCurrentDirectory(), "settings.json");
+    // Bootstrap: create minimal config so Agent can start and user can configure via Web UI
+    await ConfigLoader.SaveAsync(
+        settingsPath,
+        new AgentConfig
+        {
+            Providers = [],
+            Model = "",
+            ThinkingLevel = "medium",
+            ThinkingEnabled = true,
+            MaxTokens = 4096,
+        }
+    );
+    Console.Error.WriteLine($"Created bootstrap config at {settingsPath}. Configure via web UI.");
 }
 
 var config = await ConfigLoader.LoadAsync(settingsPath);
 if (config is null)
 {
-    await Console.Error.WriteLineAsync($"Settings file not found: {settingsPath}");
+    await Console.Error.WriteLineAsync($"Failed to load settings from: {settingsPath}");
     return;
 }
 var validation = ConfigLoader.Validate(config);
@@ -197,7 +204,6 @@ app.MapGet(
     "/api/config/status",
     async (_, ct) =>
     {
-        // Forward to Agent backend /config/status (NOT /health — that lacks the "configured" field)
         using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{agentPort}") };
         var json = await http.GetStringAsync("/config/status", ct);
         return OkJson(json);

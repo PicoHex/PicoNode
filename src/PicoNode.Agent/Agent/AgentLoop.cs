@@ -22,14 +22,16 @@ public sealed class AgentLoop
     /// <summary>LLM-based summary compaction — v2 target.</summary>
     public static List<Message> Compact(List<Message> messages, int keepLast = 20)
     {
-        if (messages.Count <= keepLast) return [.. messages];
+        if (messages.Count <= keepLast)
+            return [.. messages];
         return messages.Skip(messages.Count - keepLast).ToList();
     }
 
     public async Task<List<Message>> RunTurnAsync(
         Session session,
         CancellationToken ct,
-        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null)
+        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
+    )
     {
         var result = new List<Message>();
         var iterations = 0;
@@ -45,13 +47,15 @@ public sealed class AgentLoop
             var context = new ChatContext { SystemPrompt = SystemPrompt, Messages = valid };
             var assistantMsg = await CallLLMAsync(context, ct, onEvent);
 
-            if (assistantMsg == null) break;
+            if (assistantMsg == null)
+                break;
 
             await session.AppendMessage(assistantMsg);
             result.Add(assistantMsg);
 
-            var toolCallBlocks = assistantMsg.ContentBlocks
-                ?.Where(cb => cb.Type == BlockTypeToolCall).ToArray();
+            var toolCallBlocks = assistantMsg
+                .ContentBlocks?.Where(cb => cb.Type == BlockTypeToolCall)
+                .ToArray();
             hasTools = toolCallBlocks is { Length: > 0 };
 
             if (hasTools)
@@ -67,7 +71,14 @@ public sealed class AgentLoop
                             Role = RoleToolResult,
                             ToolCallId = tc.Id,
                             ToolName = tc.Name,
-                            ContentBlocks = [new ContentBlock { Type = BlockTypeText, Text = $"Tool not found: {tc.Name}" }],
+                            ContentBlocks =
+                            [
+                                new ContentBlock
+                                {
+                                    Type = BlockTypeText,
+                                    Text = $"Tool not found: {tc.Name}",
+                                },
+                            ],
                             IsError = true,
                             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                         };
@@ -78,23 +89,61 @@ public sealed class AgentLoop
 
                     // Hook: OnToolCall
                     var hookInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
-                        new { kind = KindHook, eventName = HookEventToolCall, toolName = tc.Name, args = tc.Arguments });
-                    var hookResult = await _hookRunner.EmitAsync(TriggerKind.OnToolCall, hookInput, ct);
-                    if (hookResult is { } h && h.TryGetProperty("action", out var action) && action.GetString() == ActionBlock)
+                        new
+                        {
+                            kind = KindHook,
+                            eventName = HookEventToolCall,
+                            toolName = tc.Name,
+                            args = tc.Arguments,
+                        }
+                    );
+                    var hookResult = await _hookRunner.EmitAsync(
+                        TriggerKind.OnToolCall,
+                        hookInput,
+                        ct
+                    );
+                    if (
+                        hookResult is { } h
+                        && h.TryGetProperty("action", out var action)
+                        && action.GetString() == ActionBlock
+                    )
                         continue;
 
                     // Execute tool
                     var toolInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
-                        new { kind = KindToolCall, toolCallId = tc.Id, toolName = tc.Name, args = tc.Arguments });
-                    var toolResponse = await _runner.ExecuteAsync(capConfig, KindToolCall, toolInput, ct);
+                        new
+                        {
+                            kind = KindToolCall,
+                            toolCallId = tc.Id,
+                            toolName = tc.Name,
+                            args = tc.Arguments,
+                        }
+                    );
+                    var toolResponse = await _runner.ExecuteAsync(
+                        capConfig,
+                        KindToolCall,
+                        toolInput,
+                        ct
+                    );
 
                     var toolMsg = new Message
                     {
                         Role = RoleToolResult,
                         ToolCallId = tc.Id,
                         ToolName = tc.Name,
-                        ContentBlocks = [new ContentBlock { Type = BlockTypeText, Text = toolResponse.TryGetProperty(FieldContent, out var c) ? c.ToString() : "" }],
-                        IsError = toolResponse.TryGetProperty(FieldIsError, out var isErr) && isErr.GetBoolean(),
+                        ContentBlocks =
+                        [
+                            new ContentBlock
+                            {
+                                Type = BlockTypeText,
+                                Text = toolResponse.TryGetProperty(FieldContent, out var c)
+                                    ? c.ToString()
+                                    : "",
+                            },
+                        ],
+                        IsError =
+                            toolResponse.TryGetProperty(FieldIsError, out var isErr)
+                            && isErr.GetBoolean(),
                         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     };
                     await session.AppendMessage(toolMsg);
@@ -102,7 +151,8 @@ public sealed class AgentLoop
                 }
             }
 
-            if (iterations >= MaxToolIterations) break;
+            if (iterations >= MaxToolIterations)
+                break;
         } while (hasTools);
 
         return result;
@@ -111,36 +161,75 @@ public sealed class AgentLoop
     private async Task<Message?> CallLLMAsync(
         ChatContext context,
         CancellationToken ct,
-        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null)
+        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
+    )
     {
         Message? finalMessage = null;
         var contentBlocks = new List<ContentBlock>();
         var textAccum = new StringBuilder();
 
-        await foreach (var evt in _llm.StreamAsync(context.SystemPrompt, context.Messages, ModelId, null, ct))
+        await foreach (
+            var evt in _llm.StreamAsync(context.SystemPrompt, context.Messages, ModelId, null, ct)
+        )
         {
             switch (evt.Type)
             {
                 case "text_delta":
                     textAccum.Append(evt.Text);
                     if (onEvent is not null)
-                        await onEvent(new AssistantMessageEvent.TextDelta { Index = 0, Delta = evt.Text ?? "", Partial = new() }, ct);
+                        await onEvent(
+                            new AssistantMessageEvent.TextDelta
+                            {
+                                Index = 0,
+                                Delta = evt.Text ?? "",
+                                Partial = new(),
+                            },
+                            ct
+                        );
                     break;
                 case "thinking_delta":
                     if (onEvent is not null)
-                        await onEvent(new AssistantMessageEvent.ThinkingDelta { Index = 0, Delta = evt.Text ?? "" }, ct);
+                        await onEvent(
+                            new AssistantMessageEvent.ThinkingDelta
+                            {
+                                Index = 0,
+                                Delta = evt.Text ?? "",
+                            },
+                            ct
+                        );
                     break;
                 case "done":
-                    contentBlocks.Insert(0, new ContentBlock { Type = "text", Text = textAccum.ToString() });
-                    finalMessage = new Message { Role = "assistant", StopReason = evt.StopReason ?? "end_turn", ContentBlocks = [.. contentBlocks] };
+                    contentBlocks.Insert(
+                        0,
+                        new ContentBlock { Type = "text", Text = textAccum.ToString() }
+                    );
+                    finalMessage = new Message
+                    {
+                        Role = "assistant",
+                        StopReason = evt.StopReason ?? "end_turn",
+                        ContentBlocks = [.. contentBlocks],
+                    };
                     break;
                 case "error":
-                    contentBlocks.Insert(0, new ContentBlock { Type = "text", Text = textAccum.ToString() });
-                    finalMessage = new Message { Role = "assistant", StopReason = "error", ErrorMessage = evt.ErrorMessage, ContentBlocks = [.. contentBlocks] };
+                    contentBlocks.Insert(
+                        0,
+                        new ContentBlock { Type = "text", Text = textAccum.ToString() }
+                    );
+                    finalMessage = new Message
+                    {
+                        Role = "assistant",
+                        StopReason = "error",
+                        ErrorMessage = evt.ErrorMessage,
+                        ContentBlocks = [.. contentBlocks],
+                    };
+                    if (onEvent is not null)
+                        await onEvent(
+                            new AssistantMessageEvent.Error { Message = finalMessage },
+                            ct
+                        );
                     break;
             }
         }
         return finalMessage;
     }
-
 }

@@ -2,9 +2,14 @@ namespace PicoNode.AI;
 
 public sealed class ProviderRouter : IProviderRouter
 {
-    private readonly IReadOnlyList<ProviderConfig> _providers;
+    private IReadOnlyList<ProviderConfig> _providers;
 
     public ProviderRouter(IEnumerable<ProviderConfig> providers)
+    {
+        _providers = providers.OrderBy(p => p.Priority).ToList();
+    }
+
+    public void UpdateProviders(IEnumerable<ProviderConfig> providers)
     {
         _providers = providers.OrderBy(p => p.Priority).ToList();
     }

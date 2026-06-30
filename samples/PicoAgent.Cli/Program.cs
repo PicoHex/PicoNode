@@ -1,7 +1,4 @@
-var homeDir = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-    FileSystemConstants.AgentHomeDir
-);
+var homeDir = Path.Combine(AppContext.BaseDirectory, "data");
 Directory.CreateDirectory(homeDir);
 Directory.CreateDirectory(Path.Combine(homeDir, FileSystemConstants.SessionsDir));
 
@@ -135,7 +132,8 @@ else
                 else if (evt is AssistantMessageEvent.ToolCallEnd)
                     Console.WriteLine();
                 else if (evt is AssistantMessageEvent.Done)
-                { /* stream completion handled by loop exit */ }
+                { /* stream completion handled by loop exit */
+                }
                 else if (evt is AssistantMessageEvent.Error e)
                     Console.Write($"\n[Error: {e.Message.ErrorMessage}]");
             }

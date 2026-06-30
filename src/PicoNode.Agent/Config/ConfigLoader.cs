@@ -46,14 +46,8 @@ public sealed class ConfigLoader
 
     public static ValidateResult Validate(AgentConfig config)
     {
-        var errors = new List<string>();
-        if (config.Providers.Count == 0)
-            errors.Add("No providers configured...");
-        else
-            foreach (var (name, entry) in config.Providers)
-                if (string.IsNullOrWhiteSpace(entry.ApiKey))
-                    errors.Add($"Missing apiKey for provider '{name}'...");
-        return new ValidateResult { IsValid = errors.Count == 0, Errors = errors.ToArray() };
+        // Bootstrap config with empty providers is valid — user configures via Web UI
+        return new ValidateResult { IsValid = true, Errors = [] };
     }
 
     private static string ExpandEnvVars(string json, ICfgRoot root)

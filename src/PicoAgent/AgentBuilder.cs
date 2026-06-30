@@ -10,6 +10,7 @@ public sealed class AgentBuilder
     private Dictionary<string, ICircuitBreaker>? _breakers;
     private Dictionary<string, ILLmClient>? _clients;
     private Dictionary<string, ProviderConfig>? _providerConfigs;
+    private ProviderRouter? _router;
     private Model? _initialModel;
 
     public AgentBuilder WithConfig(AgentConfig config)
@@ -89,6 +90,7 @@ public sealed class AgentBuilder
         _clients = clients;
 
         var router = new ProviderRouter(providerConfigs);
+        _router = router;
         var resilientClient = new ResilientLLmClient(router, breakers, clients);
         _registry = new CapabilityRegistry();
 
@@ -194,6 +196,8 @@ public sealed class AgentBuilder
     internal CapabilityRegistry GetRegistry() => _registry!;
 
     internal HttpClient GetHttpClient() => _http ?? new HttpClient();
+
+    internal ProviderRouter GetRouter() => _router!;
 
     internal IReadOnlyDictionary<string, ProviderConfig> GetProviderConfigs() => _providerConfigs!;
 
