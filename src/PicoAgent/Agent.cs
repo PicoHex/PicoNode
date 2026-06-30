@@ -524,6 +524,77 @@ public sealed partial class Agent : IAsyncDisposable
                 )
         );
 
+        // ── Configuration management ──
+
+        // GET /config/status — check if config is valid
+        app.MapGet(
+            "/config/status",
+            (_, _) =>
+            {
+                if (_homeDir is not { Length: > 0 })
+                    return ValueTask.FromResult(JsonResponse(200, "{\"configured\":false}"));
+                var path = Path.Combine(_homeDir, "settings.json");
+                var exists = File.Exists(path);
+                var model = SnapshotModel();
+                var json = $"{{\"configured\":true,\"model\":\"{EscapeJsonString(model.Id)}\",\"provider\":\"{EscapeJsonString(model.Provider)}\"}}";
+                return ValueTask.FromResult(JsonResponse(200, json));
+            }
+        );
+
+        // POST /config/validate — test a provider config without saving
+        app.MapPost(
+            "/config/validate",
+            async (ctx, ct) =>
+            {
+                var json = await ReadJsonBodyAsync(ctx, ct);
+                var provider = json?.TryGetProperty("provider", out var pv) == true ? pv.GetString() : null;
+                var apiKey = json?.TryGetProperty("apiKey", out var ak) == true ? ak.GetString() : null;
+                var baseUrl = json?.TryGetProperty("baseUrl", out var bu) == true ? bu.GetString() : null;
+                var apiFormat = json?.TryGetProperty("apiFormat", out var af) == true ? af.GetString() : "openai";
+                if (string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(apiKey))
+                    return JsonError(400, "INVALID_ARGUMENT", "provider and apiKey required");
+                try
+                {
+                    var models = await ValidateProviderAsync(provider!, apiKey!, baseUrl, apiFormat!, ct);
+                    var result = "[" + string.Join(",", models.Select(m =>
+                        $"{{\"id\":\"{EscapeJsonString(m.Id)}\",\"ownedBy\":\"{EscapeJsonString(m.OwnedBy)}\"}}")) + "]";
+                    return JsonResponse(200, result);
+                }
+                catch (Exception ex)
+                {
+                    return JsonError(400, "VALIDATION_FAILED", ex.Message);
+                }
+            }
+        );
+
+        // POST /config — save config and reload
+        app.MapPost(
+            "/config",
+            async (ctx, ct) =>
+            {
+                if (_homeDir is not { Length: > 0 })
+                    return JsonError(400, "NO_HOME_DIR", "homeDir not configured");
+                var json = await ReadJsonBodyAsync(ctx, ct);
+                var raw = json?.GetRawText();
+                if (string.IsNullOrWhiteSpace(raw))
+                    return JsonError(400, "INVALID_ARGUMENT", "config body required");
+                var config = System.Text.Json.JsonSerializer.Deserialize<AgentConfig>(raw,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (config is null)
+                    return JsonError(400, "INVALID_ARGUMENT", "malformed config");
+                var path = Path.Combine(_homeDir, "settings.json");
+                await ConfigLoader.SaveAsync(path, config, ct);
+                _logger?.Info("Configuration saved, restart required for full reload");
+                return JsonResponse(200, "{\"status\":\"saved\"}");
+            }
+        );
+
+        // GET /config/providers — list known provider templates for the UI
+        app.MapGet(
+            "/config/providers",
+            (_, _) =>
+                ValueTask.FromResult(JsonResponse(200, ProviderTemplates)));
+
         return app;
     }
 
@@ -573,6 +644,40 @@ public sealed partial class Agent : IAsyncDisposable
         }
         return sb.ToString();
     }
+
+    private async Task<List<DiscoveredModel>> ValidateProviderAsync(
+        string name, string apiKey, string? baseUrl, string apiFormat, CancellationToken ct)
+    {
+        var fmt = apiFormat.ToLowerInvariant() switch
+        {
+            "anthropic" => AiApiFormat.AnthropicMessages,
+            _ => AiApiFormat.OpenAIChatCompletions,
+        };
+        var pc = new ProviderConfig
+        {
+            Name = name, ApiKey = apiKey, ApiFormat = fmt,
+            BaseUrl = baseUrl ?? (fmt == AiApiFormat.AnthropicMessages
+                ? "https://api.anthropic.com"
+                : "https://api.openai.com/v1"),
+        };
+        return await ModelDiscovery.DiscoverAsync(_http, pc, ct) switch
+        {
+            { Length: 0 } => throw new InvalidOperationException("No models discovered — check API key and base URL"),
+            var models => models.ToList(),
+        };
+    }
+
+    private static readonly string ProviderTemplates = """
+    [
+      {"name":"openai","label":"OpenAI","baseUrl":"https://api.openai.com/v1","apiFormat":"openai"},
+      {"name":"anthropic","label":"Anthropic","baseUrl":"https://api.anthropic.com","apiFormat":"anthropic"},
+      {"name":"deepseek","label":"DeepSeek","baseUrl":"https://api.deepseek.com/v1","apiFormat":"openai"},
+      {"name":"kimi","label":"Moonshot (Kimi)","baseUrl":"https://api.moonshot.cn/v1","apiFormat":"openai"},
+      {"name":"groq","label":"Groq","baseUrl":"https://api.groq.com/openai/v1","apiFormat":"openai"},
+      {"name":"glm","label":"Zhipu (GLM)","baseUrl":"https://open.bigmodel.cn/api/paas/v4","apiFormat":"openai"},
+      {"name":"ollama","label":"Ollama (local)","baseUrl":"http://localhost:11434/v1","apiFormat":"openai"}
+    ]
+    """;
 
     private static HttpResponse JsonOk() =>
         new()

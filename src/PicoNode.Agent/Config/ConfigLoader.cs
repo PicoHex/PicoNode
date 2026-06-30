@@ -27,6 +27,21 @@ public sealed class ConfigLoader
         return System.Text.Json.JsonSerializer.Deserialize(expanded, JsonContext.AgentConfig);
     }
 
+    /// <summary>
+    /// Saves an <see cref="AgentConfig"/> to disk. If the target directory does
+    /// not exist it is created. The JSON is written with indentation for
+    /// human readability (matching the settings.example.json format).
+    /// </summary>
+    public static async Task SaveAsync(string path, AgentConfig config, CancellationToken ct = default)
+    {
+        var dir = Path.GetDirectoryName(path);
+        if (dir is not null)
+            Directory.CreateDirectory(dir);
+        var json = System.Text.Json.JsonSerializer.Serialize(config,
+            new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(path, json, ct);
+    }
+
     public sealed class ValidateResult
     {
         public bool IsValid { get; set; }

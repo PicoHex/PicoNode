@@ -188,6 +188,42 @@ app.MapPost(
     }
 );
 
+// ── Config proxy (forward to Agent backend) ──
+
+app.MapGet("/api/config/status", async (_, ct) =>
+{
+    var json = await client.GetHealthAsync(ct);
+    return OkJson(json);
+});
+
+app.MapGet("/api/config/providers", async (_, ct) =>
+{
+    // Proxy to Agent backend
+    using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{agentPort}") };
+    var json = await http.GetStringAsync("/config/providers", ct);
+    return OkJson(json);
+});
+
+app.MapPost("/api/config/validate", async (ctx, ct) =>
+{
+    using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{agentPort}") };
+    using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8, leaveOpen: true);
+    var body = await reader.ReadToEndAsync(ct);
+    var resp = await http.PostAsync("/config/validate", new StringContent(body, Encoding.UTF8, "application/json"), ct);
+    var result = await resp.Content.ReadAsStringAsync(ct);
+    return new HttpResponse { StatusCode = (int)resp.StatusCode, Body = Encoding.UTF8.GetBytes(result), Headers = [new("Content-Type", "application/json")] };
+});
+
+app.MapPost("/api/config", async (ctx, ct) =>
+{
+    using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{agentPort}") };
+    using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8, leaveOpen: true);
+    var body = await reader.ReadToEndAsync(ct);
+    var resp = await http.PostAsync("/config", new StringContent(body, Encoding.UTF8, "application/json"), ct);
+    var result = await resp.Content.ReadAsStringAsync(ct);
+    return new HttpResponse { StatusCode = (int)resp.StatusCode, Body = Encoding.UTF8.GetBytes(result), Headers = [new("Content-Type", "application/json")] };
+});
+
 // ── 静态文件 (最后注册 = 最先执行) ──
 var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
 if (Directory.Exists(wwwroot))

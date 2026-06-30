@@ -20,6 +20,15 @@ let isStreaming = false;
 
 // ── Init ──
 (async function init() {
+    // Check if configuration exists
+    try {
+        const r = await fetch('/api/config/status');
+        const s = await r.json();
+        if (!s.configured) {
+            window.location.href = '/config.html';
+            return;
+        }
+    } catch { /* if config endpoint unavailable, continue */ }
     await loadHealth();
     await loadModels();
     await loadSessions();
@@ -103,10 +112,13 @@ async function loadMessages(sessionId) {
         messages.innerHTML = '';
         if (msgs && Array.isArray(msgs)) {
             for (const m of msgs) {
-                if (!m.role || m.role === 'system') continue;
-                const role = m.role === 'user' ? 'user' : 'assistant';
-                const text = m.content || (m.contentBlocks && m.contentBlocks[0]?.text) || '';
-                if (text) renderMessage(role, text);
+                const role = (m.Role || m.role || '').toLowerCase();
+                if (!role || role === 'system') continue;
+                const displayRole = role === 'user' ? 'user' : 'assistant';
+                const text = m.Content || m.content
+                    || (m.ContentBlocks && m.ContentBlocks[0]?.Text)
+                    || (m.contentBlocks && m.contentBlocks[0]?.text) || '';
+                if (text) renderMessage(displayRole, text);
             }
         }
     } catch (e) { /* ignore */ }
@@ -218,8 +230,11 @@ async function sendMessage() {
                 if (payload === '[DONE]') {
                     if (streamDot) streamDot.remove();
                     contentEl.innerHTML = marked.parse(rawText);
+                    deferMermaidRender(contentEl);
                     if (rawThinking) {
-                        thinkingBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking);
+                        const tc = thinkingBlock.querySelector('.think-content');
+                        tc.innerHTML = marked.parse(rawThinking);
+                        deferMermaidRender(tc);
                     }
                     currentAssistant = null;
                     break;
@@ -229,33 +244,46 @@ async function sendMessage() {
                     switch (evt.type) {
                         case 'delta':
                             rawText += evt.content;
-                            contentEl.innerText = rawText;
+                            if (rawText.trim() && streamDot) {
+                                streamDot.remove();
+                                streamDot = null;
+                            }
+                            if (!streamDot) {
+                                contentEl.innerText = rawText;
+                            }
                             break;
                         case 'thinking':
                             rawThinking += evt.content;
                             thinkingBlock.querySelector('.think-content').textContent = rawThinking;
+                            thinkingBlock.open = true;
                             break;
                         case 'done':
                             if (streamDot) streamDot.remove();
                             contentEl.innerHTML = marked.parse(rawText);
+                            deferMermaidRender(contentEl);
                             if (rawThinking) {
-                                thinkingBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking);
+                                const tc = thinkingBlock.querySelector('.think-content');
+                                tc.innerHTML = marked.parse(rawThinking);
+                                deferMermaidRender(tc);
                             }
+                            thinkingBlock.open = false;
                             currentAssistant = null;
                             break;
                         case 'tool_call_start':
+                            if (streamDot) { streamDot.remove(); streamDot = null; }
                             rawText += `\n\n🔧 **${evt.toolName}**\n`;
                             contentEl.innerHTML = marked.parse(rawText);
                             break;
                         case 'tool_call_delta':
                             rawText += evt.content;
-                            contentEl.innerText = rawText;
+                            if (!streamDot) contentEl.innerText = rawText;
                             break;
                         case 'tool_call_end':
                             rawText += '\n';
-                            contentEl.innerText = rawText;
+                            if (!streamDot) contentEl.innerText = rawText;
                             break;
                         case 'error':
+                            if (streamDot) { streamDot.remove(); streamDot = null; }
                             rawText += `\n\n> ⚠️ ${evt.message}`;
                             contentEl.innerHTML = marked.parse(rawText);
                             break;
@@ -270,6 +298,8 @@ async function sendMessage() {
         isStreaming = false;
         sendBtn.disabled = false;
         input.focus();
+        // Auto-save after each message so conversation survives restart
+        try { await api('POST', `/api/session/save/${currentSession}`); } catch {}
         await loadSessions();
     }
 }
@@ -281,16 +311,22 @@ function renderMessage(role, text) {
     const content = document.createElement('div');
     content.className = 'msg-content';
     content.innerHTML = marked.parse(text);
-    // Mermaid lazy render
-    content.querySelectorAll('pre.mermaid-placeholder').forEach(async pre => {
-        try {
-            const { svg } = await mermaid.render('mermaid-' + Math.random().toString(36).slice(2), pre.textContent);
-            pre.outerHTML = `<div class="mermaid-rendered">${svg}</div>`;
-        } catch { pre.classList.add('mermaid-error'); }
-    });
     el.appendChild(content);
     messages.appendChild(el);
+    // Defer Mermaid rendering to avoid blocking
+    deferMermaidRender(content);
     return el;
+}
+
+async function deferMermaidRender(container) {
+    const placeholders = container.querySelectorAll('pre.mermaid-placeholder');
+    for (const pre of placeholders) {
+        try {
+            const id = 'mermaid-' + Math.random().toString(36).slice(2);
+            const { svg } = await mermaid.render(id, pre.textContent);
+            pre.outerHTML = `<div class="mermaid-rendered">${svg}</div>`;
+        } catch { pre.classList.add('mermaid-error'); }
+    }
 }
 
 function renderAssistantShell() {
@@ -304,6 +340,7 @@ function renderAssistantShell() {
     // Thinking block (collapsible)
     const think = document.createElement('details');
     think.className = 'thinking';
+    think.open = true;  // start expanded so user sees activity
     think.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>';
     el.insertBefore(think, content);
 
@@ -322,14 +359,16 @@ renderer.code = function({ text, lang }) {
 marked.setOptions({ renderer, breaks: true });
 
 // ── Theme ──
+function applyTheme(key) {
+    document.documentElement.setAttribute('data-theme', key);
+    localStorage.setItem('picoagent-theme', key);
+    document.querySelectorAll('#theme-switcher button').forEach(b => b.classList.toggle('active', b.dataset.themeKey === key));
+    // Match Mermaid theme: dark for warm themes, neutral for light
+    const mmTheme = key === 'ivory-paper' ? 'neutral' : 'dark';
+    mermaid.initialize({ startOnLoad: false, theme: mmTheme });
+}
 const themeKey = localStorage.getItem('picoagent-theme') || 'warm-charcoal';
-document.documentElement.setAttribute('data-theme', themeKey);
+applyTheme(themeKey);
 document.querySelectorAll('#theme-switcher button').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.themeKey === themeKey);
-    btn.addEventListener('click', () => {
-        const key = btn.dataset.themeKey;
-        document.documentElement.setAttribute('data-theme', key);
-        localStorage.setItem('picoagent-theme', key);
-        document.querySelectorAll('#theme-switcher button').forEach(b => b.classList.toggle('active', b === btn));
-    });
+    btn.addEventListener('click', () => applyTheme(btn.dataset.themeKey));
 });

@@ -413,4 +413,5 @@ FodyWeavers.xsd
 
 .sisyphus/
 **/superpowers/
+.omo/samples/PicoAgent.Web/settings.json
 .omo/

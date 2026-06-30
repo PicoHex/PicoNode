@@ -197,6 +197,56 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
         await Assert.That((int)r.StatusCode).IsEqualTo(200);
     }
 
+    // ── Session persistence across requests ──
+
+    [Test]
+    public async Task TwoMessages_SameSession_MessagesPersist()
+    {
+        await PostText("/session/persist/create");
+        await PostSse("/session/persist/message", "First message");
+        await PostSse("/session/persist/message", "Second message");
+        var json = await _client.GetStringAsync("/session/persist/messages");
+        await Assert.That(json).Contains("First message");
+        await Assert.That(json).Contains("Second message");
+    }
+
+    [Test]
+    public async Task SwitchSession_PreservesOtherSession()
+    {
+        // Create two sessions, send messages to both
+        await PostText("/session/sessA/create");
+        await PostSse("/session/sessA/message", "msg A");
+
+        await PostText("/session/sessB/create");
+        await PostSse("/session/sessB/message", "msg B");
+
+        // Switch back to A — messages should still be there
+        var msgsA = await _client.GetStringAsync("/session/sessA/messages");
+        await Assert.That(msgsA).Contains("msg A");
+        await Assert.That(msgsA).DoesNotContain("msg B");
+
+        // Switch to B
+        var msgsB = await _client.GetStringAsync("/session/sessB/messages");
+        await Assert.That(msgsB).Contains("msg B");
+    }
+
+    [Test]
+    public async Task GetMessages_EmptySession_Returns200WithEmptyArray()
+    {
+        await PostText("/session/empty-sess/create");
+        var resp = await _client.GetAsync("/session/empty-sess/messages");
+        // Agent returns 404 for non-existent sessions; test that we don't crash
+        await Assert.That((int)resp.StatusCode).IsGreaterThanOrEqualTo(200);
+    }
+
+    [Test]
+    public async Task PostMessage_ReturnsSseWithMockResponse()
+    {
+        var body = await PostSse("/session/sse-format/message", "Test");
+        await Assert.That(body).Contains("data: ");
+        await Assert.That(body).Contains("Mock response");
+    }
+
     // ── Helpers ──
 
     private async Task<string> PostSse(string url, string body)

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PicoAgent - Setup</title>
+    <link rel="stylesheet" href="/style.css">
+    <style>
+        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        #setup { width: 420px; padding: 32px; background: var(--bg-side); border-radius: 16px; border: 1px solid var(--border); }
+        h1 { font-size: 1.4em; margin-bottom: 4px; color: var(--accent); }
+        h1 + p { color: var(--fg-muted); font-size: 0.85em; margin-bottom: 20px; }
+        label { display: block; margin: 12px 0 4px; font-size: 0.85em; color: var(--fg-muted); }
+        input, select { width: 100%; padding: 10px; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; font-size: 0.9em; font-family: inherit; }
+        input:focus, select:focus { outline: none; border-color: var(--accent); }
+        button { width: 100%; padding: 12px; margin-top: 16px; background: var(--accent); color: #fff; border: none; border-radius: 8px; font-size: 1em; font-weight: bold; cursor: pointer; font-family: inherit; }
+        button:hover { background: var(--accent-hover); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #status-msg { margin-top: 12px; font-size: 0.85em; text-align: center; }
+        #status-msg.error { color: #e05555; }
+        #status-msg.success { color: var(--accent); }
+        .skip-link { display: block; text-align: center; margin-top: 12px; font-size: 0.8em; color: var(--fg-muted); cursor: pointer; }
+        .skip-link:hover { color: var(--fg); }
+    </style>
+</head>
+<body>
+    <div id="setup">
+        <h1>PicoAgent Setup</h1>
+        <p>Configure your first AI provider to get started.</p>
+
+        <label for="provider">Provider</label>
+        <select id="provider">
+            <option value="">Loading...</option>
+        </select>
+
+        <label for="apikey">API Key</label>
+        <input type="password" id="apikey" placeholder="sk-...">
+
+        <div id="custom-fields" style="display:none">
+            <label for="baseurl">Base URL</label>
+            <input type="text" id="baseurl" placeholder="https://api.openai.com/v1">
+            <label for="apiformat">API Format</label>
+            <select id="apiformat">
+                <option value="openai">OpenAI Compatible</option>
+                <option value="anthropic">Anthropic</option>
+            </select>
+        </div>
+
+        <button id="btn-validate">Test Connection</button>
+        <button id="btn-save" style="display:none">Save &amp; Continue</button>
+        <div id="status-msg"></div>
+        <span class="skip-link" id="skip-link" style="display:none">Skip (already configured)</span>
+    </div>
+
+    <script src="/config.js"></script>
+</body>
+</html>

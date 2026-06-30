@@ -135,8 +135,15 @@ public sealed class AgentHttpClient : IAsyncDisposable
         CancellationToken ct = default
     )
     {
-        var json = await _http.GetStringAsync($"/session/{sessionId}/messages", ct);
-        return System.Text.Json.JsonSerializer.Deserialize(json, SourceGenContext.Default.MessageArray) ?? [];
+        try
+        {
+            var json = await _http.GetStringAsync($"/session/{sessionId}/messages", ct);
+            return System.Text.Json.JsonSerializer.Deserialize(json, SourceGenContext.Default.MessageArray) ?? [];
+        }
+        catch (HttpRequestException)
+        {
+            return [];
+        }
     }
 
     public async Task<bool> ReloadAsync(CancellationToken ct = default) =>
