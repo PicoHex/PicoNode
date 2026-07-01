@@ -43,6 +43,28 @@ public class AgentCompactSessionTests
     }
 
     [Test]
+    public async Task CompactSessionAsync_NonexistentSession_ReturnsNullWithoutCreating()
+    {
+        var host = new AgentHost(
+            new AgentLoop(new NoopAgentLlm(), new CapabilityRegistry(), new CapabilityRunner())
+        );
+        var agent = global::PicoAgent.Agent.CreateForTest(
+            host,
+            new CapabilityRegistry(),
+            new Model { Id = "test-model", Provider = "test" },
+            clients: new Dictionary<string, ILLmClient> { ["test"] = new NoopLLmClient() }
+        );
+
+        var sessionsBefore = host.GetActiveSessionIds().Count;
+        var (entry, count, _) = await agent.CompactSessionAsync("doesnotexist", keepRecent: 20);
+        var sessionsAfter = host.GetActiveSessionIds().Count;
+
+        await Assert.That(entry).IsNull();
+        await Assert.That(count).IsEqualTo(0);
+        await Assert.That(sessionsAfter).IsEqualTo(sessionsBefore);
+    }
+
+    [Test]
     public async Task CompactSessionAsync_FewMessages_ReturnsNull()
     {
         var host = new AgentHost(

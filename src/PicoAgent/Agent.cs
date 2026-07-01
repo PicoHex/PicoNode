@@ -271,6 +271,10 @@ public sealed partial class Agent : IAsyncDisposable
         if (_clients.Count == 0)
             return (null, 0, 0);
 
+        // Don't create a session just to check compaction eligibility.
+        if (!_host.GetActiveSessionIds().Contains(sessionId))
+            return (null, 0, 0);
+
         using var _ = await _host.LockSessionAsync(sessionId, ct);
         var session = _host.GetOrCreateSession(sessionId);
 
@@ -715,24 +719,10 @@ public sealed partial class Agent : IAsyncDisposable
             "/config/status",
             (_, _) =>
             {
-                if (_homeDir is not { Length: > 0 })
-                    return ValueTask.FromResult(JsonResponse(200, "{\"configured\":false}"));
-                var path = Path.Combine(_homeDir, "settings.json");
-                var configured = false;
-                if (File.Exists(path))
-                {
-                    try
-                    {
-                        using var doc = JsonDocument.Parse(File.ReadAllText(path));
-                        configured =
-                            doc.RootElement.TryGetProperty("Providers", out var pv)
-                            && pv.ValueKind == JsonValueKind.Object
-                            && pv.EnumerateObject().Any();
-                    }
-                    catch
-                    { /* ignore parse errors, configured stays false */
-                    }
-                }
+                // Check in-memory state: clients are populated when provider config is loaded.
+                // This avoids a case-sensitivity mismatch between PicoJetson camelCase
+                // serialization and the PascalCase property name check in JsonDocument.
+                var configured = _clients.Count > 0;
                 var model = SnapshotModel();
                 var json =
                     $"{{\"configured\":{(configured ? "true" : "false")},\"model\":\"{EscapeJsonString(model.Id)}\",\"provider\":\"{EscapeJsonString(model.Provider)}\"}}";
