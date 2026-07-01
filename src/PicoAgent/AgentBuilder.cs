@@ -100,7 +100,7 @@ public sealed class AgentBuilder
         var runner = new CapabilityRunner();
         var model = await ResolveModelAsync(http, providerConfigs, ct);
         _initialModel = model;
-        var adapter = new AgentLlmAdapter(resilientClient);
+        var adapter = new AgentLlmAdapter(resilientClient, router);
         var loop = new AgentLoop(adapter, _registry, runner);
         var host = new AgentHost(loop);
 
