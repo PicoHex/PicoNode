@@ -62,11 +62,42 @@ public sealed class Compactor
 
     private async Task<string> SummarizeAsync(Message[] messages, CancellationToken ct)
     {
+        // Serialize the actual messages into the user prompt so the summarizer
+        // has real content to work with. Historic bug: the prompt used to be
+        // literally "Summarize: {N} messages", producing meaningless output.
+        var buf = new StringBuilder();
+        buf.AppendLine(
+            "Summarize the following conversation faithfully. Preserve intent, "
+                + "decisions, code snippets, tool calls, file paths and open questions. "
+                + "Return a concise plain-text summary."
+        );
+        buf.AppendLine();
+        foreach (var m in messages)
+        {
+            buf.Append('[').Append(m.Role ?? "unknown").AppendLine("]");
+            if (!string.IsNullOrEmpty(m.Content))
+                buf.AppendLine(m.Content);
+            if (m.ContentBlocks is not null)
+            {
+                foreach (var cb in m.ContentBlocks)
+                {
+                    if (!string.IsNullOrEmpty(cb.Text))
+                        buf.AppendLine(cb.Text);
+                }
+            }
+            buf.AppendLine();
+        }
+
         var text = new StringBuilder();
-        await foreach (var evt in _llm.StreamAsync(
-            "Summarize these messages concisely.",
-            [new Message { Role = "user", Content = $"Summarize: {messages.Length} messages" }],
-            "compactor", null, ct))
+        await foreach (
+            var evt in _llm.StreamAsync(
+                "You are a conversation summarizer.",
+                [new Message { Role = "user", Content = buf.ToString() }],
+                "compactor",
+                null,
+                ct
+            )
+        )
         {
             if (evt.Type == "text_delta" && evt.Text is not null)
                 text.Append(evt.Text);
