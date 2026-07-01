@@ -36,15 +36,23 @@
 In `Agent.cs`, add below the `ReloadProviderConfigs` region:
 
 ```csharp
-public async Task<CompactionEntry?> CompactSessionAsync(
+public async Task<(CompactionEntry? Entry, int CompressedCount, long TokensSaved)> CompactSessionAsync(
     string sessionId,
     int keepRecent = 20,
     CancellationToken ct = default)
 {
     if (_clients.Count == 0)
-        return null;
+        return (null, 0, 0);
 
     var session = _host.GetOrCreateSession(sessionId);
+
+    // Count message entries in the active path for accurate compressedCount
+    var entries = await session.GetEntries();
+    var path = entries.Where(e => e is not LeafEntry).ToArray();
+    var msgInPath = path.OfType<MessageEntry>().Count();
+    if (msgInPath <= keepRecent)
+        return (null, 0, 0);  // nothing to compress
+
     var adapter = new AgentLlmAdapter(_clients.Values.First(), _router);
     var compactor = new Compactor(adapter);
     var settings = new CompactionSettings
@@ -54,7 +62,18 @@ public async Task<CompactionEntry?> CompactSessionAsync(
         ReserveTokens = 4096,
     };
 
-    return await compactor.CompactAsync(session, settings, ct);
+    var result = await compactor.CompactAsync(session, settings, ct);
+    if (result is null)
+        return (null, 0, 0);
+
+    // Switch to the compaction entry so BuildContext uses the summary
+    await session.MoveTo(result.Id);
+
+    var compressedCount = msgInPath - keepRecent;
+    var summaryTokens = (result.Summary?.Length ?? 0) / 4;
+    var tokensSaved = Math.Max(0, result.TokensBefore - summaryTokens);
+
+    return (result, compressedCount, tokensSaved);
 }
 ```
 
@@ -78,15 +97,15 @@ app.MapPost(
         }
         catch { /* use default */ }
 
-        var result = await CompactSessionAsync(id, keepRecent, ct);
-        if (result is null)
+        var (entry, compressedCount, tokensSaved) = await CompactSessionAsync(id, keepRecent, ct);
+        if (entry is null)
             return JsonResponse(200,
                 "{\"compressedCount\":0,\"summary\":null,\"tokensSaved\":0}");
 
         var json = "{"
-            + $"\"summary\":\"{EscapeJsonString(result.Summary)}\","
-            + $"\"compressedCount\":1,"
-            + $"\"tokensSaved\":{result.TokensBefore}"
+            + $"\"summary\":\"{EscapeJsonString(entry.Summary)}\","
+            + $"\"compressedCount\":{compressedCount},"
+            + $"\"tokensSaved\":{tokensSaved}"
             + "}";
         return JsonResponse(200, json);
     }
