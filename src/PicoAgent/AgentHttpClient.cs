@@ -140,15 +140,15 @@ public sealed class AgentHttpClient : IAsyncDisposable
     public async Task<string> CompactSessionAsync(
         string sessionId,
         int keepRecent = 20,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
-        var json = keepRecent != 20
-            ? $"{{\"keepRecent\":{keepRecent}}}"
-            : "{}";
+        var json = keepRecent != 20 ? $"{{\"keepRecent\":{keepRecent}}}" : "{}";
         var response = await _http.PostAsync(
             $"/session/{sessionId}/compact",
             new StringContent(json, Encoding.UTF8, "application/json"),
-            ct);
+            ct
+        );
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync(ct);
     }
@@ -225,7 +225,10 @@ public sealed class AgentHttpClient : IAsyncDisposable
 
     // For the CreateForTest pattern to work, the class needs a parameterless
     // constructor that the static factory can set.
-    private AgentHttpClient() { _http = null!; }
+    private AgentHttpClient()
+    {
+        _http = null!;
+    }
 
     public async ValueTask DisposeAsync()
     {

@@ -10,7 +10,11 @@ public class HookRunnerTests
         var hookRunner = new HookRunner(registry, runner);
 
         var input = "{}"u8.ToArray();
-        var result = await hookRunner.EmitAsync(TriggerKind.OnAgentStart, input, CancellationToken.None);
+        var result = await hookRunner.EmitAsync(
+            TriggerKind.OnAgentStart,
+            input,
+            CancellationToken.None
+        );
         await Assert.That(result).IsNull();
     }
 
@@ -22,7 +26,11 @@ public class HookRunnerTests
         var runner = new CapabilityRunner();
         var hookRunner = new HookRunner(registry, runner);
 
-        var result = await hookRunner.EmitAsync(TriggerKind.OnToolCall, "{}"u8.ToArray(), CancellationToken.None);
+        var result = await hookRunner.EmitAsync(
+            TriggerKind.OnToolCall,
+            "{}"u8.ToArray(),
+            CancellationToken.None
+        );
         await Assert.That(result).IsNull(); // no hooks registered yet
     }
 }

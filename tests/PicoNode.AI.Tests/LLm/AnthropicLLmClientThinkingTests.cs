@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.LLm;
 
-
 /// <summary>
 /// Tests for StreamOptions.Reasoning → thinking block serialization
 /// in AnthropicLLmClient.

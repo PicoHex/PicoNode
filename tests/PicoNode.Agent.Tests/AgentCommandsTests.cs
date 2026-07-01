@@ -7,7 +7,8 @@ public class AgentCommandsTests
     {
         var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
         Assert.Throws<ArgumentException>(() =>
-            AgentCommands.Execute("unknown_command", "", session));
+            AgentCommands.Execute("unknown_command", "", session)
+        );
     }
 
     [Test]

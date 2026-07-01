@@ -50,23 +50,28 @@ public sealed class InMemorySessionStorage : ISessionStorage
 
     public Task<SessionTreeEntryBase[]> GetPathToRoot(string? leafId)
     {
-        if (leafId is null) return Task.FromResult(Array.Empty<SessionTreeEntryBase>());
+        if (leafId is null)
+            return Task.FromResult(Array.Empty<SessionTreeEntryBase>());
         var path = new List<SessionTreeEntryBase>();
-        var current = _byId.GetValueOrDefault(leafId)
+        var current =
+            _byId.GetValueOrDefault(leafId)
             ?? throw new SessionException(SessionErrorCode.NotFound, $"Entry {leafId} not found");
         while (true)
         {
             path.Insert(0, current);
-            if (current.ParentId is null) break;
-            current = _byId.GetValueOrDefault(current.ParentId)
-                ?? throw new SessionException(SessionErrorCode.InvalidEntry, $"Parent {current.ParentId} not found");
+            if (current.ParentId is null)
+                break;
+            current =
+                _byId.GetValueOrDefault(current.ParentId)
+                ?? throw new SessionException(
+                    SessionErrorCode.InvalidEntry,
+                    $"Parent {current.ParentId} not found"
+                );
         }
         return Task.FromResult(path.ToArray());
     }
 
-    public Task<SessionTreeEntryBase[]> GetEntries() =>
-        Task.FromResult(_entries.ToArray());
+    public Task<SessionTreeEntryBase[]> GetEntries() => Task.FromResult(_entries.ToArray());
 
-    public Task<string?> GetLabel(string id) =>
-        Task.FromResult(_labelsById.GetValueOrDefault(id));
+    public Task<string?> GetLabel(string id) => Task.FromResult(_labelsById.GetValueOrDefault(id));
 }

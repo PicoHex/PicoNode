@@ -7,7 +7,12 @@ public class SkillFormatterTests
     {
         var skills = new List<SkillInfo>
         {
-            new() { Name = "pdf-tools", Description = "Handle PDF", Path = "/path/to/SKILL.md" },
+            new()
+            {
+                Name = "pdf-tools",
+                Description = "Handle PDF",
+                Path = "/path/to/SKILL.md",
+            },
         };
 
         var prompt = SkillFormatter.FormatSkillsPrompt(skills);
@@ -22,7 +27,12 @@ public class SkillFormatterTests
         var skills = new List<SkillInfo>
         {
             new() { Name = "visible", Description = "Visible skill" },
-            new() { Name = "hidden", Description = "Hidden skill", DisableModelInvocation = true },
+            new()
+            {
+                Name = "hidden",
+                Description = "Hidden skill",
+                DisableModelInvocation = true,
+            },
         };
 
         var prompt = SkillFormatter.FormatSkillsPrompt(skills);
@@ -33,7 +43,12 @@ public class SkillFormatterTests
     [Test]
     public async Task FormatSkillInvocation_ShouldWrapFullContent()
     {
-        var skill = new SkillInfo { Name = "pdf", Description = "PDF tools", Path = "/path/SKILL.md" };
+        var skill = new SkillInfo
+        {
+            Name = "pdf",
+            Description = "PDF tools",
+            Path = "/path/SKILL.md",
+        };
         var fullContent = "# PDF Tools\n\nExtract with pdf-extract";
         var result = SkillFormatter.FormatSkillInvocation(skill, fullContent);
 

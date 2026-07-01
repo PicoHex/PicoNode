@@ -83,12 +83,16 @@ public class AgentHostModelFlowTests
         var model = new Model { Id = "test-model", MaxTokens = 4096 };
 
         await host.ProcessMessageAsync(
-            "Hi", model, CancellationToken.None, "s3",
+            "Hi",
+            model,
+            CancellationToken.None,
+            "s3",
             onEvent: (evt, ct) =>
             {
                 receivedEvents.Add(evt);
                 return ValueTask.CompletedTask;
-            });
+            }
+        );
 
         // Should receive at least a TextDelta
         await Assert.That(receivedEvents.Count).IsGreaterThan(0);
@@ -108,12 +112,16 @@ public class AgentHostModelFlowTests
 
         // Act
         await host.ProcessMessageAsync(
-            "Hello", model, CancellationToken.None, "think-session",
+            "Hello",
+            model,
+            CancellationToken.None,
+            "think-session",
             onEvent: (evt, ct) =>
             {
                 receivedEvents.Add(evt);
                 return ValueTask.CompletedTask;
-            });
+            }
+        );
 
         // Assert: thinking events should reach the callback
         var thinkingEvents = receivedEvents.OfType<AssistantMessageEvent.ThinkingDelta>().ToList();
@@ -134,7 +142,8 @@ public class AgentHostModelFlowTests
             Message[] messages,
             string modelId,
             string? reasoningLevel,
-            [EnumeratorCancellation] CancellationToken ct)
+            [EnumeratorCancellation] CancellationToken ct
+        )
         {
             ReceivedModelId = modelId;
             yield return new LlmStreamEvent("text_delta", $"Echo: {modelId}", null, null);
@@ -153,9 +162,15 @@ public class AgentHostModelFlowTests
             Message[] messages,
             string modelId,
             string? reasoningLevel,
-            [EnumeratorCancellation] CancellationToken ct)
+            [EnumeratorCancellation] CancellationToken ct
+        )
         {
-            yield return new LlmStreamEvent("thinking_delta", "Let me think about this...", null, null);
+            yield return new LlmStreamEvent(
+                "thinking_delta",
+                "Let me think about this...",
+                null,
+                null
+            );
             yield return new LlmStreamEvent("thinking_delta", "The answer is 42.", null, null);
             yield return new LlmStreamEvent("text_delta", "42", null, null);
             yield return new LlmStreamEvent("done", null, "end_turn", null);

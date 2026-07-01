@@ -19,7 +19,9 @@ public sealed class Http2Tests
                     return c;
             }
         }
-        catch { /* intentional */ }
+        catch
+        { /* intentional */
+        }
         return null;
     }
 

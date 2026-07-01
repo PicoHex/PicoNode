@@ -20,14 +20,32 @@ public class AgentHostSequentialMessageTests
 
         // R1
         var r1Events = new List<AssistantMessageEvent>();
-        await host.ProcessMessageAsync("hello", model, CancellationToken.None, "s1",
-            onEvent: (e, _) => { r1Events.Add(e); return ValueTask.CompletedTask; });
+        await host.ProcessMessageAsync(
+            "hello",
+            model,
+            CancellationToken.None,
+            "s1",
+            onEvent: (e, _) =>
+            {
+                r1Events.Add(e);
+                return ValueTask.CompletedTask;
+            }
+        );
         await Assert.That(r1Events.Count).IsGreaterThan(0);
 
         // R2 — same session, different message
         var r2Events = new List<AssistantMessageEvent>();
-        await host.ProcessMessageAsync("world", model, CancellationToken.None, "s1",
-            onEvent: (e, _) => { r2Events.Add(e); return ValueTask.CompletedTask; });
+        await host.ProcessMessageAsync(
+            "world",
+            model,
+            CancellationToken.None,
+            "s1",
+            onEvent: (e, _) =>
+            {
+                r2Events.Add(e);
+                return ValueTask.CompletedTask;
+            }
+        );
         await Assert.That(r2Events.Count).IsGreaterThan(0);
 
         // Session should contain both messages
@@ -55,8 +73,12 @@ public class AgentHostSequentialMessageTests
     private sealed class FastMockAgentLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl,
-            [EnumeratorCancellation] CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            [EnumeratorCancellation] CancellationToken ct
+        )
         {
             yield return new LlmStreamEvent("text_delta", "ok", null, null);
             yield return new LlmStreamEvent("done", null, "end_turn", null);

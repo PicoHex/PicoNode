@@ -9,7 +9,15 @@ public class IAgentLlmTests
     {
         var mock = new TestAgentLlm();
         var events = new List<LlmStreamEvent>();
-        await foreach (var evt in mock.StreamAsync("system prompt", [], "test-model", null, CancellationToken.None))
+        await foreach (
+            var evt in mock.StreamAsync(
+                "system prompt",
+                [],
+                "test-model",
+                null,
+                CancellationToken.None
+            )
+        )
             events.Add(evt);
 
         await Assert.That(events).HasCount().EqualTo(1);
@@ -20,9 +28,12 @@ public class IAgentLlmTests
     private sealed class TestAgentLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? systemPrompt, Message[] messages,
-            string modelId, string? reasoningLevel,
-            CancellationToken ct)
+            string? systemPrompt,
+            Message[] messages,
+            string modelId,
+            string? reasoningLevel,
+            CancellationToken ct
+        )
         {
             yield return new LlmStreamEvent("done", "mock response", "end_turn", null);
             await Task.CompletedTask;

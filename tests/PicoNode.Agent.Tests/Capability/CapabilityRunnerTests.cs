@@ -31,17 +31,29 @@ public class CapabilityRunnerTests
 
         try
         {
-            var config = new ManifestCapability { Name = "echo", Handler = handler, Lifecycle = 1 };
+            var config = new ManifestCapability
+            {
+                Name = "echo",
+                Handler = handler,
+                Lifecycle = 1,
+            };
             var runner = new CapabilityRunner();
-            var inputJson = """{"kind":"tool_call","toolCallId":"1","toolName":"echo","args":{}}"""u8.ToArray();
-            var result = await runner.ExecuteAsync(config, "tool_call", inputJson, CancellationToken.None);
+            var inputJson =
+                """{"kind":"tool_call","toolCallId":"1","toolName":"echo","args":{}}"""u8.ToArray();
+            var result = await runner.ExecuteAsync(
+                config,
+                "tool_call",
+                inputJson,
+                CancellationToken.None
+            );
 
             await Assert.That(result.TryGetProperty("content", out var c)).IsTrue();
             await Assert.That(c.GetString()).IsEqualTo("got it");
         }
         finally
         {
-            if (Directory.Exists(scriptDir)) Directory.Delete(scriptDir, true);
+            if (Directory.Exists(scriptDir))
+                Directory.Delete(scriptDir, true);
         }
     }
 
@@ -53,11 +65,11 @@ public class CapabilityRunnerTests
             Name = "test",
             Handler = "echo",
             Lifecycle = 1,
-            Schema = """{"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}""",
+            Schema =
+                """{"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}""",
         };
         var args = new Dictionary<string, object>();
-        var ex = Assert.Throws<ToolException>(() =>
-            CapabilityRunner.ValidateArgs(config, args));
+        var ex = Assert.Throws<ToolException>(() => CapabilityRunner.ValidateArgs(config, args));
         await Assert.That(ex!.Code).IsEqualTo(ToolErrorCode.SchemaValidationFailed);
     }
 

@@ -92,7 +92,8 @@ public class KnowledgeScannerTests
     [Test]
     public async Task ParseSkillMarkdown_DisableModelInvocation_IsParsed()
     {
-        var content = "---\nname: hidden-skill\ndescription: A hidden skill\ndisable-model-invocation: true\n---\n# Body";
+        var content =
+            "---\nname: hidden-skill\ndescription: A hidden skill\ndisable-model-invocation: true\n---\n# Body";
         var scanner = new KnowledgeScanner();
         var result = scanner.ParseForTest(content);
         await Assert.That(result).IsNotNull();

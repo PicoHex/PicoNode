@@ -124,7 +124,9 @@ public sealed class SessionPageTests
             {
                 Directory.Delete(tempRoot, recursive: true);
             }
-            catch { /* intentional */ }
+            catch
+            { /* intentional */
+            }
         }
     }
 }

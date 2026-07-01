@@ -4,7 +4,8 @@ public static class SystemPromptBuilder
 {
     public static string FormatToolsPrompt(IReadOnlyList<ManifestCapability> capabilities)
     {
-        if (capabilities.Count == 0) return "";
+        if (capabilities.Count == 0)
+            return "";
         var sb = new StringBuilder();
         sb.AppendLine("Available tools:");
         foreach (var cap in capabilities)
@@ -19,7 +20,8 @@ public static class SystemPromptBuilder
     public static string Build(
         IReadOnlyList<SkillInfo> skills,
         IReadOnlyList<ManifestCapability> tools,
-        string? agentsMd = null)
+        string? agentsMd = null
+    )
     {
         var sb = new StringBuilder();
         if (agentsMd is not null)

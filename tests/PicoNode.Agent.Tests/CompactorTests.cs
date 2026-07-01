@@ -11,14 +11,33 @@ public class CompactorTests
         // Add 30 messages, each ~100 chars = ~25 tokens
         for (int i = 0; i < 30; i++)
         {
-            await session.AppendMessage(new Message { Role = "user", Content = new string('x', 100), Timestamp = 1 });
-            await session.AppendMessage(new Message { Role = "assistant", Content = new string('y', 100), Timestamp = 1 });
+            await session.AppendMessage(
+                new Message
+                {
+                    Role = "user",
+                    Content = new string('x', 100),
+                    Timestamp = 1,
+                }
+            );
+            await session.AppendMessage(
+                new Message
+                {
+                    Role = "assistant",
+                    Content = new string('y', 100),
+                    Timestamp = 1,
+                }
+            );
         }
 
         // keepRecentTokens = 16 means ~4 messages worth (16*4 chars = 64 chars = ~4 messages of 100 chars each... hmm)
         // Actually: each message has 100 chars. chars/4 = 25 tokens. keepRecentTokens=50 should keep ~2 messages
         // Let me use keepRecentTokens = 200 tokens → ~8 messages of 25 tokens each
-        var settings = new CompactionSettings { Enabled = true, ReserveTokens = 16384, KeepRecentTokens = 200 };
+        var settings = new CompactionSettings
+        {
+            Enabled = true,
+            ReserveTokens = 16384,
+            KeepRecentTokens = 200,
+        };
         var llm = new MockCompactionLlm();
         var compactor = new Compactor(llm);
 
@@ -36,7 +55,12 @@ public class CompactorTests
     private sealed class MockCompactionLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl, CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            CancellationToken ct
+        )
         {
             yield return new LlmStreamEvent("text_delta", "mock summary", null, null);
             yield return new LlmStreamEvent("done", null, "end_turn", null);

@@ -194,7 +194,9 @@ static X509Certificate2 CreateFreshCert()
         }
         rootStore.Close();
     }
-    catch { /* best-effort cleanup */ }
+    catch
+    { /* best-effort cleanup */
+    }
 
     Console.Error.WriteLine(
         $"Created fresh dev cert: {loaded.Subject}, key={loaded.GetKeyAlgorithm()}"

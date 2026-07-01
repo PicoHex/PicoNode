@@ -92,8 +92,13 @@ public sealed partial class AgentHost
     private sealed class SessionLockReleaser : IDisposable
     {
         private SemaphoreSlim? _sem;
+
         public SessionLockReleaser(SemaphoreSlim sem) => _sem = sem;
-        public void Dispose() { Interlocked.Exchange(ref _sem, null)?.Release(); }
+
+        public void Dispose()
+        {
+            Interlocked.Exchange(ref _sem, null)?.Release();
+        }
     }
 
     public async Task<IReadOnlyList<Message>> GetSessionMessagesAsync(string sessionId = "default")

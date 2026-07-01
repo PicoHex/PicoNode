@@ -8,7 +8,11 @@ public class InMemorySessionStorageTests
     public async Task AppendEntry_ShouldStoreEntry()
     {
         var storage = new InMemorySessionStorage();
-        var entry = new MessageEntry { Id = "test1234", Message = new Message { Role = "user" } };
+        var entry = new MessageEntry
+        {
+            Id = "test1234",
+            Message = new Message { Role = "user" },
+        };
         await storage.AppendEntry(entry);
 
         var retrieved = await storage.GetEntry("test1234");
@@ -20,7 +24,11 @@ public class InMemorySessionStorageTests
     public async Task GetEntry_ShouldReturnEntry()
     {
         var storage = new InMemorySessionStorage();
-        var entry = new MessageEntry { Id = "test1234", Message = new Message { Role = "user" } };
+        var entry = new MessageEntry
+        {
+            Id = "test1234",
+            Message = new Message { Role = "user" },
+        };
         await storage.AppendEntry(entry);
 
         var retrieved = await storage.GetEntry("test1234");
@@ -32,8 +40,18 @@ public class InMemorySessionStorageTests
     public async Task GetPathToRoot_ShouldWalkParentChain()
     {
         var storage = new InMemorySessionStorage();
-        var e1 = new MessageEntry { Id = "a1", ParentId = null, Message = new Message { Role = "user" } };
-        var e2 = new MessageEntry { Id = "a2", ParentId = "a1", Message = new Message { Role = "assistant" } };
+        var e1 = new MessageEntry
+        {
+            Id = "a1",
+            ParentId = null,
+            Message = new Message { Role = "user" },
+        };
+        var e2 = new MessageEntry
+        {
+            Id = "a2",
+            ParentId = "a1",
+            Message = new Message { Role = "assistant" },
+        };
         await storage.AppendEntry(e1);
         await storage.AppendEntry(e2);
 
@@ -47,7 +65,11 @@ public class InMemorySessionStorageTests
     public async Task GetLeafId_ShouldReturnCurrentLeaf()
     {
         var storage = new InMemorySessionStorage();
-        var entry = new MessageEntry { Id = "abc12345", Message = new Message { Role = "user" } };
+        var entry = new MessageEntry
+        {
+            Id = "abc12345",
+            Message = new Message { Role = "user" },
+        };
         await storage.AppendEntry(entry);
 
         var leafId = await storage.GetLeafId();
@@ -58,8 +80,17 @@ public class InMemorySessionStorageTests
     public async Task SetLeafId_ShouldMoveHead()
     {
         var storage = new InMemorySessionStorage();
-        var e1 = new MessageEntry { Id = "a1", Message = new Message { Role = "user" } };
-        var e2 = new MessageEntry { Id = "a2", ParentId = "a1", Message = new Message { Role = "assistant" } };
+        var e1 = new MessageEntry
+        {
+            Id = "a1",
+            Message = new Message { Role = "user" },
+        };
+        var e2 = new MessageEntry
+        {
+            Id = "a2",
+            ParentId = "a1",
+            Message = new Message { Role = "assistant" },
+        };
         await storage.AppendEntry(e1);
         await storage.AppendEntry(e2);
 

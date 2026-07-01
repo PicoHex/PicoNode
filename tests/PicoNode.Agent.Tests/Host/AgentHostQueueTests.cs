@@ -29,7 +29,12 @@ public class AgentHostQueueTests
     private sealed class MockAgentLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl, CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            CancellationToken ct
+        )
         {
             yield return new LlmStreamEvent("done", "ok", "end_turn", null);
             await Task.CompletedTask;

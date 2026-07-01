@@ -5,8 +5,9 @@ public sealed class AgentHostSessionLockTests
     [Test]
     public async Task LockSessionAsync_PreventsConcurrentAccess()
     {
-        var host = new AgentHost(new AgentLoop(
-            new NoopAgentLlm(), new CapabilityRegistry(), new CapabilityRunner()));
+        var host = new AgentHost(
+            new AgentLoop(new NoopAgentLlm(), new CapabilityRegistry(), new CapabilityRunner())
+        );
 
         using var lock1 = await host.LockSessionAsync("test", CancellationToken.None);
         await Assert.That(lock1).IsNotNull();
@@ -22,8 +23,9 @@ public sealed class AgentHostSessionLockTests
     [Test]
     public async Task LockSessionAsync_DifferentSessions_AreIndependent()
     {
-        var host = new AgentHost(new AgentLoop(
-            new NoopAgentLlm(), new CapabilityRegistry(), new CapabilityRunner()));
+        var host = new AgentHost(
+            new AgentLoop(new NoopAgentLlm(), new CapabilityRegistry(), new CapabilityRunner())
+        );
 
         using var lock1 = await host.LockSessionAsync("a", CancellationToken.None);
         using var lock2 = await host.LockSessionAsync("b", CancellationToken.None);
@@ -47,7 +49,12 @@ public sealed class AgentHostSessionLockTests
     private sealed class MockAgentLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl, CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            CancellationToken ct
+        )
         {
             yield return new LlmStreamEvent("done", "ok", "end_turn", null);
             await Task.CompletedTask;
@@ -57,7 +64,12 @@ public sealed class AgentHostSessionLockTests
     private sealed class NoopAgentLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl, CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            CancellationToken ct
+        )
         {
             yield break;
         }

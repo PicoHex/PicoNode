@@ -75,8 +75,12 @@ public class AgentHttpClientSilentFailureTests
                 ctx.Response.StatusCode = 500;
                 ctx.Response.Close();
             }
-            catch (HttpListenerException) { /* listener stopped */ }
-            catch (ObjectDisposedException) { /* listener stopped */ }
+            catch (HttpListenerException)
+            { /* listener stopped */
+            }
+            catch (ObjectDisposedException)
+            { /* listener stopped */
+            }
         });
 
         await using var client = new AgentHttpClient($"http://127.0.0.1:{port}");

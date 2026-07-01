@@ -6,7 +6,14 @@ public class AgentLoopTests
     public async Task RunTurnAsync_SimpleMessage_ReturnsAssistantResponse()
     {
         var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
-        await session.AppendMessage(new Message { Role = "user", Content = "Hello", Timestamp = 1 });
+        await session.AppendMessage(
+            new Message
+            {
+                Role = "user",
+                Content = "Hello",
+                Timestamp = 1,
+            }
+        );
 
         var llm = new MockAgentLlm();
         var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner());
@@ -23,7 +30,14 @@ public class AgentLoopTests
     public async Task RunTurnAsync_WithCallback_StreamsEvents()
     {
         var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
-        await session.AppendMessage(new Message { Role = "user", Content = "Hello", Timestamp = 1 });
+        await session.AppendMessage(
+            new Message
+            {
+                Role = "user",
+                Content = "Hello",
+                Timestamp = 1,
+            }
+        );
 
         var events = new List<AssistantMessageEvent>();
         Func<AssistantMessageEvent, CancellationToken, ValueTask> onEvent = (e, _) =>
@@ -49,7 +63,12 @@ public class AgentLoopTests
     private sealed class MockAgentLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl, CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            CancellationToken ct
+        )
         {
             yield return new LlmStreamEvent("done", "ok", "end_turn", null);
             await Task.CompletedTask;
@@ -59,7 +78,12 @@ public class AgentLoopTests
     private sealed class StreamingMockAgentLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl, CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            CancellationToken ct
+        )
         {
             yield return new LlmStreamEvent("text_delta", "Hello!", null, null);
             yield return new LlmStreamEvent("done", null, "end_turn", null);

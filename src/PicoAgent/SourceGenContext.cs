@@ -6,6 +6,4 @@ namespace PicoAgent;
 [JsonSerializable(typeof(DiscoveredModel[]))]
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(Message[]))]
-internal sealed partial class SourceGenContext : JsonSerializerContext
-{
-}
+internal sealed partial class SourceGenContext : JsonSerializerContext { }

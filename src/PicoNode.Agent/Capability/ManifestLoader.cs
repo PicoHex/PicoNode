@@ -21,8 +21,8 @@ public sealed class ManifestCapability
     public string?[] TriggerToolNames { get; set; } = [];
     public int Lifecycle { get; set; }
     public string? SchemaPath { get; set; }
-    public string? Schema { get; set; }       // simplified schema: {"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}
-    public string? Guidelines { get; set; }  // single-line usage hint for system prompt
+    public string? Schema { get; set; } // simplified schema: {"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}
+    public string? Guidelines { get; set; } // single-line usage hint for system prompt
     public int Priority { get; set; } = 50;
     public string Description { get; set; } = "";
 

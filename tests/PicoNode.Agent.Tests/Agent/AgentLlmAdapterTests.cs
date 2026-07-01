@@ -9,7 +9,15 @@ public class AgentLlmAdapterTests
         var adapter = new AgentLlmAdapter(existingClient);
 
         var events = new List<LlmStreamEvent>();
-        await foreach (var evt in adapter.StreamAsync("system", [new Message { Role = "user", Content = "hi" }], "test", null, CancellationToken.None))
+        await foreach (
+            var evt in adapter.StreamAsync(
+                "system",
+                [new Message { Role = "user", Content = "hi" }],
+                "test",
+                null,
+                CancellationToken.None
+            )
+        )
             events.Add(evt);
 
         // Should get at least a done event
@@ -22,7 +30,8 @@ public class AgentLlmAdapterTests
             Model model,
             ChatContext context,
             StreamOptions? options,
-            [EnumeratorCancellation] CancellationToken ct)
+            [EnumeratorCancellation] CancellationToken ct
+        )
         {
             yield return new AssistantMessageEvent.Done
             {

@@ -6,7 +6,14 @@ public class AgentLoopSystemPromptTests
     public async Task RunTurnAsync_ShouldPassSystemPromptToLlm()
     {
         var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
-        await session.AppendMessage(new Message { Role = "user", Content = "Hello", Timestamp = 1 });
+        await session.AppendMessage(
+            new Message
+            {
+                Role = "user",
+                Content = "Hello",
+                Timestamp = 1,
+            }
+        );
 
         var llm = new CapturingAgentLlm();
         var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner());
@@ -21,7 +28,14 @@ public class AgentLoopSystemPromptTests
     public async Task RunTurnAsync_ShouldPassModelIdToLlm()
     {
         var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
-        await session.AppendMessage(new Message { Role = "user", Content = "Hello", Timestamp = 1 });
+        await session.AppendMessage(
+            new Message
+            {
+                Role = "user",
+                Content = "Hello",
+                Timestamp = 1,
+            }
+        );
 
         var llm = new CapturingAgentLlm();
         var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner());
@@ -38,9 +52,12 @@ public class AgentLoopSystemPromptTests
         public string? ReceivedModelId { get; private set; }
 
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? systemPrompt, Message[] messages,
-            string modelId, string? reasoningLevel,
-            CancellationToken ct)
+            string? systemPrompt,
+            Message[] messages,
+            string modelId,
+            string? reasoningLevel,
+            CancellationToken ct
+        )
         {
             ReceivedSystemPrompt = systemPrompt;
             ReceivedModelId = modelId;

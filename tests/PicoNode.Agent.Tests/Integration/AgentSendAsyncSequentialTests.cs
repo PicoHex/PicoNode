@@ -47,10 +47,19 @@ public class AgentSendAsyncSequentialTests
     private sealed class EchoAgentLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl,
-            [EnumeratorCancellation] CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            [EnumeratorCancellation] CancellationToken ct
+        )
         {
-            yield return new LlmStreamEvent("text_delta", $"echo: {msgs.LastOrDefault()?.Content ?? "?"}", null, null);
+            yield return new LlmStreamEvent(
+                "text_delta",
+                $"echo: {msgs.LastOrDefault()?.Content ?? "?"}",
+                null,
+                null
+            );
             yield return new LlmStreamEvent("done", null, "end_turn", null);
             await Task.CompletedTask;
         }
@@ -59,8 +68,12 @@ public class AgentSendAsyncSequentialTests
     private sealed class LargeResponseAgentLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl,
-            [EnumeratorCancellation] CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            [EnumeratorCancellation] CancellationToken ct
+        )
         {
             // Simulate many text deltas (like DeepSeek thinking)
             for (int i = 0; i < 200; i++)

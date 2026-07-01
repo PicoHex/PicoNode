@@ -21,18 +21,24 @@ public class IAgentExtensionTests
 
     private sealed class BlockingExtension : IAgentExtension
     {
-        public Task<bool> OnToolCallAsync(string n, byte[] a, CancellationToken ct)
-            => Task.FromResult(n == "rm");
+        public Task<bool> OnToolCallAsync(string n, byte[] a, CancellationToken ct) =>
+            Task.FromResult(n == "rm");
+
         public Task<string?> OnSystemPromptAsync(string c) => Task.FromResult<string?>(null);
-        public Task<byte[]?> OnToolResultAsync(string n, byte[] r, CancellationToken ct) => Task.FromResult<byte[]?>(null);
+
+        public Task<byte[]?> OnToolResultAsync(string n, byte[] r, CancellationToken ct) =>
+            Task.FromResult<byte[]?>(null);
     }
 
     private sealed class ModifyingExtension : IAgentExtension
     {
-        public Task<bool> OnToolCallAsync(string n, byte[] a, CancellationToken ct)
-            => Task.FromResult(false);
-        public Task<string?> OnSystemPromptAsync(string c)
-            => Task.FromResult<string?>($"{c}\nextra rules");
-        public Task<byte[]?> OnToolResultAsync(string n, byte[] r, CancellationToken ct) => Task.FromResult<byte[]?>(null);
+        public Task<bool> OnToolCallAsync(string n, byte[] a, CancellationToken ct) =>
+            Task.FromResult(false);
+
+        public Task<string?> OnSystemPromptAsync(string c) =>
+            Task.FromResult<string?>($"{c}\nextra rules");
+
+        public Task<byte[]?> OnToolResultAsync(string n, byte[] r, CancellationToken ct) =>
+            Task.FromResult<byte[]?>(null);
     }
 }

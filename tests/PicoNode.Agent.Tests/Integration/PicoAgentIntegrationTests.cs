@@ -1,11 +1,11 @@
 using System.IO.Pipelines;
-using System.Text;
 using System.Net;
+using System.Text;
+using PicoDI;
 using PicoNode.Agent;
 using PicoNode.Http;
 using PicoNode.Web;
 using PicoWeb;
-using PicoDI;
 using AgentClass = PicoAgent.Agent;
 
 namespace PicoNode.Agent.Tests.Integration;
@@ -62,14 +62,18 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
                 MaxTokens = 4096,
             },
             providerConfigs: providers,
-            clients: clients);
+            clients: clients
+        );
 
         var app = _agent.BuildWebApp();
-        _server = new WebServer(app, new WebServerOptions
-        {
-            Endpoint = new IPEndPoint(IPAddress.Loopback, _port),
-            Logger = null,
-        });
+        _server = new WebServer(
+            app,
+            new WebServerOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, _port),
+                Logger = null,
+            }
+        );
         _server.StartAsync().GetAwaiter().GetResult();
         _client = new HttpClient { BaseAddress = new Uri($"http://localhost:{_port}") };
     }
@@ -128,8 +132,10 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
     [Test]
     public async Task SwitchModel_ReturnsOk()
     {
-        var resp = await _client.PostAsync("/model/switch",
-            new StringContent("{\"modelId\":\"gpt-4\"}", Encoding.UTF8, "application/json"));
+        var resp = await _client.PostAsync(
+            "/model/switch",
+            new StringContent("{\"modelId\":\"gpt-4\"}", Encoding.UTF8, "application/json")
+        );
         await Assert.That((int)resp.StatusCode).IsEqualTo(200);
     }
 
@@ -137,24 +143,38 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
     public async Task SwitchProvider_WithValidProvider_ReturnsOk()
     {
         // "test-provider" is configured in the Agent setup
-        var resp = await _client.PostAsync("/provider/switch",
-            new StringContent("{\"provider\":\"test-provider\"}", Encoding.UTF8, "application/json"));
+        var resp = await _client.PostAsync(
+            "/provider/switch",
+            new StringContent("{\"provider\":\"test-provider\"}", Encoding.UTF8, "application/json")
+        );
         await Assert.That((int)resp.StatusCode).IsEqualTo(200);
     }
 
     [Test]
     public async Task SwitchProvider_WithUnknownProvider_Returns404()
     {
-        var resp = await _client.PostAsync("/provider/switch",
-            new StringContent("{\"provider\":\"unknown-provider\"}", Encoding.UTF8, "application/json"));
+        var resp = await _client.PostAsync(
+            "/provider/switch",
+            new StringContent(
+                "{\"provider\":\"unknown-provider\"}",
+                Encoding.UTF8,
+                "application/json"
+            )
+        );
         await Assert.That((int)resp.StatusCode).IsEqualTo(404);
     }
 
     [Test]
     public async Task SwitchThinking_ReturnsOk()
     {
-        var resp = await _client.PostAsync("/thinking",
-            new StringContent("{\"enabled\":true,\"level\":\"high\"}", Encoding.UTF8, "application/json"));
+        var resp = await _client.PostAsync(
+            "/thinking",
+            new StringContent(
+                "{\"enabled\":true,\"level\":\"high\"}",
+                Encoding.UTF8,
+                "application/json"
+            )
+        );
         await Assert.That((int)resp.StatusCode).IsEqualTo(200);
     }
 
@@ -256,7 +276,10 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
             Content = new StringContent(body, Encoding.UTF8, "text/plain"),
         };
         request.Headers.Accept.Add(new("text/event-stream"));
-        using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        using var response = await _client.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead
+        );
         return await response.Content.ReadAsStringAsync();
     }
 
@@ -281,8 +304,12 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
     private sealed class MockAgentLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl,
-            [EnumeratorCancellation] CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            [EnumeratorCancellation] CancellationToken ct
+        )
         {
             yield return new LlmStreamEvent("text_delta", "Mock response", null, null);
             yield return new LlmStreamEvent("done", null, "end_turn", null);
@@ -297,8 +324,11 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
     private sealed class TestLLmClient : ILLmClient
     {
         public async IAsyncEnumerable<AssistantMessageEvent> StreamAsync(
-            Model model, ChatContext context, StreamOptions? options,
-            [EnumeratorCancellation] CancellationToken ct)
+            Model model,
+            ChatContext context,
+            StreamOptions? options,
+            [EnumeratorCancellation] CancellationToken ct
+        )
         {
             yield return new AssistantMessageEvent.TextDelta
             {
@@ -308,11 +338,7 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
             };
             yield return new AssistantMessageEvent.Done
             {
-                Message = new Message
-                {
-                    Role = "assistant",
-                    StopReason = "end_turn",
-                },
+                Message = new Message { Role = "assistant", StopReason = "end_turn" },
             };
             await Task.CompletedTask;
         }

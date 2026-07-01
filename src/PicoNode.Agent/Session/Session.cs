@@ -10,7 +10,12 @@ public sealed class Session
 
     public async Task<string> AppendEntry(SessionTreeEntryBase entry)
     {
-        entry = entry with { Id = await _storage.CreateEntryId(), ParentId = await _storage.GetLeafId(), Timestamp = DateTime.UtcNow.ToString("O") };
+        entry = entry with
+        {
+            Id = await _storage.CreateEntryId(),
+            ParentId = await _storage.GetLeafId(),
+            Timestamp = DateTime.UtcNow.ToString("O"),
+        };
         await _storage.AppendEntry(entry);
         return entry.Id;
     }
@@ -21,8 +26,11 @@ public sealed class Session
         return BuildContextFromPath(path);
     }
 
-    public async Task<string?> MoveTo(string? entryId,
-        string? branchSummary = null, object? details = null)
+    public async Task<string?> MoveTo(
+        string? entryId,
+        string? branchSummary = null,
+        object? details = null
+    )
     {
         if (entryId is not null && await _storage.GetEntry(entryId) is null)
             throw new SessionException(SessionErrorCode.NotFound, $"Entry {entryId} not found");
@@ -49,8 +57,12 @@ public sealed class Session
         return await AppendEntry(entry);
     }
 
-    public async Task<string> AppendCompaction(string summary, string firstKeptEntryId,
-        long tokensBefore, object? details = null)
+    public async Task<string> AppendCompaction(
+        string summary,
+        string firstKeptEntryId,
+        long tokensBefore,
+        object? details = null
+    )
     {
         var entry = new CompactionEntry
         {
@@ -69,8 +81,11 @@ public sealed class Session
     }
 
     public Task<SessionTreeEntryBase?> GetEntry(string id) => _storage.GetEntry(id);
+
     public Task<SessionTreeEntryBase[]> GetEntries() => _storage.GetEntries();
+
     public Task<string?> GetLeafId() => _storage.GetLeafId();
+
     public Task<string?> GetLabel(string id) => _storage.GetLabel(id);
 
     // ── Context building ──
@@ -89,18 +104,16 @@ public sealed class Session
 
         if (compaction is not null)
         {
-            messages.Add(new Message
-            {
-                Role = "compactionSummary",
-                Content = compaction.Summary,
-            });
+            messages.Add(new Message { Role = "compactionSummary", Content = compaction.Summary });
 
             var compactionIdx = Array.FindIndex(path, e => e.Id == compaction.Id);
             var foundFirstKept = false;
             for (int i = 0; i < compactionIdx; i++)
             {
-                if (path[i].Id == compaction.FirstKeptEntryId) foundFirstKept = true;
-                if (foundFirstKept) AppendMessageFromEntry(path[i], messages);
+                if (path[i].Id == compaction.FirstKeptEntryId)
+                    foundFirstKept = true;
+                if (foundFirstKept)
+                    AppendMessageFromEntry(path[i], messages);
             }
             for (int i = compactionIdx + 1; i < path.Length; i++)
                 AppendMessageFromEntry(path[i], messages);
@@ -122,18 +135,12 @@ public sealed class Session
                 messages.Add(me.Message);
                 break;
             case CustomMessageEntry cme:
-                messages.Add(new Message
-                {
-                    Role = "custom",
-                    Content = cme.Content as string ?? "",
-                });
+                messages.Add(
+                    new Message { Role = "custom", Content = cme.Content as string ?? "" }
+                );
                 break;
             case BranchSummaryEntry bs:
-                messages.Add(new Message
-                {
-                    Role = "branchSummary",
-                    Content = bs.Summary,
-                });
+                messages.Add(new Message { Role = "branchSummary", Content = bs.Summary });
                 break;
         }
     }

@@ -262,10 +262,11 @@ public sealed partial class Agent : IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    public async Task<(CompactionEntry? Entry, int CompressedCount, long TokensSaved)> CompactSessionAsync(
-        string sessionId,
-        int keepRecent = 20,
-        CancellationToken ct = default)
+    public async Task<(
+        CompactionEntry? Entry,
+        int CompressedCount,
+        long TokensSaved
+    )> CompactSessionAsync(string sessionId, int keepRecent = 20, CancellationToken ct = default)
     {
         if (_clients.Count == 0)
             return (null, 0, 0);
@@ -669,13 +670,23 @@ public sealed partial class Agent : IAsyncDisposable
                 }
                 catch { }
 
-                var (entry, compressedCount, tokensSaved) = await CompactSessionAsync(id, keepRecent, ct);
+                var (entry, compressedCount, tokensSaved) = await CompactSessionAsync(
+                    id,
+                    keepRecent,
+                    ct
+                );
                 if (entry is null)
-                    return JsonResponse(200, "{\"compressedCount\":0,\"summary\":null,\"tokensSaved\":0}");
+                    return JsonResponse(
+                        200,
+                        "{\"compressedCount\":0,\"summary\":null,\"tokensSaved\":0}"
+                    );
 
-                var json = "{" + $"\"summary\":\"{EscapeJsonString(entry.Summary)}\","
+                var json =
+                    "{"
+                    + $"\"summary\":\"{EscapeJsonString(entry.Summary)}\","
                     + $"\"compressedCount\":{compressedCount},"
-                    + $"\"tokensSaved\":{tokensSaved}" + "}";
+                    + $"\"tokensSaved\":{tokensSaved}"
+                    + "}";
                 return JsonResponse(200, json);
             }
         );

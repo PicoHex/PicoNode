@@ -1,8 +1,8 @@
 namespace PicoNode.AI;
 
 public readonly record struct LlmStreamEvent(
-    string Type,        // "done" | "error" | "text_delta" | "thinking_delta"
-                        // | "tool_call_start" | "tool_call_delta" | "tool_call_end"
+    string Type, // "done" | "error" | "text_delta" | "thinking_delta"
+    // | "tool_call_start" | "tool_call_delta" | "tool_call_end"
     string? Text,
     string? StopReason,
     string? ErrorMessage,
@@ -17,5 +17,6 @@ public interface IAgentLlm
         Message[] messages,
         string modelId,
         string? reasoningLevel,
-        CancellationToken ct);
+        CancellationToken ct
+    );
 }

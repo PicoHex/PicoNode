@@ -39,7 +39,14 @@ public class AgentHostTests
         var model = new Model { Id = "test", MaxTokens = 4096 };
 
         var restored = new PicoNode.Agent.Session(new InMemorySessionStorage());
-        await restored.AppendMessage(new Message { Role = "user", Content = "previous", Timestamp = 1 });
+        await restored.AppendMessage(
+            new Message
+            {
+                Role = "user",
+                Content = "previous",
+                Timestamp = 1,
+            }
+        );
         await host.RestoreSessionAsync("s1", restored);
         await host.ProcessMessageAsync("new", model, CancellationToken.None, "s1");
 
@@ -50,7 +57,12 @@ public class AgentHostTests
     private sealed class MockAgentLlm : IAgentLlm
     {
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl, CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            CancellationToken ct
+        )
         {
             yield return new LlmStreamEvent("text_delta", "ok", null, null);
             yield return new LlmStreamEvent("done", null, "end_turn", null);

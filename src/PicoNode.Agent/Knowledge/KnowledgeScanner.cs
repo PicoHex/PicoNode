@@ -16,7 +16,10 @@ public sealed class SkillSource
 
 public sealed class KnowledgeScanner
 {
-    private static readonly Regex ValidNameRegex = new(@"^[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.Compiled);
+    private static readonly Regex ValidNameRegex = new(
+        @"^[a-z0-9]+(-[a-z0-9]+)*$",
+        RegexOptions.Compiled
+    );
     private const int MaxNameLength = 64;
     private const int MaxDescriptionLength = 1024;
 
@@ -51,7 +54,11 @@ public sealed class KnowledgeScanner
     private static List<SkillInfo> ScanDirectory(string dir)
     {
         var skills = new List<SkillInfo>();
-        var skillFiles = Directory.GetFiles(dir, FileSystemConstants.SkillFile, SearchOption.AllDirectories);
+        var skillFiles = Directory.GetFiles(
+            dir,
+            FileSystemConstants.SkillFile,
+            SearchOption.AllDirectories
+        );
 
         foreach (var skillPath in skillFiles)
         {
@@ -80,14 +87,20 @@ public sealed class KnowledgeScanner
             var trimmed = line.Trim();
             if (trimmed == YmlConstants.FrontmatterDelim)
             {
-                if (!inFrontmatter) { inFrontmatter = true; continue; }
+                if (!inFrontmatter)
+                {
+                    inFrontmatter = true;
+                    continue;
+                }
                 break;
             }
 
-            if (!inFrontmatter) continue;
+            if (!inFrontmatter)
+                continue;
 
             var colonIdx = trimmed.IndexOf(':');
-            if (colonIdx < 0) continue;
+            if (colonIdx < 0)
+                continue;
 
             var key = trimmed[..colonIdx].Trim();
             var value = trimmed[(colonIdx + 1)..].Trim();
@@ -97,13 +110,23 @@ public sealed class KnowledgeScanner
             else if (key == YmlConstants.KeyDescription)
                 skill.Description = value;
             else if (key == "disable-model-invocation")
-                skill.DisableModelInvocation = string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+                skill.DisableModelInvocation = string.Equals(
+                    value,
+                    "true",
+                    StringComparison.OrdinalIgnoreCase
+                );
         }
 
         // Validation
-        if (string.IsNullOrWhiteSpace(skill.Name)) return null;
-        if (!ValidNameRegex.IsMatch(skill.Name) || skill.Name.Length > MaxNameLength) return null;
-        if (string.IsNullOrWhiteSpace(skill.Description) || skill.Description.Length > MaxDescriptionLength) return null;
+        if (string.IsNullOrWhiteSpace(skill.Name))
+            return null;
+        if (!ValidNameRegex.IsMatch(skill.Name) || skill.Name.Length > MaxNameLength)
+            return null;
+        if (
+            string.IsNullOrWhiteSpace(skill.Description)
+            || skill.Description.Length > MaxDescriptionLength
+        )
+            return null;
 
         return skill;
     }

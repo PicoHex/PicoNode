@@ -5,7 +5,8 @@ public static class SkillFormatter
     public static string FormatSkillsPrompt(List<SkillInfo> skills)
     {
         var visible = skills.Where(s => !s.DisableModelInvocation).ToList();
-        if (visible.Count == 0) return "";
+        if (visible.Count == 0)
+            return "";
 
         var sb = new StringBuilder();
         sb.AppendLine("---");

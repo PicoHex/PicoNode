@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.LLm;
 
-
 public sealed class OpenAILlmClientThinkingTests
 {
     [Test]
