@@ -316,6 +316,19 @@ public sealed partial class Agent : IAsyncDisposable
         return merged;
     }
 
+    /// <summary>
+    /// Design-review flaw #15: previously ReloadProviderConfigs assigned the
+    /// provider *name* (e.g. "deepseek") to <see cref="Model.Id"/> whenever
+    /// <c>config.Model</c> was null, producing an invalid model identifier that
+    /// the upstream provider would 404 on. Return the configured model when
+    /// present and non-empty, otherwise return "" — the sentinel meaning
+    /// "unresolved; downstream SwitchModel or first LLM call must fill this in".
+    /// </summary>
+    public static string ResolveInitialModelId(
+        string? configModel,
+        IReadOnlyList<ProviderConfig> providerList
+    ) => configModel is { Length: > 0 } ? configModel : "";
+
     private void ReloadProviderConfigs(AgentConfig config)
     {
         var providerList = new List<ProviderConfig>();
@@ -363,9 +376,7 @@ public sealed partial class Agent : IAsyncDisposable
             {
                 _pendingModel.Provider = pcDict.Keys.First();
                 _pendingModel.Api = providerList[0].ApiFormat;
-                _pendingModel.Id = config.Model ?? providerList[0].Name;
-                if (config.Model is { Length: > 0 })
-                    _pendingModel.Id = config.Model;
+                _pendingModel.Id = ResolveInitialModelId(config.Model, providerList);
             }
         }
     }
