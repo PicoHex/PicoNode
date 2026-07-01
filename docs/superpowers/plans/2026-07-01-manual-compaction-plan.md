@@ -77,7 +77,7 @@ public class AgentHostSessionLockTests
 - [ ] **T1.2: Run test — expect fail: `'AgentHost' does not contain a definition for 'LockSessionAsync'`**
 
 ```bash
-dotnet test tests/PicoNode.Agent.Tests --filter "AgentHostSessionLockTests"
+dotnet test tests/PicoNode.Agent.Tests -- --treenode-filter "*AgentHostSessionLockTests*"
 ```
 
 - [ ] **T1.3: Implement `LockSessionAsync` + `SessionLockReleaser` in `AgentHost.cs`**
@@ -105,7 +105,7 @@ private sealed class SessionLockReleaser : IDisposable
 - [ ] **T1.4: Run test — expect pass**
 
 ```bash
-dotnet test tests/PicoNode.Agent.Tests --filter "AgentHostSessionLockTests"
+dotnet test tests/PicoNode.Agent.Tests -- --treenode-filter "*AgentHostSessionLockTests*"
 ```
 
 - [ ] **T1.5: Commit session lock**
@@ -170,7 +170,7 @@ public class AgentCompactSessionTests
 - [ ] **T1.7: Run test — expect fail**
 
 ```bash
-dotnet test tests/PicoNode.Agent.Tests --filter "AgentCompactSessionTests"
+dotnet test tests/PicoNode.Agent.Tests -- --treenode-filter "*AgentCompactSessionTests*"
 ```
 
 - [ ] **T1.8: Implement `CompactSessionAsync`**
@@ -221,7 +221,7 @@ public async Task<(CompactionEntry? Entry, int CompressedCount, long TokensSaved
 - [ ] **T1.9: Run test — expect pass**
 
 ```bash
-dotnet test tests/PicoNode.Agent.Tests --filter "AgentCompactSessionTests"
+dotnet test tests/PicoNode.Agent.Tests -- --treenode-filter "*AgentCompactSessionTests*"
 ```
 
 - [ ] **T1.10: Add HTTP endpoint in `BuildWebApp`**
