@@ -294,6 +294,28 @@ public sealed partial class Agent : IAsyncDisposable
 
     // ── Private ──
 
+    /// <summary>
+    /// Design-review flaw #4: preserve existing <see cref="ICircuitBreaker"/> instances
+    /// for provider names that survive a config reload. Only allocate a fresh
+    /// <see cref="CircuitBreaker"/> for genuinely new provider names, and drop entries
+    /// whose provider was removed. This prevents a hot-reload from silently resetting
+    /// an Open circuit and re-flooding a known-failing provider.
+    /// </summary>
+    public static IReadOnlyDictionary<string, ICircuitBreaker> MergeBreakers(
+        IReadOnlyDictionary<string, ICircuitBreaker> previous,
+        IEnumerable<string> providerNames
+    )
+    {
+        var merged = new Dictionary<string, ICircuitBreaker>();
+        foreach (var name in providerNames)
+        {
+            merged[name] = previous.TryGetValue(name, out var existing)
+                ? existing
+                : new CircuitBreaker();
+        }
+        return merged;
+    }
+
     private void ReloadProviderConfigs(AgentConfig config)
     {
         var providerList = new List<ProviderConfig>();
@@ -304,6 +326,10 @@ public sealed partial class Agent : IAsyncDisposable
             var pcDict = (Dictionary<string, ProviderConfig>)_providerConfigs;
             var brDict = (Dictionary<string, ICircuitBreaker>)_breakers;
             var clDict = (Dictionary<string, ILLmClient>)_clients;
+
+            // Preserve breakers whose provider names survive; drop the rest.
+            var mergedBreakers = MergeBreakers(brDict, config.Providers.Keys);
+
             pcDict.Clear();
             brDict.Clear();
             clDict.Clear();
@@ -325,7 +351,7 @@ public sealed partial class Agent : IAsyncDisposable
                 };
                 pcDict[name] = pc;
                 providerList.Add(pc);
-                brDict[name] = new CircuitBreaker();
+                brDict[name] = mergedBreakers[name];
                 clDict[name] =
                     apiFormat == AiApiFormat.AnthropicMessages
                         ? new AnthropicLLmClient(_http)
