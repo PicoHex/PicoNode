@@ -88,7 +88,11 @@ public sealed class WebApiApp : IAsyncDisposable
     {
         var u = new Uri(uri);
         var host = u.Host;
-        var port = u.Port > 0 ? u.Port : 80;
+        // Honour :0 explicitly — the caller wants an OS-assigned ephemeral port.
+        // Only fall back to 80 when no port was specified at all (IsDefaultPort).
+        var port = u.IsDefaultPort && u.Port == 80 ? 80 : u.Port;
+        if (port < 0)
+            port = 80;
 
         if (host == "+" || host == "*")
             return new IPEndPoint(IPAddress.Any, port);

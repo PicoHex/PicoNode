@@ -21,8 +21,14 @@ public sealed class WebApiAppLifecycleTests
         await Task.Delay(100);
         await cts.CancelAsync();
 
-        // Should complete without exception when cancelled
-        var completed = runTask.IsCompletedSuccessfully || runTask.IsCompleted;
-        await Assert.That(completed).IsTrue();
+        // RunAsync must complete within a bounded time after cancellation —
+        // previously this checked `runTask.IsCompleted` synchronously right
+        // after Cancel(), which only passed by accident when StartAsync had
+        // already faulted (e.g. bind-to-port-80 permission failure). With
+        // real ephemeral binding the shutdown is genuinely async, so we
+        // must await it.
+        var completed = await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(3)));
+        await Assert.That(completed == runTask).IsTrue();
+        await runTask;
     }
 }

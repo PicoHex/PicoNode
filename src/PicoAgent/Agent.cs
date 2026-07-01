@@ -119,6 +119,10 @@ public sealed partial class Agent : IAsyncDisposable
         EventHandler exitHandler = (_, _) => tcs.TrySetResult();
         Console.CancelKeyPress += cancelHandler;
         AppDomain.CurrentDomain.ProcessExit += exitHandler;
+        // Also honour the caller's cancellation token — previously it was accepted
+        // but only forwarded to ListenAsync, so a cancellation request after the
+        // server started would hang RunAsync until Ctrl+C.
+        using var ctReg = ct.Register(() => tcs.TrySetResult());
         try
         {
             await tcs.Task;

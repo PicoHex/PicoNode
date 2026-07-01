@@ -13,9 +13,14 @@ public sealed class Compactor
 
     public Compactor(IAgentLlm llm) => _llm = llm;
 
-    public async Task<CompactionEntry?> CompactAsync(Session session, CompactionSettings settings, CancellationToken ct)
+    public async Task<CompactionEntry?> CompactAsync(
+        Session session,
+        CompactionSettings settings,
+        CancellationToken ct
+    )
     {
-        if (!settings.Enabled) return null;
+        if (!settings.Enabled)
+            return null;
 
         var entries = await session.GetEntries();
         var path = entries.Where(e => e is not LeafEntry).ToArray();
@@ -34,7 +39,8 @@ public sealed class Compactor
             cutIndex = i;
         }
         // If all messages fit within KeepRecentTokens, no compaction needed
-        if (cutIndex == 0) return null;
+        if (cutIndex == 0)
+            return null;
         // Ensure cutIndex doesn't point to the middle of a compaction
         if (cutIndex > 0 && path[cutIndex - 1] is CompactionEntry)
             cutIndex = Math.Max(0, cutIndex - 1);
@@ -115,7 +121,8 @@ public sealed class Compactor
 
     private static long EstimateEntryTokens(SessionTreeEntryBase entry)
     {
-        if (entry is not MessageEntry me) return 0;
+        if (entry is not MessageEntry me)
+            return 0;
         long chars = me.Message.Content?.Length ?? 0;
         if (me.Message.ContentBlocks is not null)
         {
