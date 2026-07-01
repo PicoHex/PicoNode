@@ -100,6 +100,15 @@ async function loadSessions() {
             div.className = 'session' + (s === currentSession ? ' active' : '');
             div.dataset.id = s;
             div.textContent = s;
+            const compactBtn = document.createElement('button');
+            compactBtn.className = 'compact-btn';
+            compactBtn.textContent = '🗜️';
+            compactBtn.title = 'Compress history';
+            compactBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                compactSession(s, compactBtn);
+            });
+            div.appendChild(compactBtn);
             div.addEventListener('click', () => switchSession(s));
             sessionList.appendChild(div);
         }
@@ -154,6 +163,41 @@ async function saveSession() {
         btn.textContent = '✗';
         setTimeout(() => { btn.textContent = '💾'; }, 1500);
     }
+}
+
+async function compactSession(sessionId, btn) {
+    const originalText = btn.textContent;
+    btn.textContent = '...';
+    btn.disabled = true;
+    try {
+        const result = await api('POST', `/api/session/${sessionId}/compact`, { keepRecent: 20 });
+        if (result.compressedCount > 0) {
+            showToast(`Compressed ${result.compressedCount} messages, saved ${result.tokensSaved} tokens`);
+        } else {
+            showToast('Nothing to compress (messages <= 20)');
+        }
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1500);
+        if (sessionId === currentSession) {
+            await loadMessages(sessionId);
+        }
+    } catch (e) {
+        btn.textContent = '✗';
+        showToast(`Compression failed: ${e.message}`);
+        setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1500);
+    }
+}
+
+function showToast(msg) {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 async function switchModel(modelId) {
