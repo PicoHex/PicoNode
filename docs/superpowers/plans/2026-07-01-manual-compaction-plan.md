@@ -28,8 +28,38 @@
 - Modify: `src/PicoAgent/Agent.cs`
 
 **Interfaces:**
-- Consumes: `_host`, `_clients`, `_router`, `_pendingModel`, `_loop`
+- Consumes: `_host`, `_clients`, `_router`
 - Produces: `CompactSessionAsync(string sessionId, int keepRecent, CancellationToken ct)` → HTTP 响应 JSON
+
+> ⚠️ **Concurrency**: Must acquire the per-session `SemaphoreSlim` from `AgentHost` (same lock used by `ProcessMessageAsync`) to prevent tree corruption when compact and chat race on the same session. Two options:
+> A. Expose `AgentHost`'s lock via a public `AcquireSessionLockAsync` method
+> B. Call `_host.ProcessMessageAsync` with a special "compact" system message (abuses the API)
+>
+> Recommend **A** — add `Task<IDisposable> LockSessionAsync(string sessionId, CancellationToken ct)` to `AgentHost`.
+
+- [ ] **Step 0: Add `LockSessionAsync` to AgentHost**
+
+In `src/PicoNode.Agent/Host/AgentHost.cs`, add:
+
+```csharp
+/// <summary>
+/// Acquire the per-session lock for external operations (e.g. compaction)
+/// that must not race with ProcessMessageAsync.
+/// </summary>
+public async Task<IDisposable> LockSessionAsync(string sessionId, CancellationToken ct)
+{
+    var sessionLock = _sessionLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
+    await sessionLock.WaitAsync(ct);
+    return new SessionLockReleaser(sessionLock);
+}
+
+private sealed class SessionLockReleaser : IDisposable
+{
+    private SemaphoreSlim? _sem;
+    public SessionLockReleaser(SemaphoreSlim sem) => _sem = sem;
+    public void Dispose() { Interlocked.Exchange(ref _sem, null)?.Release(); }
+}
+```
 
 - [ ] **Step 1: Add `CompactSessionAsync` method to Agent class**
 
@@ -43,6 +73,9 @@ public async Task<(CompactionEntry? Entry, int CompressedCount, long TokensSaved
 {
     if (_clients.Count == 0)
         return (null, 0, 0);
+
+    // Acquire session lock so we don't race with ProcessMessageAsync
+    using var _ = await _host.LockSessionAsync(sessionId, ct);
 
     var session = _host.GetOrCreateSession(sessionId);
 
@@ -123,8 +156,8 @@ Expected: 0 errors.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/PicoAgent/Agent.cs
-git commit -m "feat(agent): add CompactSessionAsync and /session/{id}/compact endpoint"
+git add src/PicoNode.Agent/Host/AgentHost.cs src/PicoAgent/Agent.cs
+git commit -m "feat(agent): add CompactSessionAsync with session-locked /session/{id}/compact endpoint"
 ```
 
 ---
