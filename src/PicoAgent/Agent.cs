@@ -930,11 +930,15 @@ public sealed partial class Agent : IAsyncDisposable
     {
         if (!Uri.TryCreate(uri, UriKind.Absolute, out var u))
             throw new ArgumentException($"Invalid URI: {uri}", nameof(uri));
+        // Honour explicitly-supplied port (including :0 for OS-assigned
+        // ephemeral). Only default to 80 when the caller left the port off
+        // (Uri.IsDefaultPort) or the URI parser returned a negative value.
+        var port = u.IsDefaultPort || u.Port < 0 ? 80 : u.Port;
         if (u.Host is "localhost" or "127.0.0.1" or "::1")
-            return new IPEndPoint(IPAddress.Loopback, u.Port > 0 ? u.Port : 80);
+            return new IPEndPoint(IPAddress.Loopback, port);
         if (IPAddress.TryParse(u.Host, out var addr))
-            return new IPEndPoint(addr, u.Port > 0 ? u.Port : 80);
-        return new IPEndPoint(IPAddress.Loopback, u.Port > 0 ? u.Port : 80);
+            return new IPEndPoint(addr, port);
+        return new IPEndPoint(IPAddress.Loopback, port);
     }
 
     [GeneratedRegex(@"^[a-zA-Z0-9_-]+$")]
