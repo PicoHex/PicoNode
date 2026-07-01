@@ -191,6 +191,25 @@ app.MapPost(
 );
 
 app.MapPost(
+    "/api/session/{id}/compact",
+    async (ctx, ct) =>
+    {
+        var id = ctx.RouteValues["id"] ?? "default";
+        var keepRecent = 20;
+        try
+        {
+            var json = await ReadJsonAsync(ctx, ct);
+            if (json?.TryGetProperty("keepRecent", out var kr) == true)
+                keepRecent = kr.GetInt32();
+        }
+        catch { }
+
+        var result = await client.CompactSessionAsync(id, keepRecent, ct);
+        return OkJson(result);
+    }
+);
+
+app.MapPost(
     "/api/reload",
     async (_, ct) =>
     {
