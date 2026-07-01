@@ -125,6 +125,23 @@ public sealed class OpenAILlmClient : ILLmClient
 
     private static void AppendMessage(StringBuilder sb, Message m)
     {
+        if (m.Role == "toolResult")
+        {
+            // OpenAI Chat Completions requires the "tool" role plus a tool_call_id
+            // pointing back at the assistant's originating tool_calls[i].id.
+            var text =
+                m.ContentBlocks?.Where(cb => cb.Type == "text")
+                    .Select(cb => cb.Text)
+                    .FirstOrDefault()
+                ?? "";
+            sb.Append("{\"role\":\"tool\",\"tool_call_id\":\"");
+            sb.Append(EscapeJson(m.ToolCallId ?? ""));
+            sb.Append("\",\"content\":\"");
+            sb.Append(EscapeJson(text));
+            sb.Append("\"}");
+            return;
+        }
+
         sb.Append('{');
         sb.Append($"\"role\":\"{m.Role}\"");
         sb.Append(',');
@@ -134,28 +151,103 @@ public sealed class OpenAILlmClient : ILLmClient
         }
         else if (m.Role == "assistant")
         {
-            sb.Append("\"content\":");
-            if (m.ContentBlocks != null && m.ContentBlocks.Length > 0)
-            {
-                var text =
-                    m.ContentBlocks.Where(cb => cb.Type == "text")
-                        .Select(cb => cb.Text)
-                        .FirstOrDefault()
-                    ?? "";
-                sb.Append($"\"{EscapeJson(text)}\"");
-            }
+            var textBlocks =
+                m.ContentBlocks?.Where(cb => cb.Type == "text").ToArray() ?? [];
+            var toolCallBlocks =
+                m.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray() ?? [];
+
+            var text = textBlocks.Select(cb => cb.Text).FirstOrDefault() ?? "";
+
+            // Per OpenAI spec, content must be null (not "") when only tool_calls are present.
+            if (toolCallBlocks.Length > 0 && string.IsNullOrEmpty(text))
+                sb.Append("\"content\":null");
             else
+                sb.Append($"\"content\":\"{EscapeJson(text)}\"");
+
+            if (toolCallBlocks.Length > 0)
             {
-                sb.Append("\"\"");
+                sb.Append(",\"tool_calls\":[");
+                for (int i = 0; i < toolCallBlocks.Length; i++)
+                {
+                    if (i > 0)
+                        sb.Append(',');
+                    AppendToolCall(sb, toolCallBlocks[i]);
+                }
+                sb.Append(']');
             }
-        }
-        else if (m.Role == "toolResult")
-        {
-            sb.Append(
-                $"\"content\":\"{EscapeJson(m.ContentBlocks?.FirstOrDefault()?.Text ?? "")}\""
-            );
         }
         sb.Append('}');
+    }
+
+    private static void AppendToolCall(StringBuilder sb, ContentBlock cb)
+    {
+        sb.Append("{\"id\":\"");
+        sb.Append(EscapeJson(cb.Id ?? ""));
+        sb.Append("\",\"type\":\"function\",\"function\":{\"name\":\"");
+        sb.Append(EscapeJson(cb.Name ?? ""));
+        sb.Append("\",\"arguments\":\"");
+        // OpenAI expects `arguments` as a JSON-encoded STRING, so we build the
+        // dictionary JSON first, then escape it as a JSON string literal.
+        var argsJson = new StringBuilder(64);
+        AppendArgumentsJson(argsJson, cb.Arguments);
+        sb.Append(EscapeJson(argsJson.ToString()));
+        sb.Append("\"}}");
+    }
+
+    private static void AppendArgumentsJson(
+        StringBuilder sb,
+        Dictionary<string, object?> args
+    )
+    {
+        sb.Append('{');
+        var first = true;
+        foreach (var kv in args)
+        {
+            if (!first)
+                sb.Append(',');
+            first = false;
+            sb.Append('"');
+            sb.Append(EscapeJson(kv.Key));
+            sb.Append("\":");
+            AppendJsonValue(sb, kv.Value);
+        }
+        sb.Append('}');
+    }
+
+    private static void AppendJsonValue(StringBuilder sb, object? value)
+    {
+        switch (value)
+        {
+            case null:
+                sb.Append("null");
+                break;
+            case bool b:
+                sb.Append(b ? "true" : "false");
+                break;
+            case string s:
+                sb.Append('"');
+                sb.Append(EscapeJson(s));
+                sb.Append('"');
+                break;
+            case int or long or short or byte or sbyte or uint or ulong or ushort:
+                sb.Append(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture));
+                break;
+            case double d:
+                sb.Append(d.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                break;
+            case float f:
+                sb.Append(f.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                break;
+            case decimal m:
+                sb.Append(m.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                break;
+            default:
+                // Fallback: quote the ToString representation so the payload stays valid JSON.
+                sb.Append('"');
+                sb.Append(EscapeJson(value.ToString() ?? ""));
+                sb.Append('"');
+                break;
+        }
     }
 
     private static string EscapeJson(string s)
