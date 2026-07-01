@@ -78,6 +78,24 @@ public sealed partial class AgentHost
         }
     }
 
+    /// <summary>
+    /// Acquire the per-session lock for external operations (e.g. compaction)
+    /// that must not race with ProcessMessageAsync.
+    /// </summary>
+    public async Task<IDisposable> LockSessionAsync(string sessionId, CancellationToken ct)
+    {
+        var sessionLock = _sessionLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
+        await sessionLock.WaitAsync(ct);
+        return new SessionLockReleaser(sessionLock);
+    }
+
+    private sealed class SessionLockReleaser : IDisposable
+    {
+        private SemaphoreSlim? _sem;
+        public SessionLockReleaser(SemaphoreSlim sem) => _sem = sem;
+        public void Dispose() { Interlocked.Exchange(ref _sem, null)?.Release(); }
+    }
+
     public async Task<IReadOnlyList<Message>> GetSessionMessagesAsync(string sessionId = "default")
     {
         if (_sessions.TryGetValue(sessionId, out var session))
