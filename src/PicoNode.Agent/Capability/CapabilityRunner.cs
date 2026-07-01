@@ -65,22 +65,87 @@ public sealed class CapabilityRunner
         startInfo.UseShellExecute = false;
         startInfo.CreateNoWindow = true;
 
-        using var process = Process.Start(startInfo)!;
+        var process =
+            Process.Start(startInfo)
+            ?? throw new ToolException(
+                ToolErrorCode.ExecutionFailed,
+                $"Failed to start capability handler: {config.Handler}"
+            );
 
-        // Write input line
-        await process.StandardInput.BaseStream.WriteAsync(inputJson, ct);
-        await process.StandardInput.BaseStream.WriteAsync(NewLine, ct);
-        await process.StandardInput.FlushAsync(ct);
-        process.StandardInput.Close();
+        // Kick off stderr drain concurrently so a chatty tool cannot deadlock
+        // by filling the stderr pipe while we wait for stdout.
+        var stderrTask = process.StandardError.ReadToEndAsync(ct);
 
-        // Read response — single line, parse as JSON
-        // v1: single response. v2: streaming with health ping/pong for persistent hooks.
-        var responseLine = await process.StandardOutput.ReadLineAsync(ct);
-        if (responseLine == null)
-            return default;
+        try
+        {
+            // Write input line
+            try
+            {
+                await process.StandardInput.BaseStream.WriteAsync(inputJson, ct);
+                await process.StandardInput.BaseStream.WriteAsync(NewLine, ct);
+                await process.StandardInput.FlushAsync(ct);
+                process.StandardInput.Close();
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                // stdin closed early by the subprocess — proceed to read whatever
+                // it produced on stdout/stderr rather than masking the real error.
+            }
 
-        using var doc = JsonDocument.Parse(responseLine);
-        return doc.RootElement.Clone();
+            // Read response line
+            var responseLine = await process.StandardOutput.ReadLineAsync(ct);
+
+            // Wait for the subprocess to actually exit before inspecting exit code.
+            await process.WaitForExitAsync(ct);
+
+            var stderr = await stderrTask;
+
+            if (string.IsNullOrEmpty(responseLine))
+            {
+                var detail = string.IsNullOrWhiteSpace(stderr)
+                    ? $"Capability '{config.Name}' exited with code {process.ExitCode} and no output"
+                    : $"Capability '{config.Name}' produced no output (exit code {process.ExitCode}): {stderr.Trim()}";
+                throw new ToolException(ToolErrorCode.ExecutionFailed, detail);
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(responseLine);
+                return doc.RootElement.Clone();
+            }
+            catch (JsonException jex)
+            {
+                var stderrTail = string.IsNullOrWhiteSpace(stderr) ? "" : $" (stderr: {stderr.Trim()})";
+                throw new ToolException(
+                    ToolErrorCode.ExecutionFailed,
+                    $"Capability '{config.Name}' returned malformed JSON: {jex.Message}{stderrTail}",
+                    jex
+                );
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            TryKill(process);
+            throw;
+        }
+        finally
+        {
+            TryKill(process);
+            process.Dispose();
+        }
+    }
+
+    private static void TryKill(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+            // Best-effort — process may have already exited or be unkillable.
+        }
     }
 
     private static ProcessStartInfo ParseHandler(string handler)
