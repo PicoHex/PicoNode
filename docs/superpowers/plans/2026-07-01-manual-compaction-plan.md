@@ -8,7 +8,7 @@
 
 **Tech Stack:** C# / .NET 10 / PicoAgent / PicoNode.Agent / vanilla JS
 
-**Spec:** `docs/2026-07-01-manual-compaction-design.md`
+**Spec:** `docs/superpowers/specs/2026-07-01-manual-compaction-design.md`
 
 ---
 
