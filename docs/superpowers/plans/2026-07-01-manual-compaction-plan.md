@@ -308,7 +308,7 @@ public class AgentHttpClientCompactTests
 - [ ] **T2.2: Run test — expect fail: `'AgentHttpClient' does not contain 'CreateForTest'` or `'CompactSessionAsync'`**
 
 ```bash
-dotnet test tests/PicoNode.Tests --filter "AgentHttpClientCompactTests"
+dotnet test tests/PicoNode.Tests -- --treenode-filter "*AgentHttpClientCompactTests*"
 ```
 
 - [ ] **T2.3: Add `CreateForTest` constructor**
@@ -351,7 +351,7 @@ public async Task<string> CompactSessionAsync(
 - [ ] **T2.6: Run test — expect pass**
 
 ```bash
-dotnet test tests/PicoNode.Tests --filter "AgentHttpClientCompactTests"
+dotnet test tests/PicoNode.Tests -- --treenode-filter "*AgentHttpClientCompactTests*"
 ```
 
 - [ ] **T2.7: Commit**
