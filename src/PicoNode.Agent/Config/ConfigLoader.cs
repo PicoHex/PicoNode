@@ -1,13 +1,9 @@
-using System.Text.Json;
+using System.Text;
 
 namespace PicoNode.Agent;
 
 public sealed class ConfigLoader
 {
-    private static readonly AgentConfigJsonContext JsonContext = new(
-        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-    );
-
     public static async Task<AgentConfig?> LoadAsync(string path)
     {
         if (!File.Exists(path))
@@ -19,7 +15,7 @@ public sealed class ConfigLoader
             .BuildAsync();
         var json = File.ReadAllText(path);
         var expanded = ExpandEnvVars(json, root);
-        return System.Text.Json.JsonSerializer.Deserialize(expanded, JsonContext.AgentConfig);
+        return PicoJetson.JsonSerializer.Deserialize<AgentConfig>(Encoding.UTF8.GetBytes(expanded));
     }
 
     public static async Task SaveAsync(
@@ -31,10 +27,7 @@ public sealed class ConfigLoader
         var dir = Path.GetDirectoryName(path);
         if (dir is not null)
             Directory.CreateDirectory(dir);
-        var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
-            config,
-            JsonContext.AgentConfig
-        );
+        var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(config);
         await File.WriteAllTextAsync(path, Encoding.UTF8.GetString(bytes), ct);
     }
 
@@ -46,8 +39,21 @@ public sealed class ConfigLoader
 
     public static ValidateResult Validate(AgentConfig config)
     {
-        // Bootstrap config with empty providers is valid — user configures via Web UI
-        return new ValidateResult { IsValid = true, Errors = [] };
+        var errors = new List<string>();
+
+        if (config.Providers is null || config.Providers.Count == 0)
+        {
+            errors.Add("No providers configured");
+            return new ValidateResult { IsValid = false, Errors = [.. errors] };
+        }
+
+        foreach (var (name, provider) in config.Providers)
+        {
+            if (string.IsNullOrEmpty(provider.ApiKey))
+                errors.Add($"Provider '{name}' is missing apiKey");
+        }
+
+        return new ValidateResult { IsValid = errors.Count == 0, Errors = [.. errors] };
     }
 
     private static string ExpandEnvVars(string json, ICfgRoot root)

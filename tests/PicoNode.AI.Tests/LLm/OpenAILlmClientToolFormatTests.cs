@@ -48,7 +48,12 @@ public sealed class OpenAILlmClientToolFormatTests
         {
             Messages =
             [
-                new Message { Role = "user", Content = "hi", Timestamp = 1 },
+                new Message
+                {
+                    Role = "user",
+                    Content = "hi",
+                    Timestamp = 1,
+                },
                 new Message
                 {
                     Role = "assistant",
@@ -69,10 +74,7 @@ public sealed class OpenAILlmClientToolFormatTests
                     Role = "toolResult",
                     ToolCallId = "call_abc",
                     ToolName = "get_weather",
-                    ContentBlocks =
-                    [
-                        new ContentBlock { Type = "text", Text = "sunny, 22C" },
-                    ],
+                    ContentBlocks = [new ContentBlock { Type = "text", Text = "sunny, 22C" }],
                     Timestamp = 3,
                 },
             ],
@@ -115,7 +117,12 @@ public sealed class OpenAILlmClientToolFormatTests
         {
             Messages =
             [
-                new Message { Role = "user", Content = "weather?", Timestamp = 1 },
+                new Message
+                {
+                    Role = "user",
+                    Content = "weather?",
+                    Timestamp = 1,
+                },
                 new Message
                 {
                     Role = "assistant",
@@ -127,11 +134,7 @@ public sealed class OpenAILlmClientToolFormatTests
                             Type = "tool_call",
                             Id = "call_xyz",
                             Name = "get_weather",
-                            Arguments = new()
-                            {
-                                ["city"] = "Paris",
-                                ["units"] = "metric",
-                            },
+                            Arguments = new() { ["city"] = "Paris", ["units"] = "metric" },
                         },
                     ],
                     Timestamp = 2,
@@ -160,9 +163,7 @@ public sealed class OpenAILlmClientToolFormatTests
         await Assert.That(argsProp.ValueKind).IsEqualTo(JsonValueKind.String);
         using var argsDoc = JsonDocument.Parse(argsProp.GetString()!);
         await Assert.That(argsDoc.RootElement.GetProperty("city").GetString()).IsEqualTo("Paris");
-        await Assert
-            .That(argsDoc.RootElement.GetProperty("units").GetString())
-            .IsEqualTo("metric");
+        await Assert.That(argsDoc.RootElement.GetProperty("units").GetString()).IsEqualTo("metric");
     }
 
     [Test]
@@ -175,7 +176,12 @@ public sealed class OpenAILlmClientToolFormatTests
         {
             Messages =
             [
-                new Message { Role = "user", Content = "hi", Timestamp = 1 },
+                new Message
+                {
+                    Role = "user",
+                    Content = "hi",
+                    Timestamp = 1,
+                },
                 new Message
                 {
                     Role = "assistant",

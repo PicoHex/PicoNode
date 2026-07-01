@@ -151,8 +151,7 @@ public sealed class OpenAILlmClient : ILLmClient
         }
         else if (m.Role == "assistant")
         {
-            var textBlocks =
-                m.ContentBlocks?.Where(cb => cb.Type == "text").ToArray() ?? [];
+            var textBlocks = m.ContentBlocks?.Where(cb => cb.Type == "text").ToArray() ?? [];
             var toolCallBlocks =
                 m.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray() ?? [];
 
@@ -194,10 +193,7 @@ public sealed class OpenAILlmClient : ILLmClient
         sb.Append("\"}}");
     }
 
-    private static void AppendArgumentsJson(
-        StringBuilder sb,
-        Dictionary<string, object?> args
-    )
+    private static void AppendArgumentsJson(StringBuilder sb, Dictionary<string, object?> args)
     {
         sb.Append('{');
         var first = true;
@@ -230,7 +226,9 @@ public sealed class OpenAILlmClient : ILLmClient
                 sb.Append('"');
                 break;
             case int or long or short or byte or sbyte or uint or ulong or ushort:
-                sb.Append(Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture));
+                sb.Append(
+                    Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)
+                );
                 break;
             case double d:
                 sb.Append(d.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
