@@ -262,6 +262,45 @@ public sealed partial class Agent : IAsyncDisposable
         return Task.CompletedTask;
     }
 
+    public async Task<(CompactionEntry? Entry, int CompressedCount, long TokensSaved)> CompactSessionAsync(
+        string sessionId,
+        int keepRecent = 20,
+        CancellationToken ct = default)
+    {
+        if (_clients.Count == 0)
+            return (null, 0, 0);
+
+        using var _ = await _host.LockSessionAsync(sessionId, ct);
+        var session = _host.GetOrCreateSession(sessionId);
+
+        var entries = await session.GetEntries();
+        var path = entries.Where(e => e is not LeafEntry).ToArray();
+        var msgInPath = path.OfType<MessageEntry>().Count();
+        if (msgInPath <= keepRecent)
+            return (null, 0, 0);
+
+        var adapter = new AgentLlmAdapter(_clients.Values.First(), _router);
+        var compactor = new Compactor(adapter);
+        var settings = new CompactionSettings
+        {
+            Enabled = true,
+            KeepRecentTokens = keepRecent * 256,
+            ReserveTokens = 4096,
+        };
+
+        var result = await compactor.CompactAsync(session, settings, ct);
+        if (result is null)
+            return (null, 0, 0);
+
+        await session.MoveTo(result.Id);
+
+        var compressedCount = msgInPath - keepRecent;
+        var summaryTokens = (result.Summary?.Length ?? 0) / 4;
+        var tokensSaved = Math.Max(0, result.TokensBefore - summaryTokens);
+
+        return (result, compressedCount, tokensSaved);
+    }
+
     // ── Test support ──
 
     /// <summary>
@@ -615,6 +654,32 @@ public sealed partial class Agent : IAsyncDisposable
             }
         );
 
+        // POST /session/{id}/compact (async)
+        app.MapPost(
+            "/session/{id}/compact",
+            async (ctx, ct) =>
+            {
+                var id = ctx.RouteValues["id"] ?? "default";
+                var keepRecent = 20;
+                try
+                {
+                    var body = await ReadJsonBodyAsync(ctx, ct);
+                    if (body?.TryGetProperty("keepRecent", out var kr) == true)
+                        keepRecent = kr.GetInt32();
+                }
+                catch { }
+
+                var (entry, compressedCount, tokensSaved) = await CompactSessionAsync(id, keepRecent, ct);
+                if (entry is null)
+                    return JsonResponse(200, "{\"compressedCount\":0,\"summary\":null,\"tokensSaved\":0}");
+
+                var json = "{" + $"\"summary\":\"{EscapeJsonString(entry.Summary)}\","
+                    + $"\"compressedCount\":{compressedCount},"
+                    + $"\"tokensSaved\":{tokensSaved}" + "}";
+                return JsonResponse(200, json);
+            }
+        );
+
         // POST /reload (sync)
         app.MapPost(
             "/reload",
@@ -909,6 +974,30 @@ public sealed partial class Agent : IAsyncDisposable
                         case AssistantMessageEvent.ThinkingDelta th:
                             await sse.WriteJsonAsync(
                                 $"{{\"type\":\"thinking\",\"content\":\"{EscapeJsonString(th.Delta)}\"}}",
+                                ct2
+                            );
+                            break;
+                        case AssistantMessageEvent.ToolCallStart ts:
+                        {
+                            var b = ts.Partial.ContentBlocks?.ElementAtOrDefault(ts.Index);
+                            await sse.WriteJsonAsync(
+                                $"{{\"type\":\"tool_call_start\",\"toolCallId\":\"{EscapeJsonString(b?.Id ?? "")}\",\"toolName\":\"{EscapeJsonString(b?.Name ?? "")}\"}}",
+                                ct2
+                            );
+                            break;
+                        }
+                        case AssistantMessageEvent.ToolCallDelta td2:
+                        {
+                            var b = td2.Partial.ContentBlocks?.ElementAtOrDefault(td2.Index);
+                            await sse.WriteJsonAsync(
+                                $"{{\"type\":\"tool_call_delta\",\"toolCallId\":\"{EscapeJsonString(b?.Id ?? "")}\",\"content\":\"{EscapeJsonString(td2.Delta)}\"}}",
+                                ct2
+                            );
+                            break;
+                        }
+                        case AssistantMessageEvent.ToolCallEnd te:
+                            await sse.WriteJsonAsync(
+                                $"{{\"type\":\"tool_call_end\",\"toolCallId\":\"{EscapeJsonString(te.Call.Id ?? "")}\"}}",
                                 ct2
                             );
                             break;
