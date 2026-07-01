@@ -11,6 +11,13 @@ public sealed class AgentLoop
     public string? SystemPrompt { get; set; }
     public string ModelId { get; set; } = "default";
 
+    /// <summary>
+    /// Per-LLM-call timeout. Defaults to 5 minutes so misbehaving upstreams that
+    /// stream one byte and then hang cannot pin server workers indefinitely.
+    /// Set to <see cref="Timeout.InfiniteTimeSpan"/> to disable.
+    /// </summary>
+    public TimeSpan LlmTimeout { get; set; } = TimeSpan.FromMinutes(5);
+
     public AgentLoop(IAgentLlm llm, CapabilityRegistry registry, CapabilityRunner runner)
     {
         _llm = llm;
@@ -177,8 +184,22 @@ public sealed class AgentLoop
         var contentBlocks = new List<ContentBlock>();
         var textAccum = new StringBuilder();
 
+        // Design-review flaw #14: enforce a per-call timeout on the LLM stream so
+        // a hanging upstream cannot pin a request forever.
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (LlmTimeout > TimeSpan.Zero && LlmTimeout != Timeout.InfiniteTimeSpan)
+            linkedCts.CancelAfter(LlmTimeout);
+        var streamCt = linkedCts.Token;
+
         await foreach (
-            var evt in _llm.StreamAsync(context.SystemPrompt, context.Messages, modelId, null, ct)
+            var evt in _llm.StreamAsync(
+                    context.SystemPrompt,
+                    context.Messages,
+                    modelId,
+                    null,
+                    streamCt
+                )
+                .WithCancellation(streamCt)
         )
         {
             switch (evt.Type)
