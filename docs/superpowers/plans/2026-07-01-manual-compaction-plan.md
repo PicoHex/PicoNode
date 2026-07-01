@@ -6,7 +6,7 @@
 
 **Architecture:** 复用已有 `Compactor` 类和 `IAgentLlm` 基础设施。Agent 侧新增 `CompactSessionAsync` 方法和 HTTP 端点，Web 代理透传，前端 session 列表加压缩按钮。
 
-**Tech Stack:** C# / .NET 10 / PicoAgent / PicoNode.Agent / vanilla JS
+**Tech Stack:** C# / .NET 10 / PicoAgent / PicoNode.Agent / vanilla JS / TUnit
 
 **Spec:** `docs/superpowers/specs/2026-07-01-manual-compaction-design.md`
 
@@ -15,31 +15,72 @@
 ## Global Constraints
 
 - 不修改 `AgentLoop` / `RunTurnAsync`
-- `Compactor` 复用主模型（`_pendingModel.Id`）
-- 复用已有 `AgentLlmAdapter`（`_clients.First().Value` + `_router`）
+- `Compactor` 复用主模型（`_clients.Values.First()` + `_router`）
 - JSON 响应用手写（与 Agent 现有端点模式一致）
 - 前端 vanilla JS，无外部依赖
+- **TDD: 每个 Task 先写失败测试，再实现，测试通过后 commit**
 
 ---
 
-### Task 1: Agent 侧 `CompactSessionAsync` + HTTP 端点
+### Task 1: Agent 侧会话锁 + `CompactSessionAsync` + HTTP 端点
 
 **Files:**
+- Modify: `src/PicoNode.Agent/Host/AgentHost.cs`
 - Modify: `src/PicoAgent/Agent.cs`
+- Test: `tests/PicoNode.Agent.Tests/Host/AgentHostSessionLockTests.cs`
+- Test: `tests/PicoNode.Agent.Tests/PicoAgent/AgentCompactSessionTests.cs`
 
 **Interfaces:**
-- Consumes: `_host`, `_clients`, `_router`
-- Produces: `CompactSessionAsync(string sessionId, int keepRecent, CancellationToken ct)` → HTTP 响应 JSON
+- Produces: `AgentHost.LockSessionAsync(string, CancellationToken)` → `Task<IDisposable>`
+- Produces: `Agent.CompactSessionAsync(string, int, CancellationToken)` → `Task<(CompactionEntry?, int, long)>`
+- Produces: `POST /session/{id}/compact` → `{"compressedCount":N,"summary":"...","tokensSaved":N}`
 
-> ⚠️ **Concurrency**: Must acquire the per-session `SemaphoreSlim` from `AgentHost` (same lock used by `ProcessMessageAsync`) to prevent tree corruption when compact and chat race on the same session. Two options:
-> A. Expose `AgentHost`'s lock via a public `AcquireSessionLockAsync` method
-> B. Call `_host.ProcessMessageAsync` with a special "compact" system message (abuses the API)
->
-> Recommend **A** — add `Task<IDisposable> LockSessionAsync(string sessionId, CancellationToken ct)` to `AgentHost`.
+- [ ] **T1.1: Write failing test — `LockSessionAsync`**
 
-- [ ] **Step 0: Add `LockSessionAsync` to AgentHost**
+`tests/PicoNode.Agent.Tests/Host/AgentHostSessionLockTests.cs`:
 
-In `src/PicoNode.Agent/Host/AgentHost.cs`, add:
+```csharp
+namespace PicoNode.Agent.Tests.Host;
+
+public class AgentHostSessionLockTests
+{
+    [Test]
+    public async Task LockSessionAsync_PreventsConcurrentAccess()
+    {
+        var host = new AgentHost(new AgentLoop(
+            new NoopAgentLlm(), new CapabilityRegistry(), new CapabilityRunner()));
+
+        using var lock1 = await host.LockSessionAsync("test", CancellationToken.None);
+        Assert.That(lock1).IsNotNull();
+
+        // Second lock should block, verify with a short timeout
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            using var lock2 = await host.LockSessionAsync("test", cts.Token);
+        });
+    }
+
+    [Test]
+    public async Task LockSessionAsync_DifferentSessions_AreIndependent()
+    {
+        var host = new AgentHost(new AgentLoop(
+            new NoopAgentLlm(), new CapabilityRegistry(), new CapabilityRunner()));
+
+        using var lock1 = await host.LockSessionAsync("a", CancellationToken.None);
+        using var lock2 = await host.LockSessionAsync("b", CancellationToken.None);
+        // Both acquired without blocking — different sessions
+    }
+}
+```
+
+- [ ] **T1.2: Run test — expect fail: `'AgentHost' does not contain a definition for 'LockSessionAsync'`**
+
+```bash
+dotnet test tests/PicoNode.Agent.Tests --filter "AgentHostSessionLockTests"
+```
+
+- [ ] **T1.3: Implement `LockSessionAsync` + `SessionLockReleaser` in `AgentHost.cs`**
 
 ```csharp
 /// <summary>
@@ -61,9 +102,78 @@ private sealed class SessionLockReleaser : IDisposable
 }
 ```
 
-- [ ] **Step 1: Add `CompactSessionAsync` method to Agent class**
+- [ ] **T1.4: Run test — expect pass**
 
-In `Agent.cs`, add below the `ReloadProviderConfigs` region:
+```bash
+dotnet test tests/PicoNode.Agent.Tests --filter "AgentHostSessionLockTests"
+```
+
+- [ ] **T1.5: Commit session lock**
+
+```bash
+git add src/PicoNode.Agent/Host/AgentHost.cs tests/PicoNode.Agent.Tests/Host/AgentHostSessionLockTests.cs
+git commit -m "feat(agent): add LockSessionAsync with safe releaser for session-level mutual exclusion"
+```
+
+---
+
+- [ ] **T1.6: Write failing test — `CompactSessionAsync`**
+
+`tests/PicoNode.Agent.Tests/PicoAgent/AgentCompactSessionTests.cs`:
+
+```csharp
+namespace PicoNode.Agent.Tests.PicoAgent;
+
+public class AgentCompactSessionTests
+{
+    private static Agent CreateTestAgent(
+        IAgentLlm? llm = null,
+        Dictionary<string, ILLmClient>? clients = null)
+    {
+        var c = clients ?? new Dictionary<string, ILLmClient> { ["test"] = new NoopLLmClient() };
+        var host = new AgentHost(new AgentLoop(
+            llm ?? new NoopAgentLlm(), new CapabilityRegistry(), new CapabilityRunner()));
+        var router = new ProviderRouter(new[] {
+            new ProviderConfig { Name = "test", ApiFormat = AiApiFormat.OpenAIChatCompletions }
+        });
+        return Agent.CreateForTest(host, new CapabilityRegistry(),
+            new Model { Id = "test-model", Provider = "test" },
+            providerConfigs: c.ToDictionary(kv => kv.Key, kv => new ProviderConfig { Name = kv.Key }),
+            breakers: new Dictionary<string, ICircuitBreaker> { ["test"] = new CircuitBreaker() },
+            clients: c);
+    }
+
+    [Test]
+    public async Task CompactSessionAsync_NoClients_ReturnsNull()
+    {
+        var agent = CreateTestAgent(clients: new Dictionary<string, ILLmClient>());
+        var (entry, count, saved) = await agent.CompactSessionAsync("test");
+        await Assert.That(entry).IsNull();
+        await Assert.That(count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task CompactSessionAsync_FewMessages_ReturnsNull()
+    {
+        var agent = CreateTestAgent();
+        var session = agent.GetHostForTest().GetOrCreateSession("test");
+        await session.AppendMessage(new Message { Role = "user", Content = "hi" });
+        await session.AppendMessage(new Message { Role = "assistant", Content = "hello" });
+
+        var (entry, count, _) = await agent.CompactSessionAsync("test", keepRecent: 20);
+        await Assert.That(entry).IsNull();
+        await Assert.That(count).IsEqualTo(0);
+    }
+}
+```
+
+- [ ] **T1.7: Run test — expect fail**
+
+```bash
+dotnet test tests/PicoNode.Agent.Tests --filter "AgentCompactSessionTests"
+```
+
+- [ ] **T1.8: Implement `CompactSessionAsync`**
 
 ```csharp
 public async Task<(CompactionEntry? Entry, int CompressedCount, long TokensSaved)> CompactSessionAsync(
@@ -74,24 +184,21 @@ public async Task<(CompactionEntry? Entry, int CompressedCount, long TokensSaved
     if (_clients.Count == 0)
         return (null, 0, 0);
 
-    // Acquire session lock so we don't race with ProcessMessageAsync
     using var _ = await _host.LockSessionAsync(sessionId, ct);
-
     var session = _host.GetOrCreateSession(sessionId);
 
-    // Count message entries in the active path for accurate compressedCount
     var entries = await session.GetEntries();
     var path = entries.Where(e => e is not LeafEntry).ToArray();
     var msgInPath = path.OfType<MessageEntry>().Count();
     if (msgInPath <= keepRecent)
-        return (null, 0, 0);  // nothing to compress
+        return (null, 0, 0);
 
     var adapter = new AgentLlmAdapter(_clients.Values.First(), _router);
     var compactor = new Compactor(adapter);
     var settings = new CompactionSettings
     {
         Enabled = true,
-        KeepRecentTokens = keepRecent * 256,  // rough estimate: ~256 tokens per msg
+        KeepRecentTokens = keepRecent * 256,
         ReserveTokens = 4096,
     };
 
@@ -99,7 +206,6 @@ public async Task<(CompactionEntry? Entry, int CompressedCount, long TokensSaved
     if (result is null)
         return (null, 0, 0);
 
-    // Switch to the compaction entry so BuildContext uses the summary
     await session.MoveTo(result.Id);
 
     var compressedCount = msgInPath - keepRecent;
@@ -110,54 +216,54 @@ public async Task<(CompactionEntry? Entry, int CompressedCount, long TokensSaved
 }
 ```
 
-- [ ] **Step 2: Add HTTP endpoint in `BuildWebApp`**
+> **Note:** `CompactSessionAsync` 被多个测试文件使用，需要 `internal` 或 `public` 访问级别。这里用 `public` — 遵循 Agent 已有模式的 `ListModelsAsync` / `SwitchModelAsync` 等。
 
-After the existing `/session/{id}/save` endpoint, add:
+- [ ] **T1.9: Run test — expect pass**
 
-```csharp
-// POST /session/{id}/compact — compress history into summary
-app.MapPost(
-    "/session/{id}/compact",
-    async (ctx, ct) =>
-    {
-        var id = ctx.RouteValues["id"] ?? "default";
-        var keepRecent = 20;
-        try
-        {
-            var body = await ReadJsonBodyAsync(ctx, ct);
-            if (body?.TryGetProperty("keepRecent", out var kr) == true)
-                keepRecent = kr.GetInt32();
-        }
-        catch { /* use default */ }
-
-        var (entry, compressedCount, tokensSaved) = await CompactSessionAsync(id, keepRecent, ct);
-        if (entry is null)
-            return JsonResponse(200,
-                "{\"compressedCount\":0,\"summary\":null,\"tokensSaved\":0}");
-
-        var json = "{"
-            + $"\"summary\":\"{EscapeJsonString(entry.Summary)}\","
-            + $"\"compressedCount\":{compressedCount},"
-            + $"\"tokensSaved\":{tokensSaved}"
-            + "}";
-        return JsonResponse(200, json);
-    }
-);
+```bash
+dotnet test tests/PicoNode.Agent.Tests --filter "AgentCompactSessionTests"
 ```
 
-- [ ] **Step 3: Build and verify**
+- [ ] **T1.10: Add HTTP endpoint in `BuildWebApp`**
+
+After the existing `/session/{id}/save` endpoint:
+
+```csharp
+app.MapPost("/session/{id}/compact", async (ctx, ct) =>
+{
+    var id = ctx.RouteValues["id"] ?? "default";
+    var keepRecent = 20;
+    try
+    {
+        var body = await ReadJsonBodyAsync(ctx, ct);
+        if (body?.TryGetProperty("keepRecent", out var kr) == true)
+            keepRecent = kr.GetInt32();
+    }
+    catch { }
+
+    var (entry, compressedCount, tokensSaved) = await CompactSessionAsync(id, keepRecent, ct);
+    if (entry is null)
+        return JsonResponse(200, "{\"compressedCount\":0,\"summary\":null,\"tokensSaved\":0}");
+
+    var json = "{" + $"\"summary\":\"{EscapeJsonString(entry.Summary)}\","
+        + $"\"compressedCount\":{compressedCount},"
+        + $"\"tokensSaved\":{tokensSaved}" + "}";
+    return JsonResponse(200, json);
+});
+```
+
+- [ ] **T1.11: Build and verify + run full Agent test suite**
 
 ```bash
 dotnet build src/PicoAgent/PicoAgent.csproj
+dotnet test tests/PicoNode.Agent.Tests
 ```
 
-Expected: 0 errors.
-
-- [ ] **Step 4: Commit**
+- [ ] **T1.12: Commit**
 
 ```bash
-git add src/PicoNode.Agent/Host/AgentHost.cs src/PicoAgent/Agent.cs
-git commit -m "feat(agent): add CompactSessionAsync with session-locked /session/{id}/compact endpoint"
+git add src/PicoAgent/Agent.cs tests/PicoNode.Agent.Tests/PicoAgent/AgentCompactSessionTests.cs
+git commit -m "feat(agent): add CompactSessionAsync and /session/{id}/compact endpoint"
 ```
 
 ---
@@ -166,14 +272,63 @@ git commit -m "feat(agent): add CompactSessionAsync with session-locked /session
 
 **Files:**
 - Modify: `src/PicoAgent/AgentHttpClient.cs`
+- Test: `tests/PicoNode.Tests/AgentHttpClientCompactTests.cs`
 
 **Interfaces:**
-- Consumes: `_http`
-- Produces: `CompactSessionAsync(string sessionId, int keepRecent, CancellationToken ct)`
+- Produces: `AgentHttpClient.CompactSessionAsync(string, int, CancellationToken)` → `Task<string>`
 
-- [ ] **Step 1: Add method**
+- [ ] **T2.1: Write failing test**
 
-After `SaveSessionAsync`, add:
+`tests/PicoNode.Tests/AgentHttpClientCompactTests.cs`:
+
+```csharp
+namespace PicoNode.Tests;
+
+public class AgentHttpClientCompactTests
+{
+    [Test]
+    public async Task CompactSessionAsync_DefaultKeepRecent_SendsEmptyBody()
+    {
+        var seenBody = "";
+        var handler = new TestDelegatingHandler(async (req, ct) =>
+        {
+            seenBody = await req.Content!.ReadAsStringAsync(ct);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent("{\"compressedCount\":0}") };
+        });
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("http://localhost") };
+        var client = AgentHttpClient.CreateForTest(http);
+
+        await client.CompactSessionAsync("s1");
+        await Assert.That(seenBody).IsEqualTo("{}");
+    }
+}
+```
+
+- [ ] **T2.2: Run test — expect fail: `'AgentHttpClient' does not contain 'CreateForTest'` or `'CompactSessionAsync'`**
+
+```bash
+dotnet test tests/PicoNode.Tests --filter "AgentHttpClientCompactTests"
+```
+
+- [ ] **T2.3: Add `CreateForTest` constructor**
+
+In `AgentHttpClient.cs`, add:
+
+```csharp
+/// <summary>Test-only constructor accepting a pre-configured HttpClient.</summary>
+internal static AgentHttpClient CreateForTest(HttpClient http) => new() { _http = http };
+
+// For the CreateForTest pattern to work, the class needs a parameterless
+// constructor that the static factory can set. Add this private ctor:
+private AgentHttpClient() { _http = null!; }
+```
+
+- [ ] **T2.4: Run test — expect fail: `'CompactSessionAsync'` not found**
+
+- [ ] **T2.5: Implement `CompactSessionAsync`**
+
+After `SaveSessionAsync`:
 
 ```csharp
 public async Task<string> CompactSessionAsync(
@@ -193,16 +348,16 @@ public async Task<string> CompactSessionAsync(
 }
 ```
 
-- [ ] **Step 2: Build and verify**
+- [ ] **T2.6: Run test — expect pass**
 
 ```bash
-dotnet build src/PicoAgent/PicoAgent.csproj
+dotnet test tests/PicoNode.Tests --filter "AgentHttpClientCompactTests"
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **T2.7: Commit**
 
 ```bash
-git add src/PicoAgent/AgentHttpClient.cs
+git add src/PicoAgent/AgentHttpClient.cs tests/PicoNode.Tests/AgentHttpClientCompactTests.cs
 git commit -m "feat(client): add CompactSessionAsync to AgentHttpClient"
 ```
 
@@ -217,40 +372,37 @@ git commit -m "feat(client): add CompactSessionAsync to AgentHttpClient"
 - Consumes: `client` (AgentHttpClient)
 - Produces: `POST /api/session/{id}/compact`
 
-- [ ] **Step 1: Add proxy route**
+> **No new test file** — Web 代理是薄透传，不包含业务逻辑，手动验证覆盖。
+
+- [ ] **T3.1: Add proxy route**
 
 After the existing `/api/session/save/{id}` endpoint:
 
 ```csharp
-app.MapPost(
-    "/api/session/{id}/compact",
-    async (ctx, ct) =>
+app.MapPost("/api/session/{id}/compact", async (ctx, ct) =>
+{
+    var id = ctx.RouteValues["id"] ?? "default";
+    var keepRecent = 20;
+    try
     {
-        var id = ctx.RouteValues["id"] ?? "default";
-        var keepRecent = 20;
-        try
-        {
-            var json = await ReadJsonAsync(ctx, ct);
-            if (json?.TryGetProperty("keepRecent", out var kr) == true)
-                keepRecent = kr.GetInt32();
-        }
-        catch { /* use default */ }
-
-        var result = await client.CompactSessionAsync(id, keepRecent, ct);
-        return OkJson(result);
+        var json = await ReadJsonAsync(ctx, ct);
+        if (json?.TryGetProperty("keepRecent", out var kr) == true)
+            keepRecent = kr.GetInt32();
     }
-);
+    catch { }
+
+    var result = await client.CompactSessionAsync(id, keepRecent, ct);
+    return OkJson(result);
+});
 ```
 
-- [ ] **Step 2: Build and verify**
+- [ ] **T3.2: Build and verify**
 
 ```bash
 dotnet build samples/PicoAgent.Web/PicoAgent.Web.csproj
 ```
 
-Expected: 0 errors.
-
-- [ ] **Step 3: Commit**
+- [ ] **T3.3: Commit**
 
 ```bash
 git add samples/PicoAgent.Web/Program.cs
@@ -259,19 +411,17 @@ git commit -m "feat(web): add /api/session/{id}/compact proxy endpoint"
 
 ---
 
-### Task 4: 前端压缩按钮
+### Task 4: 前端压缩按钮 + Toast
 
 **Files:**
 - Modify: `samples/PicoAgent.Web/wwwroot/app.js`
 - Modify: `samples/PicoAgent.Web/wwwroot/style.css`
 
-**Interfaces:**
-- Consumes: session list DOM, `api()` helper
-- Produces: 🗜️ button per session row, click → compact → toast feedback
+> **No automated test** — 前端 vanilla JS，手动验证覆盖。
 
-- [ ] **Step 1: Add `compactSession` function**
+- [ ] **T4.1: Add `compactSession` function**
 
-At the end of the API helpers section, after `saveSession`:
+After `saveSession` in `app.js`:
 
 ```javascript
 async function compactSession(sessionId, btn) {
@@ -287,7 +437,6 @@ async function compactSession(sessionId, btn) {
         }
         btn.textContent = '✓';
         setTimeout(() => { btn.textContent = originalText; btn.disabled = false; }, 1500);
-        // Refresh messages if compacting current session
         if (sessionId === currentSession) {
             await loadMessages(sessionId);
         }
@@ -311,9 +460,9 @@ function showToast(msg) {
 }
 ```
 
-- [ ] **Step 2: Add compression button to session list items**
+- [ ] **T4.2: Add compression button to session list items**
 
-In `loadSessions()`, inside the loop that creates session divs, add after `div.textContent = s`:
+In `loadSessions()`, after `div.textContent = s`:
 
 ```javascript
 const compactBtn = document.createElement('button');
@@ -327,50 +476,31 @@ compactBtn.addEventListener('click', (e) => {
 div.appendChild(compactBtn);
 ```
 
-- [ ] **Step 3: Add toast CSS**
+- [ ] **T4.3: Add toast + button CSS**
 
-In `style.css`, append:
+Append to `style.css`:
 
 ```css
 .toast {
-    position: fixed;
-    bottom: 24px;
-    left: 50%;
+    position: fixed; bottom: 24px; left: 50%;
     transform: translateX(-50%) translateY(20px);
-    background: var(--accent);
-    color: #fff;
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-size: 0.85em;
-    opacity: 0;
+    background: var(--accent); color: #fff;
+    padding: 10px 20px; border-radius: 8px;
+    font-size: 0.85em; opacity: 0;
     transition: opacity 0.3s, transform 0.3s;
-    z-index: 1000;
-    pointer-events: none;
+    z-index: 1000; pointer-events: none;
 }
-.toast.show {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .compact-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 0.85em;
-    padding: 2px 6px;
-    opacity: 0.5;
+    background: none; border: none; cursor: pointer;
+    font-size: 0.85em; padding: 2px 6px; opacity: 0.5;
     transition: opacity 0.2s;
 }
 .compact-btn:hover { opacity: 1; }
 .compact-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 ```
 
-- [ ] **Step 4: Build and verify**
-
-```bash
-dotnet build samples/PicoAgent.Web/PicoAgent.Web.csproj
-```
-
-- [ ] **Step 5: Commit**
+- [ ] **T4.4: Commit**
 
 ```bash
 git add samples/PicoAgent.Web/wwwroot/app.js samples/PicoAgent.Web/wwwroot/style.css
@@ -381,30 +511,29 @@ git commit -m "feat(web): add session compaction button and toast UI"
 
 ### Task 5: 手动验证
 
-- [ ] **Step 1: 启动服务**
+- [ ] **T5.1: 启动服务**
 
 ```bash
 rm -rf samples/PicoAgent.Web/bin/Debug/net10.0/data
 dotnet run --project samples/PicoAgent.Web/PicoAgent.Web.csproj
 ```
 
-- [ ] **Step 2: 配置 provider**
+- [ ] **T5.2: 配置 provider**
 
-浏览器访问 `http://localhost:9000` → 配置页 → 输入真实 API Key → Save
+浏览器 `http://localhost:9000` → 输入真实 API Key → Save
 
-- [ ] **Step 3: 发送多轮对话**（至少 25 条消息，超出默认 keepRecent=20）
+- [ ] **T5.3: 发送 ≥25 条消息**
 
-- [ ] **Step 4: 点击当前 session 的 🗜️ 按钮**
+超出默认 `keepRecent=20`
 
-Expected:
-- 按钮变 `...` → `✓` → 恢复 `🗜️`
-- Toast 显示 "Compressed N messages, saved X tokens"
-- 消息区自动刷新，显示压缩后的上下文
+- [ ] **T5.4: 点击 🗜️**
 
-- [ ] **Step 5: 发送新消息验证压缩效果**
+Expected: `...` → `✓` → toast "Compressed N messages, saved X tokens" → 消息区刷新
 
-新消息应基于压缩后的上下文化仍能正常回复。
+- [ ] **T5.5: 发送新消息验证上下文**
 
-- [ ] **Step 6: 测试无需压缩的场景**（消息数 ≤ 20）
+压缩后 LLM 应能正常回复
 
-Expected: Toast "Nothing to compress (messages <= 20)"
+- [ ] **T5.6: 消息 ≤20 条时点击 🗜️**
+
+Expected: toast "Nothing to compress"
