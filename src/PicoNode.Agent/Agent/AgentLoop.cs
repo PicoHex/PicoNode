@@ -27,8 +27,16 @@ public sealed class AgentLoop
         return messages.Skip(messages.Count - keepLast).ToList();
     }
 
+    public Task<List<Message>> RunTurnAsync(
+        Session session,
+        CancellationToken ct,
+        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
+    ) => RunTurnAsync(session, ModelId, SystemPrompt, ct, onEvent);
+
     public async Task<List<Message>> RunTurnAsync(
         Session session,
+        string modelId,
+        string? systemPrompt,
         CancellationToken ct,
         Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
     )
@@ -44,8 +52,8 @@ public sealed class AgentLoop
             var messages = await session.BuildContext();
             var valid = messages.Where(m => !string.IsNullOrEmpty(m.Role)).ToArray();
 
-            var context = new ChatContext { SystemPrompt = SystemPrompt, Messages = valid };
-            var assistantMsg = await CallLLMAsync(context, ct, onEvent);
+            var context = new ChatContext { SystemPrompt = systemPrompt, Messages = valid };
+            var assistantMsg = await CallLLMAsync(context, modelId, ct, onEvent);
 
             if (assistantMsg == null)
                 break;
@@ -160,6 +168,7 @@ public sealed class AgentLoop
 
     private async Task<Message?> CallLLMAsync(
         ChatContext context,
+        string modelId,
         CancellationToken ct,
         Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
     )
@@ -169,7 +178,7 @@ public sealed class AgentLoop
         var textAccum = new StringBuilder();
 
         await foreach (
-            var evt in _llm.StreamAsync(context.SystemPrompt, context.Messages, ModelId, null, ct)
+            var evt in _llm.StreamAsync(context.SystemPrompt, context.Messages, modelId, null, ct)
         )
         {
             switch (evt.Type)

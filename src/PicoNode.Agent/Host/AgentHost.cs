@@ -48,16 +48,28 @@ public sealed partial class AgentHost
         await sessionLock.WaitAsync(ct);
         try
         {
-            var session = _sessions.GetOrAdd(sessionId, _ => new Session(new InMemorySessionStorage()));
-            await session.AppendMessage(new Message
-            {
-                Role = RoleUser,
-                Content = content,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            });
+            var session = _sessions.GetOrAdd(
+                sessionId,
+                _ => new Session(new InMemorySessionStorage())
+            );
+            await session.AppendMessage(
+                new Message
+                {
+                    Role = RoleUser,
+                    Content = content,
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                }
+            );
 
-            _loop.ModelId = model.Id;
-            var result = await _loop.RunTurnAsync(session, ct, onEvent);
+            // Route per-call state through the RunTurnAsync overload so concurrent
+            // sessions cannot cross-contaminate the shared AgentLoop.
+            var result = await _loop.RunTurnAsync(
+                session,
+                model.Id,
+                _loop.SystemPrompt,
+                ct,
+                onEvent
+            );
             return ExtractText(result);
         }
         finally
@@ -94,13 +106,19 @@ public sealed partial class AgentHost
     public void Steer(string sessionId, Message message)
     {
         var queue = _steeringQueues.GetOrAdd(sessionId, _ => []);
-        lock (queue) { queue.Add(message); }
+        lock (queue)
+        {
+            queue.Add(message);
+        }
     }
 
     public void FollowUp(string sessionId, Message message)
     {
         var queue = _followUpQueues.GetOrAdd(sessionId, _ => []);
-        lock (queue) { queue.Add(message); }
+        lock (queue)
+        {
+            queue.Add(message);
+        }
     }
 
     public bool HasQueuedMessages(string sessionId) =>
