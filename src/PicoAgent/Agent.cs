@@ -704,7 +704,18 @@ public sealed partial class Agent : IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
-                    return JsonError(400, "VALIDATION_FAILED", ex.Message);
+                    // NEVER echo ex.Message back to the caller — provider /
+                    // HttpClient exception messages routinely contain internal
+                    // URLs, IPs, hostnames and occasionally header fragments.
+                    // The endpoint is unauthenticated in the current design,
+                    // so any passthrough is an information disclosure. Log
+                    // full detail server-side, return a fixed short string.
+                    _logger?.Error(
+                        $"/config/validate failed for provider={provider}: {ex.Message}", ex);
+                    return JsonError(
+                        400,
+                        "VALIDATION_FAILED",
+                        "Provider validation failed. Check server logs for details.");
                 }
             }
         );
