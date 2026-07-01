@@ -8,6 +8,7 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
     private readonly List<SessionTreeEntryBase> _entries = [];
     private readonly Dictionary<string, SessionTreeEntryBase> _byId = [];
     private readonly Dictionary<string, string> _labelsById = [];
+    private readonly SemaphoreSlim _mutex = new(1, 1);
     private string? _leafId;
     private Func<string> _idGenerator;
     private bool _disposed;
@@ -61,14 +62,32 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
         return new JsonlSessionStorage(filePath, [], null);
     }
 
-    public Task<string?> GetLeafId() => Task.FromResult(_leafId);
-
-    public Task SetLeafId(string? leafId)
+    public Task<string?> GetLeafId()
     {
-        if (leafId is not null && !_byId.ContainsKey(leafId))
-            throw new SessionException(SessionErrorCode.NotFound, $"Entry {leafId} not found");
-        _leafId = leafId;
-        return Task.CompletedTask;
+        _mutex.Wait();
+        try
+        {
+            return Task.FromResult(_leafId);
+        }
+        finally
+        {
+            _mutex.Release();
+        }
+    }
+
+    public async Task SetLeafId(string? leafId)
+    {
+        await _mutex.WaitAsync();
+        try
+        {
+            if (leafId is not null && !_byId.ContainsKey(leafId))
+                throw new SessionException(SessionErrorCode.NotFound, $"Entry {leafId} not found");
+            _leafId = leafId;
+        }
+        finally
+        {
+            _mutex.Release();
+        }
     }
 
     public Task<string> CreateEntryId() => Task.FromResult(_idGenerator());
@@ -76,47 +95,98 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
     public async Task AppendEntry(SessionTreeEntryBase entry)
     {
         var line = SessionEntrySerializer.Serialize(entry) + "\n";
-        await File.AppendAllTextAsync(_filePath, line);
-        _entries.Add(entry);
-        _byId[entry.Id] = entry;
+        await _mutex.WaitAsync();
+        try
+        {
+            await File.AppendAllTextAsync(_filePath, line);
+            _entries.Add(entry);
+            _byId[entry.Id] = entry;
 
-        if (entry is LabelEntry { Label: { } label } le)
-            _labelsById[le.TargetId] = label;
-        else if (entry is LabelEntry le2)
-            _labelsById.Remove(le2.TargetId);
+            if (entry is LabelEntry { Label: { } label } le)
+                _labelsById[le.TargetId] = label;
+            else if (entry is LabelEntry le2)
+                _labelsById.Remove(le2.TargetId);
 
-        _leafId = entry is LeafEntry lf ? lf.TargetId : entry.Id;
+            _leafId = entry is LeafEntry lf ? lf.TargetId : entry.Id;
+        }
+        finally
+        {
+            _mutex.Release();
+        }
     }
 
-    public Task<SessionTreeEntryBase?> GetEntry(string id) =>
-        Task.FromResult(_byId.GetValueOrDefault(id));
+    public Task<SessionTreeEntryBase?> GetEntry(string id)
+    {
+        _mutex.Wait();
+        try
+        {
+            return Task.FromResult(_byId.GetValueOrDefault(id));
+        }
+        finally
+        {
+            _mutex.Release();
+        }
+    }
 
     public Task<SessionTreeEntryBase[]> GetPathToRoot(string? leafId)
     {
         if (leafId is null)
             return Task.FromResult(Array.Empty<SessionTreeEntryBase>());
-        var path = new List<SessionTreeEntryBase>();
-        var current =
-            _byId.GetValueOrDefault(leafId)
-            ?? throw new SessionException(SessionErrorCode.NotFound, $"Entry {leafId} not found");
-        while (true)
+        _mutex.Wait();
+        try
         {
-            path.Insert(0, current);
-            if (current.ParentId is null)
-                break;
-            current =
-                _byId.GetValueOrDefault(current.ParentId)
+            var path = new List<SessionTreeEntryBase>();
+            var current =
+                _byId.GetValueOrDefault(leafId)
                 ?? throw new SessionException(
-                    SessionErrorCode.InvalidEntry,
-                    $"Parent {current.ParentId} not found"
+                    SessionErrorCode.NotFound,
+                    $"Entry {leafId} not found"
                 );
+            while (true)
+            {
+                path.Insert(0, current);
+                if (current.ParentId is null)
+                    break;
+                current =
+                    _byId.GetValueOrDefault(current.ParentId)
+                    ?? throw new SessionException(
+                        SessionErrorCode.InvalidEntry,
+                        $"Parent {current.ParentId} not found"
+                    );
+            }
+            return Task.FromResult(path.ToArray());
         }
-        return Task.FromResult(path.ToArray());
+        finally
+        {
+            _mutex.Release();
+        }
     }
 
-    public Task<SessionTreeEntryBase[]> GetEntries() => Task.FromResult(_entries.ToArray());
+    public Task<SessionTreeEntryBase[]> GetEntries()
+    {
+        _mutex.Wait();
+        try
+        {
+            return Task.FromResult(_entries.ToArray());
+        }
+        finally
+        {
+            _mutex.Release();
+        }
+    }
 
-    public Task<string?> GetLabel(string id) => Task.FromResult(_labelsById.GetValueOrDefault(id));
+    public Task<string?> GetLabel(string id)
+    {
+        _mutex.Wait();
+        try
+        {
+            return Task.FromResult(_labelsById.GetValueOrDefault(id));
+        }
+        finally
+        {
+            _mutex.Release();
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -134,6 +204,7 @@ public sealed class JsonlSessionStorage : ISessionStorage, IAsyncDisposable
             };
             await AppendEntry(leaf);
         }
+        _mutex.Dispose();
     }
 
     public static async Task SaveAsync(

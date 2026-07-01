@@ -115,7 +115,9 @@ public sealed class CapabilityRunner
             }
             catch (JsonException jex)
             {
-                var stderrTail = string.IsNullOrWhiteSpace(stderr) ? "" : $" (stderr: {stderr.Trim()})";
+                var stderrTail = string.IsNullOrWhiteSpace(stderr)
+                    ? ""
+                    : $" (stderr: {stderr.Trim()})";
                 throw new ToolException(
                     ToolErrorCode.ExecutionFailed,
                     $"Capability '{config.Name}' returned malformed JSON: {jex.Message}{stderrTail}",

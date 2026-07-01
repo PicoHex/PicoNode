@@ -105,7 +105,8 @@ public class CapabilityRunnerRobustnessTests
                 if (Directory.Exists(dir))
                     Directory.Delete(dir, true);
             }
-            catch { /* subprocess may still hold script file */
+            catch
+            { /* subprocess may still hold script file */
             }
         }
     }
