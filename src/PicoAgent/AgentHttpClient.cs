@@ -5,7 +5,7 @@ namespace PicoAgent;
 
 public sealed class AgentHttpClient : IAsyncDisposable
 {
-    private readonly HttpClient _http;
+    private HttpClient _http;
     private bool _disposed;
 
     public AgentHttpClient(string baseUrl)
@@ -137,6 +137,22 @@ public sealed class AgentHttpClient : IAsyncDisposable
         CancellationToken ct = default
     ) => (await _http.PostAsync($"/session/{sessionId}/save", null, ct)).IsSuccessStatusCode;
 
+    public async Task<string> CompactSessionAsync(
+        string sessionId,
+        int keepRecent = 20,
+        CancellationToken ct = default)
+    {
+        var json = keepRecent != 20
+            ? $"{{\"keepRecent\":{keepRecent}}}"
+            : "{}";
+        var response = await _http.PostAsync(
+            $"/session/{sessionId}/compact",
+            new StringContent(json, Encoding.UTF8, "application/json"),
+            ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync(ct);
+    }
+
     public async Task<IReadOnlyList<Message>> GetMessagesAsync(
         string sessionId = "default",
         CancellationToken ct = default
@@ -203,6 +219,13 @@ public sealed class AgentHttpClient : IAsyncDisposable
         }
         return sb.ToString();
     }
+
+    /// <summary>Test-only constructor accepting a pre-configured HttpClient.</summary>
+    internal static AgentHttpClient CreateForTest(HttpClient http) => new() { _http = http };
+
+    // For the CreateForTest pattern to work, the class needs a parameterless
+    // constructor that the static factory can set.
+    private AgentHttpClient() { _http = null!; }
 
     public async ValueTask DisposeAsync()
     {
