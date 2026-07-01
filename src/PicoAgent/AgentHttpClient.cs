@@ -142,18 +142,21 @@ public sealed class AgentHttpClient : IAsyncDisposable
         CancellationToken ct = default
     )
     {
-        try
-        {
-            var json = await _http.GetStringAsync($"/session/{sessionId}/messages", ct);
-            return System.Text.Json.JsonSerializer.Deserialize(
-                    json,
-                    SourceGenContext.Default.MessageArray
-                ) ?? [];
-        }
-        catch (HttpRequestException)
-        {
+        // Transport / connectivity failures MUST propagate — silently
+        // returning [] on every HttpRequestException makes callers unable to
+        // distinguish "empty session" from "backend broken". Only the
+        // legitimately-empty case (backend responded 404 for a session that
+        // doesn't exist yet) collapses to []. Everything else propagates,
+        // matching ListSessionsAsync / ListModelsAsync / GetHealthAsync.
+        using var resp = await _http.GetAsync($"/session/{sessionId}/messages", ct);
+        if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
             return [];
-        }
+        resp.EnsureSuccessStatusCode();
+        var json = await resp.Content.ReadAsStringAsync(ct);
+        return System.Text.Json.JsonSerializer.Deserialize(
+                json,
+                SourceGenContext.Default.MessageArray
+            ) ?? [];
     }
 
     public async Task<bool> ReloadAsync(CancellationToken ct = default) =>

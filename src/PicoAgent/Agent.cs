@@ -711,11 +711,14 @@ public sealed partial class Agent : IAsyncDisposable
                     // so any passthrough is an information disclosure. Log
                     // full detail server-side, return a fixed short string.
                     _logger?.Error(
-                        $"/config/validate failed for provider={provider}: {ex.Message}", ex);
+                        $"/config/validate failed for provider={provider}: {ex.Message}",
+                        ex
+                    );
                     return JsonError(
                         400,
                         "VALIDATION_FAILED",
-                        "Provider validation failed. Check server logs for details.");
+                        "Provider validation failed. Check server logs for details."
+                    );
                 }
             }
         );
