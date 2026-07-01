@@ -91,7 +91,7 @@ public sealed class AgentBuilder
 
         var router = new ProviderRouter(providerConfigs);
         _router = router;
-        var resilientClient = new ResilientLLmClient(router, breakers, clients);
+        var resilientClient = new ResilientLLmClient(router, _providerConfigs, breakers, clients);
         _registry = new CapabilityRegistry();
 
         if (_capabilitiesRoot is { Length: > 0 })

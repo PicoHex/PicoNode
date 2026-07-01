@@ -28,19 +28,16 @@ public class ResilientLLmClientTests
                 )
         );
         var clients = new Dictionary<string, ILLmClient> { ["openai"] = openaiClient };
-        var router = new ProviderRouter(
-            new[]
-            {
-                new ProviderConfig
-                {
-                    Name = "openai",
-                    ApiFormat = AiApiFormat.OpenAIChatCompletions,
-                    Priority = 1,
-                },
-            }
-        );
+        var providerConfig = new ProviderConfig
+        {
+            Name = "openai",
+            ApiFormat = AiApiFormat.OpenAIChatCompletions,
+            Priority = 1,
+        };
+        var router = new ProviderRouter(new[] { providerConfig });
+        var providers = new Dictionary<string, ProviderConfig> { ["openai"] = providerConfig };
         var breakers = new Dictionary<string, ICircuitBreaker>();
-        var resilient = new ResilientLLmClient(router, breakers, clients);
+        var resilient = new ResilientLLmClient(router, providers, breakers, clients);
 
         await foreach (
             var e in resilient.StreamAsync(
