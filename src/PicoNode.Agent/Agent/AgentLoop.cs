@@ -207,6 +207,42 @@ public sealed class AgentLoop
                             ct
                         );
                     break;
+                case "tool_call_start":
+                    if (onEvent is not null)
+                        await onEvent(
+                            new AssistantMessageEvent.ToolCallStart { Index = 0, Partial = new() },
+                            ct
+                        );
+                    break;
+                case "tool_call_delta":
+                    if (onEvent is not null)
+                        await onEvent(
+                            new AssistantMessageEvent.ToolCallDelta
+                            {
+                                Index = 0,
+                                Delta = evt.Text ?? "",
+                                Partial = new(),
+                            },
+                            ct
+                        );
+                    break;
+                case "tool_call_end":
+                    if (onEvent is not null)
+                        await onEvent(
+                            new AssistantMessageEvent.ToolCallEnd
+                            {
+                                Index = 0,
+                                Call = new ContentBlock
+                                {
+                                    Type = "tool_call",
+                                    Id = evt.ToolCallId,
+                                    Name = evt.ToolName,
+                                },
+                                Partial = new(),
+                            },
+                            ct
+                        );
+                    break;
                 case "done":
                     contentBlocks.Insert(
                         0,
