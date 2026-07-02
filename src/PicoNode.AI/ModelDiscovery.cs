@@ -27,19 +27,13 @@ public static class ModelDiscovery
                 return [];
 
             var json = await response.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            if (!root.TryGetProperty("data", out var data))
-                return [];
-
-            return data.EnumerateArray()
-                .Select(m => new DiscoveredModel
-                {
-                    Id = m.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "",
-                    OwnedBy = m.TryGetProperty("owned_by", out var ob) ? ob.GetString() ?? "" : "",
-                })
-                .ToArray();
+            var list = PicoJetson.JsonSerializer.Deserialize<ModelListResponse>(
+                Encoding.UTF8.GetBytes(json)
+            );
+            return list?.Data
+                    .Select(m => new DiscoveredModel { Id = m.Id, OwnedBy = m.OwnedBy })
+                    .ToArray()
+                ?? [];
         }
         catch
         {

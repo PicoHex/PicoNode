@@ -49,16 +49,13 @@ public sealed class AnthropicLLmClient : ILLmClient
             var errorMessage = $"HTTP {(int)response.StatusCode}";
             try
             {
-                using var errDoc = JsonDocument.Parse(errorBody);
-                if (
-                    errDoc.RootElement.TryGetProperty("error", out var err)
-                    && err.TryGetProperty("message", out var msg)
-                )
-                {
-                    errorMessage = msg.GetString() ?? errorBody;
-                }
+                var errResp = PicoJetson.JsonSerializer.Deserialize<AnthropicErrorResponse>(
+                    Encoding.UTF8.GetBytes(errorBody)
+                );
+                if (errResp?.Error?.Message is { Length: > 0 } msg)
+                    errorMessage = msg;
             }
-            catch (JsonException)
+            catch
             {
                 errorMessage = errorBody;
             }

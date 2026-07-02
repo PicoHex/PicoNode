@@ -43,12 +43,11 @@ public sealed class OpenAILlmClient : ILLmClient
             var errorMessage = $"HTTP {(int)response.StatusCode}";
             try
             {
-                using var doc = JsonDocument.Parse(errorBody);
-                if (
-                    doc.RootElement.TryGetProperty("error", out var err)
-                    && err.TryGetProperty("message", out var msg)
-                )
-                    errorMessage = msg.GetString() ?? errorBody;
+                var errResp = PicoJetson.JsonSerializer.Deserialize<OpenAiErrorResponse>(
+                    Encoding.UTF8.GetBytes(errorBody)
+                );
+                if (errResp?.Error?.Message is { Length: > 0 } msg)
+                    errorMessage = msg;
             }
             catch
             {
