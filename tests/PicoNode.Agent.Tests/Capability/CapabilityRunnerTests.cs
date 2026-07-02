@@ -47,7 +47,7 @@ public class CapabilityRunnerTests
                 CancellationToken.None
             );
 
-            await Assert.That(result.TryGetProperty("content", out var c)).IsTrue();
+            await Assert.That(result.RootElement.TryGetProperty("content", out var c)).IsTrue();
             await Assert.That(c.GetString()).IsEqualTo("got it");
         }
         finally

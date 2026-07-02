@@ -12,7 +12,7 @@ public sealed class HookRunner
         _runner = runner;
     }
 
-    public async Task<JsonElement?> EmitAsync(
+    public async Task<PicoDocument?> EmitAsync(
         TriggerKind trigger,
         byte[] input,
         CancellationToken ct
@@ -22,7 +22,8 @@ public sealed class HookRunner
         foreach (var hook in hooks)
         {
             var result = await _runner.ExecuteAsync(hook, "hook", input, ct);
-            if (result.TryGetProperty("action", out var action) && action.GetString() == "block")
+            var root = result.RootElement;
+            if (root.TryGetProperty("action", out var action) && action.GetString() == "block")
                 return result;
         }
         return null;

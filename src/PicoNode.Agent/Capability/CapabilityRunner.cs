@@ -9,13 +9,12 @@ public sealed class CapabilityRunner
     {
         if (config.Schema is null)
             return;
-        using var doc = JsonDocument.Parse(config.Schema);
-        var root = doc.RootElement;
-        if (root.TryGetProperty("required", out var required))
+        var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(config.Schema));
+        if (doc.RootElement.TryGetProperty("required", out var required))
         {
-            foreach (var field in required.EnumerateArray())
+            for (int i = 0; i < required.GetArrayLength(); i++)
             {
-                var name = field.GetString()!;
+                var name = required[i].GetString()!;
                 if (!args.ContainsKey(name))
                     throw new ToolException(
                         ToolErrorCode.SchemaValidationFailed,
@@ -49,7 +48,7 @@ public sealed class CapabilityRunner
         return new TruncationResult(truncated + "\n" + notice, true, tempPath);
     }
 
-    public async Task<JsonElement> ExecuteAsync(
+    public async Task<PicoDocument> ExecuteAsync(
         ManifestCapability config,
         string contextKind,
         byte[] inputJson,
@@ -108,10 +107,9 @@ public sealed class CapabilityRunner
 
             try
             {
-                using var doc = JsonDocument.Parse(responseLine);
-                return doc.RootElement.Clone();
+                return PicoDocument.Parse(Encoding.UTF8.GetBytes(responseLine));
             }
-            catch (JsonException jex)
+            catch (FormatException jex)
             {
                 var stderrTail = string.IsNullOrWhiteSpace(stderr)
                     ? ""

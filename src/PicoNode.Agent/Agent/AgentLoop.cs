@@ -121,7 +121,7 @@ public sealed class AgentLoop
                     );
                     if (
                         hookResult is { } h
-                        && h.TryGetProperty("action", out var action)
+                        && h.RootElement.TryGetProperty("action", out var action)
                         && action.GetString() == ActionBlock
                     )
                         continue;
@@ -153,13 +153,13 @@ public sealed class AgentLoop
                             new ContentBlock
                             {
                                 Type = BlockTypeText,
-                                Text = toolResponse.TryGetProperty(FieldContent, out var c)
+                                Text = toolResponse.RootElement.TryGetProperty(FieldContent, out var c)
                                     ? c.ToString()
                                     : "",
                             },
                         ],
                         IsError =
-                            toolResponse.TryGetProperty(FieldIsError, out var isErr)
+                            toolResponse.RootElement.TryGetProperty(FieldIsError, out var isErr)
                             && isErr.GetBoolean(),
                         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     };
