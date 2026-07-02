@@ -7,7 +7,6 @@ namespace PicoAgent;
 /// SSE event DTOs for deserializing incoming events from the Agent backend.
 /// Mirror the JSON shape: {"type":"delta","content":"Hi"}.
 /// </summary>
-
 [PicoSerializable]
 [JsonCamelCase]
 [PicoPolymorphic(TypeDiscriminatorPropertyName = "type")]

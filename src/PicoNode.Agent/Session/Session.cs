@@ -132,9 +132,7 @@ public sealed class Session
                 messages.Add(me.Message);
                 break;
             case CustomMessageEntry cme:
-                messages.Add(
-                    new Message { Role = "custom", Content = cme.Content }
-                );
+                messages.Add(new Message { Role = "custom", Content = cme.Content });
                 break;
             case BranchSummaryEntry bs:
                 messages.Add(new Message { Role = "branchSummary", Content = bs.Summary });

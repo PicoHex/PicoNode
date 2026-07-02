@@ -117,9 +117,7 @@ public sealed class AgentHttpClient : IAsyncDisposable
     public async Task<IReadOnlyList<string>> ListSessionsAsync(CancellationToken ct = default)
     {
         var json = await _http.GetStringAsync("/sessions", ct);
-        return PicoJetson.JsonSerializer.Deserialize<string[]>(
-                Encoding.UTF8.GetBytes(json)
-            ) ?? [];
+        return PicoJetson.JsonSerializer.Deserialize<string[]>(Encoding.UTF8.GetBytes(json)) ?? [];
     }
 
     public async Task<bool> CreateSessionAsync(string sessionId, CancellationToken ct = default) =>
@@ -165,9 +163,7 @@ public sealed class AgentHttpClient : IAsyncDisposable
             return [];
         resp.EnsureSuccessStatusCode();
         var json = await resp.Content.ReadAsStringAsync(ct);
-        return PicoJetson.JsonSerializer.Deserialize<Message[]>(
-                Encoding.UTF8.GetBytes(json)
-            ) ?? [];
+        return PicoJetson.JsonSerializer.Deserialize<Message[]>(Encoding.UTF8.GetBytes(json)) ?? [];
     }
 
     public async Task<bool> ReloadAsync(CancellationToken ct = default) =>
@@ -273,7 +269,9 @@ internal static class PicoAgentSseParser
                     [
                         new ContentBlock
                         {
-                            Type = "tool_call", Id = ts.ToolCallId, Name = ts.ToolName,
+                            Type = "tool_call",
+                            Id = ts.ToolCallId,
+                            Name = ts.ToolName,
                         },
                     ],
                 },
@@ -285,10 +283,7 @@ internal static class PicoAgentSseParser
                 Partial = new Message
                 {
                     Role = "assistant",
-                    ContentBlocks =
-                    [
-                        new ContentBlock { Type = "tool_call", Id = td.ToolCallId },
-                    ],
+                    ContentBlocks = [new ContentBlock { Type = "tool_call", Id = td.ToolCallId }],
                 },
             },
             SseInToolCallEnd te => new AssistantMessageEvent.ToolCallEnd

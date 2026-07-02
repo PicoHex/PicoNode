@@ -16,10 +16,14 @@ public class SseInEventDeserializationTests
     [Test]
     public async Task Deserialize_ThinkingEvent_ReturnsThinkingDelta()
     {
-        var evt = PicoAgentSseParser.ParseForTest("""{"type":"thinking","content":"reasoning..."}""");
+        var evt = PicoAgentSseParser.ParseForTest(
+            """{"type":"thinking","content":"reasoning..."}"""
+        );
         await Assert.That(evt).IsNotNull();
         await Assert.That(evt).IsTypeOf<AssistantMessageEvent.ThinkingDelta>();
-        await Assert.That(((AssistantMessageEvent.ThinkingDelta)evt!).Delta).IsEqualTo("reasoning...");
+        await Assert
+            .That(((AssistantMessageEvent.ThinkingDelta)evt!).Delta)
+            .IsEqualTo("reasoning...");
     }
 
     [Test]
@@ -28,7 +32,9 @@ public class SseInEventDeserializationTests
         var evt = PicoAgentSseParser.ParseForTest("""{"type":"done","stopReason":"end_turn"}""");
         await Assert.That(evt).IsNotNull();
         await Assert.That(evt).IsTypeOf<AssistantMessageEvent.Done>();
-        await Assert.That(((AssistantMessageEvent.Done)evt!).Message.StopReason).IsEqualTo("end_turn");
+        await Assert
+            .That(((AssistantMessageEvent.Done)evt!).Message.StopReason)
+            .IsEqualTo("end_turn");
     }
 
     [Test]
@@ -37,7 +43,9 @@ public class SseInEventDeserializationTests
         var evt = PicoAgentSseParser.ParseForTest("""{"type":"error","message":"broke"}""");
         await Assert.That(evt).IsNotNull();
         await Assert.That(evt).IsTypeOf<AssistantMessageEvent.Error>();
-        await Assert.That(((AssistantMessageEvent.Error)evt!).Message.ErrorMessage).IsEqualTo("broke");
+        await Assert
+            .That(((AssistantMessageEvent.Error)evt!).Message.ErrorMessage)
+            .IsEqualTo("broke");
     }
 
     [Test]
@@ -69,7 +77,9 @@ public class SseInEventDeserializationTests
     [Test]
     public async Task Deserialize_ToolCallEndEvent_ReturnsToolCallEnd()
     {
-        var evt = PicoAgentSseParser.ParseForTest("""{"type":"tool_call_end","toolCallId":"abc"}""");
+        var evt = PicoAgentSseParser.ParseForTest(
+            """{"type":"tool_call_end","toolCallId":"abc"}"""
+        );
         await Assert.That(evt).IsNotNull();
         await Assert.That(evt).IsTypeOf<AssistantMessageEvent.ToolCallEnd>();
         await Assert.That(((AssistantMessageEvent.ToolCallEnd)evt!).Call.Id).IsEqualTo("abc");

@@ -263,7 +263,8 @@ internal sealed class NoopAgentLlm : IAgentLlm
         Message[] messages,
         string modelId,
         string? reasoningLevel,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         yield break;
     }

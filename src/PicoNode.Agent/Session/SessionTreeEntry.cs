@@ -32,7 +32,9 @@ public sealed class CompactionEntry : SessionTreeEntryBase
     public string Summary { get; set; } = "";
     public string FirstKeptEntryId { get; set; } = "";
     public long TokensBefore { get; set; }
-    [JsonIgnore] public object? Details { get; set; }
+
+    [JsonIgnore]
+    public object? Details { get; set; }
     public bool FromHook { get; set; }
 }
 
@@ -40,21 +42,27 @@ public sealed class BranchSummaryEntry : SessionTreeEntryBase
 {
     public string FromId { get; set; } = "";
     public string Summary { get; set; } = "";
-    [JsonIgnore] public object? Details { get; set; }
+
+    [JsonIgnore]
+    public object? Details { get; set; }
     public bool FromHook { get; set; }
 }
 
 public sealed class CustomEntry : SessionTreeEntryBase
 {
     public string CustomType { get; set; } = "";
-    [JsonIgnore] public object? Data { get; set; }
+
+    [JsonIgnore]
+    public object? Data { get; set; }
 }
 
 public sealed class CustomMessageEntry : SessionTreeEntryBase
 {
     public string CustomType { get; set; } = "";
     public string Content { get; set; } = "";
-    [JsonIgnore] public object? Details { get; set; }
+
+    [JsonIgnore]
+    public object? Details { get; set; }
     public bool Display { get; set; } = true;
 }
 

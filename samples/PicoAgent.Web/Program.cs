@@ -196,7 +196,9 @@ app.MapPost(
             if (req is not null)
                 keepRecent = req.KeepRecent;
         }
-        catch { /* body parsing best-effort — keep default */ }
+        catch
+        { /* body parsing best-effort — keep default */
+        }
 
         var result = await client.CompactSessionAsync(id, keepRecent, ct);
         return OkJson(result);
@@ -395,7 +397,8 @@ static async Task ForwardSseAsync(
     }
 }
 
-static async Task<T?> ReadJsonAsync<T>(WebContext ctx, CancellationToken ct) where T : class
+static async Task<T?> ReadJsonAsync<T>(WebContext ctx, CancellationToken ct)
+    where T : class
 {
     using var reader = new StreamReader(
         ctx.Request.BodyStream,

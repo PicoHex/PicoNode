@@ -445,7 +445,11 @@ public sealed partial class Agent : IAsyncDisposable
                 if (wasUnconfigured)
                 {
                     var resilientClient = new ResilientLLmClient(
-                        _router, _providerConfigs, _breakers, _clients);
+                        _router,
+                        _providerConfigs,
+                        _breakers,
+                        _clients
+                    );
                     var adapter = new AgentLlmAdapter(resilientClient, _router);
                     var newLoop = new AgentLoop(adapter, _registry, new CapabilityRunner());
                     _host.ReplaceLoop(newLoop);
@@ -692,7 +696,9 @@ public sealed partial class Agent : IAsyncDisposable
                     if (req is not null)
                         keepRecent = req.KeepRecent;
                 }
-                catch { /* body parsing best-effort — keep default */ }
+                catch
+                { /* body parsing best-effort — keep default */
+                }
 
                 var (entry, compressedCount, tokensSaved) = await CompactSessionAsync(
                     id,
@@ -756,7 +762,11 @@ public sealed partial class Agent : IAsyncDisposable
             async (ctx, ct) =>
             {
                 var req = await ReadJsonAsync<ConfigValidateReq>(ctx, ct);
-                if (req is null || string.IsNullOrWhiteSpace(req.Provider) || string.IsNullOrWhiteSpace(req.ApiKey))
+                if (
+                    req is null
+                    || string.IsNullOrWhiteSpace(req.Provider)
+                    || string.IsNullOrWhiteSpace(req.ApiKey)
+                )
                     return JsonError(400, "INVALID_ARGUMENT", "provider and apiKey required");
                 try
                 {
@@ -831,7 +841,8 @@ public sealed partial class Agent : IAsyncDisposable
         return app;
     }
 
-    private static async Task<T?> ReadJsonAsync<T>(WebContext ctx, CancellationToken ct) where T : class
+    private static async Task<T?> ReadJsonAsync<T>(WebContext ctx, CancellationToken ct)
+        where T : class
     {
         var text = await ReadBodyTextAsync(ctx, ct);
         if (text is null)
