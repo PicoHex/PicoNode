@@ -16,9 +16,8 @@ public class ConfigLoaderTests
     {
         var json =
             """{"providers":{"deepseek":{"apiKey":"sk-test-key","apiFormat":"openai","baseUrl":"https://api.deepseek.com/v1"}},"model":"deepseek-chat","thinkingEnabled":true,"thinkingLevel":"medium","maxTokens":4096}""";
-        var config = System.Text.Json.JsonSerializer.Deserialize<AgentConfig>(
-            json,
-            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+        var config = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(
+            Encoding.UTF8.GetBytes(json)
         );
         await Assert.That(config!.Providers.Count).IsEqualTo(1);
         await Assert.That(config.Providers["deepseek"].ApiKey).IsEqualTo("sk-test-key");
