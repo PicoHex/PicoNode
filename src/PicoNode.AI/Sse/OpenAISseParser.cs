@@ -51,17 +51,17 @@ public static class OpenAISseParser
                 yield break;
             }
 
-            JsonDocument? doc = null;
+            PicoDocument? doc = null;
             try
             {
-                doc = JsonDocument.Parse(json);
+                doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(json));
             }
-            catch (JsonException)
+            catch (Exception)
             {
                 continue;
             }
 
-            using var _doc = doc;
+            // PicoDocument is not IDisposable
             var root = doc.RootElement;
 
             if (
@@ -76,13 +76,14 @@ public static class OpenAISseParser
 
             if (delta.TryGetProperty(JsonPropReasoningContent, out var reasoning))
             {
-                var text = reasoning.GetString()!;
-                yield return new AssistantMessageEvent.ThinkingDelta { Index = 0, Delta = text };
+                var text = SafeGetString(reasoning);
+                if (text is not null)
+                    yield return new AssistantMessageEvent.ThinkingDelta { Index = 0, Delta = text };
             }
 
             if (delta.TryGetProperty(JsonPropContent, out var content))
             {
-                var text = content.GetString()!;
+                var text = SafeGetString(content) ?? "";
                 contentAccum.Append(text);
 
                 if (!started)
@@ -109,7 +110,7 @@ public static class OpenAISseParser
 
             if (
                 choice.TryGetProperty(JsonPropFinishReason, out var fr)
-                && fr.GetString() is { } reason
+                && SafeGetString(fr) is { } reason
                 && reason != "null"
                 && reason != ""
             )
@@ -124,4 +125,11 @@ public static class OpenAISseParser
             }
         }
     }
+
+    /// <summary>
+    /// GetString() without throwing on non-string/null values.
+    /// PicoElement.GetString() throws, unlike STJ's JsonElement which returns null.
+    /// </summary>
+    private static string? SafeGetString(PicoElement el) =>
+        el.ValueKind == PicoValueKind.String ? el.GetString() : null;
 }

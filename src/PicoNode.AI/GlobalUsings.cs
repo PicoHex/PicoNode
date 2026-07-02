@@ -9,5 +9,4 @@ global using System.Net;
 global using System.Net.Http;
 global using System.Runtime.ExceptionServices;
 global using PicoNode.AI;
-global using System.Text.Json;
 global using PicoJetson;

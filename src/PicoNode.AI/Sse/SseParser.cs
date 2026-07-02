@@ -59,19 +59,19 @@ public static class SseParser
             }
 
             var json = line[DataPrefix.Length..]; // skip "data: "
-            JsonDocument? doc = null;
+            PicoDocument? doc = null;
             try
             {
-                doc = JsonDocument.Parse(json);
+                doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(json));
             }
-            catch (JsonException)
+            catch (Exception)
             {
                 continue;
             } // skip malformed JSON lines
 
-            using var _doc = doc;
+            // PicoDocument is not IDisposable
             var root = doc.RootElement;
-            var type = root.GetProperty("type").GetString();
+            var type = root["type"].GetString();
 
             switch (type)
             {
@@ -84,9 +84,9 @@ public static class SseParser
                     break;
 
                 case TypeContentBlockStart:
-                    var cbIndex = root.GetProperty("index").GetInt32();
-                    var cb = root.GetProperty("content_block");
-                    var cbType = cb.GetProperty("type").GetString()!;
+                    var cbIndex = root["index"].GetInt32();
+                    var cb = root["content_block"];
+                    var cbType = cb["type"].GetString()!;
 
                     if (cbType == BlockTypeText)
                     {
@@ -101,8 +101,8 @@ public static class SseParser
                         contentBlocks[cbIndex] = new ContentBlock
                         {
                             Type = "tool_call",
-                            Id = cb.GetProperty("id").GetString()!,
-                            Name = cb.GetProperty("name").GetString()!,
+                            Id = cb["id"].GetString()!,
+                            Name = cb["name"].GetString()!,
                         };
                         currentToolArgs.Clear();
                         yield return new AssistantMessageEvent.ToolCallStart
@@ -114,13 +114,13 @@ public static class SseParser
                     break;
 
                 case TypeContentBlockDelta:
-                    var deltaIndex = root.GetProperty("index").GetInt32();
-                    var delta = root.GetProperty("delta");
-                    var deltaType = delta.GetProperty("type").GetString();
+                    var deltaIndex = root["index"].GetInt32();
+                    var delta = root["delta"];
+                    var deltaType = delta["type"].GetString();
 
                     if (deltaType == DeltaTypeText)
                     {
-                        var text = delta.GetProperty("text").GetString()!;
+                        var text = delta["text"].GetString()!;
                         if (contentBlocks[deltaIndex].Type == "text")
                         {
                             contentBlocks[deltaIndex].Text += text;
@@ -134,7 +134,7 @@ public static class SseParser
                     }
                     else if (deltaType == DeltaTypeInputJson)
                     {
-                        var partialJson = delta.GetProperty("partial_json").GetString()!;
+                        var partialJson = delta["partial_json"].GetString()!;
                         currentToolArgs.Append(partialJson);
                         yield return new AssistantMessageEvent.ToolCallDelta
                         {
@@ -145,7 +145,7 @@ public static class SseParser
                     }
                     else if (deltaType == DeltaTypeThinking)
                     {
-                        var thinking = delta.GetProperty("thinking").GetString()!;
+                        var thinking = delta["thinking"].GetString()!;
                         yield return new AssistantMessageEvent.ThinkingDelta
                         {
                             Index = deltaIndex,
@@ -156,7 +156,7 @@ public static class SseParser
                     break;
 
                 case TypeContentBlockStop:
-                    var stopIdx = root.GetProperty("index").GetInt32();
+                    var stopIdx = root["index"].GetInt32();
                     if (contentBlocks[stopIdx].Type == "tool_call")
                     {
                         contentBlocks[stopIdx].Arguments = ParseJsonObject(
@@ -191,7 +191,7 @@ public static class SseParser
                     {
                         Role = "assistant",
                         ErrorMessage = root.TryGetProperty("error", out var err)
-                            ? err.GetProperty("message").GetString()
+                            ? err["message"].GetString()
                             : "Unknown error",
                         StopReason = "error",
                     };
@@ -217,23 +217,45 @@ public static class SseParser
     {
         if (string.IsNullOrWhiteSpace(json))
             return new();
-        using var doc = JsonDocument.Parse(json);
-        var result = ParseElement(doc.RootElement);
-        return (result as Dictionary<string, object?>) ?? new();
+        try
+        {
+            var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(json));
+            var result = ParseElement(doc.RootElement);
+            return (result as Dictionary<string, object?>) ?? new();
+        }
+        catch (FormatException)
+        {
+            return new();
+        }
     }
 
-    private static object? ParseElement(JsonElement el)
+    private static object? ParseElement(PicoElement el)
     {
         return el.ValueKind switch
         {
-            JsonValueKind.Object => el.EnumerateObject()
-                .ToDictionary(p => p.Name, p => ParseElement(p.Value)),
-            JsonValueKind.Array => el.EnumerateArray().Select(ParseElement).ToList(),
-            JsonValueKind.String => el.GetString(),
-            JsonValueKind.Number => el.TryGetInt64(out var l) ? l : el.GetDouble(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
+            PicoValueKind.Object => EnumerateObjectToDict(el),
+            PicoValueKind.Array => EnumerateArrayToList(el),
+            PicoValueKind.String => el.GetString(),
+            PicoValueKind.Number => el.TryGetInt64(out var l) ? l : el.GetDouble(),
+            PicoValueKind.True => true,
+            PicoValueKind.False => false,
             _ => null,
         };
+    }
+
+    private static Dictionary<string, object?> EnumerateObjectToDict(PicoElement el)
+    {
+        var dict = new Dictionary<string, object?>();
+        foreach (var prop in el.EnumerateObject())
+            dict[prop.Name] = ParseElement(prop.Value);
+        return dict;
+    }
+
+    private static List<object?> EnumerateArrayToList(PicoElement el)
+    {
+        var list = new List<object?>();
+        foreach (var item in el.EnumerateArray())
+            list.Add(ParseElement(item));
+        return list;
     }
 }
