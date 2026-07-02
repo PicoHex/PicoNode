@@ -1,6 +1,5 @@
 namespace PicoNode.Tests;
 
-using System.Text;
 
 public sealed class AgentHttpClientJsonTests
 {

@@ -1,4 +1,3 @@
-using PicoNode.AI;
 
 var homeDir = Path.Combine(AppContext.BaseDirectory, "data");
 Directory.CreateDirectory(homeDir);

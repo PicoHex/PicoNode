@@ -1,4 +1,3 @@
-using PicoNode.Agent;
 
 namespace PicoNode.Agent.Tests.Host;
 

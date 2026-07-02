@@ -1,8 +1,5 @@
 namespace PicoNode.AI.Tests.LLm;
 
-using System.Net;
-using System.Net.Http;
-using PicoNode.AI;
 
 public class ResilientLLmClientResilienceTests
 {

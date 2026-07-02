@@ -1,7 +1,5 @@
 namespace PicoNode.AI.Tests;
 
-using PicoNode.AI;
-using PicoNode.AI;
 
 public class ModelDiscoveryTests
 {

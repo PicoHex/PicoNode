@@ -1,7 +1,5 @@
 namespace PicoNode.Tests;
 
-using System.Net;
-using System.Text;
 using Agent = PicoAgent.Agent;
 
 public sealed class AgentTests

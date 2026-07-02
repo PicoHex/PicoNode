@@ -1,8 +1,5 @@
 namespace PicoNode.AI.Tests.LLm;
 
-using System.Net;
-using System.Net.Http;
-using PicoNode.AI;
 
 /// <summary>
 /// Batch 2 (A2): ResilientLLmClient must forward events as they arrive from the underlying

@@ -23,3 +23,4 @@ global using PicoNode.AI;
 global using PicoNode.Http;
 global using PicoNode.Web;
 global using PicoWeb;
+global using System.Text;

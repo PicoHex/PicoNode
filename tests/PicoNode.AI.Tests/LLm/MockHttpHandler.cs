@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.LLm;
 
-using PicoNode.AI;
 
 public sealed class MockHttpHandler : HttpMessageHandler
 {

@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.Adapter;
 
-using System.Runtime.CompilerServices;
 
 /// <summary>
 /// TDD Batch 8: AgentLlmAdapter fixes.

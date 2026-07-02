@@ -1,7 +1,6 @@
 // src/PicoAgent/Agent.cs
 namespace PicoAgent;
 
-using System.Net;
 
 public sealed partial class Agent : IAsyncDisposable
 {

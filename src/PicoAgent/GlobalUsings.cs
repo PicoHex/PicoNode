@@ -13,3 +13,4 @@ global using PicoNode.Http;
 global using PicoNode.Web;
 global using PicoSerDe.Core;
 global using PicoWeb;
+global using System.Diagnostics.CodeAnalysis;

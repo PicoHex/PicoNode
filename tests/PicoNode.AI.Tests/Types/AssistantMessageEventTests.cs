@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.Types;
 
-using PicoNode.AI;
 
 public class AssistantMessageEventTests
 {

@@ -1,5 +1,3 @@
-using PicoNode.Agent;
-using PicoNode.AI;
 
 namespace PicoNode.Agent.Tests.PicoAgentCompactTests;
 

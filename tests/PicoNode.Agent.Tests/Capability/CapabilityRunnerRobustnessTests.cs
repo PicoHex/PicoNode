@@ -1,4 +1,3 @@
-using System.Text.Json;
 
 namespace PicoNode.Agent.Tests.Capability;
 

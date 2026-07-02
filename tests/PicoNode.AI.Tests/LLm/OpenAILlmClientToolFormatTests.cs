@@ -1,8 +1,5 @@
 namespace PicoNode.AI.Tests.LLm;
 
-using System.Linq;
-using System.Text.Json;
-using PicoNode.AI;
 
 /// <summary>
 /// Batch 4 (A-OpenAI): OpenAILlmClient must emit tool_calls / tool messages in the

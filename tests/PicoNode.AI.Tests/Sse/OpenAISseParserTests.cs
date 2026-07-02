@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.Sse;
 
-using PicoNode.AI;
 
 public class OpenAISseParserTests
 {
