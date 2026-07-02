@@ -1,4 +1,3 @@
-using System.Text.Json;
 using PicoNode.AI;
 
 var homeDir = Path.Combine(AppContext.BaseDirectory, "data");
@@ -33,8 +32,8 @@ var validation = ConfigLoader.Validate(config);
 if (!validation.IsValid)
 {
     foreach (var err in validation.Errors)
-        await Console.Error.WriteLineAsync(err);
-    return;
+        await Console.Error.WriteLineAsync($"Warning: {err}");
+    // Continue — server starts in setup mode, config page handles provider setup.
 }
 
 var logger = new LoggerFactory([new ConsoleSink(new ConsoleFormatter())]).CreateLogger("Web");
@@ -123,11 +122,10 @@ app.MapPost(
     "/api/model/switch",
     async (ctx, ct) =>
     {
-        var json = await ReadJsonAsync(ctx, ct);
-        var modelId = json?.TryGetProperty("modelId", out var mid) == true ? mid.GetString() : null;
-        if (string.IsNullOrWhiteSpace(modelId))
+        var req = await ReadJsonAsync<ModelSwitchReq>(ctx, ct);
+        if (req is null || string.IsNullOrWhiteSpace(req.ModelId))
             return ErrorJson(400, "modelId required");
-        return (await client.SwitchModelAsync(modelId, ct))
+        return (await client.SwitchModelAsync(req.ModelId, ct))
             ? Ok()
             : ErrorJson(400, "Switch failed");
     }
@@ -137,11 +135,10 @@ app.MapPost(
     "/api/provider/switch",
     async (ctx, ct) =>
     {
-        var json = await ReadJsonAsync(ctx, ct);
-        var provider = json?.TryGetProperty("provider", out var pv) == true ? pv.GetString() : null;
-        if (string.IsNullOrWhiteSpace(provider))
+        var req = await ReadJsonAsync<ProviderSwitchReq>(ctx, ct);
+        if (req is null || string.IsNullOrWhiteSpace(req.Provider))
             return ErrorJson(400, "provider required");
-        return (await client.SwitchProviderAsync(provider, ct))
+        return (await client.SwitchProviderAsync(req.Provider, ct))
             ? Ok()
             : ErrorJson(400, "Switch failed");
     }
@@ -151,12 +148,9 @@ app.MapPost(
     "/api/thinking",
     async (ctx, ct) =>
     {
-        var json = await ReadJsonAsync(ctx, ct);
-        var enabled = json?.TryGetProperty("enabled", out var en) == true ? en.GetBoolean() : true;
-        var level =
-            json?.TryGetProperty("level", out var lv) == true
-                ? (lv.GetString() ?? "medium")
-                : "medium";
+        var req = await ReadJsonAsync<ThinkingReq>(ctx, ct);
+        var enabled = req?.Enabled ?? true;
+        var level = req?.Level ?? "medium";
         return (await client.SwitchThinkingAsync(enabled, level, ct))
             ? Ok()
             : ErrorJson(400, "Switch failed");
@@ -198,9 +192,9 @@ app.MapPost(
         var keepRecent = 20;
         try
         {
-            var json = await ReadJsonAsync(ctx, ct);
-            if (json?.TryGetProperty("keepRecent", out var kr) == true)
-                keepRecent = kr.GetInt32();
+            var req = await ReadJsonAsync<KeepRecentReq>(ctx, ct);
+            if (req is not null)
+                keepRecent = req.KeepRecent;
         }
         catch { }
 
@@ -401,7 +395,7 @@ static async Task ForwardSseAsync(
     }
 }
 
-static async Task<JsonElement?> ReadJsonAsync(WebContext ctx, CancellationToken ct)
+static async Task<T?> ReadJsonAsync<T>(WebContext ctx, CancellationToken ct) where T : class
 {
     using var reader = new StreamReader(
         ctx.Request.BodyStream,
@@ -412,8 +406,7 @@ static async Task<JsonElement?> ReadJsonAsync(WebContext ctx, CancellationToken 
     var text = await reader.ReadToEndAsync(ct);
     if (string.IsNullOrWhiteSpace(text))
         return null;
-    using var doc = JsonDocument.Parse(text);
-    return doc.RootElement.Clone();
+    return PicoJetson.JsonSerializer.Deserialize<T>(Encoding.UTF8.GetBytes(text));
 }
 
 static HttpResponse Ok() => WebResults.Json(200, "{\"status\":\"ok\"}");

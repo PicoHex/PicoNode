@@ -26,11 +26,11 @@ public sealed class AgentBuilderTests
     }
 
     [Test]
-    public async Task CreateAsync_WithoutConfig_Throws()
+    public async Task CreateAsync_WithoutProviders_StartsInUnconfiguredMode()
     {
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await Agent.CreateAsync(new AgentConfig { Providers = new() });
-        });
+        var agent = await Agent.CreateAsync(new AgentConfig { Providers = new() });
+        await Assert.That(agent).IsNotNull();
+        // Should not throw — Agent starts in unconfigured/setup mode.
+        await agent.DisposeAsync();
     }
 }

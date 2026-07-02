@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 // src/PicoAgent/Agent.cs
 namespace PicoAgent;
 
@@ -21,6 +19,7 @@ public sealed partial class Agent : IAsyncDisposable
     private Model _pendingModel;
     private WebServer? _server;
     private bool _disposed;
+    private bool _wasUnconfigured;
 
     private Agent(
         AgentHost host,
@@ -33,7 +32,8 @@ public sealed partial class Agent : IAsyncDisposable
         IReadOnlyDictionary<string, ICircuitBreaker> breakers,
         IReadOnlyDictionary<string, ILLmClient> clients,
         Model initialModel,
-        ILogger? logger = null
+        ILogger? logger = null,
+        bool wasUnconfigured = false
     )
     {
         _host = host;
@@ -47,6 +47,7 @@ public sealed partial class Agent : IAsyncDisposable
         _clients = clients;
         _pendingModel = initialModel;
         _logger = logger;
+        _wasUnconfigured = wasUnconfigured;
     }
 
     public static async Task<Agent> CreateAsync(
@@ -58,7 +59,15 @@ public sealed partial class Agent : IAsyncDisposable
         var builder = new AgentBuilder().WithConfig(config);
         if (homeDir is { Length: > 0 })
             builder.WithCapabilities(homeDir);
-        var host = await builder.BuildAgentHostInternalAsync();
+
+        // Allow startup without providers — server runs in unconfigured/setup mode.
+        var isEmpty = config.Providers is null || config.Providers.Count == 0;
+        var host = isEmpty
+            ? await builder.BuildAgentHostUnconfiguredAsync()
+            : await builder.BuildAgentHostInternalAsync();
+
+        var wasUnconfigured = isEmpty;
+
         var registry = builder.GetRegistry();
         var http = builder.GetHttpClient();
         var ownsHttp = builder.GetHttpClientIsOwned();
@@ -79,7 +88,8 @@ public sealed partial class Agent : IAsyncDisposable
             breakers,
             clients,
             model,
-            logger
+            logger,
+            wasUnconfigured
         );
     }
 
@@ -420,11 +430,27 @@ public sealed partial class Agent : IAsyncDisposable
             }
 
             _router.UpdateProviders(providerList);
+            var wasUnconfigured = _wasUnconfigured;
             if (providerList.Count > 0)
             {
                 _pendingModel.Provider = pcDict.Keys.First();
                 _pendingModel.Api = providerList[0].ApiFormat;
                 _pendingModel.Id = ResolveInitialModelId(config.Model, providerList);
+
+                // When transitioning from unconfigured → configured, replace the
+                // NoopAgentLlm loop with a real one wired through ResilientLLmClient
+                // so subsequent messages route to the newly configured provider.
+                // On normal hot-reload we keep the existing loop — the dicts are
+                // mutated in-place and ResilientLLmClient already holds the live refs.
+                if (wasUnconfigured)
+                {
+                    var resilientClient = new ResilientLLmClient(
+                        _router, _providerConfigs, _breakers, _clients);
+                    var adapter = new AgentLlmAdapter(resilientClient, _router);
+                    var newLoop = new AgentLoop(adapter, _registry, new CapabilityRunner());
+                    _host.ReplaceLoop(newLoop);
+                    _wasUnconfigured = false;
+                }
             }
         }
     }
@@ -500,12 +526,10 @@ public sealed partial class Agent : IAsyncDisposable
             "/model/switch",
             async (ctx, ct) =>
             {
-                var json = await ReadJsonBodyAsync(ctx, ct);
-                var modelId =
-                    json?.TryGetProperty("modelId", out var mid) == true ? mid.GetString() : null;
-                if (string.IsNullOrWhiteSpace(modelId))
+                var req = await ReadJsonAsync<ModelSwitchReq>(ctx, ct);
+                if (req is null || string.IsNullOrWhiteSpace(req.ModelId))
                     return JsonError(400, "INVALID_ARGUMENT", "modelId is required");
-                SwitchModel(modelId);
+                SwitchModel(req.ModelId);
                 return JsonOk();
             }
         );
@@ -515,12 +539,10 @@ public sealed partial class Agent : IAsyncDisposable
             "/provider/switch",
             async (ctx, ct) =>
             {
-                var json = await ReadJsonBodyAsync(ctx, ct);
-                var provider =
-                    json?.TryGetProperty("provider", out var pv) == true ? pv.GetString() : null;
-                if (string.IsNullOrWhiteSpace(provider))
+                var req = await ReadJsonAsync<ProviderSwitchReq>(ctx, ct);
+                if (req is null || string.IsNullOrWhiteSpace(req.Provider))
                     return JsonError(400, "INVALID_ARGUMENT", "provider is required");
-                return SwitchProvider(provider)
+                return SwitchProvider(req.Provider)
                     ? JsonOk()
                     : JsonError(404, "NOT_FOUND", "Provider not configured");
             }
@@ -531,11 +553,9 @@ public sealed partial class Agent : IAsyncDisposable
             "/thinking",
             async (ctx, ct) =>
             {
-                var json = await ReadJsonBodyAsync(ctx, ct);
-                var enabled =
-                    json?.TryGetProperty("enabled", out var en) == true ? en.GetBoolean() : true;
-                var levelStr =
-                    json?.TryGetProperty("level", out var lv) == true ? lv.GetString() : "medium";
+                var req = await ReadJsonAsync<ThinkingReq>(ctx, ct);
+                var enabled = req?.Enabled ?? true;
+                var levelStr = req?.Level ?? "medium";
                 var level = AgentConfig.ParseLevel(levelStr);
                 if (level is null)
                     return JsonError(400, "INVALID_ARGUMENT", $"Invalid level: {levelStr}");
@@ -668,9 +688,9 @@ public sealed partial class Agent : IAsyncDisposable
                 var keepRecent = 20;
                 try
                 {
-                    var body = await ReadJsonBodyAsync(ctx, ct);
-                    if (body?.TryGetProperty("keepRecent", out var kr) == true)
-                        keepRecent = kr.GetInt32();
+                    var req = await ReadJsonAsync<KeepRecentReq>(ctx, ct);
+                    if (req is not null)
+                        keepRecent = req.KeepRecent;
                 }
                 catch { }
 
@@ -735,26 +755,16 @@ public sealed partial class Agent : IAsyncDisposable
             "/config/validate",
             async (ctx, ct) =>
             {
-                var json = await ReadJsonBodyAsync(ctx, ct);
-                var provider =
-                    json?.TryGetProperty("provider", out var pv) == true ? pv.GetString() : null;
-                var apiKey =
-                    json?.TryGetProperty("apiKey", out var ak) == true ? ak.GetString() : null;
-                var baseUrl =
-                    json?.TryGetProperty("baseUrl", out var bu) == true ? bu.GetString() : null;
-                var apiFormat =
-                    json?.TryGetProperty("apiFormat", out var af) == true
-                        ? af.GetString()
-                        : "openai";
-                if (string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(apiKey))
+                var req = await ReadJsonAsync<ConfigValidateReq>(ctx, ct);
+                if (req is null || string.IsNullOrWhiteSpace(req.Provider) || string.IsNullOrWhiteSpace(req.ApiKey))
                     return JsonError(400, "INVALID_ARGUMENT", "provider and apiKey required");
                 try
                 {
                     var models = await ValidateProviderAsync(
-                        provider!,
-                        apiKey!,
-                        baseUrl,
-                        apiFormat!,
+                        req.Provider,
+                        req.ApiKey,
+                        req.BaseUrl,
+                        req.ApiFormat ?? "openai",
                         ct
                     );
                     var result =
@@ -777,7 +787,7 @@ public sealed partial class Agent : IAsyncDisposable
                     // so any passthrough is an information disclosure. Log
                     // full detail server-side, return a fixed short string.
                     _logger?.Error(
-                        $"/config/validate failed for provider={provider}: {ex.Message}",
+                        $"/config/validate failed for provider={req.Provider}: {ex.Message}",
                         ex
                     );
                     return JsonError(
@@ -796,8 +806,7 @@ public sealed partial class Agent : IAsyncDisposable
             {
                 if (_homeDir is not { Length: > 0 })
                     return JsonError(400, "NO_HOME_DIR", "homeDir not configured");
-                var json = await ReadJsonBodyAsync(ctx, ct);
-                var raw = json?.GetRawText();
+                var raw = await ReadBodyTextAsync(ctx, ct);
                 if (string.IsNullOrWhiteSpace(raw))
                     return JsonError(400, "INVALID_ARGUMENT", "config body required");
                 var config = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(
@@ -822,7 +831,15 @@ public sealed partial class Agent : IAsyncDisposable
         return app;
     }
 
-    private static async Task<JsonElement?> ReadJsonBodyAsync(WebContext ctx, CancellationToken ct)
+    private static async Task<T?> ReadJsonAsync<T>(WebContext ctx, CancellationToken ct) where T : class
+    {
+        var text = await ReadBodyTextAsync(ctx, ct);
+        if (text is null)
+            return null;
+        return PicoJetson.JsonSerializer.Deserialize<T>(Encoding.UTF8.GetBytes(text));
+    }
+
+    private static async Task<string?> ReadBodyTextAsync(WebContext ctx, CancellationToken ct)
     {
         using var reader = new StreamReader(
             ctx.Request.BodyStream,
@@ -831,10 +848,7 @@ public sealed partial class Agent : IAsyncDisposable
             leaveOpen: true
         );
         var text = await reader.ReadToEndAsync(ct);
-        if (string.IsNullOrWhiteSpace(text))
-            return null;
-        using var doc = JsonDocument.Parse(text);
-        return doc.RootElement.Clone();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
     private static string EscapeJsonString(string s)

@@ -37,15 +37,17 @@ public sealed class AgentLoop
     public Task<List<Message>> RunTurnAsync(
         Session session,
         CancellationToken ct,
-        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
-    ) => RunTurnAsync(session, ModelId, SystemPrompt, ct, onEvent);
+        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null,
+        string? reasoningLevel = null
+    ) => RunTurnAsync(session, ModelId, SystemPrompt, ct, onEvent, reasoningLevel);
 
     public async Task<List<Message>> RunTurnAsync(
         Session session,
         string modelId,
         string? systemPrompt,
         CancellationToken ct,
-        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
+        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null,
+        string? reasoningLevel = null
     )
     {
         var result = new List<Message>();
@@ -60,7 +62,7 @@ public sealed class AgentLoop
             var valid = messages.Where(m => !string.IsNullOrEmpty(m.Role)).ToArray();
 
             var context = new ChatContext { SystemPrompt = systemPrompt, Messages = valid };
-            var assistantMsg = await CallLLMAsync(context, modelId, ct, onEvent);
+            var assistantMsg = await CallLLMAsync(context, modelId, ct, onEvent, reasoningLevel);
 
             if (assistantMsg == null)
                 break;
@@ -177,7 +179,8 @@ public sealed class AgentLoop
         ChatContext context,
         string modelId,
         CancellationToken ct,
-        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null
+        Func<AssistantMessageEvent, CancellationToken, ValueTask>? onEvent = null,
+        string? reasoningLevel = null
     )
     {
         Message? finalMessage = null;
@@ -196,7 +199,7 @@ public sealed class AgentLoop
                     context.SystemPrompt,
                     context.Messages,
                     modelId,
-                    null,
+                    reasoningLevel,
                     streamCt
                 )
                 .WithCancellation(streamCt)

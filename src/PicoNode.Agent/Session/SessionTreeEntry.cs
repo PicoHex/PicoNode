@@ -1,76 +1,91 @@
+using PicoJetson;
+
 namespace PicoNode.Agent;
 
-public abstract record SessionTreeEntryBase
+[PicoSerializable]
+[PicoPolymorphic(TypeDiscriminatorPropertyName = "$type")]
+[PicoDerivedType(typeof(MessageEntry), "message")]
+[PicoDerivedType(typeof(CompactionEntry), "compaction")]
+[PicoDerivedType(typeof(BranchSummaryEntry), "branch_summary")]
+[PicoDerivedType(typeof(CustomEntry), "custom")]
+[PicoDerivedType(typeof(CustomMessageEntry), "custom_message")]
+[PicoDerivedType(typeof(LabelEntry), "label")]
+[PicoDerivedType(typeof(SessionInfoEntry), "session_info")]
+[PicoDerivedType(typeof(ModelChangeEntry), "model_change")]
+[PicoDerivedType(typeof(ThinkingLevelChangeEntry), "thinking_level_change")]
+[PicoDerivedType(typeof(ActiveToolsChangeEntry), "active_tools_change")]
+[PicoDerivedType(typeof(LeafEntry), "leaf")]
+public abstract class SessionTreeEntryBase
 {
-    public string Id { get; init; } = "";
-    public string? ParentId { get; init; }
-    public string Timestamp { get; init; } = "";
+    public string Id { get; set; } = "";
+    public string? ParentId { get; set; }
+    public string Timestamp { get; set; } = "";
 }
 
-public sealed record MessageEntry : SessionTreeEntryBase
+public sealed class MessageEntry : SessionTreeEntryBase
 {
-    public Message Message { get; init; } = new();
+    public Message Message { get; set; } = new();
 }
 
-public sealed record CompactionEntry : SessionTreeEntryBase
+public sealed class CompactionEntry : SessionTreeEntryBase
 {
-    public string Summary { get; init; } = "";
-    public string FirstKeptEntryId { get; init; } = "";
-    public long TokensBefore { get; init; }
-    public object? Details { get; init; }
-    public bool FromHook { get; init; }
+    public string Summary { get; set; } = "";
+    public string FirstKeptEntryId { get; set; } = "";
+    public long TokensBefore { get; set; }
+    [JsonIgnore] public object? Details { get; set; }
+    public bool FromHook { get; set; }
 }
 
-public sealed record BranchSummaryEntry : SessionTreeEntryBase
+public sealed class BranchSummaryEntry : SessionTreeEntryBase
 {
-    public string FromId { get; init; } = "";
-    public string Summary { get; init; } = "";
-    public object? Details { get; init; }
-    public bool FromHook { get; init; }
+    public string FromId { get; set; } = "";
+    public string Summary { get; set; } = "";
+    [JsonIgnore] public object? Details { get; set; }
+    public bool FromHook { get; set; }
 }
 
-public sealed record CustomEntry : SessionTreeEntryBase
+public sealed class CustomEntry : SessionTreeEntryBase
 {
-    public string CustomType { get; init; } = "";
-    public object? Data { get; init; }
+    public string CustomType { get; set; } = "";
+    [JsonIgnore] public object? Data { get; set; }
 }
 
-public sealed record CustomMessageEntry : SessionTreeEntryBase
+public sealed class CustomMessageEntry : SessionTreeEntryBase
 {
-    public string CustomType { get; init; } = "";
-    public object Content { get; init; } = "";
-    public object? Details { get; init; }
-    public bool Display { get; init; } = true;
+    public string CustomType { get; set; } = "";
+    public string Content { get; set; } = "";
+    [JsonIgnore] public object? Details { get; set; }
+    public bool Display { get; set; } = true;
 }
 
-public sealed record LabelEntry : SessionTreeEntryBase
+public sealed class LabelEntry : SessionTreeEntryBase
 {
-    public string TargetId { get; init; } = "";
-    public string? Label { get; init; }
+    public string TargetId { get; set; } = "";
+    public string? Label { get; set; }
 }
 
-public sealed record SessionInfoEntry : SessionTreeEntryBase
+public sealed class SessionInfoEntry : SessionTreeEntryBase
 {
-    public string? Name { get; init; }
+    public string? Name { get; set; }
 }
 
-public sealed record ModelChangeEntry : SessionTreeEntryBase
+public sealed class ModelChangeEntry : SessionTreeEntryBase
 {
-    public string Provider { get; init; } = "";
-    public string ModelId { get; init; } = "";
+    public string Provider { get; set; } = "";
+    public string ModelId { get; set; } = "";
 }
 
-public sealed record ThinkingLevelChangeEntry : SessionTreeEntryBase
+public sealed class ThinkingLevelChangeEntry : SessionTreeEntryBase
 {
-    public string ThinkingLevel { get; init; } = "";
+    public string ThinkingLevel { get; set; } = "";
 }
 
-public sealed record ActiveToolsChangeEntry : SessionTreeEntryBase
+public sealed class ActiveToolsChangeEntry : SessionTreeEntryBase
 {
-    public string[] ActiveToolNames { get; init; } = [];
+    public string[] ActiveToolNames { get; set; } = [];
 }
 
-public sealed record LeafEntry : SessionTreeEntryBase
+public sealed class LeafEntry : SessionTreeEntryBase
 {
-    public string? TargetId { get; init; }
+    public string? TargetId { get; set; }
 }

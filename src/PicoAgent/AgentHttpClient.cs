@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 // src/PicoAgent/AgentHttpClient.cs
 namespace PicoAgent;
 
@@ -108,9 +106,8 @@ public sealed class AgentHttpClient : IAsyncDisposable
             ? $"/models?provider={Uri.EscapeDataString(provider)}"
             : "/models";
         var json = await _http.GetStringAsync(url, ct);
-        return System.Text.Json.JsonSerializer.Deserialize<DiscoveredModel[]>(
-                json,
-                SourceGenContext.Default.DiscoveredModelArray
+        return PicoJetson.JsonSerializer.Deserialize<DiscoveredModel[]>(
+                Encoding.UTF8.GetBytes(json)
             ) ?? [];
     }
 
@@ -120,9 +117,8 @@ public sealed class AgentHttpClient : IAsyncDisposable
     public async Task<IReadOnlyList<string>> ListSessionsAsync(CancellationToken ct = default)
     {
         var json = await _http.GetStringAsync("/sessions", ct);
-        return System.Text.Json.JsonSerializer.Deserialize(
-                json,
-                SourceGenContext.Default.StringArray
+        return PicoJetson.JsonSerializer.Deserialize<string[]>(
+                Encoding.UTF8.GetBytes(json)
             ) ?? [];
     }
 
@@ -169,9 +165,8 @@ public sealed class AgentHttpClient : IAsyncDisposable
             return [];
         resp.EnsureSuccessStatusCode();
         var json = await resp.Content.ReadAsStringAsync(ct);
-        return System.Text.Json.JsonSerializer.Deserialize(
-                json,
-                SourceGenContext.Default.MessageArray
+        return PicoJetson.JsonSerializer.Deserialize<Message[]>(
+                Encoding.UTF8.GetBytes(json)
             ) ?? [];
     }
 
@@ -263,20 +258,12 @@ internal static class PicoAgentSseParser
 
     private static AssistantMessageEvent ParseEvent(string json)
     {
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        var type = root.GetProperty("type").GetString();
-        return type switch
+        var sse = PicoJetson.JsonSerializer.Deserialize<SseInEvent>(Encoding.UTF8.GetBytes(json));
+        return sse switch
         {
-            "delta" => new AssistantMessageEvent.TextDelta
-            {
-                Delta = root.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "",
-            },
-            "thinking" => new AssistantMessageEvent.ThinkingDelta
-            {
-                Delta = root.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "",
-            },
-            "tool_call_start" => new AssistantMessageEvent.ToolCallStart
+            SseInDelta d => new AssistantMessageEvent.TextDelta { Delta = d.Content },
+            SseInThinking t => new AssistantMessageEvent.ThinkingDelta { Delta = t.Content },
+            SseInToolCallStart ts => new AssistantMessageEvent.ToolCallStart
             {
                 Index = 0,
                 Partial = new Message
@@ -286,67 +273,42 @@ internal static class PicoAgentSseParser
                     [
                         new ContentBlock
                         {
-                            Type = "tool_call",
-                            Id = root.TryGetProperty("toolCallId", out var tcid)
-                                ? tcid.GetString() ?? ""
-                                : "",
-                            Name = root.TryGetProperty("toolName", out var tn)
-                                ? tn.GetString() ?? ""
-                                : "",
+                            Type = "tool_call", Id = ts.ToolCallId, Name = ts.ToolName,
                         },
                     ],
                 },
             },
-            "tool_call_delta" => new AssistantMessageEvent.ToolCallDelta
+            SseInToolCallDelta td => new AssistantMessageEvent.ToolCallDelta
             {
                 Index = 0,
-                Delta = root.TryGetProperty("content", out var tdc) ? tdc.GetString() ?? "" : "",
+                Delta = td.Content,
                 Partial = new Message
                 {
                     Role = "assistant",
                     ContentBlocks =
                     [
-                        new ContentBlock
-                        {
-                            Type = "tool_call",
-                            Id = root.TryGetProperty("toolCallId", out var tdId)
-                                ? tdId.GetString() ?? ""
-                                : "",
-                        },
+                        new ContentBlock { Type = "tool_call", Id = td.ToolCallId },
                     ],
                 },
             },
-            "tool_call_end" => new AssistantMessageEvent.ToolCallEnd
+            SseInToolCallEnd te => new AssistantMessageEvent.ToolCallEnd
             {
                 Index = 0,
-                Call = new ContentBlock
-                {
-                    Type = "tool_call",
-                    Id = root.TryGetProperty("toolCallId", out var teId)
-                        ? teId.GetString() ?? ""
-                        : "",
-                },
+                Call = new ContentBlock { Type = "tool_call", Id = te.ToolCallId },
                 Partial = new Message { Role = "assistant" },
             },
-            "done" => new AssistantMessageEvent.Done
+            SseInDone d => new AssistantMessageEvent.Done
             {
-                Message = new()
-                {
-                    StopReason = root.TryGetProperty("stopReason", out var sr)
-                        ? sr.GetString() ?? ""
-                        : "",
-                },
+                Message = new() { StopReason = d.StopReason ?? "" },
             },
-            "error" => new AssistantMessageEvent.Error
+            SseInError e => new AssistantMessageEvent.Error
             {
-                Message = new()
-                {
-                    ErrorMessage = root.TryGetProperty("message", out var msg)
-                        ? msg.GetString()
-                        : null,
-                },
+                Message = new() { ErrorMessage = e.Message },
             },
-            _ => throw new InvalidOperationException($"Unknown SSE event type: {type}"),
+            _ => throw new InvalidOperationException($"Unknown SSE event: {json}"),
         };
     }
+
+    /// <summary>Test-only entry point for SSE deserialization tests.</summary>
+    internal static AssistantMessageEvent ParseForTest(string json) => ParseEvent(json);
 }

@@ -6,6 +6,7 @@ global using System.Text;
 global using System.Text.RegularExpressions;
 global using PicoDI;
 global using PicoJetson;
+global using PicoSerDe.Core;
 global using PicoLog.Abs;
 global using PicoNode.Agent;
 global using PicoNode.AI;

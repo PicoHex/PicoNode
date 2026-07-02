@@ -247,6 +247,7 @@ async function sendMessage() {
     currentAssistant = renderAssistantShell();
     const contentEl = currentAssistant.querySelector('.msg-content');
     const streamDot = currentAssistant.querySelector('.streaming-indicator');
+    const streamText = currentAssistant.querySelector('.stream-text');
     const thinkingBlock = currentAssistant.querySelector('.thinking');
 
     try {
@@ -272,7 +273,8 @@ async function sendMessage() {
                 if (!line.startsWith('data: ')) continue;
                 const payload = line.slice(6);
                 if (payload === '[DONE]') {
-                    if (streamDot) streamDot.remove();
+                    if (streamDot) streamDot.style.display = 'none';
+                    streamText.style.display = 'none';
                     contentEl.innerHTML = marked.parse(rawText);
                     deferMermaidRender(contentEl);
                     if (rawThinking) {
@@ -289,12 +291,10 @@ async function sendMessage() {
                         case 'delta':
                             rawText += evt.content;
                             if (rawText.trim() && streamDot) {
-                                streamDot.remove();
-                                streamDot = null;
+                                streamDot.style.display = 'none';
+                                streamText.style.display = '';
                             }
-                            if (!streamDot) {
-                                contentEl.innerText = rawText;
-                            }
+                            streamText.textContent = rawText;
                             break;
                         case 'thinking':
                             rawThinking += evt.content;
@@ -302,7 +302,8 @@ async function sendMessage() {
                             thinkingBlock.open = true;
                             break;
                         case 'done':
-                            if (streamDot) streamDot.remove();
+                            if (streamDot) streamDot.style.display = 'none';
+                            streamText.style.display = 'none';
                             contentEl.innerHTML = marked.parse(rawText);
                             deferMermaidRender(contentEl);
                             if (rawThinking) {
@@ -314,20 +315,22 @@ async function sendMessage() {
                             currentAssistant = null;
                             break;
                         case 'tool_call_start':
-                            if (streamDot) { streamDot.remove(); streamDot = null; }
+                            if (streamDot) streamDot.style.display = 'none';
+                            streamText.style.display = 'none';
                             rawText += `\n\n🔧 **${evt.toolName}**\n`;
                             contentEl.innerHTML = marked.parse(rawText);
                             break;
                         case 'tool_call_delta':
                             rawText += evt.content;
-                            if (!streamDot) contentEl.innerText = rawText;
+                            streamText.textContent = rawText;
                             break;
                         case 'tool_call_end':
                             rawText += '\n';
-                            if (!streamDot) contentEl.innerText = rawText;
+                            streamText.textContent = rawText;
                             break;
                         case 'error':
-                            if (streamDot) { streamDot.remove(); streamDot = null; }
+                            if (streamDot) streamDot.style.display = 'none';
+                            streamText.style.display = 'none';
                             rawText += `\n\n> ⚠️ ${evt.message}`;
                             contentEl.innerHTML = marked.parse(rawText);
                             break;
@@ -378,7 +381,11 @@ function renderAssistantShell() {
     el.className = 'message assistant';
     const content = document.createElement('div');
     content.className = 'msg-content';
-    content.innerHTML = '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span>';
+    // Pre-create a text span (hidden) so the delta handler can always
+    // update it unconditionally — same pattern as .think-content.
+    content.innerHTML =
+      '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span>' +
+      '<span class="stream-text" style="display:none"></span>';
     el.appendChild(content);
 
     // Thinking block (collapsible)

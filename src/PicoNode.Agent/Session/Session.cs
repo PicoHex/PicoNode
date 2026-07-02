@@ -10,12 +10,9 @@ public sealed class Session
 
     public async Task<string> AppendEntry(SessionTreeEntryBase entry)
     {
-        entry = entry with
-        {
-            Id = await _storage.CreateEntryId(),
-            ParentId = await _storage.GetLeafId(),
-            Timestamp = DateTime.UtcNow.ToString("O"),
-        };
+        entry.Id = await _storage.CreateEntryId();
+        entry.ParentId = await _storage.GetLeafId();
+        entry.Timestamp = DateTime.UtcNow.ToString("O");
         await _storage.AppendEntry(entry);
         return entry.Id;
     }
@@ -136,7 +133,7 @@ public sealed class Session
                 break;
             case CustomMessageEntry cme:
                 messages.Add(
-                    new Message { Role = "custom", Content = cme.Content as string ?? "" }
+                    new Message { Role = "custom", Content = cme.Content }
                 );
                 break;
             case BranchSummaryEntry bs:

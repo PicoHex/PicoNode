@@ -47,7 +47,7 @@ public sealed class AgentBuilder
 
     private async Task<AgentHost> BuildAgentHostAsync(CancellationToken ct)
     {
-        var http = _http ?? new HttpClient();
+        var http = _http ?? CreateHttpClient();
         if (_http is null)
         {
             _http = http;
@@ -193,6 +193,40 @@ public sealed class AgentBuilder
         return await BuildAgentHostAsync(CancellationToken.None);
     }
 
+    /// <summary>
+    /// Build without requiring providers — used for unconfigured startup.
+    /// Creates a noop AgentLoop so the server can start and serve the config page.
+    /// </summary>
+    internal async Task<AgentHost> BuildAgentHostUnconfiguredAsync()
+    {
+        var http = _http ?? CreateHttpClient();
+        if (_http is null)
+        {
+            _http = http;
+            _ownsHttpClient = true;
+        }
+
+        _providerConfigs = new Dictionary<string, ProviderConfig>();
+        _breakers = new Dictionary<string, ICircuitBreaker>();
+        _clients = new Dictionary<string, ILLmClient>();
+        _router = new ProviderRouter([]);
+        _registry = new CapabilityRegistry();
+
+        if (_capabilitiesRoot is { Length: > 0 })
+            _registry.Scan(_capabilitiesRoot);
+
+        _initialModel = new Model
+        {
+            Id = "",
+            Provider = "unknown",
+            MaxTokens = _config?.MaxTokens ?? 4096,
+        };
+
+        var runner = new CapabilityRunner();
+        var loop = new AgentLoop(new NoopAgentLlm(), _registry, runner);
+        return new AgentHost(loop);
+    }
+
     internal CapabilityRegistry GetRegistry() => _registry!;
 
     internal HttpClient GetHttpClient() => _http ?? new HttpClient();
@@ -208,4 +242,29 @@ public sealed class AgentBuilder
     internal Model GetInitialModel() => _initialModel!;
 
     internal bool GetHttpClientIsOwned() => _ownsHttpClient;
+
+    /// <summary>
+    /// Creates an HttpClient that bypasses the system proxy.
+    /// System proxies (e.g. 127.0.0.1:10808 from VPN tools) can silently
+    /// break all outbound LLM API calls when the proxy process isn't running.
+    /// </summary>
+    private static HttpClient CreateHttpClient() =>
+        new(new SocketsHttpHandler { UseProxy = false });
+}
+
+/// <summary>
+/// Noop IAgentLlm used when the Agent starts without any configured providers.
+/// All requests return empty streams — the server is in setup mode.
+/// </summary>
+internal sealed class NoopAgentLlm : IAgentLlm
+{
+    public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
+        string? systemPrompt,
+        Message[] messages,
+        string modelId,
+        string? reasoningLevel,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        yield break;
+    }
 }

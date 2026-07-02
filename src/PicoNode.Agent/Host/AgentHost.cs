@@ -2,7 +2,7 @@ namespace PicoNode.Agent;
 
 public sealed partial class AgentHost
 {
-    private readonly AgentLoop _loop;
+    private AgentLoop _loop;
     private readonly ConcurrentDictionary<string, Session> _sessions = [];
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionLocks = [];
     private readonly ConcurrentDictionary<string, List<Message>> _steeringQueues = [];
@@ -12,6 +12,11 @@ public sealed partial class AgentHost
     {
         _loop = loop;
     }
+
+    /// <summary>
+    /// Replace the loop after a config reload transitions from unconfigured → configured.
+    /// </summary>
+    internal void ReplaceLoop(AgentLoop newLoop) => _loop = newLoop;
 
     /// <summary>
     /// Restore session state from persisted entries.
@@ -63,12 +68,16 @@ public sealed partial class AgentHost
 
             // Route per-call state through the RunTurnAsync overload so concurrent
             // sessions cannot cross-contaminate the shared AgentLoop.
+            var reasoningLevel = model.ThinkingEnabled
+                ? (model.ThinkingLevel.ToString().ToLowerInvariant())
+                : null;
             var result = await _loop.RunTurnAsync(
                 session,
                 model.Id,
                 _loop.SystemPrompt,
                 ct,
-                onEvent
+                onEvent,
+                reasoningLevel
             );
             return ExtractText(result);
         }
