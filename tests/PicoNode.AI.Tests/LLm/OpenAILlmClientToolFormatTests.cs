@@ -80,11 +80,11 @@ public sealed class OpenAILlmClientToolFormatTests
         await DriveAsync(client, context);
 
         await Assert.That(handler.CapturedRequestBody).IsNotNull();
-        using var doc = JsonDocument.Parse(handler.CapturedRequestBody!);
-        var messages = doc.RootElement.GetProperty("messages");
+        var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(handler.CapturedRequestBody!));
+        var messages = doc.RootElement["messages"];
 
         // Locate the tool result message (the one that carries a tool_call_id).
-        JsonElement? toolMsg = null;
+        PicoElement? toolMsg = null;
         foreach (var m in messages.EnumerateArray())
         {
             if (m.TryGetProperty("tool_call_id", out _))
@@ -95,12 +95,12 @@ public sealed class OpenAILlmClientToolFormatTests
         }
 
         await Assert.That(toolMsg.HasValue).IsTrue();
-        await Assert.That(toolMsg!.Value.GetProperty("role").GetString()).IsEqualTo("tool");
+        await Assert.That(toolMsg!.Value["role"].GetString()).IsEqualTo("tool");
         await Assert
-            .That(toolMsg!.Value.GetProperty("tool_call_id").GetString())
+            .That(toolMsg!.Value["tool_call_id"].GetString())
             .IsEqualTo("call_abc");
         await Assert
-            .That(toolMsg!.Value.GetProperty("content").GetString())
+            .That(toolMsg!.Value["content"].GetString())
             .IsEqualTo("sunny, 22C");
     }
 
@@ -141,26 +141,26 @@ public sealed class OpenAILlmClientToolFormatTests
 
         await DriveAsync(client, context);
 
-        using var doc = JsonDocument.Parse(handler.CapturedRequestBody!);
-        var messages = doc.RootElement.GetProperty("messages").EnumerateArray().ToArray();
+        var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(handler.CapturedRequestBody!));
+        var messages = doc.RootElement["messages"].EnumerateArray().ToArray();
         var assistant = messages.Last();
 
-        await Assert.That(assistant.GetProperty("role").GetString()).IsEqualTo("assistant");
+        await Assert.That(assistant["role"].GetString()).IsEqualTo("assistant");
         await Assert.That(assistant.TryGetProperty("tool_calls", out var tc)).IsTrue();
         await Assert.That(tc.GetArrayLength()).IsEqualTo(1);
 
         var call = tc[0];
-        await Assert.That(call.GetProperty("id").GetString()).IsEqualTo("call_xyz");
-        await Assert.That(call.GetProperty("type").GetString()).IsEqualTo("function");
-        var fn = call.GetProperty("function");
-        await Assert.That(fn.GetProperty("name").GetString()).IsEqualTo("get_weather");
+        await Assert.That(call["id"].GetString()).IsEqualTo("call_xyz");
+        await Assert.That(call["type"].GetString()).IsEqualTo("function");
+        var fn = call["function"];
+        await Assert.That(fn["name"].GetString()).IsEqualTo("get_weather");
 
         // arguments must be a JSON-encoded string, not a nested object.
-        var argsProp = fn.GetProperty("arguments");
-        await Assert.That(argsProp.ValueKind).IsEqualTo(JsonValueKind.String);
-        using var argsDoc = JsonDocument.Parse(argsProp.GetString()!);
-        await Assert.That(argsDoc.RootElement.GetProperty("city").GetString()).IsEqualTo("Paris");
-        await Assert.That(argsDoc.RootElement.GetProperty("units").GetString()).IsEqualTo("metric");
+        var argsProp = fn["arguments"];
+        await Assert.That(argsProp.ValueKind).IsEqualTo(PicoValueKind.String);
+        var argsDoc = PicoDocument.Parse(Encoding.UTF8.GetBytes(argsProp.GetString())!);
+        await Assert.That(argsDoc.RootElement["city"].GetString()).IsEqualTo("Paris");
+        await Assert.That(argsDoc.RootElement["units"].GetString()).IsEqualTo("metric");
     }
 
     [Test]

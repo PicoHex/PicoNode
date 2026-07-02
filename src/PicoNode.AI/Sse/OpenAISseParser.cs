@@ -76,14 +76,14 @@ public static class OpenAISseParser
 
             if (delta.TryGetProperty(JsonPropReasoningContent, out var reasoning))
             {
-                var text = SafeGetString(reasoning);
+                var text = reasoning.GetStringOrNull();
                 if (text is not null)
                     yield return new AssistantMessageEvent.ThinkingDelta { Index = 0, Delta = text };
             }
 
             if (delta.TryGetProperty(JsonPropContent, out var content))
             {
-                var text = SafeGetString(content) ?? "";
+                var text = content.GetStringOrNull() ?? "";
                 contentAccum.Append(text);
 
                 if (!started)
@@ -110,7 +110,7 @@ public static class OpenAISseParser
 
             if (
                 choice.TryGetProperty(JsonPropFinishReason, out var fr)
-                && SafeGetString(fr) is { } reason
+                && fr.GetStringOrNull() is { } reason
                 && reason != "null"
                 && reason != ""
             )
@@ -125,11 +125,4 @@ public static class OpenAISseParser
             }
         }
     }
-
-    /// <summary>
-    /// GetString() without throwing on non-string/null values.
-    /// PicoElement.GetString() throws, unlike STJ's JsonElement which returns null.
-    /// </summary>
-    private static string? SafeGetString(PicoElement el) =>
-        el.ValueKind == PicoValueKind.String ? el.GetString() : null;
 }

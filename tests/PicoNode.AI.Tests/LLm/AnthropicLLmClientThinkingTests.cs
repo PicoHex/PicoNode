@@ -54,7 +54,7 @@ public sealed class AnthropicLLmClientThinkingTests
 
         await Assert.That(handler.CapturedRequestBody).IsNotNull();
 
-        using var doc = System.Text.Json.JsonDocument.Parse(handler.CapturedRequestBody!);
+        var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(handler.CapturedRequestBody!));
         var root = doc.RootElement;
 
         await Assert
@@ -63,11 +63,11 @@ public sealed class AnthropicLLmClientThinkingTests
             .Because("StreamOptions.Reasoning should cause thinking block in request");
 
         await Assert
-            .That(thinkingProp.GetProperty("type").GetString())
+            .That(thinkingProp["type"].GetString())
             .IsEqualTo("enabled")
             .Because("thinking type must be 'enabled'");
 
-        var budgetTokens = thinkingProp.GetProperty("budget_tokens").GetInt32();
+        var budgetTokens = thinkingProp["budget_tokens"].GetInt32();
         await Assert
             .That(budgetTokens)
             .IsGreaterThan(0)
@@ -119,7 +119,7 @@ public sealed class AnthropicLLmClientThinkingTests
 
         await Assert.That(handler.CapturedRequestBody).IsNotNull();
 
-        using var doc = System.Text.Json.JsonDocument.Parse(handler.CapturedRequestBody!);
+        var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(handler.CapturedRequestBody!));
         var root = doc.RootElement;
 
         await Assert
@@ -175,9 +175,9 @@ public sealed class AnthropicLLmClientThinkingTests
 
         await Assert.That(handler.CapturedRequestBody).IsNotNull();
 
-        using var doc = System.Text.Json.JsonDocument.Parse(handler.CapturedRequestBody!);
-        var thinkingProp = doc.RootElement.GetProperty("thinking");
-        var budgetTokens = thinkingProp.GetProperty("budget_tokens").GetInt32();
+        var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(handler.CapturedRequestBody!));
+        var thinkingProp = doc.RootElement["thinking"];
+        var budgetTokens = thinkingProp["budget_tokens"].GetInt32();
 
         await Assert
             .That(budgetTokens)

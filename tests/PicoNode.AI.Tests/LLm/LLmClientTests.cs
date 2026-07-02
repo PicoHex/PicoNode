@@ -417,9 +417,9 @@ public class AnthropicLLmClientTests
         ) { }
 
         await Assert.That(handler.CapturedRequestBody).IsNotNull();
-        using var doc = System.Text.Json.JsonDocument.Parse(handler.CapturedRequestBody!);
+        var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(handler.CapturedRequestBody!));
         await Assert
-            .That(doc.RootElement.GetProperty("messages")[0].GetProperty("content").GetString())
+            .That(doc.RootElement["messages"][0]["content"].GetString())
             .IsEqualTo("Tab\there");
     }
 }
