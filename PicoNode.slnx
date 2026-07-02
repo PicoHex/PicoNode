@@ -7,6 +7,7 @@
     <Project Path="samples/PicoWeb.Samples.Abs/PicoWeb.Samples.Abs.csproj" />
     <Project Path="samples/PicoNode.Samples.Https/PicoNode.Samples.Https.csproj" />
     <Project Path="samples/PicoAgent.Cli/PicoAgent.Cli.csproj" />
+    <Project Path="samples/PicoAgent.Web/PicoAgent.Web.csproj" />
   </Folder>
   <Folder Name="/src/">
     <File Path="src\README.md" />
@@ -34,6 +35,7 @@
     <Project Path="tests/PicoWeb.Integration.Tests/PicoWeb.Integration.Tests.csproj" />
     <Project Path="tests/PicoNode.AI.Tests/PicoNode.AI.Tests.csproj" />
     <Project Path="tests/PicoNode.Agent.Tests/PicoNode.Agent.Tests.csproj" />
+    <Project Path="tests/PicoNode.E2E/SseTestServer/SseTestServer.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
     <File Path="benchmarks\README.md" />

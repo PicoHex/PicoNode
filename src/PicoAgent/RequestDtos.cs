@@ -1,24 +1,23 @@
-
 namespace PicoAgent;
 
 /// <summary>Request DTOs for individual HTTP endpoints.</summary>
 [PicoSerializable]
 [JsonCamelCase]
-sealed class ModelSwitchReq
+public sealed class ModelSwitchReq
 {
     public string ModelId { get; set; } = "";
 }
 
 [PicoSerializable]
 [JsonCamelCase]
-sealed class ProviderSwitchReq
+public sealed class ProviderSwitchReq
 {
     public string Provider { get; set; } = "";
 }
 
 [PicoSerializable]
 [JsonCamelCase]
-sealed class ThinkingReq
+public sealed class ThinkingReq
 {
     public bool Enabled { get; set; } = true;
     public string Level { get; set; } = "medium";
@@ -26,7 +25,7 @@ sealed class ThinkingReq
 
 [PicoSerializable]
 [JsonCamelCase]
-sealed class KeepRecentReq
+public sealed class KeepRecentReq
 {
     public int KeepRecent { get; set; } = 20;
 }
