@@ -106,13 +106,7 @@ public sealed class AgentLoop
 
                     // Hook: OnToolCall
                     var hookInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
-                        new
-                        {
-                            kind = KindHook,
-                            eventName = HookEventToolCall,
-                            toolName = tc.Name,
-                            args = tc.Arguments,
-                        }
+                        new HookPayload { Kind = KindHook, EventName = HookEventToolCall, ToolName = tc.Name, Args = tc.Arguments }
                     );
                     var hookResult = await _hookRunner.EmitAsync(
                         TriggerKind.OnToolCall,
@@ -128,13 +122,7 @@ public sealed class AgentLoop
 
                     // Execute tool
                     var toolInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
-                        new
-                        {
-                            kind = KindToolCall,
-                            toolCallId = tc.Id,
-                            toolName = tc.Name,
-                            args = tc.Arguments,
-                        }
+                        new ToolCallPayload { Kind = KindToolCall, ToolCallId = tc.Id, ToolName = tc.Name, Args = tc.Arguments }
                     );
                     var toolResponse = await _runner.ExecuteAsync(
                         capConfig,
@@ -301,4 +289,30 @@ public sealed class AgentLoop
         }
         return finalMessage;
     }
+}
+
+/// <summary>
+/// Payload for hook events (OnToolCall). Serialized to JSON and passed to capability hooks.
+/// </summary>
+[PicoSerializable]
+[JsonCamelCase]
+internal sealed class HookPayload
+{
+    public string Kind { get; set; } = "";
+    public string EventName { get; set; } = "";
+    public string? ToolName { get; set; }
+    public Dictionary<string, object?> Args { get; set; } = new();
+}
+
+/// <summary>
+/// Payload for tool execution requests. Serialized to JSON and passed to capability handlers.
+/// </summary>
+[PicoSerializable]
+[JsonCamelCase]
+internal sealed class ToolCallPayload
+{
+    public string Kind { get; set; } = "";
+    public string? ToolCallId { get; set; }
+    public string? ToolName { get; set; }
+    public Dictionary<string, object?> Args { get; set; } = new();
 }

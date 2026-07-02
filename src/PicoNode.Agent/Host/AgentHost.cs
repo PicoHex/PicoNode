@@ -16,7 +16,7 @@ public sealed partial class AgentHost
     /// <summary>
     /// Replace the loop after a config reload transitions from unconfigured → configured.
     /// </summary>
-    internal void ReplaceLoop(AgentLoop newLoop) => _loop = newLoop;
+    public void ReplaceLoop(AgentLoop newLoop) => _loop = newLoop;
 
     /// <summary>
     /// Restore session state from persisted entries.
