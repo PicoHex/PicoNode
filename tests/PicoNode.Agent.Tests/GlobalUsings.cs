@@ -8,7 +8,6 @@ global using TUnit.Assertions;
 global using TUnit.Assertions.Extensions;
 global using TUnit.Core;
 global using System.Collections.Concurrent;
-global using System.Text.Json;
 global using System.IO.Pipelines;
 global using System.Net;
 global using System.Net.Sockets;
