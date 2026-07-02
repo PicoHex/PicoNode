@@ -7,11 +7,11 @@ namespace PicoNode.Agent.Tests.Capability;
 /// Gaps in CapabilityRunner.ExecuteAsync:
 ///   1. Cancellation does not kill the subprocess — a hung/long-running process
 ///      lingers after the caller cancels, orphaning file handles and CPU.
-///   2. Malformed JSON on stdout raises a raw System.Text.Json.JsonException
+///   2. Malformed JSON on stdout raises a raw FormatException
 ///      instead of a domain ToolException(ExecutionFailed) — callers cannot
 ///      distinguish "tool crashed" from "bug in agent runtime".
 ///   3. Subprocess writing nothing to stdout (early exit / write-only-to-stderr)
-///      currently returns default(JsonElement) silently. Callers cannot detect
+///      currently returns a PicoDocument with empty content silently. Callers cannot detect
 ///      the failure — should raise ToolException(ExecutionFailed) with stderr.
 /// </summary>
 public class CapabilityRunnerRobustnessTests
