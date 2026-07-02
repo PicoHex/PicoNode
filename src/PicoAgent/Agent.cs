@@ -692,7 +692,7 @@ public sealed partial class Agent : IAsyncDisposable
                     if (req is not null)
                         keepRecent = req.KeepRecent;
                 }
-                catch { }
+                catch { /* body parsing best-effort — keep default */ }
 
                 var (entry, compressedCount, tokensSaved) = await CompactSessionAsync(
                     id,

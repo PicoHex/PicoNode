@@ -196,7 +196,7 @@ app.MapPost(
             if (req is not null)
                 keepRecent = req.KeepRecent;
         }
-        catch { }
+        catch { /* body parsing best-effort — keep default */ }
 
         var result = await client.CompactSessionAsync(id, keepRecent, ct);
         return OkJson(result);
