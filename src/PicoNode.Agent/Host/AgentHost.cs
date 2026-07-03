@@ -123,32 +123,41 @@ public sealed partial class AgentHost
 
     /// <summary>
     /// Removes the last user message and all following entries from the session.
-    /// Used by the retry feature to avoid duplicating prompts in LLM context.
+    /// Serialized via per-session lock to prevent races with ProcessMessageAsync.
     /// </summary>
     public async Task RetryLastMessageAsync(string sessionId)
     {
-        if (!_sessions.TryGetValue(sessionId, out var session))
-            return;
-        var entries = await session.GetEntries();
-        var lastUserIdx = -1;
-        for (int i = entries.Length - 1; i >= 0; i--)
+        var sessionLock = _sessionLocks.GetOrAdd(sessionId, _ => new SemaphoreSlim(1, 1));
+        await sessionLock.WaitAsync();
+        try
         {
-            if (entries[i] is MessageEntry me && me.Message.Role == "user")
+            if (!_sessions.TryGetValue(sessionId, out var session))
+                return;
+            var entries = await session.GetEntries();
+            var lastUserIdx = -1;
+            for (int i = entries.Length - 1; i >= 0; i--)
             {
-                lastUserIdx = i;
-                break;
+                if (entries[i] is MessageEntry me && me.Message.Role == "user")
+                {
+                    lastUserIdx = i;
+                    break;
+                }
             }
+            if (lastUserIdx < 0)
+                return;
+            var kept = new List<SessionTreeEntryBase>();
+            for (int i = 0; i < lastUserIdx; i++)
+                kept.Add(entries[i]);
+            var newStorage = new InMemorySessionStorage();
+            var newSession = new Session(newStorage);
+            foreach (var entry in kept)
+                await newSession.AppendEntry(EntryClone(entry));
+            _sessions[sessionId] = newSession;
         }
-        if (lastUserIdx < 0)
-            return;
-        var kept = new List<SessionTreeEntryBase>();
-        for (int i = 0; i < lastUserIdx; i++)
-            kept.Add(entries[i]);
-        var newStorage = new InMemorySessionStorage();
-        var newSession = new Session(newStorage);
-        foreach (var entry in kept)
-            await newSession.AppendEntry(EntryClone(entry));
-        _sessions[sessionId] = newSession;
+        finally
+        {
+            sessionLock.Release();
+        }
     }
 
     /// <summary>
