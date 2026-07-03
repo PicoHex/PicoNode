@@ -169,6 +169,32 @@ public sealed class AgentHttpClient : IAsyncDisposable
     public async Task<bool> ReloadAsync(CancellationToken ct = default) =>
         (await _http.PostAsync("/reload", null, ct)).IsSuccessStatusCode;
 
+    // ── Config proxy (forward to Agent backend) ──
+
+    public Task<string> GetConfigStatusAsync(CancellationToken ct = default) =>
+        _http.GetStringAsync("/config/status", ct);
+
+    public Task<string> GetConfigProvidersAsync(CancellationToken ct = default) =>
+        _http.GetStringAsync("/config/providers", ct);
+
+    public async Task<HttpResponseMessage> ValidateConfigAsync(
+        string body,
+        CancellationToken ct = default
+    )
+    {
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        return await _http.PostAsync("/config/validate", content, ct);
+    }
+
+    public async Task<HttpResponseMessage> SaveConfigAsync(
+        string body,
+        CancellationToken ct = default
+    )
+    {
+        var content = new StringContent(body, Encoding.UTF8, "application/json");
+        return await _http.PostAsync("/config", content, ct);
+    }
+
     private static StringContent JsonContent(string json) =>
         new(json, Encoding.UTF8, "application/json");
 

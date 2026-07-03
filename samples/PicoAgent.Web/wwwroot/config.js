@@ -4,8 +4,7 @@ const apiKeyInput = document.getElementById('apikey');
 const baseUrlInput = document.getElementById('baseurl');
 const apiFormatSel = document.getElementById('apiformat');
 const customFields = document.getElementById('custom-fields');
-const btnValidate = document.getElementById('btn-validate');
-const btnSave = document.getElementById('btn-save');
+const btnConnect = document.getElementById('btn-connect');
 const statusMsg = document.getElementById('status-msg');
 const skipLink = document.getElementById('skip-link');
 
@@ -54,15 +53,17 @@ providerSel.addEventListener('change', () => {
     }
 });
 
-btnValidate.addEventListener('click', async () => {
+// ── Single button: validate → save → redirect ──
+btnConnect.addEventListener('click', async () => {
     const provider = getProvider();
     const apiKey = apiKeyInput.value.trim();
     if (!provider || !apiKey) { setStatus('Provider and API Key required', true); return; }
 
-    setStatus('Testing...');
-    btnValidate.disabled = true;
+    setStatus('Connecting...');
+    btnConnect.disabled = true;
     try {
-        const r = await fetch('/api/config/validate', {
+        // Step 1: validate
+        const vr = await fetch('/api/config/validate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -71,56 +72,46 @@ btnValidate.addEventListener('click', async () => {
                 apiFormat: apiFormatSel.value,
             }),
         });
-        if (!r.ok) {
-            const err = await r.json();
-            setStatus(`Validation failed: ${err.message || r.status}`, true);
+        if (!vr.ok) {
+            const err = await vr.json().catch(() => ({}));
+            setStatus(`Connection failed: ${err.message || vr.status}`, true);
             return;
         }
-        const models = await r.json();
+        const models = await vr.json();
         discoveredModels = models;
-        setStatus(`Connected! Found ${models.length} models.`, false);
-        btnSave.style.display = 'block';
-        btnValidate.style.display = 'none';
-    } catch (e) {
-        setStatus(`Connection error: ${e.message}`, true);
-    } finally {
-        btnValidate.disabled = false;
-    }
-});
+        setStatus(`Connected! Found ${models.length} models. Saving...`, false);
 
-btnSave.addEventListener('click', async () => {
-    setStatus('Saving...');
-    btnSave.disabled = true;
-    try {
-        const provider = getProvider();
+        // Step 2: save config immediately
         const config = {
             thinkingEnabled: true,
             thinkingLevel: 'medium',
-            model: discoveredModels[0]?.id || null,
+            model: models[0]?.id || null,
             maxTokens: 4096,
             providers: {
                 [provider]: {
-                    apiKey: apiKeyInput.value.trim(),
+                    apiKey,
                     baseUrl: baseUrlInput.value.trim() || undefined,
                     apiFormat: apiFormatSel.value,
                 },
             },
         };
-        const r = await fetch('/api/config', {
+        const sr = await fetch('/api/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(config),
         });
-        if (r.ok) {
-            setStatus('Saved! Redirecting...', false);
-            window.location.href = '/';
-        } else {
-            setStatus('Save failed', true);
+        if (!sr.ok) {
+            setStatus('Save failed after successful validation', true);
+            return;
         }
+
+        // Step 3: redirect
+        setStatus('Ready! Redirecting...', false);
+        window.location.href = '/';
     } catch (e) {
         setStatus(`Error: ${e.message}`, true);
     } finally {
-        btnSave.disabled = false;
+        btnConnect.disabled = false;
     }
 });
 

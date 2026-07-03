@@ -6,7 +6,7 @@
     <title>PicoAgent - Setup</title>
     <link rel="stylesheet" href="/style.css">
     <style>
-        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--bg); }
         #setup { width: 420px; padding: 32px; background: var(--bg-side); border-radius: 16px; border: 1px solid var(--border); }
         h1 { font-size: 1.4em; margin-bottom: 4px; color: var(--accent); }
         h1 + p { color: var(--fg-muted); font-size: 0.85em; margin-bottom: 20px; }
@@ -46,8 +46,7 @@
             </select>
         </div>
 
-        <button id="btn-validate">Test Connection</button>
-        <button id="btn-save" style="display:none">Save &amp; Continue</button>
+        <button id="btn-connect">Connect</button>
         <div id="status-msg"></div>
         <span class="skip-link" id="skip-link" style="display:none">Skip (already configured)</span>
     </div>

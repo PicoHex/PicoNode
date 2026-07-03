@@ -1,7 +1,8 @@
 // ── State ──
 let currentSession = 'default';
 let currentModel = '';
-let providers = [];
+let currentProvider = '';
+let modelProviderMap = {}; // modelId → providerName
 
 // ── DOM refs ──
 const input    = document.getElementById('input');
@@ -9,7 +10,6 @@ const sendBtn  = document.getElementById('send');
 const messages = document.getElementById('messages');
 const statusEl = document.getElementById('status').querySelector('span');
 const modelSel = document.getElementById('model-select');
-const provSel  = document.getElementById('provider-select');
 const thinkChk = document.getElementById('thinking-checkbox');
 const thinkLvl = document.getElementById('thinking-level');
 const sessionList = document.getElementById('session-list');
@@ -17,10 +17,36 @@ const sessionList = document.getElementById('session-list');
 // ── Stream state ──
 let currentAssistant = null;
 let isStreaming = false;
+let streamMsgIndex = 0;       // index within current session for thinking cache key
+
+// ── Thinking cache (persists across session switches in the same tab) ──
+const THINKING_PREFIX = 'picoagent-thinking-';
+
+function thinkingKey(sessionId, msgIdx) {
+    return THINKING_PREFIX + sessionId + '-' + msgIdx;
+}
+
+function saveThinking(sessionId, msgIdx, text) {
+    if (text) sessionStorage.setItem(thinkingKey(sessionId, msgIdx), text);
+}
+
+function loadThinking(sessionId, msgIdx) {
+    return sessionStorage.getItem(thinkingKey(sessionId, msgIdx));
+}
+
+function forgetThinking(sessionId) {
+    const prefix = THINKING_PREFIX + sessionId + '-';
+    const keys = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+        const k = sessionStorage.key(i);
+        if (k && k.startsWith(prefix)) keys.push(k);
+    }
+    keys.forEach(k => sessionStorage.removeItem(k));
+}
 
 // ── Init ──
 (async function init() {
-    // Check if configuration exists
+    // Safety net: redirect to config if no provider
     try {
         const r = await fetch('/api/config/status');
         const s = await r.json();
@@ -52,39 +78,50 @@ async function loadHealth() {
     try {
         const h = await api('GET', '/api/health');
         currentModel = h.model;
-        statusEl.textContent = `${h.model} @ ${h.provider}`;
+        currentProvider = h.provider;
+        updateStatus();
     } catch (e) { /* ignore */ }
 }
 
+function updateStatus() {
+    statusEl.textContent = currentProvider
+        ? `${currentModel} @ ${currentProvider}`
+        : currentModel || '--';
+}
+
+// ── Combined model selector ──
 async function loadModels() {
     try {
         const models = await api('GET', '/api/models');
         modelSel.innerHTML = '';
-        provSel.innerHTML = '';
-        const seenIds = new Set();
-        const seenProvs = new Set();
+        modelProviderMap = {};
+
+        // Group by provider
+        const groups = {};
         for (const m of (models || [])) {
-            if (!seenIds.has(m.id)) {
-                seenIds.add(m.id);
+            const prov = m.ownedBy || 'Unknown';
+            if (!groups[prov]) groups[prov] = [];
+            groups[prov].push(m);
+        }
+
+        if (Object.keys(groups).length === 0) {
+            modelSel.innerHTML = '<option value="">No models found</option>';
+            return;
+        }
+
+        // Build optgroups
+        for (const [prov, provModels] of Object.entries(groups)) {
+            const og = document.createElement('optgroup');
+            og.label = prov;
+            for (const m of provModels) {
+                modelProviderMap[m.id] = prov;
                 const opt = document.createElement('option');
                 opt.value = m.id;
                 opt.textContent = m.id;
                 if (m.id === currentModel) opt.selected = true;
-                modelSel.appendChild(opt);
+                og.appendChild(opt);
             }
-            if (m.ownedBy && !seenProvs.has(m.ownedBy)) {
-                seenProvs.add(m.ownedBy);
-                const opt = document.createElement('option');
-                opt.value = m.ownedBy;
-                opt.textContent = m.ownedBy;
-                provSel.appendChild(opt);
-            }
-        }
-        if (modelSel.options.length === 0) {
-            modelSel.innerHTML = '<option value="">No models found</option>';
-        }
-        if (provSel.options.length === 0) {
-            provSel.innerHTML = '<option value="">No providers</option>';
+            modelSel.appendChild(og);
         }
     } catch (e) {
         modelSel.innerHTML = '<option value="">Failed to load</option>';
@@ -120,17 +157,47 @@ async function loadMessages(sessionId) {
         const msgs = await api('GET', `/api/session/${sessionId}/messages`);
         messages.innerHTML = '';
         if (msgs && Array.isArray(msgs)) {
+            let msgIdx = 0;
             for (const m of msgs) {
                 const role = (m.Role || m.role || '').toLowerCase();
                 if (!role || role === 'system') continue;
-                const displayRole = role === 'user' ? 'user' : 'assistant';
                 const text = m.Content || m.content
                     || (m.ContentBlocks && m.ContentBlocks[0]?.Text)
                     || (m.contentBlocks && m.contentBlocks[0]?.text) || '';
-                if (text) renderMessage(displayRole, text);
+
+                if (role === 'assistant' && text) {
+                    // Restore cached thinking if available
+                    const cachedThinking = loadThinking(sessionId, msgIdx);
+                    renderMessageWithThinking('assistant', text, cachedThinking);
+                } else if (text) {
+                    renderMessage('user', text);
+                }
+                msgIdx++;
             }
         }
     } catch (e) { /* ignore */ }
+}
+
+function renderMessageWithThinking(role, text, thinkingText) {
+    const el = document.createElement('div');
+    el.className = `message ${role}`;
+
+    // Thinking block (only if we have cached thinking)
+    if (thinkingText) {
+        const think = document.createElement('details');
+        think.className = 'thinking';
+        think.open = false;
+        think.innerHTML = `<summary>thinking</summary><div class="think-content">${marked.parse(thinkingText)}</div>`;
+        el.appendChild(think);
+    }
+
+    const content = document.createElement('div');
+    content.className = 'msg-content';
+    content.innerHTML = marked.parse(text);
+    el.appendChild(content);
+    messages.appendChild(el);
+    deferMermaidRender(content);
+    return el;
 }
 
 async function switchSession(id) {
@@ -173,6 +240,7 @@ async function compactSession(sessionId, btn) {
         const result = await api('POST', `/api/session/${sessionId}/compact`, { keepRecent: 20 });
         if (result.compressedCount > 0) {
             showToast(`Compressed ${result.compressedCount} messages, saved ${result.tokensSaved} tokens`);
+            forgetThinking(sessionId);  // invalidate stale thinking cache
         } else {
             showToast('Nothing to compress (messages <= 20)');
         }
@@ -200,31 +268,30 @@ function showToast(msg) {
     }, 3000);
 }
 
-async function switchModel(modelId) {
+// ── Model switch (auto-switches provider) ──
+modelSel.addEventListener('change', async () => {
+    const modelId = modelSel.value;
+    if (!modelId) return;
+
+    const provider = modelProviderMap[modelId];
     try {
+        if (provider && provider !== currentProvider) {
+            await api('POST', '/api/provider/switch', { provider });
+            currentProvider = provider;
+        }
         await api('POST', '/api/model/switch', { modelId });
         currentModel = modelId;
-        statusEl.textContent = `${modelId}`;
+        updateStatus();
     } catch (e) { /* ignore */ }
-}
+});
 
-async function switchProvider(provider) {
-    try {
-        await api('POST', '/api/provider/switch', { provider });
-        await loadHealth();
-        await loadModels();
-    } catch (e) { /* ignore */ }
-}
-
+// ── Thinking ──
 async function switchThinking(enabled, level) {
     try {
         await api('POST', '/api/thinking', { enabled, level });
     } catch (e) { /* ignore */ }
 }
 
-// ── Event bindings ──
-modelSel.addEventListener('change', () => switchModel(modelSel.value));
-provSel.addEventListener('change', () => switchProvider(provSel.value));
 thinkChk.addEventListener('change', () => switchThinking(thinkChk.checked, thinkLvl.value));
 thinkLvl.addEventListener('change', () => switchThinking(thinkChk.checked, thinkLvl.value));
 document.getElementById('btn-new-session').addEventListener('click', createSession);
@@ -243,12 +310,19 @@ async function sendMessage() {
     isStreaming = true;
     sendBtn.disabled = true;
 
+    // Count current assistant messages for this session to assign an index
+    const existing = messages.querySelectorAll('.message.assistant');
+    streamMsgIndex = existing.length;
+
     renderMessage('user', text);
     currentAssistant = renderAssistantShell();
     const contentEl = currentAssistant.querySelector('.msg-content');
     const streamDot = currentAssistant.querySelector('.streaming-indicator');
     const streamText = currentAssistant.querySelector('.stream-text');
     const thinkingBlock = currentAssistant.querySelector('.thinking');
+
+    let rawText = '';
+    let rawThinking = '';
 
     try {
         const response = await fetch(`/api/session/${currentSession}/message`, {
@@ -259,8 +333,6 @@ async function sendMessage() {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
-        let rawText = '';
-        let rawThinking = '';
 
         while (true) {
             const { done, value } = await reader.read();
@@ -281,6 +353,7 @@ async function sendMessage() {
                         const tc = thinkingBlock.querySelector('.think-content');
                         tc.innerHTML = marked.parse(rawThinking);
                         deferMermaidRender(tc);
+                        saveThinking(currentSession, streamMsgIndex, rawThinking);
                     }
                     currentAssistant = null;
                     break;
@@ -300,6 +373,8 @@ async function sendMessage() {
                             rawThinking += evt.content;
                             thinkingBlock.querySelector('.think-content').textContent = rawThinking;
                             thinkingBlock.open = true;
+                            // Save incrementally so partial thinking survives crashes
+                            saveThinking(currentSession, streamMsgIndex, rawThinking);
                             break;
                         case 'done':
                             if (streamDot) streamDot.style.display = 'none';
@@ -310,6 +385,7 @@ async function sendMessage() {
                                 const tc = thinkingBlock.querySelector('.think-content');
                                 tc.innerHTML = marked.parse(rawThinking);
                                 deferMermaidRender(tc);
+                                saveThinking(currentSession, streamMsgIndex, rawThinking);
                             }
                             thinkingBlock.open = false;
                             currentAssistant = null;
@@ -345,7 +421,6 @@ async function sendMessage() {
         isStreaming = false;
         sendBtn.disabled = false;
         input.focus();
-        // Auto-save after each message so conversation survives restart
         try { await api('POST', `/api/session/save/${currentSession}`); } catch {}
         await loadSessions();
     }
@@ -360,7 +435,6 @@ function renderMessage(role, text) {
     content.innerHTML = marked.parse(text);
     el.appendChild(content);
     messages.appendChild(el);
-    // Defer Mermaid rendering to avoid blocking
     deferMermaidRender(content);
     return el;
 }
@@ -381,17 +455,14 @@ function renderAssistantShell() {
     el.className = 'message assistant';
     const content = document.createElement('div');
     content.className = 'msg-content';
-    // Pre-create a text span (hidden) so the delta handler can always
-    // update it unconditionally — same pattern as .think-content.
     content.innerHTML =
       '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span>' +
       '<span class="stream-text" style="display:none"></span>';
     el.appendChild(content);
 
-    // Thinking block (collapsible)
     const think = document.createElement('details');
     think.className = 'thinking';
-    think.open = true;  // start expanded so user sees activity
+    think.open = true;
     think.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>';
     el.insertBefore(think, content);
 
@@ -414,7 +485,6 @@ function applyTheme(key) {
     document.documentElement.setAttribute('data-theme', key);
     localStorage.setItem('picoagent-theme', key);
     document.querySelectorAll('#theme-switcher button').forEach(b => b.classList.toggle('active', b.dataset.themeKey === key));
-    // Match Mermaid theme: dark for warm themes, neutral for light
     const mmTheme = key === 'ivory-paper' ? 'neutral' : 'dark';
     mermaid.initialize({ startOnLoad: false, theme: mmTheme });
 }

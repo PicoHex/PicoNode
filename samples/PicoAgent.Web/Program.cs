@@ -1,4 +1,3 @@
-
 var homeDir = Path.Combine(AppContext.BaseDirectory, "data");
 Directory.CreateDirectory(homeDir);
 Directory.CreateDirectory(Path.Combine(homeDir, FileSystemConstants.SessionsDir));
@@ -218,8 +217,7 @@ app.MapGet(
     "/api/config/status",
     async (_, ct) =>
     {
-        using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{agentPort}") };
-        var json = await http.GetStringAsync("/config/status", ct);
+        var json = await client.GetConfigStatusAsync(ct);
         return OkJson(json);
     }
 );
@@ -228,9 +226,7 @@ app.MapGet(
     "/api/config/providers",
     async (_, ct) =>
     {
-        // Proxy to Agent backend
-        using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{agentPort}") };
-        var json = await http.GetStringAsync("/config/providers", ct);
+        var json = await client.GetConfigProvidersAsync(ct);
         return OkJson(json);
     }
 );
@@ -239,14 +235,9 @@ app.MapPost(
     "/api/config/validate",
     async (ctx, ct) =>
     {
-        using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{agentPort}") };
         using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8, leaveOpen: true);
         var body = await reader.ReadToEndAsync(ct);
-        var resp = await http.PostAsync(
-            "/config/validate",
-            new StringContent(body, Encoding.UTF8, "application/json"),
-            ct
-        );
+        var resp = await client.ValidateConfigAsync(body, ct);
         var result = await resp.Content.ReadAsStringAsync(ct);
         return new HttpResponse
         {
@@ -261,14 +252,9 @@ app.MapPost(
     "/api/config",
     async (ctx, ct) =>
     {
-        using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{agentPort}") };
         using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8, leaveOpen: true);
         var body = await reader.ReadToEndAsync(ct);
-        var resp = await http.PostAsync(
-            "/config",
-            new StringContent(body, Encoding.UTF8, "application/json"),
-            ct
-        );
+        var resp = await client.SaveConfigAsync(body, ct);
         var result = await resp.Content.ReadAsStringAsync(ct);
         return new HttpResponse
         {

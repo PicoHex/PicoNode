@@ -4,71 +4,44 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PicoAgent</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=Source+Serif+4:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({ startOnLoad: false, theme: 'dark' });</script>
+    <style>
+        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--bg); }
+        #init { text-align: center; }
+        #init .logo { font-size: 2.2em; font-weight: bold; color: var(--accent); margin-bottom: 8px; }
+        #init p  { color: var(--fg-muted); font-size: 0.95em; }
+        #init .spinner { display: inline-block; width: 28px; height: 28px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin-top: 20px; }
+        #init .error { color: #e05555; margin-top: 16px; font-size: 0.85em; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
 </head>
 <body>
-    <div id="app">
-        <aside id="sidebar">
-            <div class="logo">PicoAgent</div>
-            <div id="theme-switcher">
-                <button data-theme-key="warm-charcoal" class="active" title="暖炭墨绿"></button>
-                <button data-theme-key="warm-amber" title="深空暖橙"></button>
-                <button data-theme-key="ivory-paper" title="象牙纸墨"></button>
-            </div>
-
-            <div id="model-selector" class="sidebar-section">
-                <div class="section-label">Model</div>
-                <select id="model-select">
-                    <option value="">Loading...</option>
-                </select>
-            </div>
-
-            <div id="provider-info" class="sidebar-section">
-                <div class="section-label">Provider</div>
-                <select id="provider-select">
-                    <option value="">--</option>
-                </select>
-            </div>
-
-            <div id="thinking-toggle" class="sidebar-section">
-                <label class="toggle-label">
-                    <input type="checkbox" id="thinking-checkbox" checked>
-                    <span>Extended Thinking</span>
-                </label>
-                <select id="thinking-level" class="inline-select">
-                    <option value="minimal">Minimal</option>
-                    <option value="low">Low</option>
-                    <option value="medium" selected>Medium</option>
-                    <option value="high">High</option>
-                    <option value="xhigh">XHigh</option>
-                </select>
-            </div>
-
-            <div id="session-section" class="sidebar-section">
-                <div class="section-label">Sessions</div>
-                <div id="session-list"><div class="session active" data-id="default">default</div></div>
-                <div class="session-actions">
-                    <button id="btn-new-session" title="New session">+ New</button>
-                    <button id="btn-save-session" title="Save conversation to disk (auto-saved after each reply)">💾</button>
-                </div>
-            </div>
-
-            <div id="status">model: <span>--</span></div>
-        </aside>
-        <main id="chat">
-            <div id="messages"></div>
-            <div id="input-area">
-                <textarea id="input" placeholder="Type a message..." rows="1"></textarea>
-                <button id="send">Send</button>
-            </div>
-        </main>
+    <div id="init">
+        <div class="logo">PicoAgent</div>
+        <p id="msg">Starting...</p>
+        <div class="spinner"></div>
+        <div id="err" class="error"></div>
     </div>
-    <script src="/app.js"></script>
+    <script>
+        (async function() {
+            const msg = document.getElementById('msg');
+            const err = document.getElementById('err');
+            try {
+                const r = await fetch('/api/config/status');
+                const s = await r.json();
+                if (s.configured) {
+                    msg.textContent = 'Launching agent...';
+                    window.location.replace('/agent.html');
+                } else {
+                    msg.textContent = 'No provider configured.';
+                    err.textContent = 'Redirecting to setup...';
+                    setTimeout(() => window.location.replace('/config.html'), 800);
+                }
+            } catch {
+                msg.textContent = 'Cannot reach server.';
+                err.textContent = 'Is PicoAgent running on port 9000?';
+            }
+        })();
+    </script>
 </body>
 </html>
