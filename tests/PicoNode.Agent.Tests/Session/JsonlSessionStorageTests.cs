@@ -1,4 +1,3 @@
-
 namespace PicoNode.Agent.Tests.Session;
 
 public class JsonlSessionStorageTests
@@ -56,7 +55,7 @@ public class JsonlSessionStorageTests
 
         var opened = await JsonlSessionStorage.OpenAsync(_tempFile);
         var entries = await opened.GetEntries();
-        await Assert.That(entries).HasCount().EqualTo(2); // message + leaf
+        await Assert.That(entries).Count().IsEqualTo(2); // message + leaf
     }
 
     [Test]

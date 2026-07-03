@@ -56,7 +56,7 @@ public class AgentLoopSystemPromptTests
             Message[] messages,
             string modelId,
             string? reasoningLevel,
-            CancellationToken ct
+            [EnumeratorCancellation] CancellationToken ct
         )
         {
             ReceivedSystemPrompt = systemPrompt;

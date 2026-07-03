@@ -1217,7 +1217,7 @@ public sealed class SmokeTests
             DateTimeOffset.UtcNow.AddMinutes(-1),
             DateTimeOffset.UtcNow.AddHours(1)
         );
-        return new X509Certificate2(cert.Export(X509ContentType.Pfx));
+        return X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Pfx));
     }
 }
 
@@ -1359,7 +1359,8 @@ file sealed class SmokeTestLogger : ILogger
 {
     public ConcurrentBag<NodeFaultCode> FaultCodes { get; } = new();
 
-    public IDisposable BeginScope<TState>(TState state) => throw new NotSupportedException();
+    public IDisposable BeginScope<TState>(TState state)
+        where TState : notnull => throw new NotSupportedException();
 
     public void Log(LogLevel logLevel, string message, Exception? exception) { }
 

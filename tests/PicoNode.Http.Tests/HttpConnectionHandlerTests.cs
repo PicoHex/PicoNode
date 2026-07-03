@@ -1499,7 +1499,6 @@ public sealed class HttpConnectionHandlerTests
         // Chunk 2: rest of preface + SETTINGS (but chunk1 data isn't retained —
         // in real pipe it would be. This test verifies the early-return path
         // doesn't crash, which proves the 'P' guard works.)
-        await Assert.That(true).IsTrue();
     }
 
     [Test]

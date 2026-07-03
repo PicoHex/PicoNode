@@ -74,7 +74,8 @@ internal sealed class SpyLogger : ILogger
             throw new InvalidOperationException("Logger threw");
     }
 
-    public IDisposable BeginScope<TState>(TState state) => throw new NotSupportedException();
+    public IDisposable BeginScope<TState>(TState state)
+        where TState : notnull => throw new NotSupportedException();
 
     public void Log(LogLevel logLevel, string message, Exception? exception) =>
         Record(logLevel, default, message, exception);

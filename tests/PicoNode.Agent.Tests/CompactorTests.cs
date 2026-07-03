@@ -1,4 +1,3 @@
-
 namespace PicoNode.Agent.Tests;
 
 public class CompactorTests
@@ -58,7 +57,7 @@ public class CompactorTests
             Message[] msgs,
             string mid,
             string? rl,
-            CancellationToken ct
+            [EnumeratorCancellation] CancellationToken ct
         )
         {
             yield return new LlmStreamEvent("text_delta", "mock summary", null, null);

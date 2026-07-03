@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.LLm;
 
-
 public class SseParserTests
 {
     [Test]
@@ -197,8 +196,8 @@ public class SseParserTests
         var done = events.OfType<AssistantMessageEvent.Done>().ToArray();
         await Assert.That(done.Length).IsEqualTo(1);
         await Assert.That(done[0].Message.ContentBlocks!.Length).IsEqualTo(2);
-        await Assert.That(done[0].Message.ContentBlocks[0].Type).IsEqualTo("text");
-        await Assert.That(done[0].Message.ContentBlocks[1].Type).IsEqualTo("tool_call");
+        await Assert.That(done[0].Message.ContentBlocks![0].Type).IsEqualTo("text");
+        await Assert.That(done[0].Message.ContentBlocks![1].Type).IsEqualTo("tool_call");
     }
 }
 

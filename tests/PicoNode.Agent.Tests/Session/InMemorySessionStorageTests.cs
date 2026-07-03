@@ -1,4 +1,3 @@
-
 namespace PicoNode.Agent.Tests.Session;
 
 public class InMemorySessionStorageTests
@@ -55,7 +54,7 @@ public class InMemorySessionStorageTests
         await storage.AppendEntry(e2);
 
         var path = await storage.GetPathToRoot("a2");
-        await Assert.That(path).HasCount().EqualTo(2);
+        await Assert.That(path).Count().IsEqualTo(2);
         await Assert.That(path[0].Id).IsEqualTo("a1");
         await Assert.That(path[1].Id).IsEqualTo("a2");
     }

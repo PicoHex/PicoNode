@@ -53,7 +53,7 @@ public sealed class AgentHostSessionLockTests
             Message[] msgs,
             string mid,
             string? rl,
-            CancellationToken ct
+            [EnumeratorCancellation] CancellationToken ct
         )
         {
             yield return new LlmStreamEvent("done", "ok", "end_turn", null);
@@ -68,7 +68,7 @@ public sealed class AgentHostSessionLockTests
             Message[] msgs,
             string mid,
             string? rl,
-            CancellationToken ct
+            [EnumeratorCancellation] CancellationToken ct
         )
         {
             yield break;

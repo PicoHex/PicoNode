@@ -121,12 +121,7 @@ public sealed class HuffmanRfcTests
         await Assert.That(encoded.Length).IsEqualTo(expected.Length);
         for (int i = 0; i < expected.Length; i++)
         {
-            await Assert
-                .That(encoded[i])
-                .IsEqualTo(
-                    expected[i],
-                    $"Byte {i}: expected 0x{expected[i]:x2}, got 0x{encoded[i]:x2}"
-                );
+            await Assert.That(encoded[i]).IsEqualTo(expected[i]);
         }
     }
 }

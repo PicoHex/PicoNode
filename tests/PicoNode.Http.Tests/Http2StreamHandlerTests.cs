@@ -391,7 +391,7 @@ public sealed class Http2StreamHandlerTests
         if (!TryReadFrame(frameBytes, out var frame))
             return false;
 
-        if (frame.Type != Http2FrameType.Headers)
+        if (frame!.Type != Http2FrameType.Headers)
             return false;
 
         flags = frame.Flags;

@@ -18,15 +18,11 @@ public sealed class RadixTreeParamNameTests
 
         // Second registration with different param name at same depth should throw
         // BUG: currently silently succeeds with wrong param name
-        try
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
         {
             tree.Insert("/api/{slug}", "POST", new object());
-            await Assert.That(false).IsTrue(); // Should not reach here
-        }
-        catch (InvalidOperationException)
-        {
-            await Assert.That(true).IsTrue();
-        }
+            return Task.CompletedTask;
+        });
     }
 
     [Test]
@@ -38,7 +34,6 @@ public sealed class RadixTreeParamNameTests
 
         // Same param name, different method — should succeed (no throw)
         tree.Insert("/api/{id}", "POST", new object());
-        await Assert.That(true).IsTrue();
     }
 
     [Test]
@@ -50,7 +45,6 @@ public sealed class RadixTreeParamNameTests
         tree.Insert("/api/{id}", "GET", new object());
 
         tree.Insert("/api/{id}/details", "GET", new object());
-        await Assert.That(true).IsTrue();
     }
 
     [Test]

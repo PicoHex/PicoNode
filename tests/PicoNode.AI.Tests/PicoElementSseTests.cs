@@ -12,9 +12,15 @@ public class PicoElementSseTests
         // finish_reason could be null in SSE responses
         var el = doc.RootElement["finish_reason"];
         string? s;
-        try { s = el.GetString(); } catch { s = null; }
+        try
+        {
+            s = el.GetString();
+        }
+        catch
+        {
+            s = null;
+        }
         // Either returns null or the string — must not throw
-        await Assert.That(true).IsTrue(); // reached
     }
 
     [Test]

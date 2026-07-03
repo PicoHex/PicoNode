@@ -222,9 +222,7 @@ public sealed class HpackEncoderTests
 
         for (int i = 0; i < headers.Count; i++)
         {
-            await Assert
-                .That(decoded[i].Item2)
-                .IsEqualTo(headers[i].Item2, $"Header {i} value mismatch");
+            await Assert.That(decoded[i].Item2).IsEqualTo(headers[i].Item2);
         }
     }
 }

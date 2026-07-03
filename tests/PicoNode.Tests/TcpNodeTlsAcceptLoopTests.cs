@@ -184,7 +184,7 @@ public sealed class TcpNodeTlsAcceptLoopTests
             DateTimeOffset.UtcNow.AddMinutes(-1),
             DateTimeOffset.UtcNow.AddHours(1)
         );
-        return new X509Certificate2(cert.Export(X509ContentType.Pfx));
+        return X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Pfx));
     }
 
     private sealed class NoOpTcpHandler : ITcpConnectionHandler

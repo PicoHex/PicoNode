@@ -34,7 +34,7 @@ public class ConfigLoaderTests
         try
         {
             var config = await ConfigLoader.LoadAsync(path);
-            await Assert.That(config.Providers["test"].ApiKey).IsEqualTo("sk-test-123");
+            await Assert.That(config!.Providers["test"].ApiKey).IsEqualTo("sk-test-123");
         }
         finally
         {
@@ -102,7 +102,7 @@ public class ConfigLoaderTests
         try
         {
             var config = await ConfigLoader.LoadAsync(path);
-            await Assert.That(config.Providers["test"].ApiKey).IsEqualTo("sk-raw-999");
+            await Assert.That(config!.Providers["test"].ApiKey).IsEqualTo("sk-raw-999");
         }
         finally
         {

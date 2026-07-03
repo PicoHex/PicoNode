@@ -1,4 +1,3 @@
-
 namespace PicoNode.Agent.Tests.Agent;
 
 public class IAgentLlmTests
@@ -19,7 +18,7 @@ public class IAgentLlmTests
         )
             events.Add(evt);
 
-        await Assert.That(events).HasCount().EqualTo(1);
+        await Assert.That(events).Count().IsEqualTo(1);
         await Assert.That(events[0].Type).IsEqualTo("done");
         await Assert.That(events[0].Text).IsEqualTo("mock response");
     }
@@ -31,7 +30,7 @@ public class IAgentLlmTests
             Message[] messages,
             string modelId,
             string? reasoningLevel,
-            CancellationToken ct
+            [EnumeratorCancellation] CancellationToken ct
         )
         {
             yield return new LlmStreamEvent("done", "mock response", "end_turn", null);

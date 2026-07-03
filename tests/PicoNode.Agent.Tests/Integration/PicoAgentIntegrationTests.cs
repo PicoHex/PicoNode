@@ -82,7 +82,7 @@ public class PicoAgentIntegrationTests : IAsyncDisposable
 
     // TODO: re-enable after fixing SSE pipe completion race in test infrastructure
     // [Test]
-    public async Task SessionMessages_ContainSentContent()
+    private async Task SessionMessages_ContainSentContent()
     {
         await PostText("/session/msg1/create");
         await PostSse("/session/msg1/message", "What is 2+2?");

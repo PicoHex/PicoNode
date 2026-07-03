@@ -1,4 +1,3 @@
-
 namespace PicoNode.Agent.Tests.Host;
 
 public class AgentHostTests
@@ -60,7 +59,7 @@ public class AgentHostTests
             Message[] msgs,
             string mid,
             string? rl,
-            CancellationToken ct
+            [EnumeratorCancellation] CancellationToken ct
         )
         {
             yield return new LlmStreamEvent("text_delta", "ok", null, null);

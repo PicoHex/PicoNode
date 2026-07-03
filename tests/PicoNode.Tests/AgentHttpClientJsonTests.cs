@@ -1,6 +1,5 @@
 namespace PicoNode.Tests;
 
-
 public sealed class AgentHttpClientJsonTests
 {
     /// <summary>
@@ -46,6 +45,5 @@ public sealed class AgentHttpClientJsonTests
         }
 
         // If we got here without an unhandled exception, the JSON construction is valid
-        await Assert.That(true).IsTrue();
     }
 }

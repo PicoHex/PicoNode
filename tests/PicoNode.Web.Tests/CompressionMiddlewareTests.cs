@@ -639,6 +639,5 @@ public sealed class CompressionMiddlewareTests
         var source = new MemoryStream(original);
         var stream = new CompressedReadStream(source, "gzip", CompressionLevel.Fastest);
         stream.Dispose(); // should not deadlock or throw — if it throws, test fails
-        await Assert.That(true).IsTrue();
     }
 }
