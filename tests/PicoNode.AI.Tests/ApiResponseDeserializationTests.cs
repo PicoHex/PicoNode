@@ -1,4 +1,3 @@
-
 namespace PicoNode.AI.Tests;
 
 public class ApiResponseDeserializationTests

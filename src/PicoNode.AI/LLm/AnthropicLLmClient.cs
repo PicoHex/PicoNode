@@ -1,4 +1,3 @@
-
 namespace PicoNode.AI;
 
 public sealed class AnthropicLLmClient : ILLmClient

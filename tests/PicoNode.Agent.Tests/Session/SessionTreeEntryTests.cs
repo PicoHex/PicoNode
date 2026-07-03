@@ -1,4 +1,3 @@
-
 namespace PicoNode.Agent.Tests.Session;
 
 public class SessionTreeEntryTests

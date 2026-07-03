@@ -106,7 +106,13 @@ public sealed class AgentLoop
 
                     // Hook: OnToolCall
                     var hookInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
-                        new HookPayload { Kind = KindHook, EventName = HookEventToolCall, ToolName = tc.Name, Args = tc.Arguments }
+                        new HookPayload
+                        {
+                            Kind = KindHook,
+                            EventName = HookEventToolCall,
+                            ToolName = tc.Name,
+                            Args = tc.Arguments,
+                        }
                     );
                     var hookResult = await _hookRunner.EmitAsync(
                         TriggerKind.OnToolCall,
@@ -122,7 +128,13 @@ public sealed class AgentLoop
 
                     // Execute tool
                     var toolInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
-                        new ToolCallPayload { Kind = KindToolCall, ToolCallId = tc.Id, ToolName = tc.Name, Args = tc.Arguments }
+                        new ToolCallPayload
+                        {
+                            Kind = KindToolCall,
+                            ToolCallId = tc.Id,
+                            ToolName = tc.Name,
+                            Args = tc.Arguments,
+                        }
                     );
                     var toolResponse = await _runner.ExecuteAsync(
                         capConfig,
@@ -141,7 +153,10 @@ public sealed class AgentLoop
                             new ContentBlock
                             {
                                 Type = BlockTypeText,
-                                Text = toolResponse.RootElement.TryGetProperty(FieldContent, out var c)
+                                Text = toolResponse.RootElement.TryGetProperty(
+                                    FieldContent,
+                                    out var c
+                                )
                                     ? c.ToString()
                                     : "",
                             },

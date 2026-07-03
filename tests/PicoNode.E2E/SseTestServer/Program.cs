@@ -1,4 +1,3 @@
-
 // A minimal SSE test server that streams data through the full HTTP stack.
 // No API keys or external dependencies required.
 

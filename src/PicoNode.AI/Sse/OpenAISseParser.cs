@@ -1,4 +1,3 @@
-
 namespace PicoNode.AI;
 
 public static class OpenAISseParser
@@ -78,7 +77,11 @@ public static class OpenAISseParser
             {
                 var text = reasoning.GetStringOrNull();
                 if (text is not null)
-                    yield return new AssistantMessageEvent.ThinkingDelta { Index = 0, Delta = text };
+                    yield return new AssistantMessageEvent.ThinkingDelta
+                    {
+                        Index = 0,
+                        Delta = text,
+                    };
             }
 
             if (delta.TryGetProperty(JsonPropContent, out var content))

@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.LLm;
 
-
 /// <summary>
 /// Batch 4 (A-OpenAI): OpenAILlmClient must emit tool_calls / tool messages in the
 /// exact shape the OpenAI Chat Completions API expects, not the internal
@@ -96,12 +95,8 @@ public sealed class OpenAILlmClientToolFormatTests
 
         await Assert.That(toolMsg.HasValue).IsTrue();
         await Assert.That(toolMsg!.Value["role"].GetString()).IsEqualTo("tool");
-        await Assert
-            .That(toolMsg!.Value["tool_call_id"].GetString())
-            .IsEqualTo("call_abc");
-        await Assert
-            .That(toolMsg!.Value["content"].GetString())
-            .IsEqualTo("sunny, 22C");
+        await Assert.That(toolMsg!.Value["tool_call_id"].GetString()).IsEqualTo("call_abc");
+        await Assert.That(toolMsg!.Value["content"].GetString()).IsEqualTo("sunny, 22C");
     }
 
     [Test]

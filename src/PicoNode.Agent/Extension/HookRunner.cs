@@ -1,4 +1,3 @@
-
 namespace PicoNode.Agent;
 
 public sealed class HookRunner

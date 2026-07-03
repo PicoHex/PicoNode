@@ -1,4 +1,3 @@
-
 namespace PicoNode.AI;
 
 [PicoSerializable]
@@ -30,8 +29,7 @@ public static class ModelDiscovery
             var list = PicoJetson.JsonSerializer.Deserialize<ModelListResponse>(
                 Encoding.UTF8.GetBytes(json)
             );
-            return list?.Data
-                    .Select(m => new DiscoveredModel { Id = m.Id, OwnedBy = m.OwnedBy })
+            return list?.Data.Select(m => new DiscoveredModel { Id = m.Id, OwnedBy = m.OwnedBy })
                     .ToArray()
                 ?? [];
         }

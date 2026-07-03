@@ -25,11 +25,7 @@ public class PayloadSerializationTests
     [Test]
     public async Task HookPayload_DoesNotSerializePascalCase()
     {
-        var payload = new HookPayload
-        {
-            Kind = "hook",
-            EventName = "on_tool_call",
-        };
+        var payload = new HookPayload { Kind = "hook", EventName = "on_tool_call" };
 
         var json = PicoJetson.JsonSerializer.Serialize(payload);
 
@@ -57,11 +53,7 @@ public class PayloadSerializationTests
     [Test]
     public async Task ToolCallPayload_DoesNotSerializePascalCase()
     {
-        var payload = new ToolCallPayload
-        {
-            Kind = "tool_call",
-            ToolCallId = "call_1",
-        };
+        var payload = new ToolCallPayload { Kind = "tool_call", ToolCallId = "call_1" };
 
         var json = PicoJetson.JsonSerializer.Serialize(payload);
 

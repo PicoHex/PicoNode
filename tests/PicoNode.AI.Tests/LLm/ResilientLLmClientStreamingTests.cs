@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.LLm;
 
-
 /// <summary>
 /// Batch 2 (A2): ResilientLLmClient must forward events as they arrive from the underlying
 /// client, not buffer the entire stream first. Retry logic remains active only until the

@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.LLm;
 
-
 public class ResilientLLmClientTests
 {
     [Test]

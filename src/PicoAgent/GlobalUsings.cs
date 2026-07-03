@@ -1,3 +1,4 @@
+global using System.Diagnostics.CodeAnalysis;
 global using System.IO.Pipelines;
 global using System.Net;
 global using System.Net.Security;
@@ -13,4 +14,3 @@ global using PicoNode.Http;
 global using PicoNode.Web;
 global using PicoSerDe.Core;
 global using PicoWeb;
-global using System.Diagnostics.CodeAnalysis;

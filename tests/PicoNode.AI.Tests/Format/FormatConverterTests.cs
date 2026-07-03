@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.Format;
 
-
 public class FormatConverterTests
 {
     private readonly FormatConverter _converter = new();

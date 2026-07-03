@@ -1,4 +1,3 @@
-
 namespace PicoNode.Agent.Tests.Capability;
 
 /// <summary>

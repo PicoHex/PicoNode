@@ -1,4 +1,3 @@
-
 namespace PicoAgent;
 
 public sealed class AgentResult

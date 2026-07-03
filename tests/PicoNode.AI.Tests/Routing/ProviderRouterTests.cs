@@ -1,6 +1,5 @@
 namespace PicoNode.AI.Tests.Routing;
 
-
 public class ProviderRouterTests
 {
     [Test]
