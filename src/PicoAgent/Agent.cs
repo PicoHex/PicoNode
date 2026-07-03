@@ -1,7 +1,6 @@
 // src/PicoAgent/Agent.cs
 namespace PicoAgent;
 
-
 public sealed partial class Agent : IAsyncDisposable
 {
     private readonly object _lock = new();
@@ -211,6 +210,10 @@ public sealed partial class Agent : IAsyncDisposable
             _pendingModel.ThinkingLevel = level;
         }
     }
+
+    public string? GetSystemPrompt() => _host.GetSystemPrompt();
+
+    public void SetSystemPrompt(string? prompt) => _host.SetSystemPrompt(prompt);
 
     public async Task<IReadOnlyList<DiscoveredModel>> ListModelsAsync(
         string? provider = null,
@@ -567,6 +570,31 @@ public sealed partial class Agent : IAsyncDisposable
             }
         );
 
+        // GET /system-prompt
+        app.MapGet(
+            "/system-prompt",
+            (_, _) =>
+            {
+                var prompt = GetSystemPrompt() ?? "";
+                var dto = new SystemPromptResp { Prompt = prompt };
+                var json = PicoJetson.JsonSerializer.Serialize(dto);
+                return ValueTask.FromResult(JsonResponse(200, json));
+            }
+        );
+
+        // PUT /system-prompt
+        app.MapPost(
+            "/system-prompt",
+            async (ctx, ct) =>
+            {
+                var req = await ReadJsonAsync<SystemPromptReq>(ctx, ct);
+                if (req?.Prompt is null)
+                    return JsonError(400, "MISSING_FIELD", "prompt required");
+                SetSystemPrompt(req.Prompt);
+                return JsonOk();
+            }
+        );
+
         // GET /models (async, ListModelsAsync)
         app.MapGet(
             "/models",
@@ -744,13 +772,16 @@ public sealed partial class Agent : IAsyncDisposable
             "/config/status",
             (_, _) =>
             {
-                // Check in-memory state: clients are populated when provider config is loaded.
-                // This avoids a case-sensitivity mismatch between PicoJetson camelCase
-                // serialization and the PascalCase property name check in JsonDocument.
                 var configured = _clients.Count > 0;
                 var model = SnapshotModel();
-                var json =
-                    $"{{\"configured\":{(configured ? "true" : "false")},\"model\":\"{EscapeJsonString(model.Id)}\",\"provider\":\"{EscapeJsonString(model.Provider)}\"}}";
+                var status = new ConfigStatusResponse
+                {
+                    Configured = configured,
+                    Model = model.Id,
+                    Provider = model.Provider,
+                    Providers = _providerConfigs.Keys.ToArray(),
+                };
+                var json = PicoJetson.JsonSerializer.Serialize(status);
                 return ValueTask.FromResult(JsonResponse(200, json));
             }
         );

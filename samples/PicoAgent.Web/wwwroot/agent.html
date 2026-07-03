@@ -13,6 +13,7 @@
     <script>mermaid.initialize({ startOnLoad: false, theme: 'dark' });</script>
 </head>
 <body>
+    <button id="sidebar-toggle" class="mobile-only" title="Toggle sidebar">☰</button>
     <div id="app">
         <aside id="sidebar">
             <div class="logo">PicoAgent</div>
@@ -20,13 +21,12 @@
                 <button data-theme-key="warm-charcoal" class="active" title="暖炭墨绿"></button>
                 <button data-theme-key="warm-amber" title="深空暖橙"></button>
                 <button data-theme-key="ivory-paper" title="象牙纸墨"></button>
+                <button data-theme-key="auto" title="跟随系统"></button>
             </div>
 
             <div id="model-selector" class="sidebar-section">
                 <div class="section-label">Model</div>
-                <select id="model-select">
-                    <option value="">Loading...</option>
-                </select>
+                <select id="model-select"><option value="">Loading...</option></select>
             </div>
 
             <div id="thinking-toggle" class="sidebar-section">
@@ -35,20 +35,23 @@
                     <span>Extended Thinking</span>
                 </label>
                 <select id="thinking-level" class="inline-select">
-                    <option value="minimal">Minimal</option>
-                    <option value="low">Low</option>
-                    <option value="medium" selected>Medium</option>
-                    <option value="high">High</option>
-                    <option value="xhigh">XHigh</option>
+                    <option value="minimal">Minimal</option><option value="low">Low</option>
+                    <option value="medium" selected>Medium</option><option value="high">High</option><option value="xhigh">XHigh</option>
                 </select>
             </div>
 
+            <details id="system-prompt-section" class="sidebar-section collapsible">
+                <summary class="section-label">System Prompt</summary>
+                <textarea id="system-prompt" placeholder="Custom system prompt..." rows="4"></textarea>
+                <button id="btn-save-prompt" class="secondary small" style="width:100%;margin-top:4px">Save</button>
+            </details>
+
             <div id="session-section" class="sidebar-section">
-                <div class="section-label">Sessions</div>
+                <div class="section-label">Sessions <button id="btn-export" class="secondary small" title="Export all as Markdown" style="font-size:0.7em;padding:2px 6px;margin-left:auto">📥</button></div>
                 <div id="session-list"><div class="session active" data-id="default">default</div></div>
                 <div class="session-actions">
                     <button id="btn-new-session" title="New session">+ New</button>
-                    <button id="btn-save-session" title="Save conversation to disk (auto-saved after each reply)">💾</button>
+                    <button id="btn-save-session" title="Save conversation to disk">💾</button>
                 </div>
             </div>
 
@@ -57,11 +60,13 @@
         <main id="chat">
             <div id="messages"></div>
             <div id="input-area">
-                <textarea id="input" placeholder="Type a message..." rows="1"></textarea>
+                <textarea id="input" placeholder="Type a message... (Ctrl+Enter to send)" rows="1"></textarea>
                 <button id="send">Send</button>
+                <button id="stop" style="display:none" title="Stop generation">■</button>
             </div>
         </main>
     </div>
+    <div id="history-hint" style="display:none"></div>
     <script src="/app.js"></script>
 </body>
 </html>

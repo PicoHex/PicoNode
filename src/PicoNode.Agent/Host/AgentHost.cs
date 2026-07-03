@@ -18,6 +18,10 @@ public sealed partial class AgentHost
     /// </summary>
     public void ReplaceLoop(AgentLoop newLoop) => _loop = newLoop;
 
+    public string? GetSystemPrompt() => _loop.SystemPrompt;
+
+    public void SetSystemPrompt(string? prompt) => _loop.SystemPrompt = prompt;
+
     /// <summary>
     /// Restore session state from persisted entries.
     /// </summary>

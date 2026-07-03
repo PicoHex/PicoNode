@@ -195,6 +195,17 @@ public sealed class AgentHttpClient : IAsyncDisposable
         return await _http.PostAsync("/config", content, ct);
     }
 
+    // ── System prompt ──
+    public Task<string> GetSystemPromptAsync(CancellationToken ct = default) =>
+        _http.GetStringAsync("/system-prompt", ct);
+
+    public async Task<bool> SetSystemPromptAsync(string prompt, CancellationToken ct = default)
+    {
+        var json = $"{{\"prompt\":\"{EscapeJson(prompt)}\"}}";
+        var r = await _http.PostAsync("/system-prompt", JsonContent(json), ct);
+        return r.IsSuccessStatusCode;
+    }
+
     private static StringContent JsonContent(string json) =>
         new(json, Encoding.UTF8, "application/json");
 

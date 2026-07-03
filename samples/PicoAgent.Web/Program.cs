@@ -265,6 +265,37 @@ app.MapPost(
     }
 );
 
+// ── System prompt ──
+app.MapGet(
+    "/api/system-prompt",
+    async (_, ct) =>
+    {
+        var json = await client.GetSystemPromptAsync(ct);
+        return OkJson(json);
+    }
+);
+app.MapPost(
+    "/api/system-prompt",
+    async (ctx, ct) =>
+    {
+        using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8, leaveOpen: true);
+        var body = await reader.ReadToEndAsync(ct);
+        // Extract prompt from {"prompt":"..."}
+        var prompt = body;
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("prompt", out var p))
+                prompt = p.GetString() ?? "";
+        }
+        catch
+        { /* use raw body as prompt */
+        }
+        var ok = await client.SetSystemPromptAsync(prompt, ct);
+        return ok ? Ok() : ErrorJson(400, "Failed");
+    }
+);
+
 // ── 静态文件 (最后注册 = 最先执行) ──
 var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
 if (Directory.Exists(wwwroot))

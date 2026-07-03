@@ -160,3 +160,85 @@ pre.mermaid-error { color: var(--accent); font-size: .85em; }
 }
 .compact-btn:hover { opacity: 1; }
 .compact-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ── Message actions (copy, retry, delete) ── */
+.msg-actions { display: flex; gap: 4px; margin-top: 6px; opacity: 0; transition: opacity .2s; }
+.message:hover .msg-actions { opacity: 1; }
+.msg-actions button {
+    background: var(--border); color: var(--fg-muted); border: none;
+    border-radius: 4px; padding: 2px 8px; font-size: 0.75em; cursor: pointer;
+    font-family: inherit; transition: background .15s;
+}
+.msg-actions button:hover { background: var(--accent); color: #fff; }
+
+/* ── Stop button ── */
+#stop {
+    background: #c0392b; color: white; border: none;
+    border-radius: 8px; padding: 10px 16px; cursor: pointer;
+    font-weight: bold; font-size: 1em; font-family: inherit;
+}
+#stop:hover { background: #e74c3c; }
+
+/* ── Session delete ── */
+.session-delete {
+    background: none; border: none; cursor: pointer;
+    font-size: 0.8em; padding: 0 4px; opacity: 0;
+    transition: opacity 0.2s; color: var(--fg-muted);
+}
+.session:hover .session-delete { opacity: 0.5; }
+.session:hover .session-delete:hover { opacity: 1; color: #e05555; }
+
+/* ── Edit input overlay ── */
+.edit-overlay {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--bg-input); border-top: 1px solid var(--border);
+    padding: 12px; z-index: 10; display: none;
+}
+.edit-overlay.active { display: flex; gap: 8px; }
+.edit-overlay textarea {
+    flex: 1; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px; color: var(--fg);
+    resize: none; font-family: system-ui, sans-serif; font-size: .94em;
+}
+.edit-overlay button {
+    background: var(--accent); color: white; border: none;
+    border-radius: 8px; padding: 10px 16px; cursor: pointer;
+    font-family: inherit;
+}
+
+/* ── Mobile ── */
+.mobile-only { display: none; }
+@media (max-width: 768px) {
+    .mobile-only { display: block; }
+    #sidebar-toggle {
+        position: fixed; top: 10px; left: 10px; z-index: 20;
+        background: var(--bg-side); color: var(--fg); border: 1px solid var(--border);
+        border-radius: 6px; padding: 6px 10px; font-size: 1.2em; cursor: pointer;
+    }
+    #sidebar {
+        position: fixed; left: -260px; top: 0; bottom: 0; z-index: 15;
+        width: 260px; transition: left .25s;
+    }
+    #sidebar.open { left: 0; }
+    #app { padding-left: 0; }
+}
+
+/* ── Auto theme button ── */
+#theme-switcher button[data-theme-key="auto"] { background: conic-gradient(#2d6a4f 0deg 180deg, #faf6ed 180deg 360deg); }
+
+/* ── Collapsible sidebar section ── */
+.collapsible > summary { cursor: pointer; user-select: none; }
+.collapsible > summary::-webkit-details-marker { display: none; }
+#system-prompt { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 6px; font-family: inherit; font-size: 0.78em; resize: vertical; }
+button.small { font-size: 0.75em; padding: 4px 8px; border-radius: 4px; }
+
+/* ── Token usage badge ── */
+.token-usage { font-size: 0.7em; color: var(--fg-muted); margin-top: 2px; }
+
+/* ── Stream animation ── */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.stream-text { animation: fadeIn 0.15s ease-out; }
+
+/* ── History hint ── */
+#history-hint { position: fixed; bottom: 72px; left: 50%; transform: translateX(-50%); background: var(--bg-side); color: var(--fg-muted); padding: 6px 12px; border-radius: 6px; font-size: 0.8em; border: 1px solid var(--border); z-index: 5; opacity: 0; transition: opacity .2s; pointer-events: none; }
+#history-hint.show { opacity: 1; }

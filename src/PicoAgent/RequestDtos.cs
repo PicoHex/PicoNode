@@ -3,6 +3,16 @@ namespace PicoAgent;
 /// <summary>Request DTOs for individual HTTP endpoints.</summary>
 [PicoSerializable]
 [JsonCamelCase]
+sealed class ConfigStatusResponse
+{
+    public bool Configured { get; set; }
+    public string Model { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string[] Providers { get; set; } = [];
+}
+
+[PicoSerializable]
+[JsonCamelCase]
 public sealed class ModelSwitchReq
 {
     public string ModelId { get; set; } = string.Empty;
@@ -38,4 +48,18 @@ sealed class ConfigValidateReq
     public string ApiKey { get; set; } = string.Empty;
     public string? BaseUrl { get; set; }
     public string? ApiFormat { get; set; }
+}
+
+[PicoSerializable]
+[JsonCamelCase]
+sealed class SystemPromptReq
+{
+    public string Prompt { get; set; } = "";
+}
+
+[PicoSerializable]
+[JsonCamelCase]
+sealed class SystemPromptResp
+{
+    public string Prompt { get; set; } = "";
 }
