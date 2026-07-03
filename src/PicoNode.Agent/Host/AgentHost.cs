@@ -15,8 +15,13 @@ public sealed partial class AgentHost
 
     /// <summary>
     /// Replace the loop after a config reload transitions from unconfigured → configured.
+    /// Preserves the system prompt set by the user.
     /// </summary>
-    public void ReplaceLoop(AgentLoop newLoop) => _loop = newLoop;
+    public void ReplaceLoop(AgentLoop newLoop)
+    {
+        newLoop.SystemPrompt = _loop.SystemPrompt;
+        _loop = newLoop;
+    }
 
     public string? GetSystemPrompt() => _loop.SystemPrompt;
 
