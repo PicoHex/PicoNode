@@ -2,16 +2,16 @@ namespace PicoNode.Agent;
 
 public sealed class SkillInfo
 {
-    public string Name { get; set; } = "";
-    public string Description { get; set; } = "";
-    public string Path { get; set; } = "";
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string Path { get; set; } = string.Empty;
     public bool DisableModelInvocation { get; set; }
 }
 
 public sealed class SkillSource
 {
-    public string Path { get; init; } = "";
-    public string SourceTag { get; init; } = "";
+    public string Path { get; init; } = string.Empty;
+    public string SourceTag { get; init; } = string.Empty;
 }
 
 public sealed class KnowledgeScanner

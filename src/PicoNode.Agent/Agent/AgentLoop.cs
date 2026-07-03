@@ -298,8 +298,8 @@ public sealed class AgentLoop
 [JsonCamelCase]
 internal sealed class HookPayload
 {
-    public string Kind { get; set; } = "";
-    public string EventName { get; set; } = "";
+    public string Kind { get; set; } = string.Empty;
+    public string EventName { get; set; } = string.Empty;
     public string? ToolName { get; set; }
     public Dictionary<string, object?> Args { get; set; } = new();
 }
@@ -311,7 +311,7 @@ internal sealed class HookPayload
 [JsonCamelCase]
 internal sealed class ToolCallPayload
 {
-    public string Kind { get; set; } = "";
+    public string Kind { get; set; } = string.Empty;
     public string? ToolCallId { get; set; }
     public string? ToolName { get; set; }
     public Dictionary<string, object?> Args { get; set; } = new();

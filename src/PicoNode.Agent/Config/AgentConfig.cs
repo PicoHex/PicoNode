@@ -35,7 +35,7 @@ public sealed class AgentConfig
 [PicoJetson.JsonCamelCase]
 public sealed class ProviderEntry
 {
-    public string ApiKey { get; set; } = "";
+    public string ApiKey { get; set; } = string.Empty;
     public string? ApiFormat { get; set; }
     public string? BaseUrl { get; set; }
     public Dictionary<string, string>? Thinking { get; set; }
@@ -47,5 +47,5 @@ public sealed class ProviderEntry
 public sealed class ModelThinkingOverride
 {
     public bool ThinkingEnabled { get; set; }
-    public string ThinkingLevel { get; set; } = "";
+    public string ThinkingLevel { get; set; } = string.Empty;
 }

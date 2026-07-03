@@ -5,14 +5,14 @@ namespace PicoAgent;
 [JsonCamelCase]
 public sealed class ModelSwitchReq
 {
-    public string ModelId { get; set; } = "";
+    public string ModelId { get; set; } = string.Empty;
 }
 
 [PicoSerializable]
 [JsonCamelCase]
 public sealed class ProviderSwitchReq
 {
-    public string Provider { get; set; } = "";
+    public string Provider { get; set; } = string.Empty;
 }
 
 [PicoSerializable]
@@ -34,8 +34,8 @@ public sealed class KeepRecentReq
 [JsonCamelCase]
 sealed class ConfigValidateReq
 {
-    public string Provider { get; set; } = "";
-    public string ApiKey { get; set; } = "";
+    public string Provider { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
     public string? BaseUrl { get; set; }
     public string? ApiFormat { get; set; }
 }

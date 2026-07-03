@@ -12,7 +12,7 @@ if (!File.Exists(settingsPath))
         new AgentConfig
         {
             Providers = [],
-            Model = "",
+            Model = string.Empty,
             ThinkingLevel = "medium",
             ThinkingEnabled = true,
             MaxTokens = 4096,

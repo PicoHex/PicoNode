@@ -347,7 +347,7 @@ public class ResilientLLmClientResilienceTests
         new AssistantMessageEvent.TextDelta
         {
             Index = 0,
-            Delta = "",
+            Delta = string.Empty,
             Partial = new Message { Role = "assistant" },
         };
 

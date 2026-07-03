@@ -7,16 +7,16 @@ namespace PicoNode.AI;
 /// </summary>
 public sealed class Message
 {
-    public string Role { get; set; } = ""; // user | assistant | toolResult
+    public string Role { get; set; } = string.Empty; // user | assistant | toolResult
     public long Timestamp { get; set; }
 
     // User message fields
-    public string Content { get; set; } = "";
+    public string Content { get; set; } = string.Empty;
 
     // Assistant message fields
     public ContentBlock[]? ContentBlocks { get; set; }
-    public string Model { get; set; } = "";
-    public string Provider { get; set; } = "";
+    public string Model { get; set; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
     public AiApiFormat Api { get; set; }
     public TokenUsage Usage { get; set; } = new();
     public string StopReason { get; set; } = "stop";

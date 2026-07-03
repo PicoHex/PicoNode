@@ -108,7 +108,7 @@ public class CompactorSummarizationContentTests
     private sealed class CapturingLlm : IAgentLlm
     {
         public int CapturedCallCount { get; private set; }
-        public string JoinedPromptText { get; private set; } = "";
+        public string JoinedPromptText { get; private set; } = string.Empty;
 
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
             string? sp,

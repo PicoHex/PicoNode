@@ -16,9 +16,9 @@ namespace PicoNode.Agent;
 [PicoDerivedType(typeof(LeafEntry), "leaf")]
 public abstract class SessionTreeEntryBase
 {
-    public string Id { get; set; } = "";
+    public string Id { get; set; } = string.Empty;
     public string? ParentId { get; set; }
-    public string Timestamp { get; set; } = "";
+    public string Timestamp { get; set; } = string.Empty;
 }
 
 public sealed class MessageEntry : SessionTreeEntryBase
@@ -28,8 +28,8 @@ public sealed class MessageEntry : SessionTreeEntryBase
 
 public sealed class CompactionEntry : SessionTreeEntryBase
 {
-    public string Summary { get; set; } = "";
-    public string FirstKeptEntryId { get; set; } = "";
+    public string Summary { get; set; } = string.Empty;
+    public string FirstKeptEntryId { get; set; } = string.Empty;
     public long TokensBefore { get; set; }
 
     [JsonIgnore]
@@ -39,8 +39,8 @@ public sealed class CompactionEntry : SessionTreeEntryBase
 
 public sealed class BranchSummaryEntry : SessionTreeEntryBase
 {
-    public string FromId { get; set; } = "";
-    public string Summary { get; set; } = "";
+    public string FromId { get; set; } = string.Empty;
+    public string Summary { get; set; } = string.Empty;
 
     [JsonIgnore]
     public object? Details { get; set; }
@@ -49,7 +49,7 @@ public sealed class BranchSummaryEntry : SessionTreeEntryBase
 
 public sealed class CustomEntry : SessionTreeEntryBase
 {
-    public string CustomType { get; set; } = "";
+    public string CustomType { get; set; } = string.Empty;
 
     [JsonIgnore]
     public object? Data { get; set; }
@@ -57,8 +57,8 @@ public sealed class CustomEntry : SessionTreeEntryBase
 
 public sealed class CustomMessageEntry : SessionTreeEntryBase
 {
-    public string CustomType { get; set; } = "";
-    public string Content { get; set; } = "";
+    public string CustomType { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
 
     [JsonIgnore]
     public object? Details { get; set; }
@@ -67,7 +67,7 @@ public sealed class CustomMessageEntry : SessionTreeEntryBase
 
 public sealed class LabelEntry : SessionTreeEntryBase
 {
-    public string TargetId { get; set; } = "";
+    public string TargetId { get; set; } = string.Empty;
     public string? Label { get; set; }
 }
 
@@ -78,13 +78,13 @@ public sealed class SessionInfoEntry : SessionTreeEntryBase
 
 public sealed class ModelChangeEntry : SessionTreeEntryBase
 {
-    public string Provider { get; set; } = "";
-    public string ModelId { get; set; } = "";
+    public string Provider { get; set; } = string.Empty;
+    public string ModelId { get; set; } = string.Empty;
 }
 
 public sealed class ThinkingLevelChangeEntry : SessionTreeEntryBase
 {
-    public string ThinkingLevel { get; set; } = "";
+    public string ThinkingLevel { get; set; } = string.Empty;
 }
 
 public sealed class ActiveToolsChangeEntry : SessionTreeEntryBase

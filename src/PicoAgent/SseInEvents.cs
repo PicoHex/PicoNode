@@ -21,37 +21,37 @@ class SseInEvent { }
 [JsonCamelCase]
 sealed class SseInDelta : SseInEvent
 {
-    public string Content { get; set; } = "";
+    public string Content { get; set; } = string.Empty;
 }
 
 [PicoSerializable]
 [JsonCamelCase]
 sealed class SseInThinking : SseInEvent
 {
-    public string Content { get; set; } = "";
+    public string Content { get; set; } = string.Empty;
 }
 
 [PicoSerializable]
 [JsonCamelCase]
 sealed class SseInToolCallStart : SseInEvent
 {
-    public string ToolCallId { get; set; } = "";
-    public string ToolName { get; set; } = "";
+    public string ToolCallId { get; set; } = string.Empty;
+    public string ToolName { get; set; } = string.Empty;
 }
 
 [PicoSerializable]
 [JsonCamelCase]
 sealed class SseInToolCallDelta : SseInEvent
 {
-    public string ToolCallId { get; set; } = "";
-    public string Content { get; set; } = "";
+    public string ToolCallId { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
 }
 
 [PicoSerializable]
 [JsonCamelCase]
 sealed class SseInToolCallEnd : SseInEvent
 {
-    public string ToolCallId { get; set; } = "";
+    public string ToolCallId { get; set; } = string.Empty;
 }
 
 [PicoSerializable]

@@ -14,7 +14,7 @@ sealed class OpenAiErrorResponse
 [JsonCamelCase]
 sealed class OpenAiErrorDetail
 {
-    public string Message { get; set; } = "";
+    public string Message { get; set; } = string.Empty;
     public string? Type { get; set; }
 }
 
@@ -31,7 +31,7 @@ sealed class AnthropicErrorResponse
 sealed class AnthropicErrorDetail
 {
     public string? Type { get; set; }
-    public string Message { get; set; } = "";
+    public string Message { get; set; } = string.Empty;
 }
 
 [PicoSerializable]
@@ -46,9 +46,9 @@ sealed class ModelListResponse
 [JsonCamelCase]
 sealed class ModelListEntry
 {
-    public string Id { get; set; } = "";
+    public string Id { get; set; } = string.Empty;
     public string? Object { get; set; }
     public long Created { get; set; }
     [JsonPropertyName("owned_by")]
-    public string OwnedBy { get; set; } = "";
+    public string OwnedBy { get; set; } = string.Empty;
 }

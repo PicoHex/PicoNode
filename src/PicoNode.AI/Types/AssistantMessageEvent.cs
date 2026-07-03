@@ -10,14 +10,14 @@ public abstract class AssistantMessageEvent
     public sealed class TextDelta : AssistantMessageEvent
     {
         public int Index { get; set; }
-        public string Delta { get; set; } = "";
+        public string Delta { get; set; } = string.Empty;
         public Message Partial { get; set; } = new();
     }
 
     public sealed class ThinkingDelta : AssistantMessageEvent
     {
         public int Index { get; set; }
-        public string Delta { get; set; } = "";
+        public string Delta { get; set; } = string.Empty;
         public Message Partial { get; set; } = new();
     }
 
@@ -30,7 +30,7 @@ public abstract class AssistantMessageEvent
     public sealed class ToolCallDelta : AssistantMessageEvent
     {
         public int Index { get; set; }
-        public string Delta { get; set; } = "";
+        public string Delta { get; set; } = string.Empty;
         public Message Partial { get; set; } = new();
     }
 

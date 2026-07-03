@@ -2,11 +2,11 @@ namespace PicoNode.AI;
 
 public sealed class Model
 {
-    public string Id { get; set; } = "";
-    public string Name { get; set; } = "";
-    public string Provider { get; set; } = "";
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
     public AiApiFormat Api { get; set; }
-    public string BaseUrl { get; set; } = "";
+    public string BaseUrl { get; set; } = string.Empty;
     public bool ThinkingEnabled { get; set; }
     public ThinkingLevel ThinkingLevel { get; set; } = ThinkingLevel.Medium;
     public Dictionary<string, string>? ThinkingLevelMap { get; set; }

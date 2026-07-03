@@ -4,8 +4,8 @@ namespace PicoNode.Agent;
 
 public sealed class ManifestData
 {
-    public string Name { get; set; } = "";
-    public string Version { get; set; } = "";
+    public string Name { get; set; } = string.Empty;
+    public string Version { get; set; } = string.Empty;
     public ManifestCapability[] Capabilities { get; set; } = [];
     public string[] Knowledge { get; set; } = [];
     public string? Setup { get; set; }
@@ -13,8 +13,8 @@ public sealed class ManifestData
 
 public sealed class ManifestCapability
 {
-    public string Name { get; set; } = "";
-    public string Handler { get; set; } = "";
+    public string Name { get; set; } = string.Empty;
+    public string Handler { get; set; } = string.Empty;
 
     // Flat arrays instead of nested object arrays
     public int[] TriggerKinds { get; set; } = [];
@@ -24,7 +24,7 @@ public sealed class ManifestCapability
     public string? Schema { get; set; } // simplified schema: {"type":"object","required":["path"],"properties":{"path":{"type":"string"}}}
     public string? Guidelines { get; set; } // single-line usage hint for system prompt
     public int Priority { get; set; } = 50;
-    public string Description { get; set; } = "";
+    public string Description { get; set; } = string.Empty;
 
     public LifecycleKind LifecycleKind => (LifecycleKind)Lifecycle;
 

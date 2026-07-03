@@ -5,7 +5,7 @@ public class AgentHttpClientCompactTests
     [Test]
     public async Task CompactSessionAsync_DefaultKeepRecent_SendsEmptyBody()
     {
-        var seenBody = "";
+        var seenBody = string.Empty;
         var handler = new TestDelegatingHandler(
             async (req, ct) =>
             {

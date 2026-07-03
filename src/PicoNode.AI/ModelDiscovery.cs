@@ -4,8 +4,8 @@ namespace PicoNode.AI;
 [PicoSerializable]
 public sealed class DiscoveredModel
 {
-    public string Id { get; set; } = "";
-    public string OwnedBy { get; set; } = "";
+    public string Id { get; set; } = string.Empty;
+    public string OwnedBy { get; set; } = string.Empty;
 }
 
 public static class ModelDiscovery

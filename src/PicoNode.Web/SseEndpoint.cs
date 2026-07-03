@@ -49,7 +49,7 @@ public sealed class SseConnection
         if (eventType.Contains('\n'))
             throw new ArgumentException("Event type must not contain newlines", nameof(eventType));
 
-        data ??= "";
+        data ??= string.Empty;
 
         var sb = new StringBuilder();
         sb.Append("event: ").Append(eventType).Append('\n');

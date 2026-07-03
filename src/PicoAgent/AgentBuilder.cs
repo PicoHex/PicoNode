@@ -144,7 +144,7 @@ public sealed class AgentBuilder
         var model = new Model
         {
             Id = modelId,
-            BaseUrl = "",
+            BaseUrl = string.Empty,
             Api = apiFormat,
             Provider = defaultProvider,
             MaxTokens = _config.MaxTokens ?? 4096,
@@ -217,7 +217,7 @@ public sealed class AgentBuilder
 
         _initialModel = new Model
         {
-            Id = "",
+            Id = string.Empty,
             Provider = "unknown",
             MaxTokens = _config?.MaxTokens ?? 4096,
         };
