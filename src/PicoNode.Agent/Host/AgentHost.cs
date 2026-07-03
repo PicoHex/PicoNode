@@ -122,6 +122,36 @@ public sealed partial class AgentHost
     }
 
     /// <summary>
+    /// Removes the last user message and all following entries from the session.
+    /// Used by the retry feature to avoid duplicating prompts in LLM context.
+    /// </summary>
+    public async Task RetryLastMessageAsync(string sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session))
+            return;
+        var entries = await session.GetEntries();
+        var lastUserIdx = -1;
+        for (int i = entries.Length - 1; i >= 0; i--)
+        {
+            if (entries[i] is MessageEntry me && me.Message.Role == "user")
+            {
+                lastUserIdx = i;
+                break;
+            }
+        }
+        if (lastUserIdx < 0)
+            return;
+        var kept = new List<SessionTreeEntryBase>();
+        for (int i = 0; i < lastUserIdx; i++)
+            kept.Add(entries[i]);
+        var newStorage = new InMemorySessionStorage();
+        var newSession = new Session(newStorage);
+        foreach (var entry in kept)
+            await newSession.AppendEntry(EntryClone(entry));
+        _sessions[sessionId] = newSession;
+    }
+
+    /// <summary>
     /// Extracts visible text from the last assistant message in a turn.
     /// </summary>
     private static string ExtractText(List<Message> messages)
@@ -184,4 +214,96 @@ public sealed partial class AgentHost
             return drained;
         }
     }
+
+    private static SessionTreeEntryBase EntryClone(SessionTreeEntryBase e) =>
+        e switch
+        {
+            MessageEntry me => new MessageEntry
+            {
+                Id = me.Id,
+                ParentId = me.ParentId,
+                Timestamp = me.Timestamp,
+                Message = me.Message,
+            },
+            CompactionEntry ce => new CompactionEntry
+            {
+                Id = ce.Id,
+                ParentId = ce.ParentId,
+                Timestamp = ce.Timestamp,
+                Summary = ce.Summary,
+                FirstKeptEntryId = ce.FirstKeptEntryId,
+                TokensBefore = ce.TokensBefore,
+                FromHook = ce.FromHook,
+            },
+            BranchSummaryEntry bs => new BranchSummaryEntry
+            {
+                Id = bs.Id,
+                ParentId = bs.ParentId,
+                Timestamp = bs.Timestamp,
+                FromId = bs.FromId,
+                Summary = bs.Summary,
+                FromHook = bs.FromHook,
+            },
+            CustomEntry c => new CustomEntry
+            {
+                Id = c.Id,
+                ParentId = c.ParentId,
+                Timestamp = c.Timestamp,
+                CustomType = c.CustomType,
+            },
+            CustomMessageEntry cm => new CustomMessageEntry
+            {
+                Id = cm.Id,
+                ParentId = cm.ParentId,
+                Timestamp = cm.Timestamp,
+                CustomType = cm.CustomType,
+                Content = cm.Content,
+                Display = cm.Display,
+            },
+            LabelEntry l => new LabelEntry
+            {
+                Id = l.Id,
+                ParentId = l.ParentId,
+                Timestamp = l.Timestamp,
+                TargetId = l.TargetId,
+                Label = l.Label,
+            },
+            SessionInfoEntry si => new SessionInfoEntry
+            {
+                Id = si.Id,
+                ParentId = si.ParentId,
+                Timestamp = si.Timestamp,
+                Name = si.Name,
+            },
+            ModelChangeEntry mc => new ModelChangeEntry
+            {
+                Id = mc.Id,
+                ParentId = mc.ParentId,
+                Timestamp = mc.Timestamp,
+                Provider = mc.Provider,
+                ModelId = mc.ModelId,
+            },
+            ThinkingLevelChangeEntry tc => new ThinkingLevelChangeEntry
+            {
+                Id = tc.Id,
+                ParentId = tc.ParentId,
+                Timestamp = tc.Timestamp,
+                ThinkingLevel = tc.ThinkingLevel,
+            },
+            ActiveToolsChangeEntry at => new ActiveToolsChangeEntry
+            {
+                Id = at.Id,
+                ParentId = at.ParentId,
+                Timestamp = at.Timestamp,
+                ActiveToolNames = at.ActiveToolNames,
+            },
+            LeafEntry lf => new LeafEntry
+            {
+                Id = lf.Id,
+                ParentId = lf.ParentId,
+                Timestamp = lf.Timestamp,
+                TargetId = lf.TargetId,
+            },
+            _ => throw new ArgumentException($"Unknown entry type: {e.GetType().Name}"),
+        };
 }

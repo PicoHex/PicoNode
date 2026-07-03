@@ -215,6 +215,8 @@ public sealed partial class Agent : IAsyncDisposable
 
     public void SetSystemPrompt(string? prompt) => _host.SetSystemPrompt(prompt);
 
+    internal AgentHost GetHostForTesting() => _host;
+
     public async Task<IReadOnlyList<DiscoveredModel>> ListModelsAsync(
         string? provider = null,
         CancellationToken ct = default
@@ -591,6 +593,17 @@ public sealed partial class Agent : IAsyncDisposable
                 if (req?.Prompt is null)
                     return JsonError(400, "MISSING_FIELD", "prompt required");
                 SetSystemPrompt(req.Prompt);
+                return JsonOk();
+            }
+        );
+
+        // POST /session/{id}/retry — remove last exchange before retrying
+        app.MapPost(
+            "/session/{id}/retry",
+            async (ctx, ct) =>
+            {
+                var id = ctx.RouteValues["id"] ?? "default";
+                await _host.RetryLastMessageAsync(id);
                 return JsonOk();
             }
         );

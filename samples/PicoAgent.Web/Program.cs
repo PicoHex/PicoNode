@@ -280,19 +280,31 @@ app.MapPost(
     {
         using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8, leaveOpen: true);
         var body = await reader.ReadToEndAsync(ct);
-        // Extract prompt from {"prompt":"..."}
-        var prompt = body;
+        string? prompt = null;
         try
         {
             var doc = System.Text.Json.JsonDocument.Parse(body);
             if (doc.RootElement.TryGetProperty("prompt", out var p))
-                prompt = p.GetString() ?? "";
+                prompt = p.GetString();
         }
         catch
-        { /* use raw body as prompt */
+        { /* invalid JSON */
         }
+        if (prompt is null)
+            return ErrorJson(400, "Invalid request body");
         var ok = await client.SetSystemPromptAsync(prompt, ct);
         return ok ? Ok() : ErrorJson(400, "Failed");
+    }
+);
+
+// ── Retry ──
+app.MapPost(
+    "/api/session/{id}/retry",
+    async (ctx, ct) =>
+    {
+        var id = ctx.RouteValues["id"] ?? "default";
+        await client.RetryLastMessageAsync(id, ct);
+        return Ok();
     }
 );
 

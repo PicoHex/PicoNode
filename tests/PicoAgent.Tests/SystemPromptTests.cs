@@ -68,4 +68,27 @@ public sealed class SystemPromptTests
         agent.SetSystemPrompt(prompt);
         await Assert.That(agent.GetSystemPrompt()).IsEqualTo(prompt);
     }
+
+    [Test]
+    public async Task SystemPrompt_HandlesJsonLikeContent()
+    {
+        var config = new AgentConfig
+        {
+            Providers = new()
+            {
+                ["test"] = new ProviderEntry
+                {
+                    ApiKey = "sk-test",
+                    ApiFormat = "openai",
+                    BaseUrl = "https://api.openai.com/v1",
+                },
+            },
+            Model = "gpt-4",
+        };
+        await using var agent = await Agent.CreateAsync(config);
+        // Prompt that contains chars used in JSON: braces, brackets, etc.
+        var prompt = "Respond in JSON: {\"key\": [1, 2, 3]}";
+        agent.SetSystemPrompt(prompt);
+        await Assert.That(agent.GetSystemPrompt()).IsEqualTo(prompt);
+    }
 }

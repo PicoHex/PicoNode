@@ -147,7 +147,7 @@ function showEditOverlay(text) {
         editOverlay = document.createElement('div'); editOverlay.className = 'edit-overlay';
         editOverlay.innerHTML = '<textarea rows="3"></textarea><button>Send</button><button style="background:var(--border)">✕</button>';
         editOverlay.querySelector('button').addEventListener('click', () => { const t = editOverlay.querySelector('textarea').value.trim(); if (t) { editOverlay.classList.remove('active'); sendMessage(t); } });
-        editOverlay.querySelectorAll('button')[1].addEventListener('click', () => editOverlay.classList.remove('active'));
+        editOverlay.querySelectorAll('button')[1].addEventListener('click', () => { editOverlay.querySelector('textarea').value = ''; editOverlay.classList.remove('active'); });
         document.getElementById('chat').appendChild(editOverlay);
     }
     editOverlay.querySelector('textarea').value = text; editOverlay.classList.add('active'); editOverlay.querySelector('textarea').focus();
@@ -157,7 +157,10 @@ function showEditOverlay(text) {
 async function retryLastMessage() {
     const userMsgs = messages.querySelectorAll('.message.user'); if (!userMsgs.length) return;
     const last = userMsgs[userMsgs.length - 1]; const text = last.querySelector('.msg-content').textContent.trim();
-    let next = last.nextElementSibling; while (next && (next.classList.contains('assistant') || next.classList.contains('tool'))) { const r = next; next = next.nextElementSibling; r.remove(); }
+    forgetThinking(currentSession);
+    // Tell backend to remove last exchange before resending
+    try { await fetch(`/api/session/${currentSession}/retry`, { method: 'POST' }); } catch {}
+    let next = last; while (next) { const r = next; next = next.nextElementSibling; r.remove(); }
     await sendMessage(text);
 }
 

@@ -201,10 +201,15 @@ public sealed class AgentHttpClient : IAsyncDisposable
 
     public async Task<bool> SetSystemPromptAsync(string prompt, CancellationToken ct = default)
     {
-        var json = $"{{\"prompt\":\"{EscapeJson(prompt)}\"}}";
+        var dto = new { prompt };
+        var json = PicoJetson.JsonSerializer.Serialize(dto);
         var r = await _http.PostAsync("/system-prompt", JsonContent(json), ct);
         return r.IsSuccessStatusCode;
     }
+
+    // ── Retry ──
+    public async Task RetryLastMessageAsync(string sessionId, CancellationToken ct = default) =>
+        await _http.PostAsync($"/session/{sessionId}/retry", null, ct);
 
     private static StringContent JsonContent(string json) =>
         new(json, Encoding.UTF8, "application/json");
