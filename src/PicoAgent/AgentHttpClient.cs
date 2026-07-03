@@ -201,7 +201,7 @@ public sealed class AgentHttpClient : IAsyncDisposable
 
     public async Task<bool> SetSystemPromptAsync(string prompt, CancellationToken ct = default)
     {
-        var dto = new { prompt };
+        var dto = new SystemPromptReq { Prompt = prompt };
         var json = PicoJetson.JsonSerializer.Serialize(dto);
         var r = await _http.PostAsync("/system-prompt", JsonContent(json), ct);
         return r.IsSuccessStatusCode;

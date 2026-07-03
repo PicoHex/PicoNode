@@ -1,4 +1,5 @@
 global using System.Net;
+global using System.Net.Http;
 global using System.Runtime.CompilerServices;
 global using PicoAgent;
 global using PicoNode.Agent;

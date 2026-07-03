@@ -91,4 +91,30 @@ public sealed class SystemPromptTests
         agent.SetSystemPrompt(prompt);
         await Assert.That(agent.GetSystemPrompt()).IsEqualTo(prompt);
     }
+
+    [Test]
+    public async Task SystemPrompt_HttpClient_SerializesCorrectly()
+    {
+        var handler = new CapturingHandler(_ => { });
+        var http = new HttpClient(handler) { BaseAddress = new Uri("http://test") };
+        var client = AgentHttpClient.CreateForTest(http);
+        var ok = await client.SetSystemPromptAsync("You are helpful.");
+        await Assert.That(ok).IsTrue();
+    }
+
+    private sealed class CapturingHandler : HttpMessageHandler
+    {
+        private readonly Action<string?> _onBody;
+
+        public CapturingHandler(Action<string?> onBody) => _onBody = onBody;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken ct
+        )
+        {
+            _onBody(request.Content?.ReadAsStringAsync().Result);
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+        }
+    }
 }
