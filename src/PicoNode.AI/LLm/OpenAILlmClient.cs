@@ -1,4 +1,3 @@
-
 namespace PicoNode.AI;
 
 public sealed class OpenAILlmClient : ILLmClient
@@ -105,6 +104,12 @@ public sealed class OpenAILlmClient : ILLmClient
                 sb.Append(effort);
                 sb.Append('"');
             }
+        }
+        else if (options?.ThinkingDisabled == true)
+        {
+            // Some providers (DeepSeek) default thinking to enabled.
+            // Explicitly disable it so the off toggle is respected.
+            sb.Append(",\"thinking\":{\"type\":\"disabled\"}");
         }
 
         sb.Append(',');

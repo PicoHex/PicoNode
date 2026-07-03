@@ -105,7 +105,7 @@ public sealed class AgentBuilder
         var host = new AgentHost(loop);
 
         if (_capabilitiesRoot is { Length: > 0 })
-            await TryRestoreSessionAsync(host, _capabilitiesRoot, ct);
+            await TryRestoreSessionsAsync(host, _capabilitiesRoot, ct);
 
         return host;
     }
@@ -164,7 +164,7 @@ public sealed class AgentBuilder
         return model;
     }
 
-    private static async Task TryRestoreSessionAsync(
+    private static async Task TryRestoreSessionsAsync(
         AgentHost host,
         string root,
         CancellationToken ct
@@ -172,11 +172,22 @@ public sealed class AgentBuilder
     {
         try
         {
-            var sessionPath = Path.Combine(root, "sessions", "default.jsonl");
-            if (File.Exists(sessionPath))
+            var sessionsDir = Path.Combine(root, "sessions");
+            if (!Directory.Exists(sessionsDir))
+                return;
+
+            foreach (var sessionPath in Directory.EnumerateFiles(sessionsDir, "*.jsonl"))
             {
-                var session = await JsonlSessionStorage.OpenAsync(sessionPath);
-                await host.RestoreSessionAsync("default", new Session(session));
+                try
+                {
+                    var sessionId = Path.GetFileNameWithoutExtension(sessionPath);
+                    var storage = await JsonlSessionStorage.OpenAsync(sessionPath);
+                    await host.RestoreSessionAsync(sessionId, new Session(storage));
+                }
+                catch
+                {
+                    // Individual session restore is best-effort
+                }
             }
         }
         catch

@@ -157,7 +157,7 @@ async function loadMessages(sessionId) {
         const msgs = await api('GET', `/api/session/${sessionId}/messages`);
         messages.innerHTML = '';
         if (msgs && Array.isArray(msgs)) {
-            let msgIdx = 0;
+            let assistantIdx = 0;
             for (const m of msgs) {
                 const role = (m.Role || m.role || '').toLowerCase();
                 if (!role || role === 'system') continue;
@@ -167,12 +167,12 @@ async function loadMessages(sessionId) {
 
                 if (role === 'assistant' && text) {
                     // Restore cached thinking if available
-                    const cachedThinking = loadThinking(sessionId, msgIdx);
+                    const cachedThinking = loadThinking(sessionId, assistantIdx);
                     renderMessageWithThinking('assistant', text, cachedThinking);
+                    assistantIdx++;
                 } else if (text) {
                     renderMessage('user', text);
                 }
-                msgIdx++;
             }
         }
     } catch (e) { /* ignore */ }
@@ -315,7 +315,7 @@ async function sendMessage() {
     streamMsgIndex = existing.length;
 
     renderMessage('user', text);
-    currentAssistant = renderAssistantShell();
+    currentAssistant = renderAssistantShell(thinkChk.checked);
     const contentEl = currentAssistant.querySelector('.msg-content');
     const streamDot = currentAssistant.querySelector('.streaming-indicator');
     const streamText = currentAssistant.querySelector('.stream-text');
@@ -370,10 +370,10 @@ async function sendMessage() {
                             streamText.textContent = rawText;
                             break;
                         case 'thinking':
+                            if (!thinkChk.checked) break;  // skip when disabled
                             rawThinking += evt.content;
                             thinkingBlock.querySelector('.think-content').textContent = rawThinking;
                             thinkingBlock.open = true;
-                            // Save incrementally so partial thinking survives crashes
                             saveThinking(currentSession, streamMsgIndex, rawThinking);
                             break;
                         case 'done':
@@ -450,7 +450,7 @@ async function deferMermaidRender(container) {
     }
 }
 
-function renderAssistantShell() {
+function renderAssistantShell(showThinking = true) {
     const el = document.createElement('div');
     el.className = 'message assistant';
     const content = document.createElement('div');
@@ -460,11 +460,13 @@ function renderAssistantShell() {
       '<span class="stream-text" style="display:none"></span>';
     el.appendChild(content);
 
-    const think = document.createElement('details');
-    think.className = 'thinking';
-    think.open = true;
-    think.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>';
-    el.insertBefore(think, content);
+    if (showThinking) {
+        const think = document.createElement('details');
+        think.className = 'thinking';
+        think.open = true;
+        think.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>';
+        el.insertBefore(think, content);
+    }
 
     messages.appendChild(el);
     messages.scrollTop = messages.scrollHeight;

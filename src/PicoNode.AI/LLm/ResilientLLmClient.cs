@@ -1,4 +1,3 @@
-
 namespace PicoNode.AI;
 
 public sealed class ResilientLLmClient : ILLmClient
@@ -216,6 +215,7 @@ public sealed class ResilientLLmClient : ILLmClient
             MaxTokens = user?.MaxTokens,
             Temperature = user?.Temperature,
             Reasoning = user?.Reasoning,
+            ThinkingDisabled = user?.ThinkingDisabled ?? false,
             ThinkingLevelMap = user?.ThinkingLevelMap,
         };
     }

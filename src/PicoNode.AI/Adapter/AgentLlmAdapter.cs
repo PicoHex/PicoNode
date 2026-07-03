@@ -68,6 +68,12 @@ public sealed class AgentLlmAdapter : IAgentLlm
             );
             options = new StreamOptions { Reasoning = parsed ? level : ThinkingLevel.Medium };
         }
+        else
+        {
+            // Explicitly disable thinking so providers that default to enabled
+            // (e.g. DeepSeek) respect the off state.
+            options = new StreamOptions { ThinkingDisabled = true };
+        }
 
         await foreach (var evt in _client.StreamAsync(model, context, options, ct))
         {
