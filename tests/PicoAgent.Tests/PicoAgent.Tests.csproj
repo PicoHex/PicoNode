@@ -11,6 +11,7 @@
     <ProjectReference Include="..\..\src\PicoAgent\PicoAgent.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.AI\PicoNode.AI.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Agent\PicoNode.Agent.csproj" />
+    <PackageReference Include="PicoJetson" />
     <PackageReference Include="TUnit" />
   </ItemGroup>
 </Project>
