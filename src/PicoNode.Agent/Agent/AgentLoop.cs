@@ -6,6 +6,7 @@ public sealed class AgentLoop
     private readonly CapabilityRegistry _registry;
     private readonly CapabilityRunner _runner;
     private readonly HookRunner _hookRunner;
+    private readonly BuiltInToolSet _builtInTools;
     private const int MaxToolIterations = 20;
 
     public string? SystemPrompt { get; set; }
@@ -18,12 +19,20 @@ public sealed class AgentLoop
     /// </summary>
     public TimeSpan LlmTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
+    /// <summary>Working directory for built-in tool execution.</summary>
+    public string WorkingDirectory { get; set; }
+
     public AgentLoop(IAgentLlm llm, CapabilityRegistry registry, CapabilityRunner runner)
+        : this(llm, registry, runner, new BuiltInToolSet()) { }
+
+    public AgentLoop(IAgentLlm llm, CapabilityRegistry registry, CapabilityRunner runner, BuiltInToolSet builtInTools)
     {
         _llm = llm;
         _registry = registry;
         _runner = runner;
+        _builtInTools = builtInTools;
         _hookRunner = new HookRunner(registry, runner);
+        WorkingDirectory = Directory.GetCurrentDirectory();
     }
 
     /// <summary>LLM-based summary compaction — v2 target.</summary>
@@ -79,6 +88,59 @@ public sealed class AgentLoop
             {
                 foreach (var tc in toolCallBlocks!)
                 {
+                    // ── 1. Try built-in tool ──
+                    if (tc.Name is { Length: > 0 })
+                    {
+                        var builtIn = _builtInTools.Find(tc.Name);
+                        if (builtIn is not null)
+                        {
+                            // Hook: OnToolCall
+                            var biHookInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
+                                new HookPayload
+                                {
+                                    Kind = KindHook,
+                                    EventName = HookEventToolCall,
+                                    ToolName = tc.Name,
+                                    Args = tc.Arguments,
+                                }
+                            );
+                            var biHookResult = await _hookRunner.EmitAsync(TriggerKind.OnToolCall, biHookInput, ct);
+                            if (
+                                biHookResult is { } biH
+                                && biH.RootElement.TryGetProperty("action", out var biAction)
+                                && biAction.GetString() == ActionBlock
+                            )
+                                continue;
+
+                            // Execute built-in tool
+                            var (content, isError) = await builtIn.ExecuteAsync(tc.Arguments, WorkingDirectory, ct);
+
+                            // Truncate output
+                            var truncated = CapabilityRunner.TruncateOutput(content, 50000, 2000);
+
+                            var biToolMsg = new Message
+                            {
+                                Role = RoleToolResult,
+                                ToolCallId = tc.Id,
+                                ToolName = tc.Name,
+                                ContentBlocks =
+                                [
+                                    new ContentBlock
+                                    {
+                                        Type = BlockTypeText,
+                                        Text = truncated.Content,
+                                    },
+                                ],
+                                IsError = isError,
+                                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                            };
+                            await session.AppendMessage(biToolMsg);
+                            result.Add(biToolMsg);
+                            continue;
+                        }
+                    }
+
+                    // ── 2. Try CapabilityRegistry ──
                     var capConfig = _registry.GetAll().FirstOrDefault(c => c.Name == tc.Name);
 
                     if (capConfig == null)
@@ -271,29 +333,57 @@ public sealed class AgentLoop
                         );
                     break;
                 case "done":
-                    contentBlocks.Insert(
-                        0,
-                        new ContentBlock { Type = "text", Text = textAccum.ToString() }
-                    );
-                    finalMessage = new Message
+                    // Prefer ContentBlocks from the LLM adapter (properly structured by SseParser
+                    // with both text and tool_call blocks). Fall back to local textAccum for simple
+                    // mock LLMs that don't set ContentBlocks (backward compat).
+                    if (evt.ContentBlocks is { Length: > 0 })
                     {
-                        Role = "assistant",
-                        StopReason = evt.StopReason ?? "end_turn",
-                        ContentBlocks = [.. contentBlocks],
-                    };
+                        finalMessage = new Message
+                        {
+                            Role = "assistant",
+                            StopReason = evt.StopReason ?? "end_turn",
+                            ContentBlocks = evt.ContentBlocks,
+                        };
+                    }
+                    else
+                    {
+                        contentBlocks.Insert(
+                            0,
+                            new ContentBlock { Type = "text", Text = textAccum.ToString() }
+                        );
+                        finalMessage = new Message
+                        {
+                            Role = "assistant",
+                            StopReason = evt.StopReason ?? "end_turn",
+                            ContentBlocks = [.. contentBlocks],
+                        };
+                    }
                     break;
                 case "error":
-                    contentBlocks.Insert(
-                        0,
-                        new ContentBlock { Type = "text", Text = textAccum.ToString() }
-                    );
-                    finalMessage = new Message
+                    if (evt.ContentBlocks is { Length: > 0 })
                     {
-                        Role = "assistant",
-                        StopReason = "error",
-                        ErrorMessage = evt.ErrorMessage,
-                        ContentBlocks = [.. contentBlocks],
-                    };
+                        finalMessage = new Message
+                        {
+                            Role = "assistant",
+                            StopReason = "error",
+                            ErrorMessage = evt.ErrorMessage,
+                            ContentBlocks = evt.ContentBlocks,
+                        };
+                    }
+                    else
+                    {
+                        contentBlocks.Insert(
+                            0,
+                            new ContentBlock { Type = "text", Text = textAccum.ToString() }
+                        );
+                        finalMessage = new Message
+                        {
+                            Role = "assistant",
+                            StopReason = "error",
+                            ErrorMessage = evt.ErrorMessage,
+                            ContentBlocks = [.. contentBlocks],
+                        };
+                    }
                     if (onEvent is not null)
                         await onEvent(
                             new AssistantMessageEvent.Error { Message = finalMessage },

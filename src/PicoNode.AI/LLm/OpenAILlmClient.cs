@@ -114,9 +114,18 @@ public sealed class OpenAILlmClient : ILLmClient
 
         sb.Append(',');
         sb.Append("\"messages\":[");
+        // Prepend system prompt as the first message if set
+        var msgIdx = 0;
+        if (!string.IsNullOrEmpty(context.SystemPrompt))
+        {
+            sb.Append("{\"role\":\"system\",\"content\":\"");
+            sb.Append(EscapeJson(context.SystemPrompt));
+            sb.Append("\"}");
+            msgIdx = 1;
+        }
         for (int i = 0; i < context.Messages.Length; i++)
         {
-            if (i > 0)
+            if (msgIdx > 0 || i > 0)
                 sb.Append(',');
             AppendMessage(sb, context.Messages[i]);
         }

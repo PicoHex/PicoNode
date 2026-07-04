@@ -26,7 +26,7 @@ public class SystemPromptBuilderTests
             new() { Name = "read", Description = "Read files" },
         };
 
-        var prompt = SystemPromptBuilder.Build(skills, caps, "AGENTS content");
+        var prompt = SystemPromptBuilder.Build(skills, caps, agentsMd: "AGENTS content");
         await Assert.That(prompt).Contains("AGENTS content");
         await Assert.That(prompt).Contains("read");
     }

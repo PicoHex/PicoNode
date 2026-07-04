@@ -97,11 +97,23 @@ public sealed class AgentBuilder
         if (_capabilitiesRoot is { Length: > 0 })
             _registry.Scan(_capabilitiesRoot);
 
+        var builtInTools = CreateBuiltInTools();
+
         var runner = new CapabilityRunner();
         var model = await ResolveModelAsync(http, providerConfigs, ct);
         _initialModel = model;
         var adapter = new AgentLlmAdapter(resilientClient, router);
-        var loop = new AgentLoop(adapter, _registry, runner);
+        var loop = new AgentLoop(adapter, _registry, runner, builtInTools);
+        loop.WorkingDirectory = _capabilitiesRoot ?? Directory.GetCurrentDirectory();
+
+        // Build and set system prompt
+        if (_capabilitiesRoot is { Length: > 0 })
+        {
+            var scanner = new KnowledgeScanner();
+            var skills = scanner.Scan(_capabilitiesRoot);
+            loop.SystemPrompt = SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools);
+        }
+
         var host = new AgentHost(loop);
 
         if (_capabilitiesRoot is { Length: > 0 })
@@ -233,8 +245,9 @@ public sealed class AgentBuilder
             MaxTokens = _config?.MaxTokens ?? 4096,
         };
 
+        var builtInTools = CreateBuiltInTools();
         var runner = new CapabilityRunner();
-        var loop = new AgentLoop(new NoopAgentLlm(), _registry, runner);
+        var loop = new AgentLoop(new NoopAgentLlm(), _registry, runner, builtInTools);
         return new AgentHost(loop);
     }
 
@@ -261,6 +274,16 @@ public sealed class AgentBuilder
     /// </summary>
     private static HttpClient CreateHttpClient() =>
         new(new SocketsHttpHandler { UseProxy = false });
+
+    internal static BuiltInToolSet CreateBuiltInTools()
+    {
+        var tools = new BuiltInToolSet();
+        tools.Register(new ReadTool());
+        tools.Register(new BashTool());
+        tools.Register(new WriteTool());
+        tools.ApplyPreset(ToolPreset.Coding);
+        return tools;
+    }
 }
 
 /// <summary>

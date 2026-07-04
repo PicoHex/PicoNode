@@ -20,6 +20,7 @@ public static class SystemPromptBuilder
     public static string Build(
         IReadOnlyList<SkillInfo> skills,
         IReadOnlyList<ManifestCapability> tools,
+        BuiltInToolSet? builtInTools = null,
         string? agentsMd = null
     )
     {
@@ -28,6 +29,12 @@ public static class SystemPromptBuilder
             sb.AppendLine(agentsMd).AppendLine();
         sb.AppendLine(SkillFormatter.FormatSkillsPrompt(skills.ToList()));
         sb.AppendLine(FormatToolsPrompt(tools));
+        if (builtInTools is not null)
+        {
+            var toolPrompt = builtInTools.FormatForSystemPrompt();
+            if (toolPrompt.Length > 0)
+                sb.AppendLine(toolPrompt);
+        }
         return sb.ToString();
     }
 }

@@ -7,7 +7,8 @@ public readonly record struct LlmStreamEvent(
     string? StopReason,
     string? ErrorMessage,
     string? ToolCallId = null,
-    string? ToolName = null
+    string? ToolName = null,
+    ContentBlock[]? ContentBlocks = null
 );
 
 public interface IAgentLlm

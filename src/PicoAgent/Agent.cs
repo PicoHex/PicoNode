@@ -455,8 +455,18 @@ public sealed partial class Agent : IAsyncDisposable
                         _clients
                     );
                     var adapter = new AgentLlmAdapter(resilientClient, _router);
-                    var newLoop = new AgentLoop(adapter, _registry, new CapabilityRunner());
+                    var builtInTools = AgentBuilder.CreateBuiltInTools();
+                    var newLoop = new AgentLoop(adapter, _registry, new CapabilityRunner(), builtInTools);
+                    newLoop.WorkingDirectory = _homeDir ?? Directory.GetCurrentDirectory();
                     _host.ReplaceLoop(newLoop);
+                    // If system prompt is still null (unconfigured → configured transition),
+                    // rebuild it now that providers and tools are available.
+                    if (_host.GetSystemPrompt() is null && _homeDir is { Length: > 0 })
+                    {
+                        var scanner = new KnowledgeScanner();
+                        var skills = scanner.Scan(_homeDir);
+                        newLoop.SystemPrompt = SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools);
+                    }
                     _wasUnconfigured = false;
                 }
             }

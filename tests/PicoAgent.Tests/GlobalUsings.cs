@@ -1,6 +1,7 @@
 global using System.Net;
 global using System.Net.Http;
 global using System.Runtime.CompilerServices;
+global using System.Text;
 global using PicoAgent;
 global using PicoNode.Agent;
 global using PicoNode.AI;
