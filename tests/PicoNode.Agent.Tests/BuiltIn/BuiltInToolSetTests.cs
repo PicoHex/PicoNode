@@ -73,6 +73,9 @@ public class BuiltInToolSetTests
 
         var prompt = set.FormatForSystemPrompt();
 
+        // Should start with usage instruction
+        await Assert.That(prompt).Contains("actually call the tools");
+
         // Read tool should show parameters
         await Assert.That(prompt).Contains("path (string, required)");
         await Assert.That(prompt).Contains("offset (integer)");

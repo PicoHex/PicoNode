@@ -47,6 +47,8 @@ public sealed class BuiltInToolSet
     public string FormatForSystemPrompt()
     {
         var sb = new StringBuilder();
+        sb.AppendLine("You have access to the following tools. Use them to complete tasks — do not describe what you would do, actually call the tools:");
+        sb.AppendLine();
         foreach (var t in GetActiveTools())
         {
             sb.Append("- ").Append(t.Name).Append(": ").AppendLine(t.Description);
