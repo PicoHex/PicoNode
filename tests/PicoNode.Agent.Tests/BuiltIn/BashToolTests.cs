@@ -57,4 +57,24 @@ public class BashToolTests
         await Assert.That(result.IsError).IsTrue();
         await Assert.That(result.Content).Contains("timed out");
     }
+
+    [Test]
+    [Timeout(15000)]
+    public async Task Timeout_PreservesBufferedOutput()
+    {
+        var tool = new BashTool();
+        // Command that prints immediately then hangs
+        var cmd = OperatingSystem.IsWindows()
+            ? "echo BUFFERED_OUTPUT && ping -n 30 127.0.0.1 > nul"
+            : "echo BUFFERED_OUTPUT && sleep 30";
+
+        var result = await tool.ExecuteAsync(
+            new Dictionary<string, object?> { ["command"] = cmd, ["timeout"] = 1L },
+            Directory.GetCurrentDirectory(),
+            CancellationToken.None);
+
+        await Assert.That(result.IsError).IsTrue();
+        await Assert.That(result.Content).Contains("BUFFERED_OUTPUT");
+        await Assert.That(result.Content).Contains("timed out");
+    }
 }

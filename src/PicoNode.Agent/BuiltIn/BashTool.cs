@@ -51,13 +51,16 @@ public sealed class BashTool : IBuiltInTool
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSecs));
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
+        Task<string>? stdoutTask = null;
+        Task<string>? stderrTask = null;
+
         try
         {
             process.Start();
 
             // ReadToEndAsync without token so pipes drain even after process is killed
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
+            stdoutTask = process.StandardOutput.ReadToEndAsync();
+            stderrTask = process.StandardError.ReadToEndAsync();
 
             // WaitForExitAsync throws OperationCanceledException on timeout or caller cancel
             await process.WaitForExitAsync(linkedCts.Token);
@@ -77,9 +80,29 @@ public sealed class BashTool : IBuiltInTool
         catch (OperationCanceledException)
         {
             TryKill(process);
-            return timeoutCts.IsCancellationRequested
-                ? ($"[Command timed out after {timeoutSecs}s]", true)
-                : ($"[Command cancelled]", true);
+
+            // Drain any buffered output that was written before the process was killed
+            string stdout = "", stderr = "";
+            try
+            {
+                if (stdoutTask is { IsCompletedSuccessfully: true })
+                    stdout = stdoutTask.Result;
+                if (stderrTask is { IsCompletedSuccessfully: true })
+                    stderr = stderrTask.Result;
+            }
+            catch { /* best-effort: pipes may already be closed */ }
+
+            var prefix = stdout;
+            if (!string.IsNullOrWhiteSpace(stderr))
+                prefix += (prefix.Length > 0 ? "\n" : "") + stderr;
+
+            var timeoutMsg = timeoutCts.IsCancellationRequested
+                ? $"\n[Command timed out after {timeoutSecs}s]"
+                : "\n[Command cancelled]";
+
+            var output = prefix + timeoutMsg;
+            var truncated = CapabilityRunner.TruncateOutput(output, MaxBytes, MaxLines);
+            return (truncated.Content, true);
         }
     }
 
