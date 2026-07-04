@@ -280,29 +280,57 @@ public sealed class AgentLoop
                         );
                     break;
                 case "done":
-                    contentBlocks.Insert(
-                        0,
-                        new ContentBlock { Type = "text", Text = textAccum.ToString() }
-                    );
-                    finalMessage = new Message
+                    // Prefer ContentBlocks from the LLM adapter (properly structured by SseParser
+                    // with both text and tool_call blocks). Fall back to local textAccum for simple
+                    // mock LLMs that don't set ContentBlocks (backward compat).
+                    if (evt.ContentBlocks is { Length: > 0 })
                     {
-                        Role = "assistant",
-                        StopReason = evt.StopReason ?? "end_turn",
-                        ContentBlocks = [.. contentBlocks],
-                    };
+                        finalMessage = new Message
+                        {
+                            Role = "assistant",
+                            StopReason = evt.StopReason ?? "end_turn",
+                            ContentBlocks = evt.ContentBlocks,
+                        };
+                    }
+                    else
+                    {
+                        contentBlocks.Insert(
+                            0,
+                            new ContentBlock { Type = "text", Text = textAccum.ToString() }
+                        );
+                        finalMessage = new Message
+                        {
+                            Role = "assistant",
+                            StopReason = evt.StopReason ?? "end_turn",
+                            ContentBlocks = [.. contentBlocks],
+                        };
+                    }
                     break;
                 case "error":
-                    contentBlocks.Insert(
-                        0,
-                        new ContentBlock { Type = "text", Text = textAccum.ToString() }
-                    );
-                    finalMessage = new Message
+                    if (evt.ContentBlocks is { Length: > 0 })
                     {
-                        Role = "assistant",
-                        StopReason = "error",
-                        ErrorMessage = evt.ErrorMessage,
-                        ContentBlocks = [.. contentBlocks],
-                    };
+                        finalMessage = new Message
+                        {
+                            Role = "assistant",
+                            StopReason = "error",
+                            ErrorMessage = evt.ErrorMessage,
+                            ContentBlocks = evt.ContentBlocks,
+                        };
+                    }
+                    else
+                    {
+                        contentBlocks.Insert(
+                            0,
+                            new ContentBlock { Type = "text", Text = textAccum.ToString() }
+                        );
+                        finalMessage = new Message
+                        {
+                            Role = "assistant",
+                            StopReason = "error",
+                            ErrorMessage = evt.ErrorMessage,
+                            ContentBlocks = [.. contentBlocks],
+                        };
+                    }
                     if (onEvent is not null)
                         await onEvent(
                             new AssistantMessageEvent.Error { Message = finalMessage },

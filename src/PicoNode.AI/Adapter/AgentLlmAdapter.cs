@@ -118,7 +118,8 @@ public sealed class AgentLlmAdapter : IAgentLlm
                     );
                     break;
                 case AssistantMessageEvent.Done d:
-                    yield return new LlmStreamEvent("done", null, d.Message.StopReason, null);
+                    yield return new LlmStreamEvent("done", null, d.Message.StopReason, null,
+                        ContentBlocks: d.Message.ContentBlocks);
                     break;
                 case AssistantMessageEvent.Error e:
                     yield return new LlmStreamEvent("error", null, null, e.Message.ErrorMessage);
