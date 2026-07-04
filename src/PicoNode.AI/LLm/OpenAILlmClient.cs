@@ -150,6 +150,10 @@ public sealed class OpenAILlmClient : ILLmClient
             sb.Append(']');
         }
 
+        // Enable tool calling
+        if (context.Tools is { Length: > 0 })
+            sb.Append(",\"tool_choice\":\"auto\"");
+
         sb.Append('}');
         return sb.ToString();
     }
