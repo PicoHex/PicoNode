@@ -158,7 +158,6 @@ async function retryLastMessage() {
     const userMsgs = messages.querySelectorAll('.message.user'); if (!userMsgs.length) return;
     const last = userMsgs[userMsgs.length - 1]; const text = last.querySelector('.msg-content').textContent.trim();
     forgetThinking(currentSession);
-    // Tell backend to remove last exchange before resending
     try { await fetch(`/api/session/${currentSession}/retry`, { method: 'POST' }); } catch {}
     let next = last; while (next) { const r = next; next = next.nextElementSibling; r.remove(); }
     await sendMessage(text);
@@ -210,6 +209,10 @@ function showHistoryHint() { if (historyIdx >= 0) { historyHint.textContent = `H
 function stopGeneration() { if (abortCtrl) { abortCtrl.abort(); abortCtrl = null; } setStreaming(false); }
 function setStreaming(on) { isStreaming = on; sendBtn.style.display = on ? 'none' : ''; stopBtn.style.display = on ? '' : 'none'; sendBtn.disabled = on; }
 
+// ── Streaming helpers ──
+function createTextSeg() { const s = document.createElement('div'); s.className = 'stream-text-seg'; return s; }
+function finalizeTextSeg(seg) { seg.classList.add('finalized'); }
+
 async function sendMessage(overrideText) {
     const text = (overrideText || input.value).trim(); if (!text || isStreaming) return;
     if (!overrideText) { inputHistory.push(text); input.value = ''; historyIdx = -1; }
@@ -219,51 +222,51 @@ async function sendMessage(overrideText) {
     renderMessage('user', text);
     const asst = renderMessage('assistant', '', '', currentSession + '-' + streamMsgIndex);
     if (thinkChk.checked) { const th = document.createElement('details'); th.className = 'thinking'; th.open = true; th.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; asst.insertBefore(th, asst.querySelector('.msg-content')); }
-    const contentEl = asst.querySelector('.msg-content');
-    contentEl.innerHTML = '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span><span class="stream-text" style="display:none"></span>';
-    const streamDot = contentEl.querySelector('.streaming-indicator'), streamText = contentEl.querySelector('.stream-text'), thinkBlock = asst.querySelector('.thinking');
+    const msgContent = asst.querySelector('.msg-content');
+    msgContent.innerHTML = '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span>';
+    const streamDot = msgContent.querySelector('.streaming-indicator');
+    const thinkBlock = asst.querySelector('.thinking');
     let rawText = '', rawThinking = '';
-    let thinkingPhase = 0; // incremented after each tool execution, separates thinking blocks
-    let toolBlocks = {}; // toolCallId → { name, args: '', result: '', isError: false }
+    let thinkingPhase = 0;
+    let toolBlocks = {};
+    let currentTextSeg = null;
+
     try {
         const response = await fetch(`/api/session/${currentSession}/message`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text, signal: abortCtrl.signal });
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
         while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop() || '';
             for (const line of lines) { if (!line.startsWith('data: ')) continue; const p = line.slice(6);
-                if (p === '[DONE]') { streamDot.style.display = 'none'; streamText.style.display = 'none'; contentEl.innerHTML = marked.parse(rawText); deferMermaidRender(contentEl); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } break; }
+                if (p === '[DONE]') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } break; }
                 try { const evt = JSON.parse(p);
-                    if (evt.type === 'delta') { rawText += evt.content; if (rawText.trim()) { streamDot.style.display = 'none'; streamText.style.display = ''; } streamText.textContent = rawText; }
+                    if (evt.type === 'delta') {
+                        rawText += evt.content;
+                        if (!currentTextSeg) { streamDot.style.display = 'none'; currentTextSeg = createTextSeg(); msgContent.appendChild(currentTextSeg); }
+                        currentTextSeg.textContent = rawText;
+                    }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked || !thinkBlock) continue; rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
-                    else if (evt.type === 'done') { streamDot.style.display = 'none'; streamText.style.display = 'none'; contentEl.innerHTML = marked.parse(rawText); deferMermaidRender(contentEl); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
+                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
                     else if (evt.type === 'tool_call_start') {
+                        if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
                         const tid = evt.toolCallId || 'tool_' + Date.now();
                         toolBlocks[tid] = { name: evt.toolName || 'tool', args: '', result: '', isError: false };
                         const tcDiv = document.createElement('details');
-                        tcDiv.className = 'tool-call';
-                        tcDiv.dataset.toolId = tid;
-                        tcDiv.style.display = 'none';
-                        tcDiv.open = true;
+                        tcDiv.className = 'tool-call'; tcDiv.dataset.toolId = tid; tcDiv.open = true;
                         tcDiv.innerHTML = '<summary>🔧 <strong>' + (evt.toolName || 'tool') + '</strong> <span class="tool-args">running...</span></summary><div class="tool-result"></div>';
-                        asst.appendChild(tcDiv);
+                        msgContent.appendChild(tcDiv);
                     }
                     else if (evt.type === 'tool_call_delta') {
                         const tid = evt.toolCallId;
                         if (tid && toolBlocks[tid]) {
                             toolBlocks[tid].args += evt.content || '';
-                            const tcDiv = contentEl.parentElement.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
-                            if (tcDiv) {
-                                try {
-                                    const parsed = JSON.parse(toolBlocks[tid].args);
-                                    tcDiv.querySelector('.tool-args').textContent = JSON.stringify(parsed);
-                                } catch (e) { /* args still streaming */ }
-                            }
+                            const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
+                            if (tcDiv) { try { const parsed = JSON.parse(toolBlocks[tid].args); tcDiv.querySelector('.tool-args').textContent = JSON.stringify(parsed); } catch (e) {} }
                         }
                     }
                     else if (evt.type === 'tool_call_end') {
                         const tid = evt.toolCallId;
                         if (tid && toolBlocks[tid]) {
-                            const tcDiv = contentEl.parentElement.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
-                            if (tcDiv) { tcDiv.style.display = ''; tcDiv.open = true; }
+                            const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
+                            if (tcDiv) { tcDiv.open = true; }
                         }
                     }
                     else if (evt.type === 'tool_result') {
@@ -271,9 +274,8 @@ async function sendMessage(overrideText) {
                         if (tid && toolBlocks[tid]) {
                             toolBlocks[tid].result = evt.content || '';
                             toolBlocks[tid].isError = evt.isError;
-                            const tcDiv = contentEl.parentElement.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
+                            const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
                             if (tcDiv) {
-                                tcDiv.style.display = '';
                                 tcDiv.classList.toggle('tool-error', evt.isError);
                                 const truncated = toolBlocks[tid].result.length > 1000
                                     ? toolBlocks[tid].result.substring(0, 1000) + '\n... (truncated)'
@@ -283,36 +285,20 @@ async function sendMessage(overrideText) {
                                 const summary = tcDiv.querySelector('summary');
                                 const name = toolBlocks[tid].name;
                                 if (summary && toolBlocks[tid].args) {
-                                    try {
-                                        const parsed = JSON.parse(toolBlocks[tid].args);
-                                        summary.innerHTML = '🔧 <strong>' + name + '</strong> <span class="tool-args">' + JSON.stringify(parsed) + '</span>';
-                                    } catch (e) { summary.innerHTML = '🔧 <strong>' + name + '</strong>'; }
+                                    try { const parsed = JSON.parse(toolBlocks[tid].args); summary.innerHTML = '🔧 <strong>' + name + '</strong> <span class="tool-args">' + JSON.stringify(parsed) + '</span>'; }
+                                    catch (e) { summary.innerHTML = '🔧 <strong>' + name + '</strong>'; }
                                 }
                             }
-                            // New thinking phase starts after tool execution
-                            if (thinkBlock && rawThinking) {
-                                thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking);
-                                saveThinking(currentSession, streamMsgIndex + '-' + thinkingPhase, rawThinking);
-                                thinkBlock.open = false;
-                            }
-                            thinkingPhase++;
-                            rawThinking = '';
-                            // Create a fresh thinking block for the next phase
-                            if (thinkChk.checked) {
-                                thinkBlock = document.createElement('details');
-                                thinkBlock.className = 'thinking';
-                                thinkBlock.open = true;
-                                thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>';
-                                asst.appendChild(thinkBlock);
-                            } else {
-                                thinkBlock = null;
-                            }
+                            if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex + '-' + thinkingPhase, rawThinking); thinkBlock.open = false; }
+                            thinkingPhase++; rawThinking = '';
+                            if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; asst.appendChild(thinkBlock); }
+                            else { thinkBlock = null; }
                         }
                     }
-                    else if (evt.type === 'error') { streamDot.style.display = 'none'; streamText.style.display = 'none'; rawText += `\n\n> ⚠️ ${evt.message}`; contentEl.innerHTML = marked.parse(rawText); }
+                    else if (evt.type === 'error') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); currentTextSeg = null; msgContent.innerHTML += '<div class="stream-error">⚠️ ' + (evt.message || '') + '</div>'; }
                 } catch {} messages.scrollTop = messages.scrollHeight; }
         }
-    } catch (err) { if (err.name === 'AbortError') { streamDot.style.display = 'none'; streamText.style.display = ''; if (!rawText) rawText = '_[stopped]_'; streamText.textContent = rawText; contentEl.innerHTML = marked.parse(rawText); } else { contentEl.innerHTML = marked.parse(rawText || `_[Error: ${err.message}]_`); showToast(err.message, true); } }
+    } catch (err) { if (err.name === 'AbortError') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); } else { msgContent.innerHTML += '<div class="stream-error">' + err.message + '</div>'; showToast(err.message, true); } }
     finally { setStreaming(false); abortCtrl = null; input.focus(); try { await api('POST', `/api/session/save/${currentSession}`); } catch {} await loadSessions(); }
 }
 

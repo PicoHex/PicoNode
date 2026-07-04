@@ -235,7 +235,10 @@ button.small { font-size: 0.75em; padding: 4px 8px; border-radius: 4px; }
 /* ── Token usage badge ── */
 .token-usage { font-size: 0.7em; color: var(--fg-muted); margin-top: 2px; }
 
-/* ── Stream animation ── */
+/* ── Stream text segments ── */
+.stream-text-seg { white-space: pre-wrap; word-break: break-word; }
+.stream-text-seg.finalized { }
+.stream-error { color: #e74c3c; padding: 8px 0; font-size: 0.85em; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .stream-text { animation: fadeIn 0.15s ease-out; }
 
