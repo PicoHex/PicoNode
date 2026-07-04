@@ -130,6 +130,26 @@ public sealed class OpenAILlmClient : ILLmClient
             AppendMessage(sb, context.Messages[i]);
         }
         sb.Append(']');
+
+        // Tools (OpenAI function calling)
+        if (context.Tools is { Length: > 0 })
+        {
+            sb.Append(",\"tools\":[");
+            for (int i = 0; i < context.Tools.Length; i++)
+            {
+                if (i > 0)
+                    sb.Append(',');
+                sb.Append("{\"type\":\"function\",\"function\":{\"name\":");
+                sb.Append(EscapeJson(context.Tools[i].Function.Name));
+                sb.Append(",\"description\":");
+                sb.Append(EscapeJson(context.Tools[i].Function.Description));
+                sb.Append(",\"parameters\":");
+                sb.Append(context.Tools[i].Function.Parameters); // raw JSON string
+                sb.Append("}}");
+            }
+            sb.Append(']');
+        }
+
         sb.Append('}');
         return sb.ToString();
     }
