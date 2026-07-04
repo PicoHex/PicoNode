@@ -3,7 +3,7 @@ namespace PicoNode.AI.Tests.LLm;
 public sealed class OpenAILlmClientThinkingTests
 {
     [Test]
-    public async Task StreamAsync_WithThinking_IncludesReasoningEffort()
+    public async Task StreamAsync_WithThinking_DoesNotIncludeReasoningEffort()
     {
         var handler = new MockHttpHandler
         {
@@ -51,8 +51,9 @@ public sealed class OpenAILlmClientThinkingTests
         ) { }
 
         var json = handler.CapturedRequestBody!;
-        await Assert.That(json).Contains("\"reasoning_effort\"");
-        await Assert.That(json).Contains("\"medium\"");
+        // reasoning_effort is OpenAI o1-specific; not sent to generic OpenAI-compatible endpoints
+        await Assert.That(json).DoesNotContain("reasoning_effort");
+        await Assert.That(json).DoesNotContain("\"thinking\":{\"type\":\"disabled\"}");
     }
 
     [Test]
@@ -95,6 +96,7 @@ public sealed class OpenAILlmClientThinkingTests
         ) { }
 
         await Assert.That(handler.CapturedRequestBody!).DoesNotContain("reasoning_effort");
+        await Assert.That(handler.CapturedRequestBody!).DoesNotContain("\"thinking\":{\"type\":\"disabled\"}");
     }
 
     [Test]

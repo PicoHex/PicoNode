@@ -82,35 +82,9 @@ public sealed class OpenAILlmClient : ILLmClient
         sb.Append(',');
         sb.Append("\"stream\":true");
 
-        // Reasoning effort (OpenAI thinking)
-        if (options?.Reasoning is { } level)
-        {
-            var levelMap = options.ThinkingLevelMap;
-            var effort = levelMap is not null
-                ? MapResolver.Resolve(level, levelMap)
-                : level switch
-                {
-                    ThinkingLevel.Minimal => "low",
-                    ThinkingLevel.Low => "low",
-                    ThinkingLevel.Medium => "medium",
-                    ThinkingLevel.High => "high",
-                    ThinkingLevel.XHigh => "high",
-                    _ => "medium",
-                };
-
-            if (effort is not null)
-            {
-                sb.Append(",\"reasoning_effort\":\"");
-                sb.Append(effort);
-                sb.Append('"');
-            }
-        }
-        else if (options?.ThinkingDisabled == true)
-        {
-            // Some providers (DeepSeek) default thinking to enabled.
-            // Explicitly disable it so the off toggle is respected.
-            sb.Append(",\"thinking\":{\"type\":\"disabled\"}");
-        }
+        // NOTE: Do NOT send reasoning_effort or thinking params to OpenAI-compatible
+        // endpoints. These are OpenAI o1-specific. Models like DeepSeek handle thinking
+        // internally — sending unrecognized params can break output or disable tool calling.
 
         sb.Append(',');
         sb.Append("\"messages\":[");

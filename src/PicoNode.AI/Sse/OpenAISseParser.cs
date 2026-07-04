@@ -27,6 +27,7 @@ public static class OpenAISseParser
         };
 
         bool started = false;
+        bool sawContent = false;
 
         while (!ct.IsCancellationRequested)
         {
@@ -77,16 +78,50 @@ public static class OpenAISseParser
             {
                 var text = reasoning.GetStringOrNull();
                 if (text is not null)
+                {
                     yield return new AssistantMessageEvent.ThinkingDelta
                     {
                         Index = 0,
                         Delta = text,
                     };
+                    // For reasoning-only models (DeepSeek R1 flash, o1 etc.),
+                    // reasoning_content IS the response — also emit as TextDelta
+                    // so the frontend shows it even when thinking checkbox is off.
+                    // Skip if the model already produced separate content deltas.
+                    if (!sawContent)
+                    {
+                        contentAccum.Append(text);
+                        if (!started)
+                        {
+                            started = true;
+                            yield return new AssistantMessageEvent.Start { Partial = message };
+                        }
+                        yield return new AssistantMessageEvent.TextDelta
+                        {
+                            Index = 0,
+                            Delta = text,
+                            Partial = new Message
+                            {
+                                Role = "assistant",
+                                Model = model,
+                                ContentBlocks =
+                                [
+                                    new ContentBlock
+                                    {
+                                        Type = "text",
+                                        Text = contentAccum.ToString(),
+                                    },
+                                ],
+                            },
+                        };
+                    }
+                }
             }
 
             if (delta.TryGetProperty(JsonPropContent, out var content))
             {
                 var text = content.GetStringOrNull() ?? "";
+                sawContent = true;
                 contentAccum.Append(text);
 
                 if (!started)
