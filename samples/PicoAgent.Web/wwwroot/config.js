@@ -1,146 +1,128 @@
-// ── Config page logic ──
-const providerList = document.getElementById('provider-list');
-const addForm = document.getElementById('add-form');
-const btnAdd = document.getElementById('btn-add');
-const btnTestAdd = document.getElementById('btn-test-add');
-const btnCancelAdd = document.getElementById('btn-cancel-add');
-const btnSaveAll = document.getElementById('btn-save-all');
-const defaultModel = document.getElementById('default-model');
-const statusMsg = document.getElementById('status-msg');
-const skipLink = document.getElementById('skip-link');
+// ── Config page — simplified: pick provider → enter key → go
+let templates = [];        // from /api/config/providers
+let selected = null;       // { name, baseUrl, apiFormat }
 
-// ⚠️ DOM-only: apiKey values live in JavaScript memory for the duration of this
-// page visit only. They are never persisted to localStorage or sent anywhere
-// except to /api/config/validate and /api/config (both localhost).
-let providers = {};     // { name: { apiKey, baseUrl, apiFormat } }
-let allModels = [];     // [{ id, ownedBy }]
-let editingName = null;
+const providerButtons = document.getElementById('provider-buttons');
+const keySection      = document.getElementById('key-section');
+const apiKeyInput     = document.getElementById('api-key');
+const baseUrlInput    = document.getElementById('base-url');
+const customNameInput = document.getElementById('custom-name');
+const btnConnect      = document.getElementById('btn-connect');
+const statusMsg       = document.getElementById('status-msg');
+const skipLink        = document.getElementById('skip-link');
 
 (async function init() {
+    try {
+        const r = await fetch('/api/config/providers');
+        templates = await r.json();
+    } catch {}
+    // Also check if already configured (skip link)
     try {
         const r = await fetch('/api/config/status');
         if ((await r.json()).configured) skipLink.style.display = 'block';
     } catch {}
-    await loadProviders();
-    await loadModels();
-    renderProviderList();
+    renderButtons();
 })();
 
-async function loadModels() {
-    try {
-        allModels = await (await fetch('/api/models')).json();
-        defaultModel.innerHTML = '<option value="">Select...</option>';
-        for (const m of allModels) {
-            const o = document.createElement('option'); o.value = m.id; o.textContent = `${m.id} (${m.ownedBy})`; defaultModel.appendChild(o);
-        }
-    } catch {}
-}
-
-async function loadProviders() {
-    try {
-        const r = await fetch('/api/config/status');
-        const s = await r.json();
-        // s.providers is string[] from backend. Load existing names.
-        // For editing, we only have names. User must re-enter keys (security).
-        if (s.providers && s.providers.length) {
-            for (const name of s.providers) {
-                if (!providers[name]) providers[name] = { apiKey: '', baseUrl: '', apiFormat: 'openai' };
-            }
-        }
-    } catch {}
-}
-
-function renderProviderList() {
-    providerList.innerHTML = '';
-    const names = Object.keys(providers);
-    if (!names.length) { providerList.innerHTML = '<p style="color:var(--fg-muted);font-size:0.85em">No providers yet. Add one to get started.</p>'; return; }
-    for (const name of names) {
-        const p = providers[name];
-        const card = document.createElement('div'); card.className = 'provider-card';
-        card.innerHTML = `<div class="name">${esc(name)}</div>
-            <div class="detail">${esc(p.baseUrl || '')} · ${esc(p.apiFormat || 'openai')}</div>
-            <div class="detail">API Key: ${p.apiKey ? '••••' + p.apiKey.slice(-4) : '(none)'}</div>`;
-        const actions = document.createElement('div'); actions.className = 'actions';
-        const editBtn = document.createElement('button'); editBtn.textContent = 'Edit'; editBtn.addEventListener('click', () => startEdit(name));
-        const delBtn = document.createElement('button'); delBtn.textContent = '×'; delBtn.className = 'danger'; delBtn.style.padding = '4px 8px'; delBtn.style.fontSize = '0.75em'; delBtn.style.margin = '0';
-        delBtn.addEventListener('click', async () => {
-            if (Object.keys(providers).length <= 1) { setStatus('Need at least one provider', true); return; }
-            delete providers[name]; renderProviderList(); setStatus(`Removed ${name}`, false);
-        });
-        actions.appendChild(editBtn); actions.appendChild(delBtn);
-        card.appendChild(actions);
-        providerList.appendChild(card);
+function renderButtons() {
+    providerButtons.innerHTML = '';
+    for (const t of templates) {
+        const btn = document.createElement('div');
+        btn.className = 'prov-btn';
+        btn.innerHTML = `<div><div class="label">${esc(t.label)}</div><div class="url">${esc(t.baseUrl)}</div></div><span style="font-size:1.2em">→</span>`;
+        btn.addEventListener('click', () => selectProvider(t));
+        providerButtons.appendChild(btn);
     }
+    // Custom provider option
+    const custom = document.createElement('div');
+    custom.className = 'prov-btn custom';
+    custom.innerHTML = '<div><div class="label">Other (OpenAI compatible)</div><div class="url">Custom base URL</div></div><span style="font-size:1.2em">→</span>';
+    custom.addEventListener('click', () => selectProvider({ name: '', label: 'Custom', baseUrl: '', apiFormat: 'openai' }));
+    providerButtons.appendChild(custom);
 }
 
-btnAdd.addEventListener('click', () => { editingName = null; clearAddForm(); addForm.classList.add('active'); });
-btnCancelAdd.addEventListener('click', () => addForm.classList.remove('active'));
-
-function startEdit(name) {
-    editingName = name;
-    const p = providers[name];
-    document.getElementById('add-name').value = name;
-    document.getElementById('add-apikey').value = p.apiKey || '';
-    document.getElementById('add-baseurl').value = p.baseUrl || '';
-    document.getElementById('add-apiformat').value = p.apiFormat || 'openai';
-    addForm.classList.add('active');
-    btnTestAdd.textContent = 'Test & Save';
+function selectProvider(t) {
+    selected = t;
+    document.querySelectorAll('.prov-btn').forEach(b => b.classList.remove('selected'));
+    const btns = providerButtons.querySelectorAll('.prov-btn');
+    for (const b of btns) {
+        if (b.querySelector('.label').textContent === t.label) b.classList.add('selected');
+    }
+    if (!t.name && !t.baseUrl) {
+        // "Other" — last button
+        btns[btns.length - 1].classList.add('selected');
+    }
+    baseUrlInput.value = t.baseUrl || '';
+    customNameInput.value = t.name || '';
+    customNameInput.style.display = t.name ? 'none' : '';
+    apiKeyInput.value = '';
+    keySection.classList.add('active');
+    apiKeyInput.focus();
+    statusMsg.textContent = '';
 }
 
-function clearAddForm() {
-    document.getElementById('add-name').value = '';
-    document.getElementById('add-apikey').value = '';
-    document.getElementById('add-baseurl').value = '';
-    document.getElementById('add-apiformat').value = 'openai';
-}
+skipLink.addEventListener('click', () => { window.location.href = '/'; });
 
-btnTestAdd.addEventListener('click', async () => {
-    const name = document.getElementById('add-name').value.trim();
-    const apiKey = document.getElementById('add-apikey').value.trim();
-    const baseUrl = document.getElementById('add-baseurl').value.trim();
-    const apiFormat = document.getElementById('add-apiformat').value;
-    if (!name || !apiKey) { setStatus('Name and API Key required', true); return; }
+apiKeyInput.addEventListener('keydown', e => { if (e.key === 'Enter') doConnect(); });
+baseUrlInput.addEventListener('keydown', e => { if (e.key === 'Enter') apiKeyInput.focus(); });
+customNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') apiKeyInput.focus(); });
 
-    setStatus('Testing...'); btnTestAdd.disabled = true;
+btnConnect.addEventListener('click', doConnect);
+
+async function doConnect() {
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) { setStatus('Please enter your API key', true); return; }
+    if (!selected) { setStatus('Please select a provider', true); return; }
+
+    const name = selected.name || customNameInput.value.trim() || 'custom';
+    const baseUrl = baseUrlInput.value.trim() || selected.baseUrl;
+    const apiFormat = selected.apiFormat || 'openai';
+
+    setStatus('Connecting...'); btnConnect.disabled = true;
     try {
         const vr = await fetch('/api/config/validate', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ provider: name, apiKey, baseUrl: baseUrl || undefined, apiFormat }),
         });
-        if (!vr.ok) { const err = await vr.json().catch(() => ({})); setStatus(`Connection failed: ${err.message || vr.status}`, true); return; }
+        if (!vr.ok) {
+            const err = await vr.json().catch(() => ({}));
+            setStatus(`Connection failed: ${err.message || vr.status}`, true);
+            return;
+        }
         const models = await vr.json();
-
-        if (editingName && editingName !== name) delete providers[editingName];
-        providers[name] = { apiKey, baseUrl, apiFormat };
-        renderProviderList();
-        addForm.classList.remove('active');
-        setStatus(`Connected! Found ${models.length} models.`, false);
-        await loadModels();
-    } catch (e) { setStatus(`Error: ${e.message}`, true); }
-    finally { btnTestAdd.disabled = false; }
-});
-
-btnSaveAll.addEventListener('click', async () => {
-    if (!Object.keys(providers).length) { setStatus('Need at least one provider', true); return; }
-    setStatus('Saving...'); btnSaveAll.disabled = true;
-    try {
-        const firstProv = Object.keys(providers)[0];
-        const first = providers[firstProv];
+        if (!models || !models.length) {
+            setStatus('No models found. Check your API key or base URL.', true);
+            return;
+        }
+        // Pick first model as default
+        const modelId = models[0].id;
         const config = {
-            thinkingEnabled: true, thinkingLevel: 'medium',
-            model: defaultModel.value || null,
+            providers: { [name]: { apiKey, baseUrl: baseUrl || undefined, apiFormat } },
+            model: modelId,
+            thinkingEnabled: true,
+            thinkingLevel: 'medium',
             maxTokens: 4096,
-            providers,
         };
-        // Ensure the config uses the right default provider
-        const r = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
-        if (r.ok) { setStatus('Saved! Redirecting...', false); window.location.href = '/'; }
-        else { setStatus('Save failed', true); }
-    } catch (e) { setStatus(`Error: ${e.message}`, true); }
-    finally { btnSaveAll.disabled = false; }
-});
+        setStatus('Saving...');
+        const sr = await fetch('/api/config', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config),
+        });
+        if (sr.ok) {
+            setStatus(`Connected! ${models.length} models found. Redirecting...`, false);
+            setTimeout(() => { window.location.href = '/'; }, 800);
+        } else {
+            setStatus('Save failed — please try again', true);
+        }
+    } catch (e) {
+        setStatus(`Error: ${e.message}`, true);
+    } finally {
+        btnConnect.disabled = false;
+    }
+}
 
-skipLink.addEventListener('click', () => { window.location.href = '/'; });
-
-function setStatus(msg, isError) { statusMsg.textContent = msg; statusMsg.className = isError ? 'error' : 'success'; }
-function esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function setStatus(msg, isError) {
+    statusMsg.textContent = msg;
+    statusMsg.className = isError ? 'error' : 'success';
+}
+function esc(s) { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }

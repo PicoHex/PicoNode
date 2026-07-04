@@ -6,77 +6,51 @@
     <title>PicoAgent - Setup</title>
     <link rel="stylesheet" href="/style.css">
     <style>
-        body { display: flex; align-items: flex-start; justify-content: center; min-height: 100vh; background: var(--bg); padding-top: 40px; }
-        #setup { width: 460px; padding: 32px; background: var(--bg-side); border-radius: 16px; border: 1px solid var(--border); }
-        h1 { font-size: 1.4em; margin-bottom: 4px; color: var(--accent); }
-        h1 + p { color: var(--fg-muted); font-size: 0.85em; margin-bottom: 20px; }
-        label { display: block; margin: 12px 0 4px; font-size: 0.85em; color: var(--fg-muted); }
-        input, select { width: 100%; padding: 10px; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; font-size: 0.9em; font-family: inherit; }
-        input:focus, select:focus { outline: none; border-color: var(--accent); }
-        button { padding: 10px 16px; margin-top: 16px; background: var(--accent); color: #fff; border: none; border-radius: 8px; font-size: 0.9em; font-weight: bold; cursor: pointer; font-family: inherit; }
+        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--bg); }
+        #setup { width: 420px; padding: 32px; background: var(--bg-side); border-radius: 16px; border: 1px solid var(--border); }
+        h1 { font-size: 1.4em; margin-bottom: 2px; color: var(--accent); }
+        h1 + p { color: var(--fg-muted); font-size: 0.85em; margin-bottom: 24px; }
+        #provider-buttons { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+        .prov-btn { padding: 14px 16px; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; font-size: 0.95em; text-align: left; cursor: pointer; font-family: inherit; transition: all .15s; display: flex; justify-content: space-between; align-items: center; }
+        .prov-btn:hover { border-color: var(--accent); background: var(--bg); }
+        .prov-btn.selected { border-color: var(--accent); background: var(--bg); box-shadow: 0 0 0 1px var(--accent); }
+        .prov-btn .label { font-weight: 600; }
+        .prov-btn .url { font-size: 0.75em; color: var(--fg-muted); margin-top: 2px; }
+        .prov-btn.custom { border-style: dashed; }
+        #key-section { display: none; margin-top: 12px; }
+        #key-section.active { display: block; }
+        label { display: block; margin: 10px 0 4px; font-size: 0.85em; color: var(--fg-muted); }
+        input { width: 100%; padding: 10px; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; font-size: 0.9em; font-family: inherit; box-sizing: border-box; }
+        input:focus { outline: none; border-color: var(--accent); }
+        button { padding: 10px 16px; margin-top: 14px; background: var(--accent); color: #fff; border: none; border-radius: 8px; font-size: 0.9em; font-weight: 600; cursor: pointer; font-family: inherit; width: 100%; }
         button:hover { background: var(--accent-hover); }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
-        button.secondary { background: var(--border); color: var(--fg); font-weight: normal; }
-        button.danger { background: #c0392b; }
-        #status-msg { margin-top: 12px; font-size: 0.85em; text-align: center; }
+        #status-msg { margin-top: 14px; font-size: 0.85em; text-align: center; min-height: 1.2em; }
         #status-msg.error { color: #e05555; }
         #status-msg.success { color: var(--accent); }
-        .skip-link { display: block; text-align: center; margin-top: 12px; font-size: 0.8em; color: var(--fg-muted); cursor: pointer; }
+        .skip-link { display: block; text-align: center; margin-top: 16px; font-size: 0.8em; color: var(--fg-muted); cursor: pointer; }
         .skip-link:hover { color: var(--fg); }
-
-        /* ── Provider cards ── */
-        #provider-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-        .provider-card { background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 12px; position: relative; }
-        .provider-card .name { font-weight: bold; color: var(--accent); margin-bottom: 4px; }
-        .provider-card .detail { font-size: 0.8em; color: var(--fg-muted); }
-        .provider-card .actions { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; }
-        .provider-card .actions button { margin: 0; padding: 4px 8px; font-size: 0.75em; }
-
-        #add-form { display: none; margin-top: 16px; padding: 16px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; }
-        #add-form.active { display: block; }
-        #add-form .row { display: flex; gap: 8px; margin-top: 8px; }
-        #add-form .row button { flex: 1; margin-top: 0; }
-
-        #model-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
     </style>
 </head>
 <body>
     <div id="setup">
         <h1>PicoAgent Setup</h1>
-        <p>Manage your AI providers and models.</p>
+        <p>Choose a provider to get started.</p>
 
-        <div class="section-label" style="margin-bottom:4px">Providers</div>
-        <div id="provider-list"></div>
-        <button id="btn-add" class="secondary" style="width:100%">+ Add Provider</button>
+        <div id="provider-buttons"></div>
 
-        <div id="add-form">
-            <label>Provider Name</label>
-            <input type="text" id="add-name" placeholder="e.g. deepseek">
+        <div id="key-section">
             <label>API Key</label>
-            <input type="password" id="add-apikey" placeholder="sk-...">
+            <input type="password" id="api-key" placeholder="sk-..." autocomplete="off">
             <label>Base URL</label>
-            <input type="text" id="add-baseurl" placeholder="https://api.deepseek.com/v1">
-            <label>API Format</label>
-            <select id="add-apiformat">
-                <option value="openai">OpenAI Compatible</option>
-                <option value="anthropic">Anthropic</option>
-            </select>
-            <div class="row">
-                <button id="btn-test-add">Test & Save</button>
-                <button id="btn-cancel-add" class="secondary">Cancel</button>
-            </div>
+            <input type="text" id="base-url" placeholder="https://api.openai.com/v1">
+            <label>Provider Name</label>
+            <input type="text" id="custom-name" placeholder="my-provider">
+            <button id="btn-connect">Connect & Continue</button>
         </div>
 
-        <div id="model-section">
-            <div class="section-label" style="margin-bottom:4px">Default Model</div>
-            <select id="default-model">
-                <option value="">Select a model...</option>
-            </select>
-        </div>
-
-        <button id="btn-save-all" style="width:100%; margin-top:16px">Save All & Continue</button>
         <div id="status-msg"></div>
-        <span class="skip-link" id="skip-link" style="display:none">Skip (already configured)</span>
+        <span class="skip-link" id="skip-link" style="display:none">Already configured — skip to chat</span>
     </div>
 
     <script src="/config.js"></script>
