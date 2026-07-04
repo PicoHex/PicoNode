@@ -1080,6 +1080,13 @@ public sealed partial class Agent : IAsyncDisposable
                                 ct2
                             );
                             break;
+                        case AssistantMessageEvent.ToolResult tr:
+                            await sse.WriteJsonAsync(
+                                $"{{\"type\":\"tool_result\",\"toolCallId\":\"{EscapeJsonString(tr.ToolCallId)}\",\"toolName\":\"{EscapeJsonString(tr.ToolName)}\",\"content\":\"{EscapeJsonString(tr.Content)}\",\"isError\":{(tr.IsError ? "true" : "false")}}}",
+                                ct2
+                            );
+                            break;
+
                         case AssistantMessageEvent.Done d:
                             await sse.WriteJsonAsync(
                                 $"{{\"type\":\"done\",\"stopReason\":\"{EscapeJsonString(d.Message.StopReason ?? "")}\"}}",

@@ -136,6 +136,17 @@ public sealed class AgentLoop
                             };
                             await session.AppendMessage(biToolMsg);
                             result.Add(biToolMsg);
+
+                            // Emit tool result event so frontend can show it
+                            if (onEvent is not null)
+                                await onEvent(new AssistantMessageEvent.ToolResult
+                                {
+                                    ToolCallId = tc.Id ?? "",
+                                    ToolName = tc.Name ?? "",
+                                    Content = truncated.Content,
+                                    IsError = isError,
+                                }, ct);
+
                             continue;
                         }
                     }
@@ -230,6 +241,16 @@ public sealed class AgentLoop
                     };
                     await session.AppendMessage(toolMsg);
                     result.Add(toolMsg);
+
+                    // Emit tool result event so frontend can show it
+                    if (onEvent is not null)
+                        await onEvent(new AssistantMessageEvent.ToolResult
+                        {
+                            ToolCallId = tc.Id ?? "",
+                            ToolName = tc.Name ?? "",
+                            Content = toolMsg.ContentBlocks?[0].Text ?? "",
+                            IsError = toolMsg.IsError,
+                        }, ct);
                 }
             }
 

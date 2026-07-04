@@ -43,3 +43,12 @@ internal sealed class SseToolCallEndEvent
     public string type { get; set; } = "tool_call_end";
     public string toolCallId { get; set; } = string.Empty;
 }
+
+internal sealed class SseToolResultEvent
+{
+    public string type { get; set; } = "tool_result";
+    public string toolCallId { get; set; } = string.Empty;
+    public string toolName { get; set; } = string.Empty;
+    public string content { get; set; } = string.Empty;
+    public bool isError { get; set; }
+}

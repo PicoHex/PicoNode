@@ -46,6 +46,14 @@ public abstract class AssistantMessageEvent
         public Message Message { get; set; } = new();
     }
 
+    public sealed class ToolResult : AssistantMessageEvent
+    {
+        public string ToolCallId { get; set; } = string.Empty;
+        public string ToolName { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
+        public bool IsError { get; set; }
+    }
+
     public sealed class Error : AssistantMessageEvent
     {
         public Message Message { get; set; } = new();

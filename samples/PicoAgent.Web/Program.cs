@@ -395,6 +395,20 @@ static async Task ForwardSseAsync(
                         ct
                     );
                     break;
+                case AssistantMessageEvent.ToolResult tr:
+                    await sse.WriteJsonAsync(
+                        PicoJetson.JsonSerializer.Serialize(
+                            new SseToolResultEvent
+                            {
+                                toolCallId = tr.ToolCallId,
+                                toolName = tr.ToolName,
+                                content = tr.Content,
+                                isError = tr.IsError,
+                            }
+                        ),
+                        ct
+                    );
+                    break;
                 case AssistantMessageEvent.Done d:
                     await sse.WriteJsonAsync(
                         PicoJetson.JsonSerializer.Serialize(
