@@ -223,6 +223,7 @@ async function sendMessage(overrideText) {
     contentEl.innerHTML = '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span><span class="stream-text" style="display:none"></span>';
     const streamDot = contentEl.querySelector('.streaming-indicator'), streamText = contentEl.querySelector('.stream-text'), thinkBlock = asst.querySelector('.thinking');
     let rawText = '', rawThinking = '';
+    let thinkingPhase = 0; // incremented after each tool execution, separates thinking blocks
     let toolBlocks = {}; // toolCallId → { name, args: '', result: '', isError: false }
     try {
         const response = await fetch(`/api/session/${currentSession}/message`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text, signal: abortCtrl.signal });
@@ -278,7 +279,6 @@ async function sendMessage(overrideText) {
                                     ? toolBlocks[tid].result.substring(0, 1000) + '\n... (truncated)'
                                     : toolBlocks[tid].result;
                                 tcDiv.querySelector('.tool-result').textContent = truncated;
-                                // Auto-collapse when result is received (like thinking)
                                 tcDiv.open = false;
                                 const summary = tcDiv.querySelector('summary');
                                 const name = toolBlocks[tid].name;
@@ -288,6 +288,24 @@ async function sendMessage(overrideText) {
                                         summary.innerHTML = '🔧 <strong>' + name + '</strong> <span class="tool-args">' + JSON.stringify(parsed) + '</span>';
                                     } catch (e) { summary.innerHTML = '🔧 <strong>' + name + '</strong>'; }
                                 }
+                            }
+                            // New thinking phase starts after tool execution
+                            if (thinkBlock && rawThinking) {
+                                thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking);
+                                saveThinking(currentSession, streamMsgIndex + '-' + thinkingPhase, rawThinking);
+                                thinkBlock.open = false;
+                            }
+                            thinkingPhase++;
+                            rawThinking = '';
+                            // Create a fresh thinking block for the next phase
+                            if (thinkChk.checked) {
+                                thinkBlock = document.createElement('details');
+                                thinkBlock.className = 'thinking';
+                                thinkBlock.open = true;
+                                thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>';
+                                asst.appendChild(thinkBlock);
+                            } else {
+                                thinkBlock = null;
                             }
                         }
                     }
