@@ -455,7 +455,13 @@ public sealed partial class Agent : IAsyncDisposable
                         _clients
                     );
                     var adapter = new AgentLlmAdapter(resilientClient, _router);
-                    var newLoop = new AgentLoop(adapter, _registry, new CapabilityRunner());
+                    var builtInTools = new BuiltInToolSet();
+                    builtInTools.Register(new ReadTool());
+                    builtInTools.Register(new BashTool());
+                    builtInTools.Register(new WriteTool());
+                    builtInTools.ApplyPreset(ToolPreset.Coding);
+                    var newLoop = new AgentLoop(adapter, _registry, new CapabilityRunner(), builtInTools);
+                    newLoop.WorkingDirectory = _homeDir ?? Directory.GetCurrentDirectory();
                     _host.ReplaceLoop(newLoop);
                     _wasUnconfigured = false;
                 }
