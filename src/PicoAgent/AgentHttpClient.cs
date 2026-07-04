@@ -334,6 +334,13 @@ internal static class PicoAgentSseParser
                 Call = new ContentBlock { Type = "tool_call", Id = te.ToolCallId },
                 Partial = new Message { Role = "assistant" },
             },
+            SseInToolResult tr => new AssistantMessageEvent.ToolResult
+            {
+                ToolCallId = tr.ToolCallId,
+                ToolName = tr.ToolName,
+                Content = tr.Content,
+                IsError = tr.IsError,
+            },
             SseInDone d => new AssistantMessageEvent.Done
             {
                 Message = new() { StopReason = d.StopReason ?? "" },

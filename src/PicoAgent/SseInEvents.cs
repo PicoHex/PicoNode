@@ -12,6 +12,7 @@ namespace PicoAgent;
 [PicoDerivedType(typeof(SseInToolCallStart), "tool_call_start")]
 [PicoDerivedType(typeof(SseInToolCallDelta), "tool_call_delta")]
 [PicoDerivedType(typeof(SseInToolCallEnd), "tool_call_end")]
+[PicoDerivedType(typeof(SseInToolResult), "tool_result")]
 [PicoDerivedType(typeof(SseInDone), "done")]
 [PicoDerivedType(typeof(SseInError), "error")]
 class SseInEvent { }
@@ -51,6 +52,16 @@ sealed class SseInToolCallDelta : SseInEvent
 sealed class SseInToolCallEnd : SseInEvent
 {
     public string ToolCallId { get; set; } = string.Empty;
+}
+
+[PicoSerializable]
+[JsonCamelCase]
+sealed class SseInToolResult : SseInEvent
+{
+    public string ToolCallId { get; set; } = string.Empty;
+    public string ToolName { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public bool IsError { get; set; }
 }
 
 [PicoSerializable]
