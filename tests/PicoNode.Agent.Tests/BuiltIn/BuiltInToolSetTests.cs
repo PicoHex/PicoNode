@@ -63,4 +63,22 @@ public class BuiltInToolSetTests
             string wd,
             CancellationToken ct) => Task.FromResult(("ok", false));
     }
+
+    [Test]
+    public async Task FormatForSystemPrompt_IncludesParameters()
+    {
+        var set = new BuiltInToolSet();
+        set.Register(new ReadTool());
+        set.Register(new WriteTool());
+
+        var prompt = set.FormatForSystemPrompt();
+
+        // Read tool should show parameters
+        await Assert.That(prompt).Contains("path (string, required)");
+        await Assert.That(prompt).Contains("offset (integer)");
+        await Assert.That(prompt).Contains("limit (integer)");
+
+        // Write tool should show parameters
+        await Assert.That(prompt).Contains("content (string, required)");
+    }
 }
