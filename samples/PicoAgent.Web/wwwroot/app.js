@@ -227,6 +227,7 @@ async function sendMessage(overrideText) {
     const streamDot = msgContent.querySelector('.streaming-indicator');
     const thinkBlock = asst.querySelector('.thinking');
     let rawText = '', rawThinking = '';
+    let segStart = 0; // rawText offset where current text segment starts
     let thinkingPhase = 0;
     let toolBlocks = {};
     let currentTextSeg = null;
@@ -241,12 +242,13 @@ async function sendMessage(overrideText) {
                     if (evt.type === 'delta') {
                         rawText += evt.content;
                         if (!currentTextSeg) { streamDot.style.display = 'none'; currentTextSeg = createTextSeg(); msgContent.appendChild(currentTextSeg); }
-                        currentTextSeg.textContent = rawText;
+                        currentTextSeg.textContent = rawText.substring(segStart);
                     }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked || !thinkBlock) continue; rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
                     else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
                     else if (evt.type === 'tool_call_start') {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
+                        segStart = rawText.length;
                         const tid = evt.toolCallId || 'tool_' + Date.now();
                         toolBlocks[tid] = { name: evt.toolName || 'tool', args: '', result: '', isError: false };
                         const tcDiv = document.createElement('details');
@@ -291,6 +293,7 @@ async function sendMessage(overrideText) {
                             }
                             if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex + '-' + thinkingPhase, rawThinking); thinkBlock.open = false; }
                             thinkingPhase++; rawThinking = '';
+                            segStart = rawText.length;
                             if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; asst.appendChild(thinkBlock); }
                             else { thinkBlock = null; }
                         }
