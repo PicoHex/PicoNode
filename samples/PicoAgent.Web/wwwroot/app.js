@@ -222,8 +222,12 @@ function renderAllSegments(container) {
 }
 function cleanupToolBlocks(container) {
     for (const tc of container.querySelectorAll('.tool-call')) {
-        if (tc.open && !tc.querySelector('.tool-result').textContent) {
-            tc.querySelector('.tool-args').textContent = 'timed out';
+        const resultDiv = tc.querySelector('.tool-result');
+        if (resultDiv && !resultDiv.textContent) {
+            const argsSpan = tc.querySelector('.tool-args');
+            const argsText = argsSpan ? argsSpan.textContent : '';
+            resultDiv.textContent = '[no result]' + (argsText && argsText !== 'running...' ? ' — args: ' + argsText : '');
+            tc.open = true;
         }
     }
 }
