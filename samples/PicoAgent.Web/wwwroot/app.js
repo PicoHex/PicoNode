@@ -220,6 +220,13 @@ function renderAllSegments(container) {
         deferMermaidRender(seg);
     }
 }
+function cleanupToolBlocks(container) {
+    for (const tc of container.querySelectorAll('.tool-call')) {
+        if (tc.open && !tc.querySelector('.tool-result').textContent) {
+            tc.querySelector('.tool-args').textContent = 'timed out';
+        }
+    }
+}
 
 async function sendMessage(overrideText) {
     const text = (overrideText || input.value).trim(); if (!text || isStreaming) return;
@@ -245,7 +252,7 @@ async function sendMessage(overrideText) {
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
         while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop() || '';
             for (const line of lines) { if (!line.startsWith('data: ')) continue; const p = line.slice(6);
-                if (p === '[DONE]') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); renderAllSegments(msgContent); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } break; }
+                if (p === '[DONE]') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); renderAllSegments(msgContent); cleanupToolBlocks(msgContent); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } break; }
                 try { const evt = JSON.parse(p);
                     if (evt.type === 'delta') {
                         rawText += evt.content;
@@ -253,7 +260,7 @@ async function sendMessage(overrideText) {
                         currentTextSeg.textContent = rawText.substring(segStart);
                     }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked || !thinkBlock) continue; rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
-                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); renderAllSegments(msgContent); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
+                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); renderAllSegments(msgContent); cleanupToolBlocks(msgContent); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
                     else if (evt.type === 'tool_call_start') {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
                         segStart = rawText.length;
