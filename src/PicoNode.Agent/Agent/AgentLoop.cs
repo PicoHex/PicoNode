@@ -88,6 +88,56 @@ public sealed class AgentLoop
             {
                 foreach (var tc in toolCallBlocks!)
                 {
+                    // ── 1. Try built-in tool ──
+                    var builtIn = _builtInTools.Find(tc.Name);
+                    if (builtIn is not null)
+                    {
+                        // Hook: OnToolCall
+                        var biHookInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
+                            new HookPayload
+                            {
+                                Kind = KindHook,
+                                EventName = HookEventToolCall,
+                                ToolName = tc.Name,
+                                Args = tc.Arguments,
+                            }
+                        );
+                        var biHookResult = await _hookRunner.EmitAsync(TriggerKind.OnToolCall, biHookInput, ct);
+                        if (
+                            biHookResult is { } biH
+                            && biH.RootElement.TryGetProperty("action", out var biAction)
+                            && biAction.GetString() == ActionBlock
+                        )
+                            continue;
+
+                        // Execute built-in tool
+                        var (content, isError) = await builtIn.ExecuteAsync(tc.Arguments, WorkingDirectory, ct);
+
+                        // Truncate output
+                        var truncated = CapabilityRunner.TruncateOutput(content, 50000, 2000);
+
+                        var biToolMsg = new Message
+                        {
+                            Role = RoleToolResult,
+                            ToolCallId = tc.Id,
+                            ToolName = tc.Name,
+                            ContentBlocks =
+                            [
+                                new ContentBlock
+                                {
+                                    Type = BlockTypeText,
+                                    Text = truncated.Content,
+                                },
+                            ],
+                            IsError = isError,
+                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        };
+                        await session.AppendMessage(biToolMsg);
+                        result.Add(biToolMsg);
+                        continue;
+                    }
+
+                    // ── 2. Try CapabilityRegistry ──
                     var capConfig = _registry.GetAll().FirstOrDefault(c => c.Name == tc.Name);
 
                     if (capConfig == null)
