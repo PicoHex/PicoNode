@@ -102,6 +102,16 @@ public sealed class AgentBuilder
         _initialModel = model;
         var adapter = new AgentLlmAdapter(resilientClient, router);
         var loop = new AgentLoop(adapter, _registry, runner);
+        loop.WorkingDirectory = _capabilitiesRoot ?? Directory.GetCurrentDirectory();
+
+        // Build and set system prompt
+        if (_capabilitiesRoot is { Length: > 0 })
+        {
+            var scanner = new KnowledgeScanner();
+            var skills = scanner.Scan(_capabilitiesRoot);
+            loop.SystemPrompt = SystemPromptBuilder.Build(skills, _registry.GetAll());
+        }
+
         var host = new AgentHost(loop);
 
         if (_capabilitiesRoot is { Length: > 0 })
