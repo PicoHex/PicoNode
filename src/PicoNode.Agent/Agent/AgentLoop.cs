@@ -6,6 +6,7 @@ public sealed class AgentLoop
     private readonly CapabilityRegistry _registry;
     private readonly CapabilityRunner _runner;
     private readonly HookRunner _hookRunner;
+    private readonly BuiltInToolSet _builtInTools;
     private const int MaxToolIterations = 20;
 
     public string? SystemPrompt { get; set; }
@@ -18,12 +19,20 @@ public sealed class AgentLoop
     /// </summary>
     public TimeSpan LlmTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
+    /// <summary>Working directory for built-in tool execution.</summary>
+    public string WorkingDirectory { get; set; }
+
     public AgentLoop(IAgentLlm llm, CapabilityRegistry registry, CapabilityRunner runner)
+        : this(llm, registry, runner, new BuiltInToolSet()) { }
+
+    public AgentLoop(IAgentLlm llm, CapabilityRegistry registry, CapabilityRunner runner, BuiltInToolSet builtInTools)
     {
         _llm = llm;
         _registry = registry;
         _runner = runner;
+        _builtInTools = builtInTools;
         _hookRunner = new HookRunner(registry, runner);
+        WorkingDirectory = Directory.GetCurrentDirectory();
     }
 
     /// <summary>LLM-based summary compaction — v2 target.</summary>
