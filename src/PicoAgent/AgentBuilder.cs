@@ -160,7 +160,7 @@ public sealed class AgentBuilder
             BaseUrl = string.Empty,
             Api = apiFormat,
             Provider = defaultProvider,
-            MaxTokens = _config.MaxTokens ?? 131072,
+            MaxTokens = _config.MaxTokens ?? 393216,
             ThinkingEnabled = _config.ThinkingEnabled,
             ThinkingLevel = AgentConfig.ParseLevel(_config.ThinkingLevel) ?? ThinkingLevel.Medium,
         };
@@ -243,7 +243,7 @@ public sealed class AgentBuilder
         {
             Id = string.Empty,
             Provider = "unknown",
-            MaxTokens = _config?.MaxTokens ?? 131072,
+            MaxTokens = _config?.MaxTokens ?? 393216,
         };
 
         var builtInTools = CreateBuiltInTools();
