@@ -9,6 +9,9 @@ public static class OpenAISseParser
     private const string JsonPropContent = "content";
     private const string JsonPropReasoningContent = "reasoning_content";
     private const string JsonPropFinishReason = "finish_reason";
+    private const string JsonPropToolCalls = "tool_calls";
+    private const string JsonPropFunction = "function";
+    private const string JsonPropArguments = "arguments";
 
     public static async IAsyncEnumerable<AssistantMessageEvent> ParseStreamAsync(
         Stream stream,
@@ -18,6 +21,7 @@ public static class OpenAISseParser
     {
         using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
         var contentAccum = new StringBuilder();
+        var contentBlocks = new List<ContentBlock>();
         var message = new Message
         {
             Role = "assistant",
@@ -28,6 +32,8 @@ public static class OpenAISseParser
 
         bool started = false;
         bool sawContent = false;
+        // Track tool calls by index: index → (id, name, args accumulator)
+        var toolCalls = new Dictionary<int, (string Id, string Name, StringBuilder Args)>();
 
         while (!ct.IsCancellationRequested)
         {
@@ -42,10 +48,10 @@ public static class OpenAISseParser
 
             if (json.Trim() == DoneMarker)
             {
-                message.ContentBlocks =
-                [
-                    new ContentBlock { Type = "text", Text = contentAccum.ToString() },
-                ];
+                FlushToolCalls(contentBlocks, toolCalls);
+                if (contentAccum.Length > 0)
+                    contentBlocks.Add(new ContentBlock { Type = "text", Text = contentAccum.ToString() });
+                message.ContentBlocks = contentBlocks.ToArray();
                 message.StopReason = "stop";
                 yield return new AssistantMessageEvent.Done { Message = message };
                 yield break;
@@ -61,7 +67,6 @@ public static class OpenAISseParser
                 continue;
             }
 
-            // PicoDocument is not IDisposable
             var root = doc.RootElement;
 
             if (
@@ -74,6 +79,75 @@ public static class OpenAISseParser
             if (!choice.TryGetProperty(JsonPropDelta, out var delta))
                 continue;
 
+            // ── Tool calls (OpenAI function calling) ──
+            if (delta.TryGetProperty(JsonPropToolCalls, out var tcArray))
+            {
+                for (int i = 0; i < tcArray.GetArrayLength(); i++)
+                {
+                    var tc = tcArray[i];
+                    var index = tc.TryGetProperty("index", out var idxProp) ? idxProp.GetInt32() : 0;
+
+                    if (!toolCalls.TryGetValue(index, out var tcState))
+                    {
+                        // First chunk — create new tool call
+                        var id = tc.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "" : "";
+                        string name = "";
+                        if (tc.TryGetProperty(JsonPropFunction, out var func)
+                            && func.TryGetProperty("name", out var nameProp))
+                            name = nameProp.GetString() ?? "";
+                        tcState = (id, name, new StringBuilder());
+                        toolCalls[index] = tcState;
+
+                        yield return new AssistantMessageEvent.ToolCallStart
+                        {
+                            Index = index,
+                            Partial = new Message
+                            {
+                                Role = "assistant",
+                                ContentBlocks =
+                                [
+                                    new ContentBlock
+                                    {
+                                        Type = "tool_call",
+                                        Id = id,
+                                        Name = name,
+                                    },
+                                ],
+                            },
+                        };
+                    }
+
+                    // Accumulate arguments
+                    if (tc.TryGetProperty(JsonPropFunction, out var tcFunc)
+                        && tcFunc.TryGetProperty(JsonPropArguments, out var argsProp))
+                    {
+                        var argsFrag = argsProp.GetString() ?? "";
+                        tcState.Args.Append(argsFrag);
+                        toolCalls[index] = tcState;
+
+                        yield return new AssistantMessageEvent.ToolCallDelta
+                        {
+                            Index = index,
+                            Delta = argsFrag,
+                            Partial = new Message
+                            {
+                                Role = "assistant",
+                                ContentBlocks =
+                                [
+                                    new ContentBlock
+                                    {
+                                        Type = "tool_call",
+                                        Id = tcState.Id,
+                                        Name = tcState.Name,
+                                    },
+                                ],
+                            },
+                        };
+                    }
+                }
+            }
+
+            // ── Reasoning content ──
             if (delta.TryGetProperty(JsonPropReasoningContent, out var reasoning))
             {
                 var text = reasoning.GetStringOrNull();
@@ -84,10 +158,6 @@ public static class OpenAISseParser
                         Index = 0,
                         Delta = text,
                     };
-                    // For reasoning-only models (DeepSeek R1 flash, o1 etc.),
-                    // reasoning_content IS the response — also emit as TextDelta
-                    // so the frontend shows it even when thinking checkbox is off.
-                    // Skip if the model already produced separate content deltas.
                     if (!sawContent)
                     {
                         contentAccum.Append(text);
@@ -106,11 +176,7 @@ public static class OpenAISseParser
                                 Model = model,
                                 ContentBlocks =
                                 [
-                                    new ContentBlock
-                                    {
-                                        Type = "text",
-                                        Text = contentAccum.ToString(),
-                                    },
+                                    new ContentBlock { Type = "text", Text = contentAccum.ToString() },
                                 ],
                             },
                         };
@@ -118,9 +184,10 @@ public static class OpenAISseParser
                 }
             }
 
-            if (delta.TryGetProperty(JsonPropContent, out var content))
+            // ── Text content ──
+            if (delta.TryGetProperty(JsonPropContent, out var contentVal))
             {
-                var text = content.GetStringOrNull() ?? "";
+                var text = contentVal.GetStringOrNull() ?? "";
                 sawContent = true;
                 contentAccum.Append(text);
 
@@ -146,6 +213,7 @@ public static class OpenAISseParser
                 };
             }
 
+            // ── Finish reason ──
             if (
                 choice.TryGetProperty(JsonPropFinishReason, out var fr)
                 && fr.GetStringOrNull() is { } reason
@@ -153,14 +221,105 @@ public static class OpenAISseParser
                 && reason != ""
             )
             {
-                message.ContentBlocks =
-                [
-                    new ContentBlock { Type = "text", Text = contentAccum.ToString() },
-                ];
+                // Emit ToolCallEnd for all accumulated tool calls
+                foreach (var (_, state) in toolCalls)
+                {
+                    var parsed = ParseToolArgs(state.Args.ToString());
+                    contentBlocks.Add(new ContentBlock
+                    {
+                        Type = "tool_call",
+                        Id = state.Id,
+                        Name = state.Name,
+                        Arguments = parsed,
+                    });
+                    yield return new AssistantMessageEvent.ToolCallEnd
+                    {
+                        Index = 0,
+                        Call = new ContentBlock
+                        {
+                            Type = "tool_call",
+                            Id = state.Id,
+                            Name = state.Name,
+                            Arguments = parsed,
+                        },
+                        Partial = new Message { Role = "assistant" },
+                    };
+                }
+                toolCalls.Clear();
+
+                if (contentAccum.Length > 0)
+                    contentBlocks.Add(new ContentBlock { Type = "text", Text = contentAccum.ToString() });
+
+                message.ContentBlocks = contentBlocks.ToArray();
                 message.StopReason = reason;
                 yield return new AssistantMessageEvent.Done { Message = message };
                 yield break;
             }
         }
     }
+
+    private static void FlushToolCalls(
+        List<ContentBlock> contentBlocks,
+        Dictionary<int, (string Id, string Name, StringBuilder Args)> toolCalls)
+    {
+        foreach (var (_, state) in toolCalls)
+        {
+            contentBlocks.Add(new ContentBlock
+            {
+                Type = "tool_call",
+                Id = state.Id,
+                Name = state.Name,
+                Arguments = ParseToolArgs(state.Args.ToString()),
+            });
+        }
+        toolCalls.Clear();
+    }
+
+    private static Dictionary<string, object?> ParseToolArgs(string argsJson)
+    {
+        if (string.IsNullOrWhiteSpace(argsJson))
+            return new();
+        try
+        {
+            var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(argsJson));
+            return EnumerateObjectToDict(doc.RootElement);
+        }
+        catch (FormatException)
+        {
+            return new();
+        }
+    }
+
+    private static Dictionary<string, object?> EnumerateObjectToDict(PicoElement el)
+    {
+        var dict = new Dictionary<string, object?>();
+        foreach (var prop in el.EnumerateObject())
+            dict[prop.Name] = ParseElement(prop.Value);
+        return dict;
+    }
+
+    private static object? ParseElement(PicoElement el)
+    {
+        return el.ValueKind switch
+        {
+            PicoValueKind.Object => EnumerateObjectToDict(el),
+            PicoValueKind.Array => EnumerateArrayToList(el),
+            PicoValueKind.String => el.GetString(),
+            PicoValueKind.Number => el.TryGetInt64(out var l) ? l : el.GetDouble(),
+            PicoValueKind.True => true,
+            PicoValueKind.False => false,
+            _ => null,
+        };
+    }
+
+    private static List<object?> EnumerateArrayToList(PicoElement el)
+    {
+        var list = new List<object?>();
+        foreach (var item in el.EnumerateArray())
+            list.Add(ParseElement(item));
+        return list;
+    }
+
+    /// <summary>Test-only entry point for SSE deserialization tests.</summary>
+    internal static AssistantMessageEvent ParseForTest(string json) => throw new NotSupportedException("Use ParseStreamAsync for tests");
 }
