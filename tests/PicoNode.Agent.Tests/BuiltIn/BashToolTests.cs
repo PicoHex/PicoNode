@@ -3,6 +3,19 @@ namespace PicoNode.Agent.Tests.BuiltIn;
 public class BashToolTests
 {
     [Test]
+    public async Task EchoCommandWithQuotes_ReturnsOutput()
+    {
+        var tool = new BashTool();
+        var result = await tool.ExecuteAsync(
+            new Dictionary<string, object?> { ["command"] = "echo \"hello world\"" },
+            Directory.GetCurrentDirectory(),
+            CancellationToken.None);
+
+        await Assert.That(result.IsError).IsFalse();
+        await Assert.That(result.Content).Contains("hello world");
+    }
+
+    [Test]
     public async Task EchoCommand_ReturnsOutput()
     {
         var tool = new BashTool();

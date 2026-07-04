@@ -39,7 +39,7 @@ public sealed class BashTool : IBuiltInTool
         var startInfo = new ProcessStartInfo
         {
             FileName = shell,
-            Arguments = $"{shellFlag} \"{command}\"",
+            Arguments = $"{shellFlag} {command}",
             WorkingDirectory = workdir,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
