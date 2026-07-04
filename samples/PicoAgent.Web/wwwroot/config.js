@@ -101,7 +101,7 @@ async function doConnect() {
             model: modelId,
             thinkingEnabled: true,
             thinkingLevel: 'medium',
-            maxTokens: 32768,
+            maxTokens: 131072,
         };
         setStatus('Saving...');
         const sr = await fetch('/api/config', {

@@ -59,7 +59,7 @@ public sealed class AgentLlmAdapter : IAgentLlm
             Provider = providerName,
             Api = apiFormat,
             BaseUrl = baseUrl,
-            MaxTokens = 32768,
+            MaxTokens = 131072,
         };
 
         var context = new ChatContext { SystemPrompt = systemPrompt, Messages = messages, Tools = Tools };
