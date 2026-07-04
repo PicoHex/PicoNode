@@ -139,12 +139,12 @@ public sealed class OpenAILlmClient : ILLmClient
             {
                 if (i > 0)
                     sb.Append(',');
-                sb.Append("{\"type\":\"function\",\"function\":{\"name\":");
+                sb.Append("{\"type\":\"function\",\"function\":{\"name\":\"");
                 sb.Append(EscapeJson(context.Tools[i].Function.Name));
-                sb.Append(",\"description\":");
+                sb.Append("\",\"description\":\"");
                 sb.Append(EscapeJson(context.Tools[i].Function.Description));
-                sb.Append(",\"parameters\":");
-                sb.Append(context.Tools[i].Function.Parameters); // raw JSON string
+                sb.Append("\",\"parameters\":");
+                sb.Append(context.Tools[i].Function.Parameters); // raw JSON object, no escaping needed
                 sb.Append("}}");
             }
             sb.Append(']');
