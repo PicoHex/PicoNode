@@ -174,6 +174,14 @@ public sealed class AgentLoop
                         };
                         await session.AppendMessage(notFound);
                         result.Add(notFound);
+                        if (onEvent is not null)
+                            await onEvent(new AssistantMessageEvent.ToolResult
+                            {
+                                ToolCallId = tc.Id ?? "",
+                                ToolName = tc.Name ?? "",
+                                Content = $"Tool not found: {tc.Name}",
+                                IsError = true,
+                            }, ct);
                         continue;
                     }
 
