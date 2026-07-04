@@ -86,6 +86,62 @@ public class AgentLoopBuiltInToolTests
         await Assert.That(toolResult!.IsError).IsFalse();
     }
 
+    [Test]
+    public async Task RunTurnAsync_EmitsToolResultEvent_WithCorrectFields()
+    {
+        var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
+        await session.AppendMessage(new Message { Role = "user", Content = "read", Timestamp = 1 });
+
+        var llm = new DoneWithToolCallLlm("stub", "call_1",
+            new Dictionary<string, object?>());
+
+        var builtInTools = new BuiltInToolSet();
+        builtInTools.Register(new StubTool("stub"));
+
+        var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner(), builtInTools);
+
+        var toolResults = new List<AssistantMessageEvent.ToolResult>();
+        await loop.RunTurnAsync(session, CancellationToken.None,
+            onEvent: (e, _) =>
+            {
+                if (e is AssistantMessageEvent.ToolResult tr)
+                    toolResults.Add(tr);
+                return ValueTask.CompletedTask;
+            });
+
+        await Assert.That(toolResults.Count).IsGreaterThan(0);
+        await Assert.That(toolResults[0].ToolCallId).IsEqualTo("call_1");
+        await Assert.That(toolResults[0].ToolName).IsEqualTo("stub");
+        await Assert.That(toolResults[0].Content).IsEqualTo("ok");
+        await Assert.That(toolResults[0].IsError).IsFalse();
+    }
+
+    [Test]
+    public async Task RunTurnAsync_NoToolResultWhenNoToolCalled()
+    {
+        var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
+        await session.AppendMessage(new Message { Role = "user", Content = "hi", Timestamp = 1 });
+
+        // LLM returns text only, no tool_call
+        var llm = new TextOnlyLlm("hello");
+
+        var builtInTools = new BuiltInToolSet();
+        builtInTools.Register(new StubTool("stub"));
+
+        var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner(), builtInTools);
+
+        var toolResults = new List<AssistantMessageEvent.ToolResult>();
+        await loop.RunTurnAsync(session, CancellationToken.None,
+            onEvent: (e, _) =>
+            {
+                if (e is AssistantMessageEvent.ToolResult tr)
+                    toolResults.Add(tr);
+                return ValueTask.CompletedTask;
+            });
+
+        await Assert.That(toolResults.Count).IsEqualTo(0);
+    }
+
     /// <summary>
     /// Mock LLM that returns a "done" event with a tool_call ContentBlock.
     /// </summary>
@@ -127,5 +183,26 @@ public class AgentLoopBuiltInToolTests
         public Task<(string, bool)> ExecuteAsync(
             IReadOnlyDictionary<string, object?> args, string wd, CancellationToken ct)
             => Task.FromResult(("ok", false));
+    }
+
+    /// <summary>
+    /// Mock LLM that returns text only (no tool call).
+    /// </summary>
+    private sealed class TextOnlyLlm : IAgentLlm
+    {
+        private readonly string _text;
+        public TextOnlyLlm(string text) => _text = text;
+
+        public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
+            string? sp, Message[] msgs, string mid, string? rl,
+            [EnumeratorCancellation] CancellationToken ct)
+        {
+            yield return new LlmStreamEvent("done", null, "end_turn", null,
+                ContentBlocks: new ContentBlock[]
+                {
+                    new() { Type = "text", Text = _text },
+                });
+            await Task.CompletedTask;
+        }
     }
 }
