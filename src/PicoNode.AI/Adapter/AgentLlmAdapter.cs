@@ -7,6 +7,12 @@ public sealed class AgentLlmAdapter : IAgentLlm
     private readonly string _fallbackProvider;
 
     /// <summary>
+    /// Tool definitions to pass to the LLM via the native tools API parameter.
+    /// Set by AgentBuilder after construction.
+    /// </summary>
+    public ToolSchema[]? Tools { get; set; }
+
+    /// <summary>
     /// Preferred: pass an IProviderRouter so the adapter can resolve the real
     /// AiApiFormat / provider name / BaseUrl for the caller's modelId. Without
     /// this, Model.Api falls back to the enum default (AnthropicMessages) which
@@ -56,7 +62,7 @@ public sealed class AgentLlmAdapter : IAgentLlm
             MaxTokens = 4096,
         };
 
-        var context = new ChatContext { SystemPrompt = systemPrompt, Messages = messages };
+        var context = new ChatContext { SystemPrompt = systemPrompt, Messages = messages, Tools = Tools };
 
         StreamOptions? options = null;
         if (reasoningLevel is not null && reasoningLevel != "off")

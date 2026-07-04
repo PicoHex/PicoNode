@@ -103,6 +103,7 @@ public sealed class AgentBuilder
         var model = await ResolveModelAsync(http, providerConfigs, ct);
         _initialModel = model;
         var adapter = new AgentLlmAdapter(resilientClient, router);
+        adapter.Tools = builtInTools.GetActiveToolSchemas();
         var loop = new AgentLoop(adapter, _registry, runner, builtInTools);
         loop.WorkingDirectory = _capabilitiesRoot ?? Directory.GetCurrentDirectory();
 

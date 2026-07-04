@@ -92,4 +92,18 @@ public sealed class BuiltInToolSet
     }
 
     public IReadOnlyList<string> GetEnabledNames() => _enabled.ToList();
+
+    public ToolSchema[] GetActiveToolSchemas() =>
+        GetActiveTools()
+            .Where(t => t.InputSchema is { Length: > 0 })
+            .Select(t => new ToolSchema
+            {
+                Function = new ToolSchemaFunction
+                {
+                    Name = t.Name,
+                    Description = t.Description,
+                    Parameters = t.InputSchema!,
+                },
+            })
+            .ToArray();
 }

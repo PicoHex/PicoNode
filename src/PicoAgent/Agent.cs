@@ -456,6 +456,7 @@ public sealed partial class Agent : IAsyncDisposable
                     );
                     var adapter = new AgentLlmAdapter(resilientClient, _router);
                     var builtInTools = AgentBuilder.CreateBuiltInTools();
+                    adapter.Tools = builtInTools.GetActiveToolSchemas();
                     var newLoop = new AgentLoop(adapter, _registry, new CapabilityRunner(), builtInTools);
                     newLoop.WorkingDirectory = _homeDir ?? Directory.GetCurrentDirectory();
                     _host.ReplaceLoop(newLoop);
