@@ -305,9 +305,12 @@ async function sendMessage(overrideText) {
                                 tcDiv.open = false;
                                 const summary = tcDiv.querySelector('summary');
                                 const name = toolBlocks[tid].name;
+                                const prefix = evt.isError ? '❌ ' : '';
                                 if (summary && toolBlocks[tid].args) {
-                                    try { const parsed = JSON.parse(toolBlocks[tid].args); summary.innerHTML = '🔧 <strong>' + name + '</strong> <span class="tool-args">' + JSON.stringify(parsed) + '</span>'; }
-                                    catch (e) { summary.innerHTML = '🔧 <strong>' + name + '</strong>'; }
+                                    try { const parsed = JSON.parse(toolBlocks[tid].args); summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong> <span class="tool-args">' + JSON.stringify(parsed) + '</span>'; }
+                                    catch (e) { summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong>'; }
+                                } else if (summary) {
+                                    summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong>';
                                 }
                             }
                             if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex + '-' + thinkingPhase, rawThinking); thinkBlock.open = false; }
