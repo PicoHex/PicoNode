@@ -110,7 +110,7 @@ public class AgentLoopBuiltInToolTests
                 ContentBlocks: new ContentBlock[]
                 {
                     new() { Type = "text", Text = "" },
-                    new() { Type = "tool_call", Id = _toolCallId, Name = _toolName, Arguments = _args },
+                    new() { Type = ProtocolConstants.BlockTypeToolCall, Id = _toolCallId, Name = _toolName, Arguments = _args },
                 });
             await Task.CompletedTask;
         }
