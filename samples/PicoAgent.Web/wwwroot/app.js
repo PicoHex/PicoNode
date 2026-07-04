@@ -244,7 +244,7 @@ async function sendMessage(overrideText) {
                         tcDiv.style.display = 'none';
                         tcDiv.open = true;
                         tcDiv.innerHTML = '<summary>🔧 <strong>' + (evt.toolName || 'tool') + '</strong> <span class="tool-args">running...</span></summary><div class="tool-result"></div>';
-                        contentEl.parentElement.insertBefore(tcDiv, contentEl.nextElementSibling);
+                        asst.appendChild(tcDiv);
                     }
                     else if (evt.type === 'tool_call_delta') {
                         const tid = evt.toolCallId;
