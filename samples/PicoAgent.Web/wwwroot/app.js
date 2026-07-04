@@ -241,7 +241,8 @@ async function sendMessage(overrideText) {
                         tcDiv.className = 'tool-call';
                         tcDiv.dataset.toolId = tid;
                         tcDiv.style.display = 'none';
-                        tcDiv.innerHTML = '<summary>🔧 <strong>' + (evt.toolName || 'tool') + '</strong> <span class="tool-args"></span></summary><div class="tool-result"></div>';
+                        tcDiv.open = true;
+                        tcDiv.innerHTML = '<summary>🔧 <strong>' + (evt.toolName || 'tool') + '</strong> <span class="tool-args">running...</span></summary><div class="tool-result"></div>';
                         contentEl.parentElement.insertBefore(tcDiv, contentEl.nextElementSibling);
                     }
                     else if (evt.type === 'tool_call_delta') {
@@ -261,7 +262,7 @@ async function sendMessage(overrideText) {
                         const tid = evt.toolCallId;
                         if (tid && toolBlocks[tid]) {
                             const tcDiv = contentEl.parentElement.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
-                            if (tcDiv) tcDiv.style.display = '';
+                            if (tcDiv) { tcDiv.style.display = ''; tcDiv.open = true; }
                         }
                     }
                     else if (evt.type === 'tool_result') {
@@ -277,6 +278,16 @@ async function sendMessage(overrideText) {
                                     ? toolBlocks[tid].result.substring(0, 1000) + '\n... (truncated)'
                                     : toolBlocks[tid].result;
                                 tcDiv.querySelector('.tool-result').textContent = truncated;
+                                // Auto-collapse when result is received (like thinking)
+                                tcDiv.open = false;
+                                const summary = tcDiv.querySelector('summary');
+                                const name = toolBlocks[tid].name;
+                                if (summary && toolBlocks[tid].args) {
+                                    try {
+                                        const parsed = JSON.parse(toolBlocks[tid].args);
+                                        summary.innerHTML = '🔧 <strong>' + name + '</strong> <span class="tool-args">' + JSON.stringify(parsed) + '</span>';
+                                    } catch (e) { summary.innerHTML = '🔧 <strong>' + name + '</strong>'; }
+                                }
                             }
                         }
                     }
