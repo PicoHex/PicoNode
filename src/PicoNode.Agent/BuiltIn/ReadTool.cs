@@ -26,7 +26,7 @@ public sealed class ReadTool : IBuiltInTool
         string workingDirectory,
         CancellationToken ct)
     {
-        var path = GetStringArg(args, "path");
+        var path = BuiltInToolHelpers.GetStringArg(args, "path");
         if (string.IsNullOrWhiteSpace(path))
             return Task.FromResult(("[Error: path is required]", true));
 
@@ -49,8 +49,8 @@ public sealed class ReadTool : IBuiltInTool
 
         fs.Seek(0, SeekOrigin.Begin);
 
-        var offset = (int)GetLongArg(args, "offset", 1);
-        var limit = (int)GetLongArg(args, "limit", MaxLines);
+        var offset = (int)BuiltInToolHelpers.GetLongArg(args, "offset", 1);
+        var limit = (int)BuiltInToolHelpers.GetLongArg(args, "limit", MaxLines);
 
         using var reader = new StreamReader(fs, Encoding.UTF8);
         var lines = new List<string>();
@@ -75,17 +75,5 @@ public sealed class ReadTool : IBuiltInTool
         if (Path.IsPathRooted(path))
             return Path.GetFullPath(path);
         return Path.GetFullPath(Path.Combine(workingDirectory, path));
-    }
-
-    internal static string GetStringArg(IReadOnlyDictionary<string, object?> args, string key)
-    {
-        return args.TryGetValue(key, out var v) && v is string s ? s : "";
-    }
-
-    internal static long GetLongArg(IReadOnlyDictionary<string, object?> args, string key, long fallback)
-    {
-        if (!args.TryGetValue(key, out var v))
-            return fallback;
-        return v is long l ? l : fallback;
     }
 }

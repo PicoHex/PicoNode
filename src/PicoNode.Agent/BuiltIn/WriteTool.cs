@@ -21,11 +21,11 @@ public sealed class WriteTool : IBuiltInTool
         string workingDirectory,
         CancellationToken ct)
     {
-        var path = ReadTool.GetStringArg(args, "path");
+        var path = BuiltInToolHelpers.GetStringArg(args, "path");
         if (string.IsNullOrWhiteSpace(path))
             return Task.FromResult(("[Error: path is required]", true));
 
-        var content = ReadTool.GetStringArg(args, "content");
+        var content = BuiltInToolHelpers.GetStringArg(args, "content");
 
         var fullPath = Path.IsPathRooted(path)
             ? Path.GetFullPath(path)

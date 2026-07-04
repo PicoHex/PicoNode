@@ -30,7 +30,11 @@ public static class SystemPromptBuilder
         sb.AppendLine(SkillFormatter.FormatSkillsPrompt(skills.ToList()));
         sb.AppendLine(FormatToolsPrompt(tools));
         if (builtInTools is not null)
-            sb.AppendLine(builtInTools.FormatForSystemPrompt());
+        {
+            var toolPrompt = builtInTools.FormatForSystemPrompt();
+            if (toolPrompt.Length > 0)
+                sb.AppendLine(toolPrompt);
+        }
         return sb.ToString();
     }
 }

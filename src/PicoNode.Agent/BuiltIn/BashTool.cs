@@ -26,12 +26,12 @@ public sealed class BashTool : IBuiltInTool
         string workingDirectory,
         CancellationToken ct)
     {
-        var command = ReadTool.GetStringArg(args, "command");
+        var command = BuiltInToolHelpers.GetStringArg(args, "command");
         if (string.IsNullOrWhiteSpace(command))
             return ("[Error: command is required]", true);
 
-        var timeoutSecs = (int)ReadTool.GetLongArg(args, "timeout", DefaultTimeoutSeconds);
-        var workdir = ReadTool.GetStringArg(args, "workdir");
+        var timeoutSecs = (int)BuiltInToolHelpers.GetLongArg(args, "timeout", DefaultTimeoutSeconds);
+        var workdir = BuiltInToolHelpers.GetStringArg(args, "workdir");
         if (string.IsNullOrWhiteSpace(workdir))
             workdir = workingDirectory;
 

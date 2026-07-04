@@ -275,7 +275,7 @@ public sealed class AgentBuilder
     private static HttpClient CreateHttpClient() =>
         new(new SocketsHttpHandler { UseProxy = false });
 
-    private static BuiltInToolSet CreateBuiltInTools()
+    internal static BuiltInToolSet CreateBuiltInTools()
     {
         var tools = new BuiltInToolSet();
         tools.Register(new ReadTool());
