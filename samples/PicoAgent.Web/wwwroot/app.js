@@ -223,6 +223,7 @@ async function sendMessage(overrideText) {
     contentEl.innerHTML = '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span><span class="stream-text" style="display:none"></span>';
     const streamDot = contentEl.querySelector('.streaming-indicator'), streamText = contentEl.querySelector('.stream-text'), thinkBlock = asst.querySelector('.thinking');
     let rawText = '', rawThinking = '';
+    let toolBlocks = {}; // toolCallId → { name, args: '', result: '', isError: false }
     try {
         const response = await fetch(`/api/session/${currentSession}/message`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text, signal: abortCtrl.signal });
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
@@ -233,9 +234,52 @@ async function sendMessage(overrideText) {
                     if (evt.type === 'delta') { rawText += evt.content; if (rawText.trim()) { streamDot.style.display = 'none'; streamText.style.display = ''; } streamText.textContent = rawText; }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked || !thinkBlock) continue; rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
                     else if (evt.type === 'done') { streamDot.style.display = 'none'; streamText.style.display = 'none'; contentEl.innerHTML = marked.parse(rawText); deferMermaidRender(contentEl); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
-                    else if (evt.type === 'tool_call_start') { streamDot.style.display = 'none'; streamText.style.display = 'none'; rawText += `\n\n🔧 **${evt.toolName}**\n`; streamText.textContent = rawText; }
-                    else if (evt.type === 'tool_call_delta') { rawText += evt.content; streamText.textContent = rawText; }
-                    else if (evt.type === 'tool_call_end') { rawText += '\n'; streamText.textContent = rawText; }
+                    else if (evt.type === 'tool_call_start') {
+                        const tid = evt.toolCallId || 'tool_' + Date.now();
+                        toolBlocks[tid] = { name: evt.toolName || 'tool', args: '', result: '', isError: false };
+                        const tcDiv = document.createElement('details');
+                        tcDiv.className = 'tool-call';
+                        tcDiv.dataset.toolId = tid;
+                        tcDiv.style.display = 'none';
+                        tcDiv.innerHTML = '<summary>🔧 <strong>' + (evt.toolName || 'tool') + '</strong> <span class="tool-args"></span></summary><div class="tool-result"></div>';
+                        contentEl.parentElement.insertBefore(tcDiv, contentEl.nextElementSibling);
+                    }
+                    else if (evt.type === 'tool_call_delta') {
+                        const tid = evt.toolCallId;
+                        if (tid && toolBlocks[tid]) {
+                            toolBlocks[tid].args += evt.content || '';
+                            const tcDiv = contentEl.parentElement.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
+                            if (tcDiv) {
+                                try {
+                                    const parsed = JSON.parse(toolBlocks[tid].args);
+                                    tcDiv.querySelector('.tool-args').textContent = JSON.stringify(parsed);
+                                } catch (e) { /* args still streaming */ }
+                            }
+                        }
+                    }
+                    else if (evt.type === 'tool_call_end') {
+                        const tid = evt.toolCallId;
+                        if (tid && toolBlocks[tid]) {
+                            const tcDiv = contentEl.parentElement.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
+                            if (tcDiv) tcDiv.style.display = '';
+                        }
+                    }
+                    else if (evt.type === 'tool_result') {
+                        const tid = evt.toolCallId;
+                        if (tid && toolBlocks[tid]) {
+                            toolBlocks[tid].result = evt.content || '';
+                            toolBlocks[tid].isError = evt.isError;
+                            const tcDiv = contentEl.parentElement.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
+                            if (tcDiv) {
+                                tcDiv.style.display = '';
+                                tcDiv.classList.toggle('tool-error', evt.isError);
+                                const truncated = toolBlocks[tid].result.length > 1000
+                                    ? toolBlocks[tid].result.substring(0, 1000) + '\n... (truncated)'
+                                    : toolBlocks[tid].result;
+                                tcDiv.querySelector('.tool-result').textContent = truncated;
+                            }
+                        }
+                    }
                     else if (evt.type === 'error') { streamDot.style.display = 'none'; streamText.style.display = 'none'; rawText += `\n\n> ⚠️ ${evt.message}`; contentEl.innerHTML = marked.parse(rawText); }
                 } catch {} messages.scrollTop = messages.scrollHeight; }
         }
