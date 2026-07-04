@@ -59,7 +59,7 @@ public sealed class AgentLlmAdapter : IAgentLlm
             Provider = providerName,
             Api = apiFormat,
             BaseUrl = baseUrl,
-            MaxTokens = 4096,
+            MaxTokens = 8192,
         };
 
         var context = new ChatContext { SystemPrompt = systemPrompt, Messages = messages, Tools = Tools };
@@ -94,25 +94,31 @@ public sealed class AgentLlmAdapter : IAgentLlm
                     yield return new LlmStreamEvent("thinking_delta", th.Delta, null, null);
                     break;
                 case AssistantMessageEvent.ToolCallStart tcs:
+                {
+                    var b = tcs.Partial.ContentBlocks?.ElementAtOrDefault(tcs.Index);
                     yield return new LlmStreamEvent(
                         "tool_call_start",
                         Text: null,
                         StopReason: null,
                         ErrorMessage: null,
-                        ToolCallId: null,
-                        ToolName: null
+                        ToolCallId: b?.Id,
+                        ToolName: b?.Name
                     );
                     break;
+                }
                 case AssistantMessageEvent.ToolCallDelta tcd:
+                {
+                    var b = tcd.Partial.ContentBlocks?.ElementAtOrDefault(tcd.Index);
                     yield return new LlmStreamEvent(
                         "tool_call_delta",
                         Text: tcd.Delta,
                         StopReason: null,
                         ErrorMessage: null,
-                        ToolCallId: null,
-                        ToolName: null
+                        ToolCallId: b?.Id,
+                        ToolName: b?.Name
                     );
                     break;
+                }
                 case AssistantMessageEvent.ToolCallEnd tce:
                     yield return new LlmStreamEvent(
                         "tool_call_end",

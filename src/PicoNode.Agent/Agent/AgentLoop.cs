@@ -320,7 +320,23 @@ public sealed class AgentLoop
                 case "tool_call_start":
                     if (onEvent is not null)
                         await onEvent(
-                            new AssistantMessageEvent.ToolCallStart { Index = 0, Partial = new() },
+                            new AssistantMessageEvent.ToolCallStart
+                            {
+                                Index = 0,
+                                Partial = new Message
+                                {
+                                    Role = "assistant",
+                                    ContentBlocks =
+                                    [
+                                        new ContentBlock
+                                        {
+                                            Type = "tool_call",
+                                            Id = evt.ToolCallId,
+                                            Name = evt.ToolName,
+                                        },
+                                    ],
+                                },
+                            },
                             ct
                         );
                     break;
@@ -331,7 +347,18 @@ public sealed class AgentLoop
                             {
                                 Index = 0,
                                 Delta = evt.Text ?? "",
-                                Partial = new(),
+                                Partial = new Message
+                                {
+                                    Role = "assistant",
+                                    ContentBlocks =
+                                    [
+                                        new ContentBlock
+                                        {
+                                            Type = "tool_call",
+                                            Id = evt.ToolCallId,
+                                        },
+                                    ],
+                                },
                             },
                             ct
                         );
