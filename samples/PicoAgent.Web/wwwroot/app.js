@@ -176,6 +176,14 @@ thinkLvl.addEventListener('change', () => switchThinking(thinkChk.checked, think
 document.getElementById('btn-new-session').addEventListener('click', createSession);
 document.getElementById('btn-save-session').addEventListener('click', saveSession);
 
+document.getElementById('btn-reload').addEventListener('click', async () => {
+    const b = document.getElementById('btn-reload');
+    b.textContent = '⏳';
+    try { await api('POST', '/api/reload'); b.textContent = '✅'; showToast('Skills & config reloaded'); }
+    catch (e) { b.textContent = '❌'; showToast('Reload failed', true); }
+    setTimeout(() => { b.textContent = '🔄'; }, 1500);
+});
+
 // ── Export ──
 document.getElementById('btn-export').addEventListener('click', async () => {
     const all = messages.querySelectorAll('.message');

@@ -784,7 +784,14 @@ public sealed partial class Agent : IAsyncDisposable
                         if (_homeDir is { Length: > 0 })
                         {
                             _registry.Scan(_homeDir);
-                            _logger?.Info("Capabilities reloaded");
+                            var skills = AgentBuilder.ScanSkills(_homeDir);
+                            var currentPrompt = _host.GetSystemPrompt();
+                            if (currentPrompt is not null)
+                            {
+                                var builtInTools = AgentBuilder.CreateBuiltInTools();
+                                _host.SetSystemPrompt(SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools));
+                            }
+                            _logger?.Info("Skills, config and capabilities reloaded");
                         }
                         return JsonResponse(200, "{\"status\":\"reloaded\"}"u8.ToArray());
                     })()
