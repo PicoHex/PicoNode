@@ -49,6 +49,8 @@ public sealed class BuiltInToolSet
         var sb = new StringBuilder();
         sb.AppendLine("You have access to the following tools. Use them to complete tasks — do not describe what you would do, actually call the tools:");
         sb.AppendLine();
+        sb.AppendLine("Prefer dedicated tools over bash when available. Use bash only as a fallback for operations that lack a dedicated tool (e.g. git, build, test).");
+        sb.AppendLine();
         foreach (var t in GetActiveTools())
         {
             sb.Append("- ").Append(t.Name).Append(": ").AppendLine(t.Description);
