@@ -274,7 +274,7 @@ async function sendMessage(overrideText) {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
                         segStart = rawText.length;
                         const tid = evt.toolCallId || 'tool_' + Date.now();
-                        toolBlocks[tid] = { name: evt.toolName || 'tool', args: '', result: '', isError: false };
+                        toolBlocks[tid] = { name: evt.toolName || 'tool', args: '', result: '', isError: false, isSkill: false };
                         const tcDiv = document.createElement('details');
                         tcDiv.className = 'tool-call'; tcDiv.dataset.toolId = tid; tcDiv.open = true;
                         tcDiv.innerHTML = '<summary>🔧 <strong>' + (evt.toolName || 'tool') + '</strong> <span class="tool-args">running...</span></summary><div class="tool-result"></div>';
@@ -286,6 +286,17 @@ async function sendMessage(overrideText) {
                             toolBlocks[tid].args += evt.content || '';
                             const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
                             if (tcDiv) { try { const parsed = JSON.parse(toolBlocks[tid].args); tcDiv.querySelector('.tool-args').textContent = JSON.stringify(parsed); } catch (e) {} }
+                            // Detect skill read: read tool + path ends with SKILL.md
+                            if (toolBlocks[tid].name === 'read' && !toolBlocks[tid].isSkill) {
+                                try {
+                                    const parsed = JSON.parse(toolBlocks[tid].args);
+                                    if (parsed.path && parsed.path.endsWith('SKILL.md')) {
+                                        toolBlocks[tid].isSkill = true;
+                                        tcDiv.classList.add('skill-read');
+                                        tcDiv.querySelector('summary strong').textContent = '📚 ' + toolBlocks[tid].name;
+                                    }
+                                } catch (e) {}
+                            }
                         }
                     }
                     else if (evt.type === 'tool_call_end') {

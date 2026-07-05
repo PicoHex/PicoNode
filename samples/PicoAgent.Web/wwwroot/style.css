@@ -289,6 +289,12 @@ button.small { font-size: 0.75em; padding: 4px 8px; border-radius: 4px; }
 .tool-call.tool-error .tool-result {
     color: #e74c3c;
 }
+.tool-call.skill-read {
+    border-left-color: #8e44ad;
+}
+.tool-call.skill-read > summary {
+    color: #a569bd;
+}
 
 /* ── History hint ── */
 #history-hint { position: fixed; bottom: 72px; left: 50%; transform: translateX(-50%); background: var(--bg-side); color: var(--fg-muted); padding: 6px 12px; border-radius: 6px; font-size: 0.8em; border: 1px solid var(--border); z-index: 5; opacity: 0; transition: opacity .2s; pointer-events: none; }
