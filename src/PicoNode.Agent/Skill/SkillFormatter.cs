@@ -6,7 +6,8 @@ public static class SkillFormatter
     {
         var visible = skills.Where(s => !s.DisableModelInvocation).ToList();
         var sb = new StringBuilder();
-        sb.Append("Skills are stored in ").Append(FileSystemConstants.SkillsDir).AppendLine("/. To install a skill, git clone it there.");
+        sb.Append("Skills are stored in ").Append(FileSystemConstants.SkillsDir).AppendLine("/.");
+        sb.AppendLine("To install: git clone <url> for remote repos, or copy the folder for local skills.");
         if (visible.Count == 0)
             return sb.ToString();
 
