@@ -145,8 +145,17 @@ function addHistoryToolBlock(el, tc, resultText, isError) {
     const name = tc.Name || tc.name || 'tool';
     const args = tc.Arguments || tc.arguments || {};
     const argsStr = Object.keys(args).length ? JSON.stringify(args) : '';
-    const resultStr = resultText || '(no result)';
-    tcDiv.innerHTML = '<summary>🔧 <strong>' + name + '</strong> <span class="tool-args">' + argsStr + '</span></summary><div class="tool-result">' + resultStr + '</div>';
+    // Skill detection from path
+    if (name === 'read' && args.path && args.path.endsWith('SKILL.md')) {
+        tcDiv.classList.add('skill-read');
+    }
+    const summary = document.createElement('summary');
+    summary.innerHTML = '🔧 <strong>' + name + '</strong> <span class="tool-args">' + argsStr + '</span>';
+    tcDiv.appendChild(summary);
+    const resultDiv = document.createElement('div');
+    resultDiv.className = 'tool-result';
+    resultDiv.textContent = resultText || '(no result)';
+    tcDiv.appendChild(resultDiv);
     const msgContent = el.querySelector('.msg-content');
     if (msgContent) msgContent.appendChild(tcDiv);
 }
