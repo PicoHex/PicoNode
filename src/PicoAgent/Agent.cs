@@ -467,8 +467,10 @@ public sealed partial class Agent : IAsyncDisposable
                     // rebuild it now that providers and tools are available.
                     if (_host.GetSystemPrompt() is null && _homeDir is { Length: > 0 })
                     {
+                        var customPromptPath = Path.Combine(_homeDir, "system-prompt.md");
+                        var agentsMd = File.Exists(customPromptPath) ? File.ReadAllText(customPromptPath) : null;
                         var skills = AgentBuilder.ScanSkills(_homeDir);
-                        newLoop.SystemPrompt = SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools);
+                        newLoop.SystemPrompt = SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools, agentsMd);
                     }
                     _wasUnconfigured = false;
                 }
