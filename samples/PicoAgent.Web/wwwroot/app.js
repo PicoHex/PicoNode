@@ -144,10 +144,13 @@ function addHistoryToolBlock(el, tc, resultText, isError) {
     tcDiv.open = isError;
     const name = tc.Name || tc.name || 'tool';
     const args = tc.Arguments || tc.arguments || {};
-    const argsStr = Object.keys(args).length ? JSON.stringify(args) : '';
-    // Skill detection from path
-    const skillPath = args.path || args.Path || '';
-    const isSkill = name === 'read' && typeof skillPath === 'string' && skillPath.endsWith('SKILL.md');
+    // Normalize args keys to lowercase for case-insensitive matching
+    const normalizedArgs = {};
+    for (const k of Object.keys(args)) normalizedArgs[k.toLowerCase()] = args[k];
+    const argsStr = Object.keys(normalizedArgs).length ? JSON.stringify(normalizedArgs) : '';
+    // Skill detection: read + path ends with SKILL.md
+    const skillPath = normalizedArgs.path || '';
+    const isSkill = name === 'read' && typeof skillPath === 'string' && (skillPath.endsWith('SKILL.md') || skillPath.includes('SKILL.md'));
     if (isSkill) tcDiv.classList.add('skill-read');
     const icon = isSkill ? '📚' : '🔧';
     const summary = document.createElement('summary');
