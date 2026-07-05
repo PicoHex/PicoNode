@@ -440,6 +440,9 @@ public sealed partial class Agent : IAsyncDisposable
                 _pendingModel.Provider = pcDict.Keys.First();
                 _pendingModel.Api = providerList[0].ApiFormat;
                 _pendingModel.Id = ResolveInitialModelId(config.Model, providerList);
+                _pendingModel.ThinkingEnabled = config.ThinkingEnabled;
+                _pendingModel.ThinkingLevel = AgentConfig.ParseLevel(config.ThinkingLevel) ?? AgentConfig.DefaultThinkingLevel;
+                _pendingModel.MaxTokens = config.MaxTokens ?? 393216;
 
                 // When transitioning from unconfigured → configured, replace the
                 // NoopAgentLlm loop with a real one wired through ResilientLLmClient
