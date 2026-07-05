@@ -12,7 +12,7 @@ if (!File.Exists(settingsPath))
         {
             Providers = [],
             Model = string.Empty,
-            ThinkingLevel = AgentConfig.DefaultThinkingLevelString,
+            ThinkingLevel = AgentConfig.DefaultThinkingLevel.ToString().ToLowerInvariant(),
             ThinkingEnabled = true,
             MaxTokens = 4096,
         }
@@ -148,7 +148,7 @@ app.MapPost(
     {
         var req = await ReadJsonAsync<ThinkingReq>(ctx, ct);
         var enabled = req?.Enabled ?? true;
-        var level = req?.Level ?? AgentConfig.DefaultThinkingLevelString;
+        var level = req?.Level ?? AgentConfig.DefaultThinkingLevel.ToString().ToLowerInvariant();
         return (await client.SwitchThinkingAsync(enabled, level, ct))
             ? Ok()
             : ErrorJson(400, "Switch failed");

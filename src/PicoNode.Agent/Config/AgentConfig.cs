@@ -12,7 +12,6 @@ public sealed class AgentConfig
 
     /// <summary>Default thinking level when none is configured.</summary>
     public const ThinkingLevel DefaultThinkingLevel = PicoNode.AI.ThinkingLevel.XHigh;
-    public static string DefaultThinkingLevelString => DefaultThinkingLevel.ToString().ToLowerInvariant();
 
     public static ThinkingLevel? ParseLevel(string? s) =>
         s?.ToLower() switch
