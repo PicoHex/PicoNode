@@ -286,7 +286,7 @@ public sealed class AgentBuilder
         tools.Register(new GrepTool());
         tools.Register(new FindTool());
         tools.Register(new LsTool());
-        tools.ApplyPreset(ToolPreset.Coding);
+        tools.ApplyPreset(ToolPreset.All);
         return tools;
     }
 }
