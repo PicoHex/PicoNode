@@ -9,6 +9,8 @@ public static class SkillFormatter
             return "";
 
         var sb = new StringBuilder();
+        sb.AppendLine("The following skills are available. To use a skill, read its file with the read tool at the location shown.");
+        sb.AppendLine();
         sb.AppendLine("<available_skills>");
         foreach (var skill in visible)
         {
