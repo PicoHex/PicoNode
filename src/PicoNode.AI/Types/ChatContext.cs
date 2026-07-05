@@ -1,4 +1,4 @@
-namespace PicoNode.AI;
+namespace PicoNode.AI.Types;
 
 public sealed class ChatContext
 {
