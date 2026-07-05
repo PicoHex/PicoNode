@@ -804,6 +804,9 @@ public sealed partial class Agent : IAsyncDisposable
                     Model = model.Id,
                     Provider = model.Provider,
                     Providers = _providerConfigs.Keys.ToArray(),
+                    ThinkingEnabled = model.ThinkingEnabled,
+                    ThinkingLevel = model.ThinkingLevel.ToString().ToLowerInvariant(),
+                    MaxTokens = model.MaxTokens,
                 };
                 var json = PicoJetson.JsonSerializer.Serialize(status);
                 return ValueTask.FromResult(JsonResponse(200, json));

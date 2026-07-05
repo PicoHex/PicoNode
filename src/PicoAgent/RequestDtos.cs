@@ -9,6 +9,9 @@ sealed class ConfigStatusResponse
     public string Model { get; set; } = "";
     public string Provider { get; set; } = "";
     public string[] Providers { get; set; } = [];
+    public bool ThinkingEnabled { get; set; }
+    public string ThinkingLevel { get; set; } = "";
+    public int MaxTokens { get; set; }
 }
 
 [PicoSerializable]
