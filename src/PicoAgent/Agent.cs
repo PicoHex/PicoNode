@@ -467,8 +467,7 @@ public sealed partial class Agent : IAsyncDisposable
                     // rebuild it now that providers and tools are available.
                     if (_host.GetSystemPrompt() is null && _homeDir is { Length: > 0 })
                     {
-                        var scanner = new KnowledgeScanner();
-                        var skills = scanner.Scan(_homeDir);
+                        var skills = AgentBuilder.ScanSkills(_homeDir);
                         newLoop.SystemPrompt = SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools);
                     }
                     _wasUnconfigured = false;

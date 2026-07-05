@@ -13,14 +13,17 @@ public static class SkillFormatter
         foreach (var skill in visible)
         {
             sb.AppendLine("  <skill>");
-            sb.AppendLine($"    <name>{skill.Name}</name>");
-            sb.AppendLine($"    <description>{skill.Description}</description>");
-            sb.AppendLine($"    <location>{skill.Path}</location>");
+            sb.AppendLine($"    <name>{EscapeXml(skill.Name)}</name>");
+            sb.AppendLine($"    <description>{EscapeXml(skill.Description)}</description>");
+            sb.AppendLine($"    <location>{EscapeXml(skill.Path)}</location>");
             sb.AppendLine("  </skill>");
         }
         sb.AppendLine("</available_skills>");
         return sb.ToString();
     }
+
+    private static string EscapeXml(string s) =>
+        s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
 
     public static string FormatSkillInvocation(SkillInfo skill, string fullContent)
     {
