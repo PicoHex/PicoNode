@@ -103,7 +103,8 @@ async function loadMessages(sessionId) {
         if (msgs && Array.isArray(msgs)) {
             let ai = 0;
             for (const m of msgs) {
-                const role = (m.Role || m.role || '').toLowerCase(); if (!role || role === 'system') continue;
+                const role = (m.Role || m.role || '').toLowerCase();
+                if (!role || role === 'system' || role === 'toolresult' || role === 'compactionsummary' || role === 'branchsummary') continue;
                 const blocks = m.ContentBlocks || m.contentBlocks || [];
                 const textBlocks = blocks.filter(cb => (cb.Type || cb.type) === 'text');
                 const toolBlocks = blocks.filter(cb => (cb.Type || cb.type) === 'tool_call');
@@ -359,7 +360,7 @@ async function sendMessage(overrideText) {
                                     summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong>';
                                 }
                             }
-                            if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex + '-' + thinkingPhase, rawThinking); thinkBlock.open = false; }
+                            if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; }
                             thinkingPhase++; rawThinking = '';
                             segStart = rawText.length;
                             if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; asst.appendChild(thinkBlock); }
