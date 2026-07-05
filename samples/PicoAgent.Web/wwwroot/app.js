@@ -225,8 +225,16 @@ function cleanupToolBlocks(container) {
         const resultDiv = tc.querySelector('.tool-result');
         if (resultDiv && !resultDiv.textContent) {
             const argsSpan = tc.querySelector('.tool-args');
+            const nameEl = tc.querySelector('summary strong');
+            const name = nameEl ? nameEl.textContent : '?';
             const argsText = argsSpan ? argsSpan.textContent : '';
-            resultDiv.textContent = '[no result]' + (argsText && argsText !== 'running...' ? ' — args: ' + argsText : '');
+            if (argsText && argsText !== 'running...') {
+                resultDiv.textContent = '[no result] — ' + name + ' ' + argsText;
+            } else {
+                resultDiv.textContent = '[no result] — ' + name;
+            }
+            tc.querySelector('.tool-args').textContent = 'no result';
+            tc.classList.add('tool-error');
             tc.open = true;
         }
     }
