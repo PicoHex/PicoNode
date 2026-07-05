@@ -104,16 +104,34 @@ async function loadMessages(sessionId) {
             let ai = 0;
             for (const m of msgs) {
                 const role = (m.Role || m.role || '').toLowerCase(); if (!role || role === 'system') continue;
-                const text = m.Content || m.content || (m.ContentBlocks && m.ContentBlocks[0]?.Text) || (m.contentBlocks && m.contentBlocks[0]?.text) || '';
-                if (role === 'assistant' && text) {
+                const blocks = m.ContentBlocks || m.contentBlocks || [];
+                const textBlocks = blocks.filter(cb => (cb.Type || cb.type) === 'text');
+                const toolBlocks = blocks.filter(cb => (cb.Type || cb.type) === 'tool_call');
+                const text = textBlocks.map(cb => cb.Text || cb.text || '').join('');
+                if (!text && !toolBlocks.length) continue;
+                if (role === 'assistant') {
                     const tokenInfo = (m.Usage) ? `↑${m.Usage.InputTokens ?? 0} ↓${m.Usage.OutputTokens ?? 0}` : '';
                     renderMessage('assistant', text, tokenInfo, sessionId + '-' + ai);
+                    for (const tc of toolBlocks) {
+                        addHistoryToolBlock(messages.lastElementChild, tc);
+                    }
                     const ct = loadThinking(sessionId, ai); if (ct) { addThinkingBlock(messages.lastElementChild, ct); }
                     ai++;
-                } else if (text) { renderMessage(role === 'user' ? 'user' : 'assistant', text, '', null); }
+                } else if (text) { renderMessage('user', text, '', null); }
             }
         }
     } catch {}
+}
+function addHistoryToolBlock(el, tc) {
+    const tcDiv = document.createElement('details');
+    tcDiv.className = 'tool-call';
+    tcDiv.open = false;
+    const name = tc.Name || tc.name || 'tool';
+    const args = tc.Arguments || tc.arguments || {};
+    const argsStr = Object.keys(args).length ? JSON.stringify(args) : '';
+    tcDiv.innerHTML = '<summary>🔧 <strong>' + name + '</strong> <span class="tool-args">' + argsStr + '</span></summary><div class="tool-result">(result not available in history)</div>';
+    const msgContent = el.querySelector('.msg-content');
+    if (msgContent) msgContent.appendChild(tcDiv);
 }
 function renderMessage(role, text, extra = '', msgId = null) {
     const el = document.createElement('div'); el.className = `message ${role}`; if (msgId) el.dataset.msgId = msgId;
