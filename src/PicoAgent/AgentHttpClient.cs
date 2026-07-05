@@ -86,7 +86,7 @@ public sealed class AgentHttpClient : IAsyncDisposable
 
     public async Task<bool> SwitchThinkingAsync(
         bool enabled,
-        string level = "medium",
+        string level = "xhigh",
         CancellationToken ct = default
     )
     {

@@ -162,7 +162,7 @@ public sealed class AgentBuilder
             Provider = defaultProvider,
             MaxTokens = _config.MaxTokens ?? 393216,
             ThinkingEnabled = _config.ThinkingEnabled,
-            ThinkingLevel = AgentConfig.ParseLevel(_config.ThinkingLevel) ?? ThinkingLevel.Medium,
+            ThinkingLevel = AgentConfig.ParseLevel(_config.ThinkingLevel) ?? ThinkingLevel.XHigh,
         };
 
         if (defaultPreset?.Thinking is { Count: > 0 } map)

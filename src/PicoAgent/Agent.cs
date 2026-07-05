@@ -574,7 +574,7 @@ public sealed partial class Agent : IAsyncDisposable
             {
                 var req = await ReadJsonAsync<ThinkingReq>(ctx, ct);
                 var enabled = req?.Enabled ?? true;
-                var levelStr = req?.Level ?? "medium";
+                var levelStr = req?.Level ?? "xhigh";
                 var level = AgentConfig.ParseLevel(levelStr);
                 if (level is null)
                     return JsonError(400, "INVALID_ARGUMENT", $"Invalid level: {levelStr}");

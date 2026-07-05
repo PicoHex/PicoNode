@@ -100,7 +100,7 @@ async function doConnect() {
             providers: { [name]: { apiKey, baseUrl: baseUrl || undefined, apiFormat } },
             model: modelId,
             thinkingEnabled: true,
-            thinkingLevel: 'medium',
+            thinkingLevel: "xhigh",
             maxTokens: 393216,
         };
         setStatus('Saving...');
