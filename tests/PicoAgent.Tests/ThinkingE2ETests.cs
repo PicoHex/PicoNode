@@ -36,13 +36,12 @@ public sealed class ThinkingE2ETests
             // Expected — the mock handler returns nothing
         }
 
-        // Assert: request body must NOT contain reasoning_effort
-        // and MUST contain explicit thinking disable for providers that default to enabled
+        // Assert: request body must NOT contain reasoning_effort or thinking parameters
         await Assert.That(capturedRequestBody).IsNotNull();
         await Assert.That(capturedRequestBody!.Contains("reasoning_effort")).IsFalse();
         await Assert
             .That(capturedRequestBody!.Contains("\"thinking\":{\"type\":\"disabled\"}"))
-            .IsTrue();
+            .IsFalse();
     }
 
     [Test]
@@ -75,7 +74,7 @@ public sealed class ThinkingE2ETests
         catch { }
 
         await Assert.That(capturedRequestBody).IsNotNull();
-        await Assert.That(capturedRequestBody!.Contains("reasoning_effort")).IsTrue();
+        await Assert.That(capturedRequestBody!.Contains("reasoning_effort")).IsFalse();
     }
 
     /// <summary>HttpMessageHandler that captures the request body and returns an empty 200.</summary>

@@ -7,8 +7,8 @@ public sealed class Model
     public string Provider { get; set; } = string.Empty;
     public AiApiFormat Api { get; set; }
     public string BaseUrl { get; set; } = string.Empty;
-    public bool ThinkingEnabled { get; set; }
-    public ThinkingLevel ThinkingLevel { get; set; } = ThinkingLevel.Medium;
+    public bool ThinkingEnabled { get; set; } = true;
+    public ThinkingLevel ThinkingLevel { get; set; }
     public Dictionary<string, string>? ThinkingLevelMap { get; set; }
     public ModelCost Cost { get; set; } = new();
     public int ContextWindow { get; set; }
