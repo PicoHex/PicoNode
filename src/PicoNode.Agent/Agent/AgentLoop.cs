@@ -7,7 +7,6 @@ public sealed class AgentLoop
     private readonly CapabilityRunner _runner;
     private readonly HookRunner _hookRunner;
     private readonly BuiltInToolSet _builtInTools;
-    private const int MaxToolIterations = 15;
 
     public string? SystemPrompt { get; set; }
     public string ModelId { get; set; } = "default";
@@ -66,7 +65,7 @@ public sealed class AgentLoop
         do
         {
             iterations++;
-
+            if (iterations > 100) break; // safety net, LLM should stop naturally
             var messages = await session.BuildContext();
             var valid = messages.Where(m => !string.IsNullOrEmpty(m.Role)).ToArray();
 
@@ -281,9 +280,6 @@ public sealed class AgentLoop
                         }, ct);
                 }
             }
-
-            if (iterations >= MaxToolIterations)
-                break;
         } while (hasTools);
 
         return result;

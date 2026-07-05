@@ -109,7 +109,7 @@ public class AgentLoopBuiltInToolTests
                 return ValueTask.CompletedTask;
             });
 
-        await Assert.That(toolResults.Count).IsGreaterThan(0);
+        await Assert.That(toolResults.Count).IsEqualTo(1);
         await Assert.That(toolResults[0].ToolCallId).IsEqualTo("call_1");
         await Assert.That(toolResults[0].ToolName).IsEqualTo("stub");
         await Assert.That(toolResults[0].Content).IsEqualTo("ok");
@@ -144,12 +144,14 @@ public class AgentLoopBuiltInToolTests
 
     /// <summary>
     /// Mock LLM that returns a "done" event with a tool_call ContentBlock.
+    /// Only returns the tool once — subsequent calls return text-only.
     /// </summary>
     private sealed class DoneWithToolCallLlm : IAgentLlm
     {
         private readonly string _toolName;
         private readonly string _toolCallId;
         private readonly Dictionary<string, object?> _args;
+        private bool _sent;
 
         public DoneWithToolCallLlm(string toolName, string toolCallId, Dictionary<string, object?> args)
         {
@@ -162,12 +164,24 @@ public class AgentLoopBuiltInToolTests
             string? sp, Message[] msgs, string mid, string? rl,
             [EnumeratorCancellation] CancellationToken ct)
         {
-            yield return new LlmStreamEvent("done", null, "tool_use", null,
-                ContentBlocks: new ContentBlock[]
-                {
-                    new() { Type = "text", Text = "" },
-                    new() { Type = ProtocolConstants.BlockTypeToolCall, Id = _toolCallId, Name = _toolName, Arguments = _args },
-                });
+            if (!_sent)
+            {
+                _sent = true;
+                yield return new LlmStreamEvent("done", null, "tool_use", null,
+                    ContentBlocks: new ContentBlock[]
+                    {
+                        new() { Type = "text", Text = "" },
+                        new() { Type = ProtocolConstants.BlockTypeToolCall, Id = _toolCallId, Name = _toolName, Arguments = _args },
+                    });
+            }
+            else
+            {
+                yield return new LlmStreamEvent("done", null, "end_turn", null,
+                    ContentBlocks: new ContentBlock[]
+                    {
+                        new() { Type = "text", Text = "ok" },
+                    });
+            }
             await Task.CompletedTask;
         }
     }
