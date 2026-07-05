@@ -9,15 +9,16 @@ public static class SkillFormatter
             return "";
 
         var sb = new StringBuilder();
-        sb.AppendLine("---");
-        sb.AppendLine("skills:");
+        sb.AppendLine("<available_skills>");
         foreach (var skill in visible)
         {
-            sb.AppendLine($"  - name: {skill.Name}");
-            sb.AppendLine($"    description: {skill.Description}");
-            sb.AppendLine($"    location: {skill.Path}");
+            sb.AppendLine("  <skill>");
+            sb.AppendLine($"    <name>{skill.Name}</name>");
+            sb.AppendLine($"    <description>{skill.Description}</description>");
+            sb.AppendLine($"    <location>{skill.Path}</location>");
+            sb.AppendLine("  </skill>");
         }
-        sb.AppendLine("---");
+        sb.AppendLine("</available_skills>");
         return sb.ToString();
     }
 

@@ -8,5 +8,6 @@ global using System.Text;
 global using PicoDI;
 global using PicoJetson;
 global using PicoNode.AI;
+global using PicoNode.AI.Types;
 global using PicoNode.Http;
 global using PicoSerDe.Core;

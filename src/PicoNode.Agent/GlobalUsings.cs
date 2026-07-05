@@ -15,4 +15,5 @@ global using static PicoNode.Agent.FileSystemConstants;
 global using static PicoNode.Agent.ProtocolConstants;
 global using static PicoNode.Agent.YmlConstants;
 global using PicoNode.AI;
+global using PicoNode.AI.Types;
 global using PicoSerDe.Core;

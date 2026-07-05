@@ -9,6 +9,7 @@ global using PicoAgent;
 global using PicoDI;
 global using PicoNode.Agent;
 global using PicoNode.AI;
+global using PicoNode.AI.Types;
 global using PicoNode.Http;
 global using PicoNode.Web;
 global using PicoWeb;

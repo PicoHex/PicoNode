@@ -111,7 +111,13 @@ public sealed class AgentBuilder
         if (_capabilitiesRoot is { Length: > 0 })
         {
             var scanner = new KnowledgeScanner();
-            var skills = scanner.Scan(_capabilitiesRoot);
+            var skills = new List<SkillInfo>();
+            // Global skills (installed via picoagent install)
+            skills.AddRange(scanner.ScanFromDir(Path.Combine(_capabilitiesRoot, FileSystemConstants.SkillsDir)));
+            // Project skills (team-shared, .pico/skills/)
+            skills.AddRange(scanner.ScanFromDir(Path.Combine(Directory.GetCurrentDirectory(), FileSystemConstants.ProjectSkillsDir)));
+            // Legacy knowledge directory
+            skills.AddRange(scanner.Scan(_capabilitiesRoot));
             loop.SystemPrompt = SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools);
         }
 

@@ -51,6 +51,13 @@ public sealed class KnowledgeScanner
         return skills.OrderBy(s => s.Name).ToList();
     }
 
+    public List<SkillInfo> ScanFromDir(string dir)
+    {
+        if (!Directory.Exists(dir))
+            return [];
+        return ScanDirectory(dir);
+    }
+
     private static List<SkillInfo> ScanDirectory(string dir)
     {
         var skills = new List<SkillInfo>();
