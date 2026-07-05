@@ -64,6 +64,8 @@ public sealed class AgentLlmAdapter : IAgentLlm
 
         var context = new ChatContext { SystemPrompt = systemPrompt, Messages = messages, Tools = Tools };
 
+        // Thinking configuration — used by Anthropic for budget tokens.
+        // OpenAI/DeepSeek clients ignore these fields.
         StreamOptions? options = null;
         if (reasoningLevel is not null && reasoningLevel != "off")
         {
@@ -73,12 +75,6 @@ public sealed class AgentLlmAdapter : IAgentLlm
                 out var level
             );
             options = new StreamOptions { Reasoning = parsed ? level : ThinkingLevel.Medium };
-        }
-        else
-        {
-            // Explicitly disable thinking so providers that default to enabled
-            // (e.g. DeepSeek) respect the off state.
-            options = new StreamOptions { ThinkingDisabled = true };
         }
 
         await foreach (var evt in _client.StreamAsync(model, context, options, ct))
