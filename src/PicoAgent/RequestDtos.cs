@@ -30,7 +30,7 @@ public sealed class ProviderSwitchReq
 public sealed class ThinkingReq
 {
     public bool Enabled { get; set; } = true;
-    public string Level { get; set; } = "xhigh";
+    public string Level { get; set; } = AgentConfig.DefaultThinkingLevelString;
 }
 
 [PicoSerializable]

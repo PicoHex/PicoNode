@@ -10,6 +10,10 @@ public sealed class AgentConfig
     public bool ThinkingEnabled { get; set; } = true;
     public int? MaxTokens { get; set; }
 
+    /// <summary>Default thinking level when none is configured.</summary>
+    public const ThinkingLevel DefaultThinkingLevel = PicoNode.AI.ThinkingLevel.XHigh;
+    public const string DefaultThinkingLevelString = "xhigh";
+
     public static ThinkingLevel? ParseLevel(string? s) =>
         s?.ToLower() switch
         {
