@@ -74,7 +74,7 @@ public sealed class AgentLlmAdapter : IAgentLlm
                 ignoreCase: true,
                 out var level
             );
-            options = new StreamOptions { Reasoning = parsed ? level : ThinkingLevel.Medium };
+            options = new StreamOptions { Reasoning = parsed ? level : ThinkingLevel.XHigh }; // must match AgentConfig.DefaultThinkingLevel
         }
 
         await foreach (var evt in _client.StreamAsync(model, context, options, ct))
