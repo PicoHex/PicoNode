@@ -110,11 +110,21 @@ public sealed class AgentBuilder
         // Build and set system prompt
         if (_capabilitiesRoot is { Length: > 0 })
         {
-            // Load user-provided system prompt file (editable without recompilation)
             var customPromptPath = Path.Combine(_capabilitiesRoot, "system-prompt.md");
-            var agentsMd = File.Exists(customPromptPath) ? File.ReadAllText(customPromptPath) : null;
-            var skills = AgentBuilder.ScanSkills(_capabilitiesRoot);
-            loop.SystemPrompt = SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools, agentsMd);
+            if (File.Exists(customPromptPath))
+            {
+                // User-provided complete prompt — bypass all built-in generation
+                var template = File.ReadAllText(customPromptPath);
+                var skills = AgentBuilder.ScanSkills(_capabilitiesRoot);
+                template = template.Replace("{tools}", builtInTools.FormatForSystemPrompt());
+                template = template.Replace("{skills}", SkillFormatter.FormatSkillsPrompt(skills));
+                loop.SystemPrompt = template;
+            }
+            else
+            {
+                var skills = AgentBuilder.ScanSkills(_capabilitiesRoot);
+                loop.SystemPrompt = SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools);
+            }
         }
 
         var host = new AgentHost(loop);
