@@ -223,16 +223,13 @@ function renderAllSegments(container) {
 function cleanupToolBlocks(container) {
     for (const tc of container.querySelectorAll('.tool-call')) {
         const resultDiv = tc.querySelector('.tool-result');
+        if (resultDiv && resultDiv.textContent && resultDiv.textContent.startsWith('[no result]')) continue; // already handled
         if (resultDiv && !resultDiv.textContent) {
-            const argsSpan = tc.querySelector('.tool-args');
             const nameEl = tc.querySelector('summary strong');
-            const name = nameEl ? nameEl.textContent : '?';
-            const argsText = argsSpan ? argsSpan.textContent : '';
-            if (argsText && argsText !== 'running...') {
-                resultDiv.textContent = '[no result] — ' + name + ' ' + argsText;
-            } else {
-                resultDiv.textContent = '[no result] — ' + name;
-            }
+            const name = (nameEl && nameEl.textContent) ? nameEl.textContent : (tc.dataset.toolId || '?');
+            const argsSpan = tc.querySelector('.tool-args');
+            const argsText = (argsSpan && argsSpan.textContent && argsSpan.textContent !== 'running...') ? ' ' + argsSpan.textContent : '';
+            resultDiv.textContent = '[no result] ' + name + argsText;
             tc.querySelector('.tool-args').textContent = 'no result';
             tc.classList.add('tool-error');
             tc.open = true;
@@ -272,7 +269,7 @@ async function sendMessage(overrideText) {
                         currentTextSeg.textContent = rawText.substring(segStart);
                     }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked || !thinkBlock) continue; rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
-                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); renderAllSegments(msgContent); cleanupToolBlocks(msgContent); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
+                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); renderAllSegments(msgContent); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
                     else if (evt.type === 'tool_call_start') {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
                         segStart = rawText.length;
