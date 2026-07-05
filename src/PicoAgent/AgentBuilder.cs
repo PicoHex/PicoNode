@@ -282,6 +282,10 @@ public sealed class AgentBuilder
         tools.Register(new ReadTool());
         tools.Register(new BashTool());
         tools.Register(new WriteTool());
+        tools.Register(new EditTool());
+        tools.Register(new GrepTool());
+        tools.Register(new FindTool());
+        tools.Register(new LsTool());
         tools.ApplyPreset(ToolPreset.Coding);
         return tools;
     }
