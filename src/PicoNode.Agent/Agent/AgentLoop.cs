@@ -7,7 +7,7 @@ public sealed class AgentLoop
     private readonly CapabilityRunner _runner;
     private readonly HookRunner _hookRunner;
     private readonly BuiltInToolSet _builtInTools;
-    private const int MaxToolIterations = 5;
+    private const int MaxToolIterations = 15;
 
     public string? SystemPrompt { get; set; }
     public string ModelId { get; set; } = "default";
