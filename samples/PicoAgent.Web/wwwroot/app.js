@@ -301,11 +301,6 @@ async function sendMessage(overrideText) {
                                     if (parsed.path && parsed.path.endsWith('SKILL.md')) {
                                         toolBlocks[tid].isSkill = true;
                                         tcDiv.classList.add('skill-read');
-                                        // Extract skill name from path: .../skills/<name>/SKILL.md
-                                        const parts = parsed.path.replace(/\\/g, '/').split('/');
-                                        const skillIdx = parts.lastIndexOf('SKILL.md');
-                                        const skillName = skillIdx > 0 ? parts[skillIdx - 1] : 'skill';
-                                        tcDiv.querySelector('summary strong').textContent = '📚 ' + skillName;
                                     }
                                 } catch (e) {}
                             }
@@ -334,7 +329,12 @@ async function sendMessage(overrideText) {
                                 const summary = tcDiv.querySelector('summary');
                                 const name = toolBlocks[tid].name;
                                 const prefix = evt.isError ? '❌ ' : '';
-                                if (summary && toolBlocks[tid].args) {
+                                // For skill reads, extract skill name from YAML frontmatter
+                                if (toolBlocks[tid].isSkill && !evt.isError) {
+                                    const m = toolBlocks[tid].result.match(/^---\s*\nname:\s*(\S+)/m);
+                                    const skillName = m ? m[1] : name;
+                                    summary.innerHTML = prefix + '📚 <strong>' + skillName + '</strong>';
+                                } else if (summary && toolBlocks[tid].args) {
                                     try { const parsed = JSON.parse(toolBlocks[tid].args); summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong> <span class="tool-args">' + JSON.stringify(parsed) + '</span>'; }
                                     catch (e) { summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong>'; }
                                 } else if (summary) {
