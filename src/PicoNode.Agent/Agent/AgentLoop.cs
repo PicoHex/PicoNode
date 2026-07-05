@@ -110,7 +110,17 @@ public sealed class AgentLoop
                                 && biH.RootElement.TryGetProperty("action", out var biAction)
                                 && biAction.GetString() == ActionBlock
                             )
+                            {
+                                if (onEvent is not null)
+                                    await onEvent(new AssistantMessageEvent.ToolResult
+                                    {
+                                        ToolCallId = tc.Id ?? "",
+                                        ToolName = tc.Name ?? "",
+                                        Content = "Blocked by hook",
+                                        IsError = true,
+                                    }, ct);
                                 continue;
+                            }
 
                             // Execute built-in tool
                             var (content, isError) = await builtIn.ExecuteAsync(tc.Arguments, WorkingDirectory, ct);
@@ -205,7 +215,17 @@ public sealed class AgentLoop
                         && h.RootElement.TryGetProperty("action", out var action)
                         && action.GetString() == ActionBlock
                     )
+                    {
+                        if (onEvent is not null)
+                            await onEvent(new AssistantMessageEvent.ToolResult
+                            {
+                                ToolCallId = tc.Id ?? "",
+                                ToolName = tc.Name ?? "",
+                                Content = "Blocked by hook",
+                                IsError = true,
+                            }, ct);
                         continue;
+                    }
 
                     // Execute tool
                     var toolInput = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(
