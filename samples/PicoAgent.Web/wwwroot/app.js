@@ -301,7 +301,11 @@ async function sendMessage(overrideText) {
                                     if (parsed.path && parsed.path.endsWith('SKILL.md')) {
                                         toolBlocks[tid].isSkill = true;
                                         tcDiv.classList.add('skill-read');
-                                        tcDiv.querySelector('summary strong').textContent = '📚 ' + toolBlocks[tid].name;
+                                        // Extract skill name from path: .../skills/<name>/SKILL.md
+                                        const parts = parsed.path.replace(/\\/g, '/').split('/');
+                                        const skillIdx = parts.lastIndexOf('SKILL.md');
+                                        const skillName = skillIdx > 0 ? parts[skillIdx - 1] : 'skill';
+                                        tcDiv.querySelector('summary strong').textContent = '📚 ' + skillName;
                                     }
                                 } catch (e) {}
                             }
