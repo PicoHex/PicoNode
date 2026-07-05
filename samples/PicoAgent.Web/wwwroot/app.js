@@ -108,13 +108,27 @@ async function loadMessages(sessionId) {
                 const blocks = m.ContentBlocks || m.contentBlocks || [];
                 const textBlocks = blocks.filter(cb => (cb.Type || cb.type) === 'text');
                 const toolBlocks = blocks.filter(cb => (cb.Type || cb.type) === 'tool_call');
-                const text = textBlocks.map(cb => cb.Text || cb.text || '').join('');
+                let text = textBlocks.map(cb => cb.Text || cb.text || '').join('');
+                if (!text) text = m.Content || m.content || '';
                 if (!text && !toolBlocks.length) continue;
                 if (role === 'assistant') {
                     const tokenInfo = (m.Usage) ? `↑${m.Usage.InputTokens ?? 0} ↓${m.Usage.OutputTokens ?? 0}` : '';
                     renderMessage('assistant', text, tokenInfo, sessionId + '-' + ai);
                     for (const tc of toolBlocks) {
-                        addHistoryToolBlock(messages.lastElementChild, tc);
+                        // Find matching toolResult message
+                        const tcId = tc.Id || tc.id || '';
+                        let resultText = '';
+                        let isError = false;
+                        for (const rm of msgs) {
+                            const rRole = (rm.Role || rm.role || '').toLowerCase();
+                            if (rRole === 'toolresult' && (rm.ToolCallId || rm.toolCallId) === tcId) {
+                                const rBlocks = rm.ContentBlocks || rm.contentBlocks || [];
+                                resultText = rBlocks.filter(cb => (cb.Type || cb.type) === 'text').map(cb => cb.Text || cb.text || '').join('');
+                                isError = rm.IsError || rm.isError || false;
+                                break;
+                            }
+                        }
+                        addHistoryToolBlock(messages.lastElementChild, tc, resultText, isError);
                     }
                     const ct = loadThinking(sessionId, ai); if (ct) { addThinkingBlock(messages.lastElementChild, ct); }
                     ai++;
@@ -123,14 +137,16 @@ async function loadMessages(sessionId) {
         }
     } catch {}
 }
-function addHistoryToolBlock(el, tc) {
+function addHistoryToolBlock(el, tc, resultText, isError) {
     const tcDiv = document.createElement('details');
     tcDiv.className = 'tool-call';
-    tcDiv.open = false;
+    if (isError) tcDiv.classList.add('tool-error');
+    tcDiv.open = isError;
     const name = tc.Name || tc.name || 'tool';
     const args = tc.Arguments || tc.arguments || {};
     const argsStr = Object.keys(args).length ? JSON.stringify(args) : '';
-    tcDiv.innerHTML = '<summary>🔧 <strong>' + name + '</strong> <span class="tool-args">' + argsStr + '</span></summary><div class="tool-result">(result not available in history)</div>';
+    const resultStr = resultText || '(no result)';
+    tcDiv.innerHTML = '<summary>🔧 <strong>' + name + '</strong> <span class="tool-args">' + argsStr + '</span></summary><div class="tool-result">' + resultStr + '</div>';
     const msgContent = el.querySelector('.msg-content');
     if (msgContent) msgContent.appendChild(tcDiv);
 }
