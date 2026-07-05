@@ -35,7 +35,7 @@ function forgetThinking(sid) {
 
 // ── Init ──
 (async function init() {
-    try { const r = await fetch('/api/config/status'); const s = await r.json(); if (s.configured) { thinkChk.checked = s.thinkingEnabled !== false; thinkLvl.value = s.thinkingLevel || 'xhigh'; } else { window.location.href = '/config.html'; return; } } catch {}
+    try { const r = await fetch('/api/config/status'); const s = await r.json(); if (s.configured) { thinkChk.checked = s.thinkingEnabled !== false; thinkLvl.value = s.thinkingLevel || 'xhigh'; switchThinking(thinkChk.checked, thinkLvl.value); } else { window.location.href = '/config.html'; return; } } catch {}
     await loadHealth();
     await loadModels();
     await loadSessions();
