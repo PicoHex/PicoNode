@@ -5,10 +5,12 @@ public static class SkillFormatter
     public static string FormatSkillsPrompt(List<SkillInfo> skills)
     {
         var visible = skills.Where(s => !s.DisableModelInvocation).ToList();
-        if (visible.Count == 0)
-            return "";
-
         var sb = new StringBuilder();
+        sb.Append("Skills are stored in ").Append(FileSystemConstants.SkillsDir).AppendLine("/. To install a skill, git clone it there.");
+        if (visible.Count == 0)
+            return sb.ToString();
+
+        sb.AppendLine();
         sb.AppendLine("The following skills are available. To use a skill, read its file with the read tool at the location shown.");
         sb.AppendLine();
         sb.AppendLine("<available_skills>");
