@@ -95,7 +95,7 @@ public sealed class AgentLlmAdapter : IAgentLlm
                     break;
                 case AssistantMessageEvent.ToolCallStart tcs:
                 {
-                    var b = tcs.Partial.ContentBlocks?.ElementAtOrDefault(tcs.Index);
+                    var b = tcs.Partial.ContentBlocks?[0];
                     yield return new LlmStreamEvent(
                         "tool_call_start",
                         Text: null,
@@ -108,7 +108,7 @@ public sealed class AgentLlmAdapter : IAgentLlm
                 }
                 case AssistantMessageEvent.ToolCallDelta tcd:
                 {
-                    var b = tcd.Partial.ContentBlocks?.ElementAtOrDefault(tcd.Index);
+                    var b = tcd.Partial.ContentBlocks?[0];
                     yield return new LlmStreamEvent(
                         "tool_call_delta",
                         Text: tcd.Delta,
