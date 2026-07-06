@@ -44,7 +44,6 @@ public static class FileSystemConstants
     public const string PackagesDir = "packages";
     public const string SkillsDir = "skills";
     public const string ProjectSkillsDir = ".pico/skills";
-    public const string GitDir = "git";
 }
 
 public static class YmlConstants

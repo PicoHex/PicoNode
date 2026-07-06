@@ -50,7 +50,7 @@ public class SkillFormatterTests
 
         // Must include the essential instruction
         await Assert.That(prompt).Contains("git clone");
-        await Assert.That(prompt).Contains("git/");
+        await Assert.That(prompt).Contains("skills/");
         // Must NOT bloat the prompt with headings or verbose text
         await Assert.That(prompt).DoesNotContain("##");
         await Assert.That(prompt).DoesNotContain("IMPORTANT");
@@ -75,7 +75,7 @@ public class SkillFormatterTests
         await Assert.That(prompt).DoesNotContain("Never copy");
         // Must contain guidance for BOTH remote and local
         await Assert.That(prompt).Contains("git clone");
-        await Assert.That(prompt).Contains("new local skill");
+        await Assert.That(prompt).Contains("Local skills");
     }
 
     [Test]
@@ -92,7 +92,7 @@ public class SkillFormatterTests
         var prompt = SkillFormatter.FormatSkillsPrompt(skills);
         // The path pattern must use <host>, not hardcode github.com
         await Assert.That(prompt).Contains("<host>/<owner>/<repo>");
-        await Assert.That(prompt).DoesNotContain("git/github.com/<owner>/<repo>");
+        await Assert.That(prompt).DoesNotContain("skills/github.com/<owner>");
     }
 
     [Test]
@@ -138,7 +138,7 @@ public class SkillFormatterTests
 
         // null baseDir: keep relative paths (backward compat for tests)
         var prompt = SkillFormatter.FormatSkillsPrompt(skills, null);
-        await Assert.That(prompt).Contains($"`git clone <url> {FileSystemConstants.GitDir}/");
+        await Assert.That(prompt).Contains($"`git clone <url> {FileSystemConstants.SkillsDir}/");
     }
 
     [Test]

@@ -308,7 +308,6 @@ public sealed class AgentBuilder
             )
         );
         skills.AddRange(scanner.Scan(homeDir));
-        skills.AddRange(scanner.ScanFromDir(Path.Combine(homeDir, FileSystemConstants.GitDir)));
         return skills;
     }
 
