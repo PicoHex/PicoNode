@@ -441,7 +441,9 @@ public sealed partial class Agent : IAsyncDisposable
                 _pendingModel.Api = providerList[0].ApiFormat;
                 _pendingModel.Id = ResolveInitialModelId(config.Model, providerList);
                 _pendingModel.ThinkingEnabled = config.ThinkingEnabled;
-                _pendingModel.ThinkingLevel = AgentConfig.ParseLevel(config.ThinkingLevel) ?? AgentConfig.DefaultThinkingLevel;
+                _pendingModel.ThinkingLevel =
+                    AgentConfig.ParseLevel(config.ThinkingLevel)
+                    ?? AgentConfig.DefaultThinkingLevel;
                 _pendingModel.MaxTokens = config.MaxTokens ?? 393216;
 
                 // When transitioning from unconfigured → configured, replace the
@@ -460,7 +462,12 @@ public sealed partial class Agent : IAsyncDisposable
                     var adapter = new AgentLlmAdapter(resilientClient, _router);
                     var builtInTools = AgentBuilder.CreateBuiltInTools();
                     adapter.Tools = builtInTools.GetActiveToolSchemas();
-                    var newLoop = new AgentLoop(adapter, _registry, new CapabilityRunner(), builtInTools);
+                    var newLoop = new AgentLoop(
+                        adapter,
+                        _registry,
+                        new CapabilityRunner(),
+                        builtInTools
+                    );
                     newLoop.WorkingDirectory = _homeDir ?? Directory.GetCurrentDirectory();
                     _host.ReplaceLoop(newLoop);
                     // If system prompt is still null (unconfigured → configured transition),
@@ -472,14 +479,25 @@ public sealed partial class Agent : IAsyncDisposable
                         {
                             var template = File.ReadAllText(customPromptPath);
                             var skills = AgentBuilder.ScanSkills(_homeDir);
-                            template = template.Replace("{tools}", builtInTools.FormatForSystemPrompt());
-                            template = template.Replace("{skills}", SkillFormatter.FormatSkillsPrompt(skills));
+                            template = template.Replace(
+                                "{tools}",
+                                builtInTools.FormatForSystemPrompt()
+                            );
+                            template = template.Replace(
+                                "{skills}",
+                                SkillFormatter.FormatSkillsPrompt(skills, _homeDir)
+                            );
                             newLoop.SystemPrompt = template;
                         }
                         else
                         {
                             var skills = AgentBuilder.ScanSkills(_homeDir);
-                            newLoop.SystemPrompt = SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools);
+                            newLoop.SystemPrompt = SystemPromptBuilder.Build(
+                                skills,
+                                _registry.GetAll(),
+                                builtInTools,
+                                baseDir: _homeDir
+                            );
                         }
                     }
                     _wasUnconfigured = false;
@@ -588,7 +606,8 @@ public sealed partial class Agent : IAsyncDisposable
             {
                 var req = await ReadJsonAsync<ThinkingReq>(ctx, ct);
                 var enabled = req?.Enabled ?? true;
-                var levelStr = req?.Level ?? AgentConfig.DefaultThinkingLevel.ToString().ToLowerInvariant();
+                var levelStr =
+                    req?.Level ?? AgentConfig.DefaultThinkingLevel.ToString().ToLowerInvariant();
                 var level = AgentConfig.ParseLevel(levelStr);
                 if (level is null)
                     return JsonError(400, "INVALID_ARGUMENT", $"Invalid level: {levelStr}");
@@ -801,7 +820,14 @@ public sealed partial class Agent : IAsyncDisposable
                             if (currentPrompt is not null)
                             {
                                 var builtInTools = AgentBuilder.CreateBuiltInTools();
-                                _host.SetSystemPrompt(SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools));
+                                _host.SetSystemPrompt(
+                                    SystemPromptBuilder.Build(
+                                        skills,
+                                        _registry.GetAll(),
+                                        builtInTools,
+                                        baseDir: _homeDir
+                                    )
+                                );
                             }
                             _logger?.Info("Skills, config and capabilities reloaded");
                         }

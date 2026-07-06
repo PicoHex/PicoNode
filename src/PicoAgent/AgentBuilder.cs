@@ -117,7 +117,10 @@ public sealed class AgentBuilder
                 var template = File.ReadAllText(customPromptPath);
                 var skills = AgentBuilder.ScanSkills(_capabilitiesRoot);
                 template = template.Replace("{tools}", builtInTools.FormatForSystemPrompt());
-                template = template.Replace("{skills}", SkillFormatter.FormatSkillsPrompt(skills));
+                template = template.Replace(
+                    "{skills}",
+                    SkillFormatter.FormatSkillsPrompt(skills, _capabilitiesRoot)
+                );
                 loop.SystemPrompt = template;
             }
             else
@@ -126,7 +129,8 @@ public sealed class AgentBuilder
                 loop.SystemPrompt = SystemPromptBuilder.Build(
                     skills,
                     _registry.GetAll(),
-                    builtInTools
+                    builtInTools,
+                    baseDir: _capabilitiesRoot
                 );
             }
         }

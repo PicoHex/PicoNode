@@ -96,6 +96,52 @@ public class SkillFormatterTests
     }
 
     [Test]
+    public async Task FormatSkillsPrompt_WithBaseDir_ShouldOutputAbsolutePaths()
+    {
+        var skills = new List<SkillInfo>
+        {
+            new() { Name = "test", Description = "A test skill" },
+        };
+        var baseDir = OperatingSystem.IsWindows()
+            ? @"C:\Users\user\.pico-agent"
+            : "/home/user/.pico-agent";
+
+        var prompt = SkillFormatter.FormatSkillsPrompt(skills, baseDir);
+
+        // git clone path must be absolute
+        await Assert.That(prompt).Contains(baseDir);
+        await Assert.That(prompt).Contains("git clone");
+    }
+
+    [Test]
+    public async Task FormatSkillsPrompt_WithBaseDir_EmptySkillsIncludesBasePath()
+    {
+        var baseDir = OperatingSystem.IsWindows()
+            ? @"C:\Users\user\.pico-agent"
+            : "/home/user/.pico-agent";
+
+        var prompt = SkillFormatter.FormatSkillsPrompt([], baseDir);
+
+        // Even the one-liner must include the absolute base path
+        await Assert.That(prompt).Contains(baseDir);
+        await Assert.That(prompt).Contains("git clone");
+        await Assert.That(prompt.Length).IsLessThan(300);
+    }
+
+    [Test]
+    public async Task FormatSkillsPrompt_NullBaseDir_FallsBackToRelativePaths()
+    {
+        var skills = new List<SkillInfo>
+        {
+            new() { Name = "test", Description = "A test skill" },
+        };
+
+        // null baseDir: keep relative paths (backward compat for tests)
+        var prompt = SkillFormatter.FormatSkillsPrompt(skills, null);
+        await Assert.That(prompt).Contains($"`git clone <url> {FileSystemConstants.GitDir}/");
+    }
+
+    [Test]
     public async Task FormatSkillInvocation_ShouldWrapFullContent()
     {
         var skill = new SkillInfo

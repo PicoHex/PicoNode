@@ -21,13 +21,14 @@ public static class SystemPromptBuilder
         IReadOnlyList<SkillInfo> skills,
         IReadOnlyList<ManifestCapability> tools,
         BuiltInToolSet? builtInTools = null,
-        string? agentsMd = null
+        string? agentsMd = null,
+        string? baseDir = null
     )
     {
         var sb = new StringBuilder();
         if (agentsMd is not null)
             sb.AppendLine(agentsMd).AppendLine();
-        sb.AppendLine(SkillFormatter.FormatSkillsPrompt(skills.ToList()));
+        sb.AppendLine(SkillFormatter.FormatSkillsPrompt(skills.ToList(), baseDir));
         sb.AppendLine(FormatToolsPrompt(tools));
         if (builtInTools is not null)
         {

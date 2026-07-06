@@ -2,34 +2,35 @@ namespace PicoNode.Agent;
 
 public static class SkillFormatter
 {
-    public static string FormatSkillsPrompt(List<SkillInfo> skills)
+    public static string FormatSkillsPrompt(List<SkillInfo> skills, string? baseDir = null)
     {
         var visible = skills.Where(s => !s.DisableModelInvocation).ToList();
+        var gitBase = baseDir is not null
+            ? Path.Combine(baseDir, FileSystemConstants.GitDir)
+            : FileSystemConstants.GitDir;
+        var skillsBase = baseDir is not null
+            ? Path.Combine(baseDir, FileSystemConstants.SkillsDir)
+            : FileSystemConstants.SkillsDir;
+
         if (visible.Count == 0)
-            return $"No skills installed. To install: `git clone <url> {FileSystemConstants.GitDir}/<host>/<owner>/<repo>/` then POST /reload.";
+            return $"No skills installed. To install: `git clone <url> {gitBase}/<host>/<owner>/<repo>/` then POST /reload.";
 
         var sb = new StringBuilder();
         sb.AppendLine("## Skill Installation");
         sb.AppendLine();
         sb.AppendLine("Skills are discovered from two locations:");
         sb.AppendLine();
+        sb.AppendLine($"1. **Cloned repos** — `{gitBase}/<host>/<owner>/<repo>/`");
+        sb.AppendLine($"   Use `git clone <url> {gitBase}/<host>/<owner>/<repo>/` to install.");
         sb.AppendLine(
-            $"1. **Cloned repos** — `{FileSystemConstants.GitDir}/<host>/<owner>/<repo>/`"
-        );
-        sb.AppendLine(
-            $"   Use `git clone <url> {FileSystemConstants.GitDir}/<host>/<owner>/<repo>/` to install."
-        );
-        sb.AppendLine(
-            $"   Example: `git clone https://github.com/anthropics/skills.git {FileSystemConstants.GitDir}/github.com/anthropics/skills/`"
+            $"   Example: `git clone https://github.com/anthropics/skills.git {gitBase}/github.com/anthropics/skills/`"
         );
         sb.AppendLine(
             $"   The repo's `{FileSystemConstants.SkillsDir}/` directory is automatically scanned for SKILL.md files."
         );
         sb.AppendLine($"   Run `/reload` (POST /reload) after cloning to discover new skills.");
         sb.AppendLine();
-        sb.AppendLine(
-            $"2. **Standalone skills** — `{FileSystemConstants.SkillsDir}/<skill-name>/SKILL.md`"
-        );
+        sb.AppendLine($"2. **Standalone skills** — `{skillsBase}/<skill-name>/SKILL.md`");
         sb.AppendLine(
             "   For creating a new local skill, write a single SKILL.md into a new subdirectory."
         );
