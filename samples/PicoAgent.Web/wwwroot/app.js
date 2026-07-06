@@ -148,10 +148,9 @@ function addHistoryToolBlock(el, tc, resultText, isError) {
     const normalizedArgs = {};
     for (const k of Object.keys(args)) normalizedArgs[k.toLowerCase()] = args[k];
     const argsStr = Object.keys(normalizedArgs).length ? JSON.stringify(normalizedArgs) : '';
-    // Skill detection: read + path ends with SKILL.md, or result has YAML frontmatter
+    // Skill detection: read + path ends with SKILL.md
     const skillPath = normalizedArgs.path || '';
-    const isSkill = (name === 'read' && typeof skillPath === 'string' && (skillPath.endsWith('SKILL.md') || skillPath.includes('SKILL.md')))
-        || (resultText && /^---\s*\nname:\s*\S+/m.test(resultText));
+    const isSkill = name === 'read' && typeof skillPath === 'string' && (skillPath.endsWith('SKILL.md') || skillPath.includes('SKILL.md'));
     if (isSkill) tcDiv.classList.add('skill-read');
     const icon = isSkill ? '📚' : '🔧';
     const summary = document.createElement('summary');
