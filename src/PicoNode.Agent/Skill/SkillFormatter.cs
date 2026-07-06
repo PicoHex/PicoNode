@@ -5,16 +5,22 @@ public static class SkillFormatter
     public static string FormatSkillsPrompt(List<SkillInfo> skills)
     {
         var visible = skills.Where(s => !s.DisableModelInvocation).ToList();
+        if (visible.Count == 0)
+            return "";
+
         var sb = new StringBuilder();
         sb.AppendLine("## Skill Installation");
         sb.AppendLine();
         sb.AppendLine("Skills are discovered from two locations:");
         sb.AppendLine();
         sb.AppendLine(
-            $"1. **Cloned repos** — `{FileSystemConstants.GitDir}/github.com/<owner>/<repo>/`"
+            $"1. **Cloned repos** — `{FileSystemConstants.GitDir}/<host>/<owner>/<repo>/`"
         );
         sb.AppendLine(
-            $"   Use `git clone <url> {FileSystemConstants.GitDir}/github.com/<owner>/<repo>/` to install."
+            $"   Use `git clone <url> {FileSystemConstants.GitDir}/<host>/<owner>/<repo>/` to install."
+        );
+        sb.AppendLine(
+            $"   Example: `git clone https://github.com/anthropics/skills.git {FileSystemConstants.GitDir}/github.com/anthropics/skills/`"
         );
         sb.AppendLine(
             $"   The repo's `{FileSystemConstants.SkillsDir}/` directory is automatically scanned for SKILL.md files."
@@ -22,23 +28,19 @@ public static class SkillFormatter
         sb.AppendLine($"   Run `/reload` (POST /reload) after cloning to discover new skills.");
         sb.AppendLine();
         sb.AppendLine(
-            $"2. **Standalone skills** — `{FileSystemConstants.SkillsDir}/<skill-name>/`"
+            $"2. **Standalone skills** — `{FileSystemConstants.SkillsDir}/<skill-name>/SKILL.md`"
         );
         sb.AppendLine(
-            "   For local or single-file skills, create the directory and place SKILL.md inside."
+            "   For creating a new local skill, write a single SKILL.md into a new subdirectory."
         );
         sb.AppendLine();
         sb.AppendLine(
-            "IMPORTANT: Never copy individual SKILL.md files into the skills/ directory."
+            "For remote skill repos, always use `git clone` — this preserves the full repository"
         );
         sb.AppendLine(
-            "Always use `git clone` to install remote skill repos — this preserves the full"
+            "structure, enables `git pull` updates, and keeps skills organized. Do not copy"
         );
-        sb.AppendLine(
-            "repository structure, enables `git pull` updates, and keeps skills organized."
-        );
-        if (visible.Count == 0)
-            return sb.ToString();
+        sb.AppendLine("individual SKILL.md files from a remote repo into the skills/ directory.");
 
         sb.AppendLine();
         sb.AppendLine(

@@ -41,6 +41,57 @@ public class SkillFormatterTests
     }
 
     [Test]
+    public async Task FormatSkillsPrompt_WithEmptySkills_ShouldNotIncludeInstallationInstructions()
+    {
+        // Issue: zero skills injects ~250 chars of installation instructions into
+        // every system prompt, wasting tokens. Should return minimal output.
+        var prompt = SkillFormatter.FormatSkillsPrompt([]);
+
+        await Assert.That(prompt).DoesNotContain("## Skill Installation");
+        await Assert.That(prompt).DoesNotContain("git clone");
+        await Assert.That(prompt).DoesNotContain("IMPORTANT");
+        await Assert.That(prompt.Length).IsLessThan(200);
+    }
+
+    [Test]
+    public async Task FormatSkillsPrompt_ShouldDistinguishRemoteFromLocal()
+    {
+        // Issue: "Never copy individual SKILL.md files" was too absolute —
+        // it prevented the LLM from helping users create NEW local skills.
+        // The prompt should distinguish remote repos (git clone) from local
+        // skill creation (write SKILL.md to skills/<name>/).
+        var skills = new List<SkillInfo>
+        {
+            new() { Name = "test", Description = "Test skill" },
+        };
+
+        var prompt = SkillFormatter.FormatSkillsPrompt(skills);
+
+        // Must NOT contain absolute "Never copy" (which would block local creation)
+        await Assert.That(prompt).DoesNotContain("Never copy");
+        // Must contain guidance for BOTH remote and local
+        await Assert.That(prompt).Contains("git clone");
+        await Assert.That(prompt).Contains("new local skill");
+    }
+
+    [Test]
+    public async Task FormatSkillsPrompt_ShouldNotHardcodeGithub()
+    {
+        // Issue: hardcoded "github.com/<owner>/<repo>" as the ONLY pattern
+        // may mislead LLM into thinking only GitHub repos work.
+        // The instruction should use <host> as placeholder, with an example.
+        var skills = new List<SkillInfo>
+        {
+            new() { Name = "test", Description = "A test skill" },
+        };
+
+        var prompt = SkillFormatter.FormatSkillsPrompt(skills);
+        // The path pattern must use <host>, not hardcode github.com
+        await Assert.That(prompt).Contains("<host>/<owner>/<repo>");
+        await Assert.That(prompt).DoesNotContain("git/github.com/<owner>/<repo>");
+    }
+
+    [Test]
     public async Task FormatSkillInvocation_ShouldWrapFullContent()
     {
         var skill = new SkillInfo
