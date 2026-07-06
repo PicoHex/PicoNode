@@ -297,18 +297,39 @@ public sealed class AgentBuilder
     private static HttpClient CreateHttpClient() =>
         new(new SocketsHttpHandler { UseProxy = false });
 
-    internal static List<SkillInfo> ScanSkills(string homeDir)
+    internal static List<SkillInfo> ScanSkills(string homeDir) => ScanSkills(homeDir, null);
+
+    internal static List<SkillInfo> ScanSkills(string homeDir, List<PackageEntry>? pkgEntries)
     {
         var scanner = new KnowledgeScanner();
         var skills = new List<SkillInfo>();
-        skills.AddRange(scanner.ScanFromDir(Path.Combine(homeDir, FileSystemConstants.SkillsDir)));
+
+        // 1. Project-level skills (highest priority)
         skills.AddRange(
             scanner.ScanFromDir(
                 Path.Combine(Directory.GetCurrentDirectory(), FileSystemConstants.ProjectSkillsDir)
             )
         );
+
+        // 2. Package skills (from packages config — tracked)
+        if (pkgEntries is { Count: > 0 })
+        {
+            foreach (var entry in pkgEntries)
+            {
+                var pkgSkillsDir = Path.Combine(entry.DisplayPath, FileSystemConstants.SkillsDir);
+                if (Directory.Exists(pkgSkillsDir))
+                    skills.AddRange(scanner.ScanFromDir(pkgSkillsDir));
+            }
+        }
+
+        // 3. Manual skills in skills/ (no tracking)
+        skills.AddRange(scanner.ScanFromDir(Path.Combine(homeDir, FileSystemConstants.SkillsDir)));
+
+        // 4. Knowledge directory (legacy)
         skills.AddRange(scanner.Scan(homeDir));
-        return skills;
+
+        // Deduplicate by name — first occurrence wins (higher priority source added first)
+        return skills.GroupBy(s => s.Name).Select(g => g.First()).ToList();
     }
 
     internal static BuiltInToolSet CreateBuiltInTools()
