@@ -24,6 +24,7 @@
     <PackageReference Include="PicoJetson" />
     <PackageReference Include="PicoDI" />
     <PackageReference Include="PicoLog" />
+    <PackageReference Include="PicoLog.Abs" />
   </ItemGroup>
 
   <ItemGroup>

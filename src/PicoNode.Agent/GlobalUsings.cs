@@ -11,6 +11,7 @@ global using PicoCfg.Json;
 global using PicoDI;
 global using PicoJetson;
 global using PicoLog;
+global using PicoLog.Abs;
 global using static PicoNode.Agent.FileSystemConstants;
 global using static PicoNode.Agent.ProtocolConstants;
 global using static PicoNode.Agent.YmlConstants;
