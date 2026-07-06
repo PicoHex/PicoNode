@@ -123,7 +123,11 @@ public sealed class AgentBuilder
             else
             {
                 var skills = AgentBuilder.ScanSkills(_capabilitiesRoot);
-                loop.SystemPrompt = SystemPromptBuilder.Build(skills, _registry.GetAll(), builtInTools);
+                loop.SystemPrompt = SystemPromptBuilder.Build(
+                    skills,
+                    _registry.GetAll(),
+                    builtInTools
+                );
             }
         }
 
@@ -174,7 +178,8 @@ public sealed class AgentBuilder
             Provider = defaultProvider,
             MaxTokens = _config.MaxTokens ?? 393216,
             ThinkingEnabled = _config.ThinkingEnabled,
-            ThinkingLevel = AgentConfig.ParseLevel(_config.ThinkingLevel) ?? AgentConfig.DefaultThinkingLevel,
+            ThinkingLevel =
+                AgentConfig.ParseLevel(_config.ThinkingLevel) ?? AgentConfig.DefaultThinkingLevel,
         };
 
         if (defaultPreset?.Thinking is { Count: > 0 } map)
@@ -293,8 +298,13 @@ public sealed class AgentBuilder
         var scanner = new KnowledgeScanner();
         var skills = new List<SkillInfo>();
         skills.AddRange(scanner.ScanFromDir(Path.Combine(homeDir, FileSystemConstants.SkillsDir)));
-        skills.AddRange(scanner.ScanFromDir(Path.Combine(Directory.GetCurrentDirectory(), FileSystemConstants.ProjectSkillsDir)));
+        skills.AddRange(
+            scanner.ScanFromDir(
+                Path.Combine(Directory.GetCurrentDirectory(), FileSystemConstants.ProjectSkillsDir)
+            )
+        );
         skills.AddRange(scanner.Scan(homeDir));
+        skills.AddRange(scanner.ScanFromDir(Path.Combine(homeDir, FileSystemConstants.GitDir)));
         return skills;
     }
 
