@@ -107,6 +107,15 @@ public sealed class AgentBuilder
         var loop = new AgentLoop(adapter, _registry, runner, builtInTools);
         loop.WorkingDirectory = _capabilitiesRoot ?? Directory.GetCurrentDirectory();
 
+        // Resolve packages from config and install missing git repos
+        List<PackageEntry>? pkgEntries = null;
+        if (_config?.Packages is { Count: > 0 })
+        {
+            var homeDir = _capabilitiesRoot ?? AgentPaths.ResolveHomeDir();
+            pkgEntries = PackageResolver.Resolve(homeDir, _config.Packages);
+            _ = PackageInstaller.EnsureAsync(pkgEntries, null, CancellationToken.None);
+        }
+
         // Build and set system prompt
         if (_capabilitiesRoot is { Length: > 0 })
         {
@@ -115,7 +124,7 @@ public sealed class AgentBuilder
             {
                 // User-provided complete prompt — bypass all built-in generation
                 var template = File.ReadAllText(customPromptPath);
-                var skills = AgentBuilder.ScanSkills(_capabilitiesRoot);
+                var skills = AgentBuilder.ScanSkills(_capabilitiesRoot, pkgEntries);
                 template = template.Replace("{tools}", builtInTools.FormatForSystemPrompt());
                 template = template.Replace(
                     "{skills}",
@@ -125,7 +134,7 @@ public sealed class AgentBuilder
             }
             else
             {
-                var skills = AgentBuilder.ScanSkills(_capabilitiesRoot);
+                var skills = AgentBuilder.ScanSkills(_capabilitiesRoot, pkgEntries);
                 loop.SystemPrompt = SystemPromptBuilder.Build(
                     skills,
                     _registry.GetAll(),

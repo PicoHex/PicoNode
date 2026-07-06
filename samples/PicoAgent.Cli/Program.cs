@@ -1,4 +1,4 @@
-var homeDir = Path.Combine(AppContext.BaseDirectory, "data");
+var homeDir = AgentPaths.ResolveHomeDir();
 Directory.CreateDirectory(homeDir);
 Directory.CreateDirectory(Path.Combine(homeDir, FileSystemConstants.SessionsDir));
 
