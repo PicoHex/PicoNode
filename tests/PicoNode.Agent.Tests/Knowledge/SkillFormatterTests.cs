@@ -54,7 +54,7 @@ public class SkillFormatterTests
         // Must NOT bloat the prompt with headings or verbose text
         await Assert.That(prompt).DoesNotContain("##");
         await Assert.That(prompt).DoesNotContain("IMPORTANT");
-        await Assert.That(prompt.Length).IsLessThan(200);
+        await Assert.That(prompt.Length).IsLessThan(300);
     }
 
     [Test]
@@ -75,7 +75,7 @@ public class SkillFormatterTests
         await Assert.That(prompt).DoesNotContain("Never copy");
         // Must contain guidance for BOTH remote and local
         await Assert.That(prompt).Contains("git clone");
-        await Assert.That(prompt).Contains("Local skills");
+        await Assert.That(prompt).Contains("Manual skills");
     }
 
     [Test]
@@ -139,6 +139,21 @@ public class SkillFormatterTests
         // null baseDir: keep relative paths (backward compat for tests)
         var prompt = SkillFormatter.FormatSkillsPrompt(skills, null);
         await Assert.That(prompt).Contains($"`git clone <url> {FileSystemConstants.SkillsDir}/");
+    }
+
+    [Test]
+    public async Task FormatSkillsPrompt_ShowsPackageInstallInstruction()
+    {
+        var skills = new List<SkillInfo>
+        {
+            new() { Name = "test", Description = "Test skill" },
+        };
+
+        var prompt = SkillFormatter.FormatSkillsPrompt(skills, "/home/user/.pico-agent");
+        await Assert.That(prompt).Contains("packages");
+        await Assert.That(prompt).Contains("settings.json");
+        await Assert.That(prompt).Contains("git:");
+        await Assert.That(prompt).Contains("<host>/<owner>/<repo>");
     }
 
     [Test]

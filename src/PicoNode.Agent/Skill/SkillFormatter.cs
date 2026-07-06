@@ -10,28 +10,37 @@ public static class SkillFormatter
             : FileSystemConstants.SkillsDir;
 
         if (visible.Count == 0)
-            return $"No skills installed. To install: `git clone <url> {skillsDir}/<host>/<owner>/<repo>/` then POST /reload.";
+            return $"No skills installed. Add entries to `packages` in settings.json (e.g. \"git:github.com/anthropics/skills\") or `git clone <url> {skillsDir}/<host>/<owner>/<repo>/`. Then POST /reload.";
 
         var sb = new StringBuilder();
         sb.AppendLine("## Skill Installation");
         sb.AppendLine();
-        sb.AppendLine("All skills live under the `skills/` directory:");
-        sb.AppendLine();
-        sb.AppendLine($"- **Cloned repos**: `git clone <url> {skillsDir}/<host>/<owner>/<repo>/`");
-        sb.AppendLine(
-            $"  Example: `git clone https://github.com/anthropics/skills.git {skillsDir}/github.com/anthropics/skills/`"
-        );
-        sb.AppendLine($"- **Local skills**: create `{skillsDir}/<skill-name>/SKILL.md`");
-        sb.AppendLine();
-        sb.AppendLine($"Run `/reload` (POST /reload) after changes to discover new skills.");
+        sb.AppendLine("Skills are discovered from three sources (highest priority first):");
         sb.AppendLine();
         sb.AppendLine(
-            "For remote skill repos, always use `git clone` — this preserves the full repository"
+            $"1. **Project skills** — `{FileSystemConstants.ProjectSkillsDir}/` relative to the working directory."
+        );
+        sb.AppendLine();
+        sb.AppendLine("2. **Packages** — entries in the `packages` field of `settings.json`:");
+        sb.AppendLine(
+            $"   - `git:<host>/<owner>/<repo>` — auto-cloned to `{skillsDir}/<host>/<owner>/<repo>/` on startup."
+        );
+        sb.AppendLine($"   - `<relative-path>` — local directory relative to the home directory.");
+        sb.AppendLine(
+            $"   Example packages: [\"git:github.com/anthropics/skills\", \"local-src/my-tools\"]"
+        );
+        sb.AppendLine("   Run `/reload` after editing `packages` to discover new skills.");
+        sb.AppendLine();
+        sb.AppendLine(
+            $"3. **Manual skills** — `{skillsDir}/<skill-name>/SKILL.md` placed directly, or"
         );
         sb.AppendLine(
-            "structure, enables `git pull` updates, and keeps skills organized. Do not copy"
+            $"   `git clone <url> {skillsDir}/<host>/<owner>/<repo>/` for quick testing."
         );
-        sb.AppendLine("individual SKILL.md files from a remote repo into the skills/ directory.");
+        sb.AppendLine();
+        sb.AppendLine("For remote skill repos, always add them to `packages` in `settings.json`");
+        sb.AppendLine("rather than manually copying files. This preserves the full repository");
+        sb.AppendLine("structure, enables `git pull` updates, and keeps skills organized.");
 
         sb.AppendLine();
         sb.AppendLine(
