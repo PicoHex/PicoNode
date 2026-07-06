@@ -1,25 +1,45 @@
 namespace PicoNode.Agent.Tests.Config;
 
-public sealed class AgentConfigTests
+public class AgentConfigTests
 {
     [Test]
-    public async Task ParseLevel_returns_correct_enum()
+    public async Task Deserialize_WithPackages_ParsesList()
     {
-        await Assert.That(AgentConfig.ParseLevel("high")).IsEqualTo(ThinkingLevel.High);
-        await Assert.That(AgentConfig.ParseLevel("MEDIUM")).IsEqualTo(ThinkingLevel.Medium);
-        await Assert.That(AgentConfig.ParseLevel(null)).IsNull();
-        await Assert.That(AgentConfig.ParseLevel("invalid")).IsNull();
-        await Assert.That(AgentConfig.ParseLevel("")).IsNull();
+        var json =
+            """
+            {
+              "providers": {},
+              "packages": [
+                "git:github.com/anthropics/skills",
+                "local-src/my-tools"
+              ]
+            }
+            """u8;
+
+        var config = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(json.ToArray());
+        await Assert.That(config).IsNotNull();
+        await Assert.That(config!.Packages).IsNotNull();
+        await Assert.That(config.Packages!.Count).IsEqualTo(2);
+        await Assert.That(config.Packages[0]).IsEqualTo("git:github.com/anthropics/skills");
+        await Assert.That(config.Packages[1]).IsEqualTo("local-src/my-tools");
     }
 
     [Test]
-    public async Task ParseLevel_all_levels_roundtrip()
+    public async Task Deserialize_WithoutPackages_PackagesIsNull()
     {
-        foreach (var level in Enum.GetValues<ThinkingLevel>())
-        {
-            var name = level.ToString().ToLower();
-            var parsed = AgentConfig.ParseLevel(name);
-            await Assert.That(parsed).IsEqualTo(level);
-        }
+        var json = """{"providers": {}}"""u8;
+        var config = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(json.ToArray());
+        await Assert.That(config).IsNotNull();
+        await Assert.That(config!.Packages).IsNull();
+    }
+
+    [Test]
+    public async Task Deserialize_EmptyPackages_PackagesIsEmpty()
+    {
+        var json = """{"providers": {}, "packages": []}"""u8;
+        var config = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(json.ToArray());
+        await Assert.That(config).IsNotNull();
+        await Assert.That(config!.Packages).IsNotNull();
+        await Assert.That(config.Packages!.Count).IsEqualTo(0);
     }
 }
