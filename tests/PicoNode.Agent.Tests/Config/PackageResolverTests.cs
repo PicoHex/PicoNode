@@ -45,14 +45,23 @@ public class PackageResolverTests
     [Test]
     public async Task Resolve_LocalEntry_ReturnsLocalPackage()
     {
-        var homeDir = "/home/test/.pico-agent";
-        var packages = new List<string> { "local-src/my-tools" };
+        var tmp = Path.Combine(Path.GetTempPath(), "pico_pkg_" + Guid.NewGuid().ToString("N")[..8]);
+        var localPath = Path.Combine(tmp, "local-src", "my-tools");
+        Directory.CreateDirectory(localPath);
+        try
+        {
+            var packages = new List<string> { "local-src/my-tools" };
+            var result = PackageResolver.Resolve(tmp, packages);
 
-        var result = PackageResolver.Resolve(homeDir, packages);
-
-        await Assert.That(result.Count).IsEqualTo(1);
-        await Assert.That(result[0].IsGit).IsFalse();
-        await Assert.That(result[0].GitUrl).IsNull();
+            await Assert.That(result.Count).IsEqualTo(1);
+            await Assert.That(result[0].IsGit).IsFalse();
+            await Assert.That(result[0].GitUrl).IsNull();
+        }
+        finally
+        {
+            if (Directory.Exists(tmp))
+                Directory.Delete(tmp, recursive: true);
+        }
     }
 
     [Test]

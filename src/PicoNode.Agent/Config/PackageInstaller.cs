@@ -2,6 +2,8 @@ namespace PicoNode.Agent;
 
 public static class PackageInstaller
 {
+    private const int CloneTimeoutSeconds = 60;
+
     /// <summary>
     /// Ensure git repos exist for the given package entries. For paths where
     /// the directory does not already exist, attempt <c>git clone</c>.
@@ -69,14 +71,19 @@ public static class PackageInstaller
         };
 
         process.Start();
-        await process.WaitForExitAsync(ct);
+        using var timeoutCts = new CancellationTokenSource(
+            TimeSpan.FromSeconds(CloneTimeoutSeconds)
+        );
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+        await process.WaitForExitAsync(linked.Token);
 
         if (process.ExitCode != 0)
         {
-            var stderr = await process.StandardError.ReadToEndAsync(ct);
-            throw new InvalidOperationException(
-                $"git clone failed (exit {process.ExitCode}): {stderr.Trim()}"
-            );
+            var stderr = await process.StandardError.ReadToEndAsync(CancellationToken.None);
+            var reason = timeoutCts.IsCancellationRequested
+                ? $"timed out after {CloneTimeoutSeconds}s"
+                : $"exit {process.ExitCode}";
+            throw new InvalidOperationException($"git clone failed ({reason}): {stderr.Trim()}");
         }
     }
 }

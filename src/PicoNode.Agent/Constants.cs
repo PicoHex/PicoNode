@@ -41,7 +41,6 @@ public static class FileSystemConstants
     public const string SkillFile = "SKILL.md";
     public const string SessionsDir = "sessions";
     public const string AgentHomeDir = ".pico-agent";
-    public const string PackagesDir = "packages";
     public const string SkillsDir = "skills";
     public const string ProjectSkillsDir = ".pico/skills";
 }

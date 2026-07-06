@@ -45,13 +45,19 @@ public static class PackageResolver
             else
             {
                 var localPath = Path.GetFullPath(Path.Combine(homeDir, entry));
-                results.Add(new PackageEntry { DisplayPath = localPath, IsGit = false });
+                if (Directory.Exists(localPath))
+                    results.Add(new PackageEntry { DisplayPath = localPath, IsGit = false });
             }
         }
 
         return results;
     }
 
+    /// <summary>
+    /// Parse a git: entry like "github.com/owner/repo" or "github.com/owner/repo@v1".
+    /// Only the first three path segments (host/owner/repo) are used;
+    /// deeper paths are ignored. Returns null for malformed entries.
+    /// </summary>
     private static PackageEntry? ParseGitEntry(string homeDir, string entry)
     {
         var path = entry[GitPrefix.Length..];

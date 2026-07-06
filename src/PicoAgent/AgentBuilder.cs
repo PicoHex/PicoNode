@@ -113,7 +113,7 @@ public sealed class AgentBuilder
         {
             var homeDir = _capabilitiesRoot ?? AgentPaths.ResolveHomeDir();
             pkgEntries = PackageResolver.Resolve(homeDir, _config.Packages);
-            _ = PackageInstaller.EnsureAsync(pkgEntries, null, CancellationToken.None);
+            await PackageInstaller.EnsureAsync(pkgEntries, null, CancellationToken.None);
         }
 
         // Build and set system prompt
