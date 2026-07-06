@@ -41,14 +41,18 @@ public class SkillFormatterTests
     }
 
     [Test]
-    public async Task FormatSkillsPrompt_WithEmptySkills_ShouldNotIncludeInstallationInstructions()
+    public async Task FormatSkillsPrompt_WithEmptySkills_ShouldReturnMinimalInstallHint()
     {
-        // Issue: zero skills injects ~250 chars of installation instructions into
-        // every system prompt, wasting tokens. Should return minimal output.
+        // Zero installed skills: return a short one-liner (~100 chars)
+        // so the LLM knows how to install skills, but don't waste tokens
+        // with the full installation section.
         var prompt = SkillFormatter.FormatSkillsPrompt([]);
 
-        await Assert.That(prompt).DoesNotContain("## Skill Installation");
-        await Assert.That(prompt).DoesNotContain("git clone");
+        // Must include the essential instruction
+        await Assert.That(prompt).Contains("git clone");
+        await Assert.That(prompt).Contains("git/");
+        // Must NOT bloat the prompt with headings or verbose text
+        await Assert.That(prompt).DoesNotContain("##");
         await Assert.That(prompt).DoesNotContain("IMPORTANT");
         await Assert.That(prompt.Length).IsLessThan(200);
     }

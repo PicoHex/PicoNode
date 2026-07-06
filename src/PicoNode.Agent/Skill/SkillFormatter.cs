@@ -6,7 +6,7 @@ public static class SkillFormatter
     {
         var visible = skills.Where(s => !s.DisableModelInvocation).ToList();
         if (visible.Count == 0)
-            return "";
+            return $"No skills installed. To install: `git clone <url> {FileSystemConstants.GitDir}/<host>/<owner>/<repo>/` then POST /reload.";
 
         var sb = new StringBuilder();
         sb.AppendLine("## Skill Installation");
