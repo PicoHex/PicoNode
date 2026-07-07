@@ -16,11 +16,12 @@
   <ItemGroup>
     <InternalsVisibleTo Include="PicoNode.Agent.Tests" />
     <InternalsVisibleTo Include="PicoNode.Tests" />
-    <InternalsVisibleTo Include="PicoAgent.Tests" />
+    <InternalsVisibleTo Include="PicoNode.Agent.Core.Tests" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\PicoNode.Agent\PicoNode.Agent.csproj" />
+    <ProjectReference Include="..\PicoNode.Agent.Core\PicoNode.Agent.Core.csproj" />
     <ProjectReference Include="..\PicoNode.Web\PicoNode.Web.csproj" />
     <ProjectReference Include="..\PicoWeb\PicoWeb.csproj" />
     <PackageReference Include="PicoJetson" />

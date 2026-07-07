@@ -9,7 +9,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\PicoAgent\PicoAgent.csproj" />
     <ProjectReference Include="..\..\src\PicoNode.Agent.Core\PicoNode.Agent.Core.csproj" />
+    <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
+    <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />
     <PackageReference Include="TUnit" />
   </ItemGroup>
 </Project>
