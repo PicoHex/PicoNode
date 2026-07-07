@@ -2,11 +2,6 @@ using PicoNode.AI;
 
 namespace PicoAgent;
 
-/// <summary>
-/// ILLmClient that dynamically reads Llm configuration from the Agent
-/// on every call. When providers change via POST /config, subsequent
-/// LLM calls automatically use the new credentials — no restart needed.
-/// </summary>
 public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
 {
     private readonly PicoNode.Agent.Domain.Agent _agent;
@@ -20,27 +15,60 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
         [EnumeratorCancellation] CancellationToken ct)
     {
         var llm = _agent.CurrentLlm;
-        var client = llm.ApiFormat == AiApiFormat.AnthropicMessages
-            ? (ILLmClient)new AnthropicLLmClient(new HttpClient(new SocketsHttpHandler { UseProxy = false }))
-            : new OpenAILlmClient(new HttpClient(new SocketsHttpHandler { UseProxy = false }));
+        if (llm.ProviderName == "unconfigured" || string.IsNullOrEmpty(llm.ApiKey) || llm.ApiKey == "sk-test")
+        {
+            yield return DoneMsg("[No API key configured. Please set up a provider in Settings.]");
+            yield break;
+        }
+
+        var result = CreateClientAndStream(llm, context, ct);
+        await foreach (var evt in result)
+            yield return evt;
+    }
+
+    private static async IAsyncEnumerable<PicoNode.AI.AssistantMessageEvent> CreateClientAndStream(
+        Llm llm, PicoNode.AI.Types.ChatContext context, [EnumeratorCancellation] CancellationToken ct)
+    {
+        string? errorMsg = null;
+        PicoNode.AI.ILLmClient? client = null;
+        try
+        {
+            var handler = new SocketsHttpHandler { UseProxy = false };
+            client = llm.ApiFormat == AiApiFormat.AnthropicMessages
+                ? new AnthropicLLmClient(new HttpClient(handler))
+                : new OpenAILlmClient(new HttpClient(handler));
+        }
+        catch (Exception ex) { errorMsg = ex.Message; }
+
+        if (errorMsg is not null || client is null)
+        {
+            yield return DoneMsg($"[Error: {errorMsg ?? "unknown"}]");
+            yield break;
+        }
 
         var realModel = new PicoNode.AI.Model
         {
-            Id = llm.ModelId,
-            Provider = llm.ProviderName,
-            BaseUrl = llm.BaseUrl,
-            Api = llm.ApiFormat,
-            MaxTokens = llm.MaxTokens,
+            Id = llm.ModelId, Provider = llm.ProviderName, BaseUrl = llm.BaseUrl,
+            Api = llm.ApiFormat, MaxTokens = llm.MaxTokens,
         };
-
         var realOptions = new PicoNode.AI.StreamOptions
         {
-            ApiKey = llm.ApiKey,
-            MaxTokens = llm.MaxTokens,
+            ApiKey = llm.ApiKey, MaxTokens = llm.MaxTokens,
             Reasoning = llm.ThinkingEnabled ? llm.ThinkingLevel : null,
         };
 
         await foreach (var evt in client.StreamAsync(realModel, context, realOptions, ct))
             yield return evt;
     }
+
+    private static PicoNode.AI.AssistantMessageEvent.Done DoneMsg(string text) =>
+        new()
+        {
+            Message = new PicoNode.AI.Message
+            {
+                Role = "assistant",
+                ContentBlocks = [new PicoNode.AI.ContentBlock { Type = "text", Text = text }],
+                StopReason = "end_turn",
+            },
+        };
 }
