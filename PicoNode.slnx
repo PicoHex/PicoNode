@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/samples/">
     <File Path="samples\README.md" />
+    <Project Path="samples/PicoAgent.Cli/PicoAgent.Cli.csproj" />
     <Project Path="samples/PicoAgent.Web/PicoAgent.Web.csproj" />
     <Project Path="samples/PicoNode.Samples.Echo/PicoNode.Samples.Echo.csproj" />
     <Project Path="samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj" />
