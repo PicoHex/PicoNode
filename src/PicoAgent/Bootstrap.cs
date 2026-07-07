@@ -18,6 +18,8 @@ public static class Bootstrap
             };
             config.Model ??= "unconfigured";
         }
+
+        var agent = factory.Build(config, homeDir);
         var llmAdapter = BuildLlmAdapter(config);
         var server = new Server(agent, llmAdapter, factory.GetToolRunner());
 
