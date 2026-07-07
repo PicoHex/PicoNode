@@ -26,7 +26,7 @@ public sealed class Server : IAsyncDisposable
         await _webServer.StartAsync(CancellationToken.None);
     }
 
-    public static void AddEndpoints(WebApp app, DomainAgent a, DomainInterfaces.ILlmClient llm, DomainInterfaces.IToolRunner tr, string prefix = "")
+    public static void AddEndpoints(WebApp app, DomainAgent a, DomainInterfaces.ILlmClient llm, DomainInterfaces.IToolRunner tr, string prefix = "", string? settingsPath = null)
     {
         var turnLock = new SemaphoreSlim(1, 1);
         string? sp = null;
@@ -123,6 +123,14 @@ public sealed class Server : IAsyncDisposable
                     a.RemoveLlm(old.ProviderName, old.ModelId);
             }
             a.SwitchLlm(newCurrent, newModel);
+
+            // Persist to settings.json
+            if (settingsPath is { Length: > 0 })
+            {
+                var dir = Path.GetDirectoryName(settingsPath);
+                if (dir is not null) Directory.CreateDirectory(dir);
+                await File.WriteAllTextAsync(settingsPath, body, ct);
+            }
 
             return Ok();
         });

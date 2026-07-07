@@ -56,10 +56,16 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
             Reasoning = llm.ThinkingEnabled ? llm.ThinkingLevel : null,
         };
 
-        PicoNode.AI.AssistantMessageEvent? errEvt = null;
-        try { await foreach (var evt in client.StreamAsync(realModel, context, realOptions, ct)) yield return evt; }
-        catch (Exception ex) { errEvt = DoneMsg($"[LLM error: {ex.Message}]"); }
-        if (errEvt is not null) yield return errEvt;
+        List<PicoNode.AI.AssistantMessageEvent> events;
+        try
+        {
+            events = new List<PicoNode.AI.AssistantMessageEvent>();
+            await foreach (var evt in client.StreamAsync(realModel, context, realOptions, ct))
+                events.Add(evt);
+        }
+        catch (Exception ex) { events = [DoneMsg($"[LLM error: {ex.Message}]")]; }
+
+        foreach (var evt in events) yield return evt;
     }
 
     private static PicoNode.AI.AssistantMessageEvent.Done DoneMsg(string text) => new()

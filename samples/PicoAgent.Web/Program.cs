@@ -27,7 +27,7 @@ agent.Start();
 var adapter = new LlmClientAdapter(new PicoAgent.DynamicLLmClient(agent));
 
 var app = new WebApp(new SvcContainer(), new WebAppOptions { ServerHeader = "PicoAgent.Web" });
-PicoAgent.Server.AddEndpoints(app, agent, adapter, factory.GetToolRunner(), "/api");
+PicoAgent.Server.AddEndpoints(app, agent, adapter, factory.GetToolRunner(), "/api", settingsPath);
 
 var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
 if (Directory.Exists(wwwroot)) app.Use(new StaticFileMiddleware(wwwroot).InvokeAsync);
