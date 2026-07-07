@@ -20,6 +20,7 @@
     <Project Path="src/Analyzers/Controllers.Gen/Controllers.Gen.csproj" />
     <Project Path="src/Analyzers/PicoWeb.Gen/PicoWeb.Gen.csproj" />
     <Project Path="src/PicoNode.AI/PicoNode.AI.csproj" />
+    <Project Path="src/PicoNode.Agent.Core/PicoNode.Agent.Core.csproj" />
     <Project Path="src/PicoNode.Agent/PicoNode.Agent.csproj" />
     <Project Path="src/PicoAgent/PicoAgent.csproj" />
   </Folder>
@@ -34,6 +35,7 @@
     <Project Path="tests/PicoWeb.Tests/PicoWeb.Tests.csproj" />
     <Project Path="tests/PicoWeb.Integration.Tests/PicoWeb.Integration.Tests.csproj" />
     <Project Path="tests/PicoNode.AI.Tests/PicoNode.AI.Tests.csproj" />
+    <Project Path="tests/PicoNode.Agent.Core.Tests/PicoNode.Agent.Core.Tests.csproj" />
     <Project Path="tests/PicoNode.Agent.Tests/PicoNode.Agent.Tests.csproj" />
     <Project Path="tests/PicoAgent.Tests/PicoAgent.Tests.csproj" />
     <Project Path="tests/PicoNode.E2E/SseTestServer/SseTestServer.csproj" />
