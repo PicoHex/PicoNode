@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsAotCompatible>true</IsAotCompatible>
-    <RootNamespace>PicoNode.Agent</RootNamespace>
+    <RootNamespace>PicoNode.Agent.Domain</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

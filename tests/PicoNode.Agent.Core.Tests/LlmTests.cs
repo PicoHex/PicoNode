@@ -1,4 +1,5 @@
 namespace PicoNode.Agent.Tests;
+using PicoNode.Agent.Domain;
 
 public class LlmTests
 {

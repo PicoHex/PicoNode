@@ -1,4 +1,4 @@
-namespace PicoNode.Agent;
+namespace PicoNode.Agent.Domain;
 
 public sealed class Tool : IEquatable<Tool>
 {
