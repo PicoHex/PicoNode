@@ -115,9 +115,9 @@ public sealed class Server : IAsyncDisposable
         app.MapPost($"{p}/thinking", (ctx, _) => { using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8); var body = r.ReadToEnd(); var lvl = ExtractJsonString(body, "level"); if (lvl is { Length: > 0 }) { a.CurrentLlm.ThinkingLevel = lvl.ToLower() switch { "minimal" => ThinkingLevel.Minimal, "low" => ThinkingLevel.Low, "medium" => ThinkingLevel.Medium, "high" => ThinkingLevel.High, "xhigh" => ThinkingLevel.XHigh, _ => a.CurrentLlm.ThinkingLevel }; } return V(Ok()); });
         app.MapPost($"{p}/model/switch", (ctx, _) => { using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8); var body = r.ReadToEnd(); var provider = ExtractJsonString(body, "provider"); var model = ExtractJsonString(body, "modelId") ?? ExtractJsonString(body, "model"); if (string.IsNullOrWhiteSpace(provider)) return V(Error(400, "provider required")); a.SwitchLlm(provider, model ?? a.CurrentLlm.ModelId); return V(Ok()); });
         app.MapPost($"{p}/provider/switch", (ctx, _) => { using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8); var body = r.ReadToEnd(); var provider = ExtractJsonString(body, "provider"); if (string.IsNullOrWhiteSpace(provider)) return V(Error(400, "provider required")); a.SwitchLlm(provider, a.CurrentLlm.ModelId); return V(Ok()); });
-        app.MapPost($"{p}/session/{{id}}/create", (_, _) => V(Ok()));
-        app.MapPost($"{p}/session/{{id}}/delete", (_, _) => V(Ok()));
-        app.MapPost($"{p}/session/{{id}}/save", (_, _) => V(Ok()));
+        app.MapPost($"{p}/session/create/{{id}}", (_, _) => V(Ok()));
+        app.MapPost($"{p}/session/delete/{{id}}", (_, _) => V(Ok()));
+        app.MapPost($"{p}/session/save/{{id}}", (_, _) => V(Ok()));
         app.MapGet($"{p}/session/{{id}}/messages", (_, _) => V(Json("[]")));
         app.MapPost($"{p}/session/{{id}}/retry", (_, _) => V(Ok()));
         app.MapPost($"{p}/session/{{id}}/compact", (_, _) => V(Json("{\"compressedCount\":0,\"summary\":null,\"tokensSaved\":0}")));
