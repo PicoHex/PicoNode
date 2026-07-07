@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PicoAgent - Setup</title>
+    <link rel="stylesheet" href="/style.css">
+    <style>
+        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--bg); }
+        #setup { width: 420px; padding: 32px; background: var(--bg-side); border-radius: 16px; border: 1px solid var(--border); }
+        h1 { font-size: 1.4em; margin-bottom: 2px; color: var(--accent); }
+        h1 + p { color: var(--fg-muted); font-size: 0.85em; margin-bottom: 24px; }
+        #provider-buttons { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+        .prov-btn { padding: 14px 16px; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; font-size: 0.95em; text-align: left; cursor: pointer; font-family: inherit; transition: all .15s; display: flex; justify-content: space-between; align-items: center; }
+        .prov-btn:hover { border-color: var(--accent); background: var(--bg); }
+        .prov-btn.selected { border-color: var(--accent); background: var(--bg); box-shadow: 0 0 0 1px var(--accent); }
+        .prov-btn .label { font-weight: 600; }
+        .prov-btn .url { font-size: 0.75em; color: var(--fg-muted); margin-top: 2px; }
+        .prov-btn.custom { border-style: dashed; }
+        #key-section { display: none; margin-top: 12px; }
+        #key-section.active { display: block; }
+        label { display: block; margin: 10px 0 4px; font-size: 0.85em; color: var(--fg-muted); }
+        input { width: 100%; padding: 10px; background: var(--bg-input); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; font-size: 0.9em; font-family: inherit; box-sizing: border-box; }
+        input:focus { outline: none; border-color: var(--accent); }
+        button { padding: 10px 16px; margin-top: 14px; background: var(--accent); color: #fff; border: none; border-radius: 8px; font-size: 0.9em; font-weight: 600; cursor: pointer; font-family: inherit; width: 100%; }
+        button:hover { background: var(--accent-hover); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #status-msg { margin-top: 14px; font-size: 0.85em; text-align: center; min-height: 1.2em; }
+        #status-msg.error { color: #e05555; }
+        #status-msg.success { color: var(--accent); }
+        .skip-link { display: block; text-align: center; margin-top: 16px; font-size: 0.8em; color: var(--fg-muted); cursor: pointer; }
+        .skip-link:hover { color: var(--fg); }
+    </style>
+</head>
+<body>
+    <div id="setup">
+        <h1>PicoAgent Setup</h1>
+        <p>Choose a provider to get started.</p>
+
+        <div id="provider-buttons"></div>
+
+        <div id="key-section">
+            <label>API Key</label>
+            <input type="password" id="api-key" placeholder="sk-..." autocomplete="off">
+            <label>Base URL</label>
+            <input type="text" id="base-url" placeholder="https://api.openai.com/v1">
+            <label>Provider Name</label>
+            <input type="text" id="custom-name" placeholder="my-provider">
+            <button id="btn-connect">Connect & Continue</button>
+        </div>
+
+        <div id="status-msg"></div>
+        <span class="skip-link" id="skip-link" style="display:none">Already configured — skip to chat</span>
+    </div>
+
+    <script src="/config.js"></script>
+</body>
+</html>

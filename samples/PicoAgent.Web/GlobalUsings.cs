@@ -1,0 +1,17 @@
+global using System.IO.Pipelines;
+global using System.Net;
+global using System.Runtime.CompilerServices;
+global using System.Text;
+global using System.Text.RegularExpressions;
+global using PicoAgent;
+global using PicoAgent.Web;
+global using PicoDI;
+global using PicoJetson;
+global using PicoLog;
+global using PicoLog.Abs;
+global using PicoNode.Agent.Domain;
+global using static PicoNode.Agent.Domain.FileSystemConstants;
+global using PicoNode.AI;
+global using PicoNode.Http;
+global using PicoNode.Web;
+global using PicoWeb;
