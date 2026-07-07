@@ -35,7 +35,9 @@ public sealed class Server : IAsyncDisposable
         app.MapGet($"{p}/health", (_, _) => V(Json($"{{\"status\":\"ok\",\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\"}}")));
         app.MapGet($"{p}/models", (_, _) => V(Json("[]")));
         app.MapGet($"{p}/sessions", (_, _) => V(Json("[\"default\"]")));
-        app.MapGet($"{p}/config/status", (_, _) => V(Json($"{{\"configured\":true,\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\",\"providers\":[{string.Join(",", a.Llms.Select(l => $"\"{l.ProviderName}\""))}],\"thinkingEnabled\":{a.CurrentLlm.ThinkingEnabled.ToString().ToLower()},\"thinkingLevel\":\"{a.CurrentLlm.ThinkingLevel.ToString().ToLowerInvariant()}\",\"maxTokens\":{a.CurrentLlm.MaxTokens}}}")));
+        var configured = a.Llms.Any(l => l.ProviderName != "unconfigured" && l.ProviderName != "test");
+        app.MapGet($"{p}/config/status", (_, _) => V(Json(
+            $"{{\"configured\":{configured.ToString().ToLower()},\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\",\"providers\":[{string.Join(",", a.Llms.Select(l => $"\"{l.ProviderName}\""))}],\"thinkingEnabled\":{a.CurrentLlm.ThinkingEnabled.ToString().ToLower()},\"thinkingLevel\":\"{a.CurrentLlm.ThinkingLevel.ToString().ToLowerInvariant()}\",\"maxTokens\":{a.CurrentLlm.MaxTokens}}}")));
         app.MapGet($"{p}/config/providers", (_, _) => V(Json(ProviderTemplates)));
         app.MapPost($"{p}/config/validate", (_, _) => V(Json("[]")));
         app.MapPost($"{p}/config", (_, _) => V(Json("{\"status\":\"saved\"}")));
