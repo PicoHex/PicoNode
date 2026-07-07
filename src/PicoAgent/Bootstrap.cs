@@ -10,7 +10,14 @@ public static class Bootstrap
         var config = await LoadConfigAsync(homeDir);
         var factory = new AgentFactory().WithBuiltInTools();
 
-        var agent = factory.Build(config, homeDir);
+        if (config.Providers is null || config.Providers.Count == 0)
+        {
+            config.Providers = new Dictionary<string, ProviderEntry>
+            {
+                ["unconfigured"] = new() { ApiKey = "unconfigured", BaseUrl = "http://localhost" },
+            };
+            config.Model ??= "unconfigured";
+        }
         var llmAdapter = BuildLlmAdapter(config);
         var server = new Server(agent, llmAdapter, factory.GetToolRunner());
 
@@ -54,11 +61,13 @@ public static class Bootstrap
         {
             var def = new AgentConfig
             {
-                Providers = [], Model = "", ThinkingEnabled = true,
+                Providers = [],
+                Model = "unconfigured",
+                ThinkingEnabled = true,
                 ThinkingLevel = AgentConfig.DefaultThinkingLevel.ToString().ToLowerInvariant(),
                 MaxTokens = 4096,
             };
-            var json = "{\"providers\":{},\"model\":\"\",\"thinkingEnabled\":true,\"thinkingLevel\":\"xhigh\",\"maxTokens\":4096}";
+            var json = "{\"providers\":{},\"model\":\"unconfigured\",\"thinkingEnabled\":true,\"thinkingLevel\":\"xhigh\",\"maxTokens\":4096}";
             await File.WriteAllTextAsync(path, json);
             return def;
         }
