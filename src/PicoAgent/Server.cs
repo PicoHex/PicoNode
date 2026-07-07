@@ -35,9 +35,17 @@ public sealed class Server : IAsyncDisposable
         app.MapGet($"{p}/health", (_, _) => V(Json($"{{\"status\":\"ok\",\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\"}}")));
         app.MapGet($"{p}/models", (_, _) => V(Json("[]")));
         app.MapGet($"{p}/sessions", (_, _) => V(Json("[\"default\"]")));
-        var configured = a.Llms.Any(l => l.ApiKey.Length > 20);
-        app.MapGet($"{p}/config/status", (_, _) => V(Json(
-            $"{{\"configured\":{configured.ToString().ToLower()},\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\",\"providers\":[{string.Join(",", a.Llms.Select(l => $"\"{l.ProviderName}\""))}],\"thinkingEnabled\":{a.CurrentLlm.ThinkingEnabled.ToString().ToLower()},\"thinkingLevel\":\"{a.CurrentLlm.ThinkingLevel.ToString().ToLowerInvariant()}\",\"maxTokens\":{a.CurrentLlm.MaxTokens}}}")));
+        app.MapGet($"{p}/config/status", (_, _) =>
+        {
+            var hasRealProvider = a.Llms.Any(l =>
+                l.ProviderName != "unconfigured"
+                && !string.IsNullOrEmpty(l.ApiKey)
+                && l.ApiKey != "sk-test"
+            );
+            return V(Json(
+                $"{{\"configured\":{hasRealProvider.ToString().ToLower()},\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\",\"providers\":[{string.Join(",", a.Llms.Select(l => $"\"{l.ProviderName}\""))}],\"thinkingEnabled\":{a.CurrentLlm.ThinkingEnabled.ToString().ToLower()},\"thinkingLevel\":\"{a.CurrentLlm.ThinkingLevel.ToString().ToLowerInvariant()}\",\"maxTokens\":{a.CurrentLlm.MaxTokens}}}"
+            ));
+        });
         app.MapGet($"{p}/config/providers", (_, _) => V(Json(ProviderTemplates)));
         app.MapPost($"{p}/config/validate", (_, _) => V(Json("[]")));
         app.MapPost($"{p}/config", (_, _) => V(Json("{\"status\":\"saved\"}")));

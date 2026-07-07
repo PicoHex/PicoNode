@@ -106,6 +106,24 @@ public class ServerEndpointsTests
         await ws.DisposeAsync();
     }
 
+    [Test]
+    public async Task ConfigStatus_Unconfigured_ReturnsFalse()
+    {
+        var config = new Domain.AgentConfig
+        {
+            Providers = new Dictionary<string, Domain.ProviderEntry> { ["unconfigured"] = new() { ApiKey = "unconfigured" } },
+            Model = "unconfigured",
+        };
+        var factory = new AgentFactory().WithBuiltInTools();
+        var agent = factory.Build(config, "/tmp/cs");
+        var adapter = new LlmClientAdapter(new SimpleLlmClient());
+        await using var srv = new PicoAgent.Server(agent, adapter, factory.GetToolRunner());
+        await srv.ListenAsync("http://localhost:0");
+        using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{srv.Port}/") };
+        var body = await http.GetStringAsync("/config/status");
+        await Assert.That(body).Contains("\"configured\":false");
+    }
+
     private static async Task<PicoAgent.Server> StartServer()
     {
         var config = new Domain.AgentConfig
