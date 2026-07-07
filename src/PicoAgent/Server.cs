@@ -25,6 +25,7 @@ public sealed class Server : IAsyncDisposable
 
     public async Task ListenAsync(string uri)
     {
+        _agent.Start();
         var app = BuildWebApp();
         var ep = ParseEndpoint(uri);
         _webServer = new WebServer(app, new WebServerOptions { Endpoint = ep });
@@ -50,6 +51,43 @@ public sealed class Server : IAsyncDisposable
                         Headers = [new("Content-Type", "application/json; charset=utf-8")],
                     }
                 );
+            }
+        );
+
+        app.MapPost(
+            "/session/{id}/message",
+            async (ctx, ct) =>
+            {
+                using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+                var message = await reader.ReadToEndAsync(ct);
+
+                if (string.IsNullOrWhiteSpace(message))
+                {
+                    return new HttpResponse
+                    {
+                        StatusCode = 400,
+                        Body = "{\"error\":\"empty message\"}"u8.ToArray(),
+                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
+                    };
+                }
+
+                var result = await _agent.RunTurn(message, _llmClient, _toolRunner, ct);
+                var lastText =
+                    result
+                        .LastOrDefault(m => m.Role == "assistant")
+                        ?.ContentBlocks?.FirstOrDefault(cb => cb.Type == "text")
+                        ?.Text
+                    ?? "";
+
+                var body = Encoding.UTF8.GetBytes(
+                    "{\"reply\":\"" + lastText.Replace("\"", "\\\"") + "\"}"
+                );
+                return new HttpResponse
+                {
+                    StatusCode = 200,
+                    Body = body,
+                    Headers = [new("Content-Type", "application/json; charset=utf-8")],
+                };
             }
         );
 
