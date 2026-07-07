@@ -187,6 +187,14 @@ public sealed class Agent
             var ctx = await Session.BuildContext();
             var response = await llmClient.CompleteAsync(CurrentLlm, ctx, Tools, ct);
 
+            // Detect empty/error response
+            var hasContent = response.ContentBlocks is { Length: > 0 };
+            if (!hasContent && onEvent is not null)
+            {
+                response.ContentBlocks = [new ContentBlock { Type = "text", Text = "[No response from LLM. Check API key or provider configuration.]" }];
+                await onEvent("text", "[No response from LLM. Check API key or provider configuration.]");
+            }
+
             await Session.Append(new MessageEntry { Message = response });
             result.Add(response);
 
