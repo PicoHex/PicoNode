@@ -18,18 +18,18 @@ public sealed class Server : IAsyncDisposable
     public Server(DomainAgent agent, DomainInterfaces.ILlmClient llmClient, DomainInterfaces.IToolRunner toolRunner)
     { _agent = agent; _llmClient = llmClient; _toolRunner = toolRunner; }
 
-    public async Task ListenAsync(string uri)
+    public async Task ListenAsync(string uri, WebMiddleware? preMiddleware = null)
     {
         if (_isListening) throw new InvalidOperationException("Already listening");
         _isListening = true; _agent.Start();
-        _webServer = new WebServer(BuildWebApp(), new WebServerOptions { Endpoint = ParseEndpoint(uri) });
+        _webServer = new WebServer(BuildWebApp(preMiddleware), new WebServerOptions { Endpoint = ParseEndpoint(uri) });
         await _webServer.StartAsync(CancellationToken.None);
     }
 
-    private WebApp BuildWebApp()
+    private WebApp BuildWebApp(WebMiddleware? preMiddleware = null)
     {
         var app = new WebApp(new SvcContainer(), new WebAppOptions());
-        var a = _agent;
+        AddEndpoints(app, _agent, _llmClient, _toolRunner, _turnLock, ref _systemPrompt);
 
         app.MapGet("/health", (_, _) => V(Json($"{{\"status\":\"ok\",\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\"}}")));
 
@@ -68,6 +68,7 @@ public sealed class Server : IAsyncDisposable
             return new HttpResponse { StatusCode = 200, Headers = [new("Content-Type", "text/event-stream"), new("Cache-Control", "no-cache")], BodyStream = pipe.Reader.AsStream() };
         });
 
+        if (preMiddleware is not null) app.Use(preMiddleware);
         return app;
     }
 
