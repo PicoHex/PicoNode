@@ -31,6 +31,16 @@ app.MapGet("/api/config/status", (_, _) =>
 app.MapGet("/api/config/providers", (_, _) =>
     ValueTask.FromResult(Json("[{\"name\":\"test\",\"label\":\"Test\",\"baseUrl\":\"\",\"apiFormat\":\"openai\"}]")));
 app.MapPost("/api/reload", (_, _) => ValueTask.FromResult(Json("{\"status\":\"ok\"}")));
+app.MapPost("/api/thinking", (_, _) => ValueTask.FromResult(Json("{\"status\":\"ok\"}")));
+app.MapPost("/api/model/switch", (_, _) => ValueTask.FromResult(Json("{\"status\":\"ok\"}")));
+app.MapPost("/api/provider/switch", (_, _) => ValueTask.FromResult(Json("{\"status\":\"ok\"}")));
+app.MapGet("/api/sessions", (_, _) => ValueTask.FromResult(Json("[\"default\"]")));
+app.MapPost("/api/session/create/{id}", (_, _) => ValueTask.FromResult(Json("{\"status\":\"ok\"}")));
+app.MapPost("/api/session/delete/{id}", (_, _) => ValueTask.FromResult(Json("{\"status\":\"ok\"}")));
+app.MapPost("/api/session/save/{id}", (_, _) => ValueTask.FromResult(Json("{\"status\":\"ok\"}")));
+app.MapGet("/api/session/{id}/messages", (_, _) => ValueTask.FromResult(Json("[]")));
+app.MapPost("/api/config/validate", (_, _) => ValueTask.FromResult(Json("[]")));
+app.MapPost("/api/config", (_, _) => ValueTask.FromResult(Json("{\"status\":\"saved\"}")));
 
 // SSE message endpoint
 app.MapPost("/api/session/{id}/message", async (ctx, ct) =>
