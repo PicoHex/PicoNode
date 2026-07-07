@@ -21,8 +21,7 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
             yield break;
         }
 
-        var result = CreateClientAndStream(llm, context, ct);
-        await foreach (var evt in result)
+        await foreach (var evt in CreateClientAndStream(llm, context, ct))
             yield return evt;
     }
 
@@ -57,18 +56,18 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
             Reasoning = llm.ThinkingEnabled ? llm.ThinkingLevel : null,
         };
 
-        await foreach (var evt in client.StreamAsync(realModel, context, realOptions, ct))
-            yield return evt;
+        PicoNode.AI.AssistantMessageEvent? errEvt = null;
+        try { await foreach (var evt in client.StreamAsync(realModel, context, realOptions, ct)) yield return evt; }
+        catch (Exception ex) { errEvt = DoneMsg($"[LLM error: {ex.Message}]"); }
+        if (errEvt is not null) yield return errEvt;
     }
 
-    private static PicoNode.AI.AssistantMessageEvent.Done DoneMsg(string text) =>
-        new()
+    private static PicoNode.AI.AssistantMessageEvent.Done DoneMsg(string text) => new()
+    {
+        Message = new PicoNode.AI.Message
         {
-            Message = new PicoNode.AI.Message
-            {
-                Role = "assistant",
-                ContentBlocks = [new PicoNode.AI.ContentBlock { Type = "text", Text = text }],
-                StopReason = "end_turn",
-            },
-        };
+            Role = "assistant", StopReason = "end_turn",
+            ContentBlocks = [new PicoNode.AI.ContentBlock { Type = "text", Text = text }],
+        },
+    };
 }
