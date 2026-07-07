@@ -30,7 +30,7 @@ public sealed class AgentFactory
                 config.ThinkingLevel ?? AgentConfig.DefaultThinkingLevel.ToString()
             );
 
-            var modelId = config.Model ?? name;
+            var modelId = config.Model;
             llms.Add(
                 new Llm
                 {
@@ -51,7 +51,9 @@ public sealed class AgentFactory
 
         // Determine current Llm
         var currentProvider = firstProvider!;
-        var currentModel = config.Model is { Length: > 0 } ? config.Model : firstModel!;
+        if (config.Model is not { Length: > 0 })
+            throw new DomainInvariantException("config.Model must be set");
+        var currentModel = config.Model;
 
         var agent = new Agent(
             Guid.CreateVersion7(),
@@ -74,6 +76,9 @@ public sealed class AgentFactory
             var pkgEntries = PackageResolver.Resolve(homeDir, config.Packages);
             foreach (var entry in pkgEntries)
             {
+                if (entry.IsGit)
+                    _ = PackageInstaller.EnsureAsync([entry], null, CancellationToken.None);
+
                 var pkgSkillsDir = Path.Combine(entry.DisplayPath, "skills");
                 if (Directory.Exists(pkgSkillsDir))
                 {
@@ -81,13 +86,17 @@ public sealed class AgentFactory
                     var skills = scanner.ScanFromDir(pkgSkillsDir);
                     foreach (var skill in skills)
                     {
-                        agent.AddTool(
-                            new Tool
-                            {
-                                Name = skill.Name,
-                                Description = skill.Description,
-                                Kind = ToolKind.Capability,
-                            }
+                        var tool = new Tool
+                        {
+                            Name = skill.Name,
+                            Description = skill.Description,
+                            Kind = ToolKind.Capability,
+                        };
+                        agent.AddTool(tool);
+                        _toolRunner.Add(
+                            tool,
+                            (args, ct) =>
+                                Task.FromResult($"[Capability {skill.Name}: not yet implemented]")
                         );
                     }
                 }
@@ -120,6 +129,9 @@ public sealed class AgentFactory
             {
                 var path = args.GetValueOrDefault("path", "") as string ?? "";
                 var content = args.GetValueOrDefault("content", "") as string ?? "";
+                var dir = Path.GetDirectoryName(path);
+                if (dir is not null)
+                    Directory.CreateDirectory(dir);
                 await File.WriteAllTextAsync(path, content, ct);
                 return $"[Wrote {content.Length} bytes]";
             }
@@ -160,6 +172,53 @@ public sealed class AgentFactory
                 {
                     return $"[bash error: {ex.Message}]";
                 }
+            }
+        );
+
+        RegisterTool(
+            agent,
+            "edit",
+            "Make precise file edits with exact text replacement",
+            async (args, ct) =>
+            {
+                var path = args.GetValueOrDefault("path", "") as string ?? "";
+                return $"[edit stub: {path}]";
+            }
+        );
+
+        RegisterTool(
+            agent,
+            "grep",
+            "Search files for patterns",
+            async (args, ct) =>
+            {
+                var pattern = args.GetValueOrDefault("pattern", "") as string ?? "";
+                return $"[grep stub: {pattern}]";
+            }
+        );
+
+        RegisterTool(
+            agent,
+            "find",
+            "Find files by name",
+            async (args, ct) =>
+            {
+                var name = args.GetValueOrDefault("name", "") as string ?? "";
+                return $"[find stub: {name}]";
+            }
+        );
+
+        RegisterTool(
+            agent,
+            "ls",
+            "List directory contents",
+            async (args, ct) =>
+            {
+                var dir = args.GetValueOrDefault("path", ".") as string ?? ".";
+                if (!Directory.Exists(dir))
+                    return $"[Error: Directory not found: {dir}]";
+                var entries = Directory.GetFileSystemEntries(dir);
+                return string.Join("\n", entries);
             }
         );
     }
