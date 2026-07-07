@@ -136,4 +136,58 @@ public sealed class Agent
     }
 
     public void RemoveTool(string name) => _tools.RemoveAll(t => t.Name == name);
+
+    // ── Turn execution ──
+
+    public async Task<List<Message>> RunTurn(
+        string message,
+        ILlmClient llmClient,
+        IToolRunner toolRunner,
+        CancellationToken ct
+    )
+    {
+        var result = new List<Message>();
+
+        var userMsg = new Message
+        {
+            Role = "user",
+            Content = message,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+        await Session.Append(new MessageEntry { Message = userMsg });
+        result.Add(userMsg);
+
+        bool hasTools;
+        do
+        {
+            var ctx = await Session.BuildContext();
+            var response = await llmClient.CompleteAsync(CurrentLlm, ctx, Tools, ct);
+
+            await Session.Append(new MessageEntry { Message = response });
+            result.Add(response);
+
+            var toolCalls = response.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray();
+            hasTools = toolCalls is { Length: > 0 };
+
+            if (hasTools)
+            {
+                foreach (var tc in toolCalls!)
+                {
+                    var toolResult = await toolRunner.ExecuteAsync(tc.Name ?? "", tc.Arguments, ct);
+                    var toolMsg = new Message
+                    {
+                        Role = "toolResult",
+                        ToolCallId = tc.Id,
+                        ToolName = tc.Name,
+                        ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
+                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    };
+                    await Session.Append(new MessageEntry { Message = toolMsg });
+                    result.Add(toolMsg);
+                }
+            }
+        } while (hasTools);
+
+        return result;
+    }
 }
