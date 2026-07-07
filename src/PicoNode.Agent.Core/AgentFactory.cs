@@ -108,10 +108,8 @@ public sealed class AgentFactory
 
     private void RegisterBuiltInTools(Agent agent)
     {
-        RegisterTool(
-            agent,
-            "read",
-            "Read file contents",
+        RegisterTool(agent, "read", "Read file contents",
+            """{"type":"object","properties":{"path":{"type":"string","description":"Path to the file to read"},"offset":{"type":"integer","description":"Line number to start from (1-indexed)"},"limit":{"type":"integer","description":"Max lines to read"}},"required":["path"]}""",
             async (args, ct) =>
             {
                 var path = args.GetValueOrDefault("path", "") as string ?? "";
@@ -121,10 +119,8 @@ public sealed class AgentFactory
             }
         );
 
-        RegisterTool(
-            agent,
-            "write",
-            "Write file contents",
+        RegisterTool(agent, "write", "Write file contents",
+            """{"type":"object","properties":{"path":{"type":"string","description":"Path to write to"},"content":{"type":"string","description":"Content to write"}},"required":["path","content"]}""",
             async (args, ct) =>
             {
                 var path = args.GetValueOrDefault("path", "") as string ?? "";
@@ -137,10 +133,8 @@ public sealed class AgentFactory
             }
         );
 
-        RegisterTool(
-            agent,
-            "bash",
-            "Execute shell command",
+        RegisterTool(agent, "bash", "Execute shell command",
+            """{"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute"}},"required":["command"]}""",
             async (args, ct) =>
             {
                 var command = args.GetValueOrDefault("command", "") as string ?? "";
@@ -179,6 +173,7 @@ public sealed class AgentFactory
             agent,
             "edit",
             "Make precise file edits with exact text replacement",
+            """{"type":"object","properties":{"path":{"type":"string"},"oldText":{"type":"string"},"newText":{"type":"string"}},"required":["path","oldText","newText"]}""",
             async (args, ct) =>
             {
                 var path = args.GetValueOrDefault("path", "") as string ?? "";
@@ -186,10 +181,8 @@ public sealed class AgentFactory
             }
         );
 
-        RegisterTool(
-            agent,
-            "grep",
-            "Search files for patterns",
+        RegisterTool(agent, "grep", "Search files for patterns",
+            """{"type":"object","properties":{"pattern":{"type":"string","description":"Regex pattern to search for"}},"required":["pattern"]}""",
             async (args, ct) =>
             {
                 var pattern = args.GetValueOrDefault("pattern", "") as string ?? "";
@@ -197,10 +190,8 @@ public sealed class AgentFactory
             }
         );
 
-        RegisterTool(
-            agent,
-            "find",
-            "Find files by name",
+        RegisterTool(agent, "find", "Find files by name",
+            """{"type":"object","properties":{"name":{"type":"string","description":"File name pattern"}},"required":["name"]}""",
             async (args, ct) =>
             {
                 var name = args.GetValueOrDefault("name", "") as string ?? "";
@@ -208,10 +199,8 @@ public sealed class AgentFactory
             }
         );
 
-        RegisterTool(
-            agent,
-            "ls",
-            "List directory contents",
+        RegisterTool(agent, "ls", "List directory contents",
+            """{"type":"object","properties":{"path":{"type":"string","description":"Directory path"}},"required":[]}""",
             async (args, ct) =>
             {
                 var dir = args.GetValueOrDefault("path", ".") as string ?? ".";
@@ -227,6 +216,7 @@ public sealed class AgentFactory
         Agent agent,
         string name,
         string description,
+        string? inputSchema,
         Func<Dictionary<string, object?>, CancellationToken, Task<string>> handler
     )
     {
@@ -235,6 +225,7 @@ public sealed class AgentFactory
             Name = name,
             Description = description,
             Kind = ToolKind.BuiltIn,
+            InputSchema = inputSchema,
         };
         agent.AddTool(tool);
         _toolRunner.Add(tool, handler);
