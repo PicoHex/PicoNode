@@ -42,9 +42,9 @@ public class CliIntegrationTests
             var content = new StringContent("hello", Encoding.UTF8, "text/plain");
             var msgResponse = await http.PostAsync("/session/default/message", content);
             await Assert.That(msgResponse.IsSuccessStatusCode).IsTrue();
-
-            var body = await msgResponse.Content.ReadAsStringAsync();
-            await Assert.That(body).Contains("reply");
+            await Assert
+                .That(msgResponse.Content.Headers.ContentType?.MediaType)
+                .IsEqualTo("text/event-stream");
         }
         finally
         {

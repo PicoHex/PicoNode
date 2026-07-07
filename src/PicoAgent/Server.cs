@@ -65,42 +65,22 @@ public sealed class Server : IAsyncDisposable
             {
                 using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
                 var message = await reader.ReadToEndAsync(ct);
-
                 if (string.IsNullOrWhiteSpace(message))
-                {
-                    return new HttpResponse
-                    {
-                        StatusCode = 400,
-                        Body = "{\"error\":\"empty message\"}"u8.ToArray(),
-                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
-                    };
-                }
+                    return Error(400, "empty message");
 
-                await _turnLock.WaitAsync(ct);
-                try
-                {
-                    var result = await _agent.RunTurn(message, _llmClient, _toolRunner, ct);
-                    var lastText =
-                        result
-                            .LastOrDefault(m => m.Role == "assistant")
-                            ?.ContentBlocks?.FirstOrDefault(cb => cb.Type == "text")
-                            ?.Text
-                        ?? "";
+                var pipe = new Pipe();
+                _ = Task.Run(() => RunTurnIntoPipe(message, pipe.Writer, ct), ct);
 
-                    var body = Encoding.UTF8.GetBytes(
-                        "{\"reply\":\"" + lastText.Replace("\"", "\\\"") + "\"}"
-                    );
-                    return new HttpResponse
-                    {
-                        StatusCode = 200,
-                        Body = body,
-                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
-                    };
-                }
-                finally
+                return new HttpResponse
                 {
-                    _turnLock.Release();
-                }
+                    StatusCode = 200,
+                    Headers =
+                    [
+                        new("Content-Type", "text/event-stream"),
+                        new("Cache-Control", "no-cache"),
+                    ],
+                    BodyStream = pipe.Reader.AsStream(),
+                };
             }
         );
 
@@ -113,26 +93,59 @@ public sealed class Server : IAsyncDisposable
                 var provider = ExtractJsonString(body, "provider");
                 var model = ExtractJsonString(body, "model");
                 if (string.IsNullOrWhiteSpace(provider))
-                {
-                    return new HttpResponse
-                    {
-                        StatusCode = 400,
-                        Body = "{\"error\":\"provider required\"}"u8.ToArray(),
-                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
-                    };
-                }
+                    return Error(400, "provider required");
                 _agent.SwitchLlm(provider, model ?? _agent.CurrentLlm.ModelId);
-                return new HttpResponse
-                {
-                    StatusCode = 200,
-                    Body = "{\"status\":\"ok\"}"u8.ToArray(),
-                    Headers = [new("Content-Type", "application/json; charset=utf-8")],
-                };
+                return Ok();
             }
         );
 
         return app;
     }
+
+    private async Task RunTurnIntoPipe(string message, PipeWriter writer, CancellationToken ct)
+    {
+        await _turnLock.WaitAsync(ct);
+        try
+        {
+            await _agent.RunTurn(
+                message,
+                _llmClient,
+                _toolRunner,
+                ct,
+                async (kind, text) =>
+                {
+                    var sse = $"event: {kind}\ndata: {text ?? ""}\n\n";
+                    await writer.WriteAsync(Encoding.UTF8.GetBytes(sse), ct);
+                }
+            );
+        }
+        catch (Exception ex)
+        {
+            var err = $"event: error\ndata: {ex.Message}\n\n";
+            await writer.WriteAsync(Encoding.UTF8.GetBytes(err), ct);
+        }
+        finally
+        {
+            _turnLock.Release();
+            await writer.CompleteAsync();
+        }
+    }
+
+    private static HttpResponse Ok() =>
+        new()
+        {
+            StatusCode = 200,
+            Body = "{\"status\":\"ok\"}"u8.ToArray(),
+            Headers = [new("Content-Type", "application/json; charset=utf-8")],
+        };
+
+    private static HttpResponse Error(int code, string msg) =>
+        new()
+        {
+            StatusCode = code,
+            Body = Encoding.UTF8.GetBytes($"{{\"error\":\"{msg}\"}}"),
+            Headers = [new("Content-Type", "application/json; charset=utf-8")],
+        };
 
     private static string? ExtractJsonString(string json, string key)
     {

@@ -25,8 +25,9 @@ public class ServerTests
         var content = new StringContent("Hi there", Encoding.UTF8, "text/plain");
         var response = await http.PostAsync("/session/default/message", content);
         await Assert.That(response.IsSuccessStatusCode).IsTrue();
-        var body = await response.Content.ReadAsStringAsync();
-        await Assert.That(body).Contains("reply");
+        await Assert
+            .That(response.Content.Headers.ContentType?.MediaType)
+            .IsEqualTo("text/event-stream");
     }
 
     [Test]
