@@ -6,7 +6,7 @@ public class SessionTests
     public async Task Append_ThenGetEntries_ReturnsEntry()
     {
         var session = new Domain.Session(Guid.CreateVersion7());
-        var entry = new MessageEntry
+        var entry = new Domain.MessageEntry
         {
             Message = new Message { Role = "user", Content = "hello" },
         };
@@ -20,11 +20,11 @@ public class SessionTests
     public async Task MoveTo_JumpsToEarlierNode()
     {
         var session = new Domain.Session(Guid.CreateVersion7());
-        var e1 = new MessageEntry
+        var e1 = new Domain.MessageEntry
         {
             Message = new Message { Role = "user", Content = "msg1" },
         };
-        var e2 = new MessageEntry
+        var e2 = new Domain.MessageEntry
         {
             Message = new Message { Role = "assistant", Content = "msg2" },
         };
@@ -42,7 +42,7 @@ public class SessionTests
     {
         var session = new Domain.Session(Guid.CreateVersion7());
         await session.Append(
-            new MessageEntry
+            new Domain.MessageEntry
             {
                 Message = new Message { Role = "user", Content = "hello" },
             }

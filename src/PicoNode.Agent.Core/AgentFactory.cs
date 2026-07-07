@@ -77,7 +77,7 @@ public sealed class AgentFactory
             foreach (var entry in pkgEntries)
             {
                 if (entry.IsGit)
-                    _ = PackageInstaller.EnsureAsync([entry], null, CancellationToken.None);
+                    ; // git clone handled by PackageInstaller in PicoNode.Agent
 
                 var pkgSkillsDir = Path.Combine(entry.DisplayPath, "skills");
                 if (Directory.Exists(pkgSkillsDir))

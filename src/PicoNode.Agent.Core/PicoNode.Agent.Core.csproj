@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\PicoNode.Agent\PicoNode.Agent.csproj" />
     <ProjectReference Include="..\PicoNode.AI\PicoNode.AI.csproj" />
+    <PackageReference Include="PicoJetson" />
   </ItemGroup>
 </Project>

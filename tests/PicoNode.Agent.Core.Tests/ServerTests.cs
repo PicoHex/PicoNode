@@ -42,9 +42,9 @@ public class ServerTests
     [Test]
     public async Task Reload_ReturnsOk()
     {
-        var config = new AgentConfig
+        var config = new Domain.AgentConfig
         {
-            Providers = new Dictionary<string, ProviderEntry>
+            Providers = new Dictionary<string, Domain.ProviderEntry>
             {
                 ["test"] = new() { ApiKey = "sk-test" },
             },
@@ -66,9 +66,9 @@ public class ServerTests
 
     private static async Task<PicoAgent.Server> StartServer()
     {
-        var config = new AgentConfig
+        var config = new Domain.AgentConfig
         {
-            Providers = new Dictionary<string, ProviderEntry>
+            Providers = new Dictionary<string, Domain.ProviderEntry>
             {
                 ["test"] = new() { ApiKey = "sk-test" },
             },

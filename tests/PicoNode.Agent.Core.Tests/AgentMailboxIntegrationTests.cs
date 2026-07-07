@@ -5,9 +5,9 @@ public class AgentMailboxIntegrationTests
     [Test]
     public async Task Mailbox_SerializesConcurrentRequests()
     {
-        var config = new AgentConfig
+        var config = new Domain.AgentConfig
         {
-            Providers = new Dictionary<string, ProviderEntry>
+            Providers = new Dictionary<string, Domain.ProviderEntry>
             {
                 ["test"] = new() { ApiKey = "sk-test" },
             },

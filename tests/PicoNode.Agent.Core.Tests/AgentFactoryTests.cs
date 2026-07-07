@@ -5,9 +5,9 @@ public class AgentFactoryTests
     [Test]
     public async Task Build_WithConfig_CreatesAgent()
     {
-        var config = new AgentConfig
+        var config = new Domain.AgentConfig
         {
-            Providers = new Dictionary<string, ProviderEntry>
+            Providers = new Dictionary<string, Domain.ProviderEntry>
             {
                 ["deepseek"] = new()
                 {
@@ -34,9 +34,9 @@ public class AgentFactoryTests
     [Test]
     public async Task Build_NoModel_Throws()
     {
-        var config = new AgentConfig
+        var config = new Domain.AgentConfig
         {
-            Providers = new Dictionary<string, ProviderEntry>
+            Providers = new Dictionary<string, Domain.ProviderEntry>
             {
                 ["openai"] = new() { ApiKey = "sk-xxx" },
             },
@@ -52,9 +52,9 @@ public class AgentFactoryTests
     [Test]
     public async Task Build_WithBuiltInTools_RegistersThem()
     {
-        var config = new AgentConfig
+        var config = new Domain.AgentConfig
         {
-            Providers = new Dictionary<string, ProviderEntry>
+            Providers = new Dictionary<string, Domain.ProviderEntry>
             {
                 ["test"] = new() { ApiKey = "sk-xxx" },
             },
@@ -74,9 +74,9 @@ public class AgentFactoryTests
     [Test]
     public async Task Build_WithBuiltInTools_ToolRunnerCanExecute()
     {
-        var config = new AgentConfig
+        var config = new Domain.AgentConfig
         {
-            Providers = new Dictionary<string, ProviderEntry>
+            Providers = new Dictionary<string, Domain.ProviderEntry>
             {
                 ["test"] = new() { ApiKey = "sk-xxx" },
             },
@@ -102,9 +102,9 @@ public class AgentFactoryTests
         Directory.CreateDirectory(tmp);
         try
         {
-            var config = new AgentConfig
+            var config = new Domain.AgentConfig
             {
-                Providers = new Dictionary<string, ProviderEntry>
+                Providers = new Dictionary<string, Domain.ProviderEntry>
                 {
                     ["test"] = new() { ApiKey = "sk-xxx" },
                 },
