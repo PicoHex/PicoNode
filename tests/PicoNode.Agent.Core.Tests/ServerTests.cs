@@ -29,6 +29,15 @@ public class ServerTests
         await Assert.That(body).Contains("reply");
     }
 
+    [Test]
+    public async Task ListenAsync_CalledTwice_Throws()
+    {
+        await using var server = await StartServer();
+        await Assert
+            .That(() => server.ListenAsync("http://localhost:0"))
+            .Throws<InvalidOperationException>();
+    }
+
     private static async Task<PicoAgent.Server> StartServer()
     {
         var config = new AgentConfig

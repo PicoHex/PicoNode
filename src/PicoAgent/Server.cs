@@ -9,6 +9,7 @@ public sealed class Server : IAsyncDisposable
     private readonly DomainInterfaces.ILlmClient _llmClient;
     private readonly DomainInterfaces.IToolRunner _toolRunner;
     private WebServer? _webServer;
+    private bool _isListening;
 
     public int Port => _webServer?.LocalEndPoint is IPEndPoint ep ? ep.Port : 0;
 
@@ -25,6 +26,9 @@ public sealed class Server : IAsyncDisposable
 
     public async Task ListenAsync(string uri)
     {
+        if (_isListening)
+            throw new InvalidOperationException("Server is already listening");
+        _isListening = true;
         _agent.Start();
         var app = BuildWebApp();
         var ep = ParseEndpoint(uri);
