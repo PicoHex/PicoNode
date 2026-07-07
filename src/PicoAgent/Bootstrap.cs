@@ -16,7 +16,7 @@ public static class Bootstrap
             {
                 ["unconfigured"] = new() { ApiKey = "unconfigured", BaseUrl = "http://localhost" },
             };
-            config.Model ??= "unconfigured";
+            config.Model = string.IsNullOrEmpty(config.Model) ? "unconfigured" : config.Model;
         }
 
         var agent = factory.Build(config, homeDir);
