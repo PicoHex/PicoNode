@@ -95,7 +95,45 @@ public sealed class Server : IAsyncDisposable
             }
         );
 
+        app.MapPost(
+            "/model/switch",
+            async (ctx, ct) =>
+            {
+                using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+                var body = await reader.ReadToEndAsync(ct);
+                var provider = ExtractJsonString(body, "provider");
+                var model = ExtractJsonString(body, "model");
+                if (string.IsNullOrWhiteSpace(provider))
+                {
+                    return new HttpResponse
+                    {
+                        StatusCode = 400,
+                        Body = "{\"error\":\"provider required\"}"u8.ToArray(),
+                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
+                    };
+                }
+                _agent.SwitchLlm(provider, model ?? _agent.CurrentLlm.ModelId);
+                return new HttpResponse
+                {
+                    StatusCode = 200,
+                    Body = "{\"status\":\"ok\"}"u8.ToArray(),
+                    Headers = [new("Content-Type", "application/json; charset=utf-8")],
+                };
+            }
+        );
+
         return app;
+    }
+
+    private static string? ExtractJsonString(string json, string key)
+    {
+        var pattern = $"\"{key}\":\"";
+        var start = json.IndexOf(pattern, StringComparison.Ordinal);
+        if (start < 0)
+            return null;
+        start += pattern.Length;
+        var end = json.IndexOf('"', start);
+        return end > start ? json[start..end] : null;
     }
 
     private static IPEndPoint ParseEndpoint(string uri)
