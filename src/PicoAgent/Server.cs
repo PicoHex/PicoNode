@@ -47,7 +47,26 @@ public sealed class Server : IAsyncDisposable
             ));
         });
         app.MapGet($"{p}/config/providers", (_, _) => V(Json(ProviderTemplates)));
-        app.MapPost($"{p}/config/validate", (_, _) => V(Json("[]")));
+        app.MapPost($"{p}/config/validate", async (ctx, ct) =>
+        {
+            using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+            var body = await r.ReadToEndAsync(ct);
+            var name = ExtractJsonString(body, "provider") ?? ExtractJsonString(body, "name");
+            var key = ExtractJsonString(body, "apiKey");
+            var url = ExtractJsonString(body, "baseUrl");
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(key))
+                return Error(400, "provider and apiKey required");
+            try
+            {
+                var pc = new PicoNode.AI.ProviderConfig { Name = name, ApiKey = key, BaseUrl = url ?? "https://api.openai.com/v1", ApiFormat = AiApiFormat.OpenAIChatCompletions };
+                using var http = new HttpClient();
+                var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(http, pc, ct);
+                if (models.Length == 0) return Error(400, "No models found. Check your API key or base URL.");
+                var json = "[" + string.Join(",", models.Select(m => $"{{\"id\":\"{EscapeJson(m.Id)}\",\"ownedBy\":\"{EscapeJson(m.OwnedBy)}\"}}")) + "]";
+                return Json(json);
+            }
+            catch (Exception ex) { return Error(400, ex.Message); }
+        });
         app.MapPost($"{p}/config", (_, _) => V(Json("{\"status\":\"saved\"}")));
         app.MapGet($"{p}/system-prompt", (_, _) => V(Json($"{{\"prompt\":\"{EscapeJson(sp ?? "")}\"}}")));
         app.MapPost($"{p}/system-prompt", async (ctx, _) => { using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8); var body = await r.ReadToEndAsync(); sp = ExtractJsonString(body, "prompt"); return Ok(); });
