@@ -39,6 +39,31 @@ public class ServerTests
             .Throws<InvalidOperationException>();
     }
 
+    [Test]
+    public async Task Reload_ReturnsOk()
+    {
+        var config = new AgentConfig
+        {
+            Providers = new Dictionary<string, ProviderEntry>
+            {
+                ["test"] = new() { ApiKey = "sk-test" },
+            },
+            Model = "test-model",
+        };
+        var factory = new AgentFactory().WithBuiltInTools();
+        var agent = factory.Build(config, "/tmp/test-reload");
+        var adapter = new LlmClientAdapter(new SimpleLlmClient());
+        await using var server = new PicoAgent.Server(agent, adapter, factory.GetToolRunner());
+        await server.ListenAsync("http://localhost:0");
+
+        using var http = new HttpClient
+        {
+            BaseAddress = new Uri($"http://localhost:{server.Port}/"),
+        };
+        var response = await http.PostAsync("/reload", null);
+        await Assert.That(response.IsSuccessStatusCode).IsTrue();
+    }
+
     private static async Task<PicoAgent.Server> StartServer()
     {
         var config = new AgentConfig

@@ -59,28 +59,29 @@ public sealed class Server : IAsyncDisposable
             }
         );
 
+        app.MapPost("/reload", (_, _) => ValueTask.FromResult(Ok()));
+
         app.MapPost(
-            "/session/{id}/message",
-            async (ctx, ct) =>
+            "/thinking",
+            (ctx, ct) =>
             {
                 using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
-                var message = await reader.ReadToEndAsync(ct);
-                if (string.IsNullOrWhiteSpace(message))
-                    return Error(400, "empty message");
-
-                var pipe = new Pipe();
-                _ = Task.Run(() => RunTurnIntoPipe(message, pipe.Writer, ct), ct);
-
-                return new HttpResponse
+                var body = reader.ReadToEnd();
+                var level = ExtractJsonString(body, "level");
+                if (level is { Length: > 0 })
                 {
-                    StatusCode = 200,
-                    Headers =
-                    [
-                        new("Content-Type", "text/event-stream"),
-                        new("Cache-Control", "no-cache"),
-                    ],
-                    BodyStream = pipe.Reader.AsStream(),
-                };
+                    var thinkingLevel = level.ToLower() switch
+                    {
+                        "minimal" => ThinkingLevel.Minimal,
+                        "low" => ThinkingLevel.Low,
+                        "medium" => ThinkingLevel.Medium,
+                        "high" => ThinkingLevel.High,
+                        "xhigh" => ThinkingLevel.XHigh,
+                        _ => _agent.CurrentLlm.ThinkingLevel,
+                    };
+                    _agent.CurrentLlm.ThinkingLevel = thinkingLevel;
+                }
+                return ValueTask.FromResult(Ok());
             }
         );
 
@@ -96,6 +97,30 @@ public sealed class Server : IAsyncDisposable
                     return Error(400, "provider required");
                 _agent.SwitchLlm(provider, model ?? _agent.CurrentLlm.ModelId);
                 return Ok();
+            }
+        );
+
+        app.MapPost(
+            "/session/{id}/message",
+            async (ctx, ct) =>
+            {
+                using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+                var message = await reader.ReadToEndAsync(ct);
+                if (string.IsNullOrWhiteSpace(message))
+                    return Error(400, "empty message");
+
+                var pipe = new Pipe();
+                _ = Task.Run(() => RunTurnIntoPipe(message, pipe.Writer, ct), ct);
+                return new HttpResponse
+                {
+                    StatusCode = 200,
+                    Headers =
+                    [
+                        new("Content-Type", "text/event-stream"),
+                        new("Cache-Control", "no-cache"),
+                    ],
+                    BodyStream = pipe.Reader.AsStream(),
+                };
             }
         );
 
