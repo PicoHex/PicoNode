@@ -10,6 +10,7 @@ public sealed class Server : IAsyncDisposable
     private readonly DomainInterfaces.IToolRunner _toolRunner;
     private WebServer? _webServer;
     private bool _isListening;
+    private readonly SemaphoreSlim _turnLock = new(1, 1);
 
     public int Port => _webServer?.LocalEndPoint is IPEndPoint ep ? ep.Port : 0;
 
@@ -75,23 +76,31 @@ public sealed class Server : IAsyncDisposable
                     };
                 }
 
-                var result = await _agent.RunTurn(message, _llmClient, _toolRunner, ct);
-                var lastText =
-                    result
-                        .LastOrDefault(m => m.Role == "assistant")
-                        ?.ContentBlocks?.FirstOrDefault(cb => cb.Type == "text")
-                        ?.Text
-                    ?? "";
-
-                var body = Encoding.UTF8.GetBytes(
-                    "{\"reply\":\"" + lastText.Replace("\"", "\\\"") + "\"}"
-                );
-                return new HttpResponse
+                await _turnLock.WaitAsync(ct);
+                try
                 {
-                    StatusCode = 200,
-                    Body = body,
-                    Headers = [new("Content-Type", "application/json; charset=utf-8")],
-                };
+                    var result = await _agent.RunTurn(message, _llmClient, _toolRunner, ct);
+                    var lastText =
+                        result
+                            .LastOrDefault(m => m.Role == "assistant")
+                            ?.ContentBlocks?.FirstOrDefault(cb => cb.Type == "text")
+                            ?.Text
+                        ?? "";
+
+                    var body = Encoding.UTF8.GetBytes(
+                        "{\"reply\":\"" + lastText.Replace("\"", "\\\"") + "\"}"
+                    );
+                    return new HttpResponse
+                    {
+                        StatusCode = 200,
+                        Body = body,
+                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
+                    };
+                }
+                finally
+                {
+                    _turnLock.Release();
+                }
             }
         );
 
