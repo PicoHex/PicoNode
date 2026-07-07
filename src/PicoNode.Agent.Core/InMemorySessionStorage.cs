@@ -37,4 +37,10 @@ public sealed class InMemorySessionStorage : ISessionStorage
         Task.FromResult(_entries.FirstOrDefault(e => e.Id == id))!;
 
     public Task<string?> GetLabel(string id) => Task.FromResult<string?>(null);
+
+    public Task MoveTo(string entryId)
+    {
+        _leafId = entryId;
+        return Task.CompletedTask;
+    }
 }

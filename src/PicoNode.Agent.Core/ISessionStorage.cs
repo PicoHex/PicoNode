@@ -9,4 +9,5 @@ public interface ISessionStorage
     Task<SessionTreeEntryBase[]> GetPathToRoot(string leafId);
     Task<SessionTreeEntryBase?> GetEntry(string id);
     Task<string?> GetLabel(string id);
+    Task MoveTo(string entryId);
 }

@@ -23,9 +23,7 @@ public sealed class Session
 
     public async Task MoveTo(string entryId)
     {
-        var entry = await _storage.GetEntry(entryId);
-        if (entry is not null)
-            await _storage.AppendEntry(new LeafEntry { TargetId = entryId });
+        await _storage.MoveTo(entryId);
     }
 
     public async Task<List<Message>> BuildContext()
