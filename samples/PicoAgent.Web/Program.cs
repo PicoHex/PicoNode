@@ -2,17 +2,30 @@ using PicoNode.Agent.Domain;
 
 var homeDir = Path.Combine(AppContext.BaseDirectory, "data");
 Directory.CreateDirectory(homeDir);
+Directory.CreateDirectory(Path.Combine(homeDir, FileSystemConstants.SessionsDir));
 
-var config = new AgentConfig { Providers = new Dictionary<string, ProviderEntry> { ["test"] = new() { ApiKey = "sk-test" } }, Model = "test" };
-if (Environment.GetEnvironmentVariable("DEEPSEEK_API_KEY") is { Length: > 0 } key)
-    config = new AgentConfig { Providers = new Dictionary<string, ProviderEntry> { ["deepseek"] = new() { ApiKey = key, BaseUrl = "https://api.deepseek.com/v1" } }, Model = "deepseek-chat" };
+var settingsPath = Path.Combine(homeDir, "settings.json");
+if (!File.Exists(settingsPath))
+{
+    await File.WriteAllTextAsync(settingsPath,
+        "{\"providers\":{},\"model\":\"unconfigured\",\"thinkingEnabled\":true,\"thinkingLevel\":\"xhigh\",\"maxTokens\":4096}");
+    Console.Error.WriteLine($"Created bootstrap config at {settingsPath}. Configure via web UI.");
+}
+
+var raw = await File.ReadAllTextAsync(settingsPath);
+var config = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(Encoding.UTF8.GetBytes(raw));
+if (config is null) config = new AgentConfig { Providers = [], Model = "unconfigured" };
+
+// Ensure at least a dummy provider so Agent can start
+if (config.Providers is null || config.Providers.Count == 0)
+    config.Providers = new Dictionary<string, ProviderEntry> { ["unconfigured"] = new() { ApiKey = "unconfigured" } };
+if (string.IsNullOrEmpty(config.Model)) config.Model = "unconfigured";
 
 var factory = new AgentFactory().WithBuiltInTools();
 var agent = factory.Build(config, homeDir);
 agent.Start();
 var adapter = PicoAgent.Bootstrap.BuildLlmAdapter(config);
 
-// Single WebApp: API routes + static files on port 9000
 var app = new WebApp(new SvcContainer(), new WebAppOptions { ServerHeader = "PicoAgent.Web" });
 PicoAgent.Server.AddEndpoints(app, agent, adapter, factory.GetToolRunner(), "/api");
 
