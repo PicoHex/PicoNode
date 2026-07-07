@@ -33,7 +33,24 @@ public sealed class Server : IAsyncDisposable
         var p = prefix;
 
         app.MapGet($"{p}/health", (_, _) => V(Json($"{{\"status\":\"ok\",\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\"}}")));
-        app.MapGet($"{p}/models", (_, _) => V(Json("[]")));
+        app.MapGet($"{p}/models", async (_, ct) =>
+        {
+            var all = new List<string>();
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            foreach (var l in a.Llms)
+            {
+                if (l.ProviderName == "unconfigured" || string.IsNullOrEmpty(l.ApiKey) || l.ApiKey == "sk-test")
+                    continue;
+                try
+                {
+                    var pc = new PicoNode.AI.ProviderConfig { Name = l.ProviderName, ApiKey = l.ApiKey, BaseUrl = l.BaseUrl, ApiFormat = l.ApiFormat };
+                    var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(http, pc, ct);
+                    all.AddRange(models.Select(m => $"{{\"id\":\"{EscapeJson(m.Id)}\",\"ownedBy\":\"{EscapeJson(m.OwnedBy)}\"}}"));
+                }
+                catch { /* skip failed */ }
+            }
+            return Json("[" + string.Join(",", all) + "]");
+        });
         app.MapGet($"{p}/sessions", (_, _) => V(Json("[\"default\"]")));
         app.MapGet($"{p}/config/status", (_, _) =>
         {

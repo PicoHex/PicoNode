@@ -24,7 +24,7 @@ if (string.IsNullOrEmpty(config.Model)) config.Model = "unconfigured";
 var factory = new AgentFactory().WithBuiltInTools();
 var agent = factory.Build(config, homeDir);
 agent.Start();
-var adapter = PicoAgent.Bootstrap.BuildLlmAdapter(config);
+var adapter = new LlmClientAdapter(new PicoAgent.DynamicLLmClient(agent));
 
 var app = new WebApp(new SvcContainer(), new WebAppOptions { ServerHeader = "PicoAgent.Web" });
 PicoAgent.Server.AddEndpoints(app, agent, adapter, factory.GetToolRunner(), "/api");

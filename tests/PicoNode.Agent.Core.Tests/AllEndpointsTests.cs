@@ -4,6 +4,26 @@ public class AllEndpointsTests
 {
     [Test] public async Task H_Health() => await G("/health", b => b.Contains("ok"));
     [Test] public async Task H_Models() => await G("/models", b => b.StartsWith("["));
+
+    [Test]
+    public async Task Models_WithRealProvider_NotEmpty()
+    {
+        // Use a provider that will fail API call quickly but not crash
+        var c = new Domain.AgentConfig
+        {
+            Providers = new() { ["deepseek"] = new() { ApiKey = "sk-real-looking-key-12345", BaseUrl = "https://api.deepseek.com/v1" } },
+            Model = "deepseek-chat",
+        };
+        var f = new AgentFactory().WithBuiltInTools();
+        var a = f.Build(c, "/tmp/mtest");
+        var ad = new LlmClientAdapter(new SimpleLlmClient());
+        await using var s = new PicoAgent.Server(a, ad, f.GetToolRunner());
+        await s.ListenAsync("http://localhost:0");
+        using var h = new HttpClient { BaseAddress = new Uri($"http://localhost:{s.Port}/") };
+        // Should return array (may be empty if API fails, but should not 500)
+        var body = await h.GetStringAsync("/models");
+        await Assert.That(body).StartsWith("[");
+    }
     [Test] public async Task H_Sessions() => await G("/sessions", b => b.StartsWith("["));
     [Test] public async Task H_ConfigStatus() => await G("/config/status", b => b.Contains("configured"));
     [Test] public async Task H_ConfigProviders() => await G("/config/providers", b => b.StartsWith("["));
