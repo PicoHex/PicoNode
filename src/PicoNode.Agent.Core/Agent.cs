@@ -13,9 +13,10 @@ public sealed class Agent
     public AgentStatus Status { get; private set; }
     public Guid? ParentId { get; }
     public IReadOnlyList<Guid> ChildIds => _childIds;
-    public List<string>? Packages { get; set; }
+    public List<string>? Packages { get; }
     public string HomeDir { get; }
     public Session Session { get; }
+    public string? FailureReason { get; private set; }
 
     public Agent(
         Guid id,
@@ -23,7 +24,9 @@ public sealed class Agent
         string currentProvider,
         string currentModel,
         string homeDir,
-        Guid? parentId = null
+        Guid? parentId = null,
+        List<string>? packages = null,
+        ISessionStorage? sessionStorage = null
     )
     {
         if (llms is null || llms.Count == 0)
@@ -38,7 +41,8 @@ public sealed class Agent
         Status = AgentStatus.Pending;
         ParentId = parentId;
         HomeDir = homeDir;
-        Session = new Session(Guid.CreateVersion7());
+        Packages = packages;
+        Session = new Session(Guid.CreateVersion7(), sessionStorage);
 
         var match = _llms.FirstOrDefault(l =>
             l.ProviderName == currentProvider && l.ModelId == currentModel
@@ -71,15 +75,21 @@ public sealed class Agent
         if (Status != AgentStatus.Running)
             throw new DomainInvariantException($"Invariant 6: cannot fail from {Status}");
         Status = AgentStatus.Failed;
+        FailureReason = reason;
     }
 
-    public Agent SpawnChild(List<Llm> llms, List<Tool> tools)
+    public Agent SpawnChild(
+        List<Llm> llms,
+        string currentProvider,
+        string currentModel,
+        List<Tool> tools
+    )
     {
         var child = new Agent(
             Guid.CreateVersion7(),
             llms,
-            llms[0].ProviderName,
-            llms[0].ModelId,
+            currentProvider,
+            currentModel,
             HomeDir,
             Id
         );
@@ -158,8 +168,11 @@ public sealed class Agent
         result.Add(userMsg);
 
         bool hasTools;
+        var iterations = 0;
         do
         {
+            if (++iterations > 100)
+                break;
             var ctx = await Session.BuildContext();
             var response = await llmClient.CompleteAsync(CurrentLlm, ctx, Tools, ct);
 

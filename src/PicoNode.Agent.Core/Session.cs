@@ -8,10 +8,10 @@ public sealed class Session
 
     public Guid Id { get; }
 
-    public Session(Guid id)
+    public Session(Guid id, ISessionStorage? storage = null)
     {
         Id = id;
-        _inner = new InternalSession(new InMemorySessionStorage());
+        _inner = new InternalSession(storage ?? new InMemorySessionStorage());
     }
 
     public async Task<string> Append(SessionTreeEntryBase entry) => await _inner.AppendEntry(entry);

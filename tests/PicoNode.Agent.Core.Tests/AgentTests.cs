@@ -87,6 +87,15 @@ public class AgentTests
     }
 
     [Test]
+    public async Task Fail_StoresReason()
+    {
+        var agent = CreateAgent();
+        agent.Start();
+        agent.Fail("network timeout");
+        await Assert.That(agent.FailureReason).IsEqualTo("network timeout");
+    }
+
+    [Test]
     public async Task Complete_FromPending_Throws()
     {
         var agent = CreateAgent();
@@ -186,7 +195,7 @@ public class AgentTests
                 ApiKey = "sk-xxx",
             },
         };
-        var child = parent.SpawnChild(childLlms, []);
+        var child = parent.SpawnChild(childLlms, "openai", "gpt-4o", []);
         await Assert.That(parent.ChildIds).Contains(child.Id);
         await Assert.That(child.ParentId).IsEqualTo(parent.Id);
         await Assert.That(child.Status).IsEqualTo(AgentStatus.Pending);

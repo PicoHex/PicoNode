@@ -60,6 +60,44 @@ public class AgentRunTurnTests
         await Assert.That(result.Any(m => m.Role == "toolResult")).IsTrue();
     }
 
+    [Test]
+    public async Task RunTurn_InfiniteToolLoop_BreaksAfterMaxIterations()
+    {
+        var agent = CreateAgent();
+        agent.Start();
+        var mockLlm = new MockLlmClient(
+            Enumerable
+                .Repeat(
+                    new Message
+                    {
+                        Role = "assistant",
+                        ContentBlocks =
+                        [
+                            new ContentBlock
+                            {
+                                Type = "tool_call",
+                                Id = "call",
+                                Name = "bash",
+                                Arguments = new Dictionary<string, object?>
+                                {
+                                    ["command"] = "loop",
+                                },
+                            },
+                        ],
+                        StopReason = "tool_use",
+                    },
+                    200
+                )
+                .ToArray()
+        );
+        var mockTools = new MockToolRunner();
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var result = await agent.RunTurn("loop", mockLlm, mockTools, cts.Token);
+
+        await Assert.That(result.Count).IsLessThan(300);
+    }
+
     private static Domain.Agent CreateAgent()
     {
         var llms = new List<Llm>
