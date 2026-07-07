@@ -155,8 +155,8 @@ public sealed class Server : IAsyncDisposable
             _ = Task.Run(async () =>
             {
                 await turnLock.WaitAsync(ct);
-                try { await a.RunTurn(message, llm, tr, ct, async (k, t) => { await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes($"event: {k}\ndata: {t ?? ""}\n\n"), ct); }); }
-                catch (Exception ex) { await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes($"event: error\ndata: {ex.Message}\n\n"), ct); }
+                try { await a.RunTurn(message, llm, tr, ct, async (k, t) => { var json = k switch { "text" => $"{{\"type\":\"delta\",\"content\":\"{EscapeJson(t ?? "")}\"}}", "done" => "{\"type\":\"done\"}", _ => $"{{\"type\":\"{k}\",\"content\":\"{EscapeJson(t ?? "")}\"}}" }; await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes($"data: {json}\n\n"), ct); }); }
+                catch (Exception ex) { await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes($"data: {{\"type\":\"error\",\"message\":\"{EscapeJson(ex.Message)}\"}}\n\n"), ct); }
                 finally { turnLock.Release(); await pipe.Writer.CompleteAsync(); }
             }, ct);
             return new HttpResponse { StatusCode = 200, Headers = [new("Content-Type", "text/event-stream"), new("Cache-Control", "no-cache")], BodyStream = pipe.Reader.AsStream() };
