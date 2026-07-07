@@ -56,6 +56,7 @@ public sealed class LlmClientAdapter : ILlmClient
 
         NetAI.ContentBlock[]? blocks = null;
         var stopReason = "end_turn";
+        string? errorMsg = null;
 
         await foreach (var evt in _inner.StreamAsync(model, chatContext, options, ct))
         {
@@ -64,7 +65,14 @@ public sealed class LlmClientAdapter : ILlmClient
                 blocks = d.Message.ContentBlocks;
                 stopReason = d.Message.StopReason ?? stopReason;
             }
+            else if (evt is NetAI.AssistantMessageEvent.Error e)
+            {
+                errorMsg = e.Message.ErrorMessage ?? "Unknown error";
+            }
         }
+
+        if (errorMsg is not null)
+            blocks ??= [new NetAI.ContentBlock { Type = "text", Text = $"[API Error: {errorMsg}]" }];
 
         return new Message
         {
