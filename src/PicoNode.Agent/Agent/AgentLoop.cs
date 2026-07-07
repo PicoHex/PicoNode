@@ -1,5 +1,6 @@
 namespace PicoNode.Agent;
 
+[Obsolete("Use Agent (PicoNode.Agent.Domain.Agent) instead")]
 public sealed class AgentLoop
 {
     private readonly IAgentLlm _llm;

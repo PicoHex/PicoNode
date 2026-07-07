@@ -1,5 +1,6 @@
 namespace PicoNode.Agent;
 
+[Obsolete("Session management is now part of Agent aggregate")]
 public sealed partial class AgentHost
 {
     private AgentLoop _loop;

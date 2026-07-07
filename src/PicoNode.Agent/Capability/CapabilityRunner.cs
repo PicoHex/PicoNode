@@ -1,5 +1,6 @@
 namespace PicoNode.Agent;
 
+[Obsolete("Tool execution is now handled by ToolRunner (PicoNode.Agent.Domain)")]
 public sealed class CapabilityRunner
 {
     private static readonly byte[] NewLine = "\n"u8.ToArray();

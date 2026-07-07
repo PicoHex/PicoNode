@@ -1,5 +1,6 @@
 namespace PicoNode.Agent;
 
+[Obsolete("Tools are now managed as Tool VOs in Agent aggregate")]
 public sealed class CapabilityRegistry
 {
     private readonly List<ManifestCapability> _capabilities = [];
