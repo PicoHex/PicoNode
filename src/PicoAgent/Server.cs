@@ -67,7 +67,48 @@ public sealed class Server : IAsyncDisposable
             }
             catch (Exception ex) { return Error(400, ex.Message); }
         });
-        app.MapPost($"{p}/config", (_, _) => V(Json("{\"status\":\"saved\"}")));
+        app.MapPost($"{p}/config", async (ctx, ct) =>
+        {
+            using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+            var body = await r.ReadToEndAsync(ct);
+            if (string.IsNullOrWhiteSpace(body)) return Error(400, "empty body");
+
+            // Parse and validate
+            AgentConfig? newConfig;
+            try { newConfig = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(Encoding.UTF8.GetBytes(body)); }
+            catch { return Error(400, "invalid json"); }
+            if (newConfig is null) return Error(400, "invalid config");
+
+            // Add new providers first (can't remove all — invariant requires at least 1)
+            var newProviderNames = newConfig.Providers.Keys.ToList();
+            foreach (var (name, entry) in newConfig.Providers)
+            {
+                var llm = new Llm
+                {
+                    ProviderName = name, ModelId = newConfig.Model ?? name,
+                    ApiKey = entry.ApiKey, BaseUrl = entry.BaseUrl ?? "",
+                    ApiFormat = (entry.ApiFormat?.ToLowerInvariant()) switch { "anthropic" => AiApiFormat.AnthropicMessages, _ => AiApiFormat.OpenAIChatCompletions },
+                    ThinkingLevel = AgentConfig.ParseLevel(newConfig.ThinkingLevel) ?? AgentConfig.DefaultThinkingLevel,
+                    MaxTokens = newConfig.MaxTokens ?? 4096, ThinkingEnabled = newConfig.ThinkingEnabled,
+                };
+                var existing = a.Llms.FirstOrDefault(l => l.ProviderName == name);
+                if (existing is null) a.AddLlm(llm);
+            }
+            // Remove old providers not in new config
+            var toRemove = a.Llms.Where(l => !newProviderNames.Contains(l.ProviderName)).ToList();
+            var newCurrent = newProviderNames.FirstOrDefault() ?? a.Llms[0].ProviderName;
+            var newModel = newConfig.Model ?? newCurrent;
+            if (toRemove.Any(r => r.ProviderName == a.CurrentLlm.ProviderName))
+                a.SwitchLlm(newCurrent, newModel);
+            foreach (var old in toRemove)
+            {
+                if (a.Llms.Count > 1 && old.ProviderName != a.CurrentLlm.ProviderName)
+                    a.RemoveLlm(old.ProviderName, old.ModelId);
+            }
+            a.SwitchLlm(newCurrent, newModel);
+
+            return Ok();
+        });
         app.MapGet($"{p}/system-prompt", (_, _) => V(Json($"{{\"prompt\":\"{EscapeJson(sp ?? "")}\"}}")));
         app.MapPost($"{p}/system-prompt", async (ctx, _) => { using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8); var body = await r.ReadToEndAsync(); sp = ExtractJsonString(body, "prompt"); return Ok(); });
         app.MapPost($"{p}/reload", (_, _) => V(Ok()));
