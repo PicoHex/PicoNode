@@ -149,11 +149,19 @@ public sealed class Agent
 
     // ── Turn execution ──
 
-    public async Task<List<Message>> RunTurn(
+    public Task<List<Message>> RunTurn(
         string message,
         ILlmClient llmClient,
         IToolRunner toolRunner,
         CancellationToken ct
+    ) => RunTurn(message, llmClient, toolRunner, ct, null);
+
+    public async Task<List<Message>> RunTurn(
+        string message,
+        ILlmClient llmClient,
+        IToolRunner toolRunner,
+        CancellationToken ct,
+        Func<string, string?, Task>? onEvent
     )
     {
         var result = new List<Message>();
@@ -167,6 +175,9 @@ public sealed class Agent
         await Session.Append(new MessageEntry { Message = userMsg });
         result.Add(userMsg);
 
+        if (onEvent is not null)
+            await onEvent("text", message);
+
         bool hasTools;
         var iterations = 0;
         do
@@ -178,6 +189,10 @@ public sealed class Agent
 
             await Session.Append(new MessageEntry { Message = response });
             result.Add(response);
+
+            var respText = response.ContentBlocks?.FirstOrDefault(cb => cb.Type == "text")?.Text;
+            if (respText is not null && onEvent is not null)
+                await onEvent("text", respText);
 
             var toolCalls = response.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray();
             hasTools = toolCalls is { Length: > 0 };
@@ -200,6 +215,9 @@ public sealed class Agent
                 }
             }
         } while (hasTools);
+
+        if (onEvent is not null)
+            await onEvent("done", null);
 
         return result;
     }

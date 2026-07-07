@@ -98,6 +98,38 @@ public class AgentRunTurnTests
         await Assert.That(result.Count).IsLessThan(300);
     }
 
+    [Test]
+    public async Task RunTurn_WithEventCallback_InvokesCallback()
+    {
+        var agent = CreateAgent();
+        agent.Start();
+        var mockLlm = new MockLlmClient(
+            new Message
+            {
+                Role = "assistant",
+                ContentBlocks = [new ContentBlock { Type = "text", Text = "Hello!" }],
+                StopReason = "end_turn",
+            }
+        );
+        var mockTools = new MockToolRunner();
+
+        var events = new List<string>();
+        await agent.RunTurn(
+            "Hi",
+            mockLlm,
+            mockTools,
+            CancellationToken.None,
+            onEvent: (kind, text) =>
+            {
+                events.Add(kind);
+                return Task.CompletedTask;
+            }
+        );
+
+        await Assert.That(events).Contains("text");
+        await Assert.That(events).Contains("done");
+    }
+
     private static Domain.Agent CreateAgent()
     {
         var llms = new List<Llm>
