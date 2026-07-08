@@ -6,7 +6,7 @@ namespace PicoNode.Actor.Abs;
 /// </summary>
 public interface IEventSourcedActor : IActor
 {
-    /// <summary>Current version. Incremented by CommitEvents.</summary>
+    /// <summary>Current version. Incremented by ApplyEvent, set by ReplayEvents.</summary>
     ulong Version { get; }
 
     /// <summary>Uncommitted events produced by the current message.</summary>

@@ -13,6 +13,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="PicoNode.Actor.Abs.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="System.Threading.Channels" />
   </ItemGroup>
 

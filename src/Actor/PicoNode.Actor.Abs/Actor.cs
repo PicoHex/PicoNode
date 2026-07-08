@@ -5,7 +5,7 @@ namespace PicoNode.Actor.Abs;
 /// Starts a consumption loop in the constructor that reads from a Channel{Envelope}.
 /// Subclasses override OnMessageAsync for command dispatch.
 /// </summary>
-public abstract class Actor : IActor
+public abstract class Actor : IActor, IDisposable
 {
     private readonly Channel<Envelope> _mailbox;
     private readonly CancellationTokenSource _cts = new();
@@ -25,17 +25,22 @@ public abstract class Actor : IActor
 
     private async Task RunAsync(CancellationToken ct)
     {
-        await foreach (var envelope in _mailbox.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+        try
         {
-            try
+            await foreach (var envelope in _mailbox.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
-                await ProcessAsync(envelope).ConfigureAwait(false);
-            }
-            catch
-            {
-                // Single message failure does not stop the consumption loop
+                try
+                {
+                    await ProcessAsync(envelope).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    // Propagate failure to Ask callers; single message failure does not stop the loop
+                    envelope.Tcs?.TrySetException(ex);
+                }
             }
         }
+        catch (OperationCanceledException) { /* expected on Stop */ }
     }
 
     /// <summary>
@@ -51,10 +56,14 @@ public abstract class Actor : IActor
     /// <summary>Override to dispatch commands via switch/pattern match.</summary>
     protected abstract ValueTask<object?> OnMessageAsync(ICommand command);
 
-    /// <summary>Stop the consumption loop.</summary>
+    /// <summary>Stop the consumption loop and dispose resources.</summary>
     internal void Stop()
     {
         _cts.Cancel();
         _mailbox.Writer.Complete();
+        _cts.Dispose();
     }
+
+    /// <summary>IDisposable — delegates to Stop.</summary>
+    void IDisposable.Dispose() => Stop();
 }

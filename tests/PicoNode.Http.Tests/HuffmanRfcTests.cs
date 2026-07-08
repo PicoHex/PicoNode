@@ -92,6 +92,37 @@ public sealed class HuffmanRfcTests
     }
 
     /// <summary>
+    /// Huffman round-trip must preserve multi-byte UTF-8 sequences.
+    /// "café" = bytes [63 61 66 C3 A9]. The decoder must accumulate bytes
+    /// and decode via UTF-8, not cast each byte to char.
+    /// </summary>
+    [Test]
+    public async Task Huffman_roundtrip_preserves_multibyte_utf8()
+    {
+        var input = Encoding.UTF8.GetBytes("café");
+        var encoded = HuffmanCodec.Encode(input);
+        var success = HuffmanCodec.TryDecode(encoded, out var decoded);
+
+        await Assert.That(success).IsTrue();
+        await Assert.That(decoded).IsEqualTo("café");
+    }
+
+    /// <summary>
+    /// Huffman round-trip of a larger UTF-8 string with CJK characters.
+    /// "日本" = bytes [E6 97 A5 E6 9C AC].
+    /// </summary>
+    [Test]
+    public async Task Huffman_roundtrip_preserves_cjk_utf8()
+    {
+        var input = Encoding.UTF8.GetBytes("日本");
+        var encoded = HuffmanCodec.Encode(input);
+        var success = HuffmanCodec.TryDecode(encoded, out var decoded);
+
+        await Assert.That(success).IsTrue();
+        await Assert.That(decoded).IsEqualTo("日本");
+    }
+
+    /// <summary>
     /// RFC 7541 §5.2 — "www.example.com" Huffman encoding.
     /// Expected: 0xf1e3c2e5f23a6ba0ab90f4ff
     /// </summary>

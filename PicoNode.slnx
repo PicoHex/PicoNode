@@ -38,6 +38,7 @@
     <Project Path="tests/PicoNode.AI.Tests/PicoNode.AI.Tests.csproj" />
     <Project Path="tests/PicoNode.Agent.Core.Tests/PicoNode.Agent.Core.Tests.csproj" />
     <Project Path="tests/PicoNode.Agent.Tests/PicoNode.Agent.Tests.csproj" />
+    <Project Path="tests/PicoNode.Actor.Abs.Tests/PicoNode.Actor.Abs.Tests.csproj" />
     <Project Path="tests/PicoNode.E2E/SseTestServer/SseTestServer.csproj" />
   </Folder>
   <Folder Name="/benchmarks/">
