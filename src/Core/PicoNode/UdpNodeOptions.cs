@@ -17,6 +17,7 @@ public sealed class UdpNodeOptions
     public bool EnableBroadcast { get; set; } = true;
     public UdpOverflowMode QueueOverflowMode { get; set; } = UdpOverflowMode.DropNewest;
     public TimeSpan ReceiveFaultBackoff { get; set; } = DefaultReceiveFaultBackoff;
+    public TimeSpan DrainTimeout { get; set; } = TimeSpan.FromSeconds(5);
     public IPAddress? MulticastGroup { get; init; }
     public int MulticastTtl { get; set; } = 1;
     public bool MulticastLoopback { get; set; } = true;

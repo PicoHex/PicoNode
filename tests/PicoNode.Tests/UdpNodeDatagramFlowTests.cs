@@ -70,6 +70,50 @@ public sealed class UdpNodeDatagramFlowTests
     }
 
     [Test]
+    public async Task StopAsync_completes_within_DrainTimeout_when_handler_ignores_cancellation()
+    {
+        var handler = new UnCancellableBlockingHandler();
+        await using var node = new UdpNode(
+            new UdpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                DatagramHandler = handler,
+                DrainTimeout = TimeSpan.FromMilliseconds(500),
+            }
+        );
+
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Dgram,
+            ProtocolType.Udp
+        );
+        client.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+
+        await node.StartAsync();
+
+        await client.SendToAsync(
+            new byte[] { 1, 2, 3, 4 },
+            SocketFlags.None,
+            (IPEndPoint)node.LocalEndPoint
+        );
+
+        // Wait until the handler is invoked (and blocked).
+        await handler.FirstInvocationStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        var stopTask = node.StopAsync();
+
+        // StopAsync must complete within a reasonable bound of DrainTimeout,
+        // even though the handler ignores cancellation.
+        var delay = Task.Delay(TimeSpan.FromSeconds(5));
+        await Task.WhenAny(stopTask, delay);
+
+        handler.Release();
+
+        await Assert.That(stopTask.IsCompleted).IsTrue();
+        await Assert.That(delay.IsCompleted).IsFalse();
+    }
+
+    [Test]
     public async Task Received_datagram_exposes_remote_endpoint_and_allows_reply()
     {
         var handler = new CapturingUdpHandler();
@@ -324,6 +368,36 @@ public sealed class UdpNodeDatagramFlowTests
         {
             FirstInvocationStarted.TrySetResult();
             await _release.Task.WaitAsync(cancellationToken);
+        }
+
+        public void Release()
+        {
+            _release.TrySetResult();
+        }
+    }
+
+    /// <summary>
+    /// Handler that blocks indefinitely and ignores the cancellation token,
+    /// simulating a stuck handler that cannot be cancelled.
+    /// </summary>
+    private sealed class UnCancellableBlockingHandler : IUdpDatagramHandler
+    {
+        private readonly TaskCompletionSource _release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public TaskCompletionSource FirstInvocationStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async ValueTask OnDatagramAsync(
+            IUdpDatagramContext context,
+            ReadOnlyMemory<byte> datagram,
+            CancellationToken cancellationToken
+        )
+        {
+            FirstInvocationStarted.TrySetResult();
+            // Intentionally ignore cancellationToken — block until released.
+            await _release.Task;
         }
 
         public void Release()

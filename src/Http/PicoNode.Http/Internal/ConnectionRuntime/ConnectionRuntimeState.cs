@@ -41,6 +41,17 @@ internal sealed class ConnectionRuntimeState
     public int AddConnectionSendWindow(int increment) =>
         Interlocked.Add(ref _connectionSendWindow, increment);
 
+    // Connection-level flow control (how much the peer can send to us)
+    private int _connectionReceiveWindow = 65535;
+    public int ConnectionReceiveWindow
+    {
+        get => Volatile.Read(ref _connectionReceiveWindow);
+        set => Interlocked.Exchange(ref _connectionReceiveWindow, value);
+    }
+
+    public int AddConnectionReceiveWindow(int delta) =>
+        Interlocked.Add(ref _connectionReceiveWindow, delta);
+
     public void ApplySettings(IReadOnlyList<Http2Setting> settings)
     {
         foreach (var setting in settings)

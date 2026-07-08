@@ -460,6 +460,53 @@ public sealed class HttpRequestParserTests
     }
 
     [Test]
+    public async Task Parse_accepts_body_larger_than_MaxRequestBytes_but_within_MaxRequestBodySize()
+    {
+        // Body of 16 KB — exceeds MaxRequestBytes (8 KB) but well within
+        // MaxRequestBodySize (64 MB). Must not be rejected as RequestTooLarge.
+        var bodySize = 16 * 1024;
+        var body = new byte[bodySize];
+        var header = Encoding.ASCII.GetBytes(
+            $"POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: {bodySize}\r\n\r\n"
+        );
+
+        var buffer = CreateSequence(header, body);
+
+        var result = HttpRequestParser.Parse(
+            buffer,
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
+        );
+
+        await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
+        await Assert.That(result.Request).IsNotNull();
+    }
+
+    [Test]
+    public async Task Parse_rejects_body_exceeding_MaxRequestBodySize()
+    {
+        // MaxRequestBodySize = 100 bytes; body is 101 bytes.
+        var bodySize = 101;
+        var body = new byte[bodySize];
+        var header = Encoding.ASCII.GetBytes(
+            $"POST /upload HTTP/1.1\r\nHost: example.com\r\nContent-Length: {bodySize}\r\n\r\n"
+        );
+
+        var buffer = CreateSequence(header, body);
+
+        var result = HttpRequestParser.Parse(
+            buffer,
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = static (_, _) => default,
+                MaxRequestBodySize = 100,
+            }
+        );
+
+        await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
+        await Assert.That(result.Error).IsEqualTo(HttpRequestParseError.RequestTooLarge);
+    }
+
+    [Test]
     public async Task Parse_reports_invalid_headers_when_header_line_missing_carriage_return()
     {
         var buffer = CreateSequence(

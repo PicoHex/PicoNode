@@ -15,30 +15,29 @@ internal sealed class NoOpActor : Actor
 public sealed class ActorLifecycleTests
 {
     /// <summary>
-    /// BUG: _cts is never disposed. Actor should implement IDisposable
-    /// and dispose CancellationTokenSource on Stop.
+    /// Actor should implement IAsyncDisposable for async cleanup.
     /// </summary>
     [Test]
-    public async Task Actor_implements_IDisposable()
+    public async Task Actor_implements_IAsyncDisposable()
     {
         var actor = new NoOpActor(Guid.CreateVersion7());
 
-        await Assert.That(actor).IsAssignableTo<IDisposable>();
+        await Assert.That(actor).IsAssignableTo<IAsyncDisposable>();
     }
 
+    /// <summary>
+    /// StopAsync must be idempotent — safe to call multiple times.
+    /// </summary>
     [Test]
-    public async Task Stop_disposes_CancellationTokenSource()
+    public async Task StopAsync_is_idempotent()
     {
         var actor = new NoOpActor(Guid.CreateVersion7());
         actor.Post(new Envelope { Command = new NoOpCommand() });
-
-        // Small delay to let the message process
         await Task.Delay(100);
 
-        actor.Stop();
+        await actor.StopAsync();
 
-        // After Stop + Dispose, calling Stop again should not throw ObjectDisposedException
-        // If _cts was disposed, a second Stop would throw — which proves disposal happened
-        await Assert.That(() => actor.Stop()).Throws<ObjectDisposedException>();
+        // Second call must NOT throw
+        await actor.StopAsync();
     }
 }

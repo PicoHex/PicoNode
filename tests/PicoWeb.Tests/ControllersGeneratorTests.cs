@@ -137,7 +137,7 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Controllers/UsersController.cs");
 
-        await Assert.That(result).Contains("int.Parse(ctx.RouteValues[\"id\"])");
+        await Assert.That(result).Contains("int.Parse(ctx.RouteValues[\"id\"]");
         await Assert.That(result).DoesNotContain("Convert.ChangeType");
     }
 
@@ -170,7 +170,7 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Controllers/ItemsController.cs");
 
-        await Assert.That(result).Contains("long.Parse(ctx.RouteValues[\"id\"])");
+        await Assert.That(result).Contains("long.Parse(ctx.RouteValues[\"id\"]");
     }
 
     [Test]
@@ -227,7 +227,7 @@ public sealed class ControllersGeneratorTests
 
         await Assert.That(result).Contains("{blogId}");
         await Assert.That(result).Contains("{slug}");
-        await Assert.That(result).Contains("int.Parse(ctx.RouteValues[\"blogId\"])");
+        await Assert.That(result).Contains("int.Parse(ctx.RouteValues[\"blogId\"]");
         await Assert.That(result).Contains("var __slug = ctx.RouteValues[\"slug\"]");
     }
 
@@ -354,6 +354,44 @@ public sealed class ControllersGeneratorTests
         await Assert.That(result).Contains("typeof(global::MyApp.Controllers.UsersController)");
         await Assert.That(result).Contains("new global::MyApp.Controllers.UsersController()");
         await Assert.That(result).Contains("SvcLifetime.Scoped");
+    }
+
+    [Test]
+    public async Task Async_Task_T_method_generates_async_lambda_with_await()
+    {
+        var source = """
+            namespace MyApp.Controllers;
+            public class UsersController
+            {
+                public async System.Threading.Tasks.Task<string> GetUser(int id) { return "test"; }
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/UsersController.cs");
+
+        // Must emit 'async' on the lambda so 'await' compiles (CS4001 fix).
+        await Assert.That(result).Contains("async (WebContext ctx, CancellationToken _) =>");
+        await Assert.That(result).Contains("await");
+        // Async path should not wrap in ValueTask.FromResult — return directly.
+        await Assert.That(result).DoesNotContain("ValueTask.FromResult");
+    }
+
+    [Test]
+    public async Task Guid_parameter_uses_Guid_Parse_not_Convert_ChangeType()
+    {
+        var source = """
+            namespace MyApp.Controllers;
+            public class UsersController
+            {
+                public string GetUser(System.Guid id) { return "test"; }
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/UsersController.cs");
+
+        // Debug: show generated source for route binding
+        await Assert.That(result).Contains("Guid.Parse");
+        await Assert.That(result).DoesNotContain("Convert.ChangeType");
     }
 
     private static string RunGenerator(string source, string fileName)

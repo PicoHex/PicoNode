@@ -203,16 +203,27 @@ public sealed class UdpNode : INode
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        if (_state is NodeState.Stopped or NodeState.Disposed or NodeState.Created)
+        if (_state is NodeState.Stopping or NodeState.Stopped or NodeState.Disposed or NodeState.Created)
         {
             return;
+        }
+
+        var callerToken = cancellationToken;
+        using var stopCts =
+            Options.DrainTimeout > TimeSpan.Zero
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : null;
+        if (stopCts is not null)
+        {
+            stopCts.CancelAfter(Options.DrainTimeout);
+            cancellationToken = stopCts.Token;
         }
 
         var stopCompleted = false;
 
         lock (_stateLock)
         {
-            if (_state is NodeState.Stopped or NodeState.Disposed or NodeState.Created)
+            if (_state is NodeState.Stopping or NodeState.Stopped or NodeState.Disposed or NodeState.Created)
             {
                 return;
             }
@@ -246,18 +257,23 @@ public sealed class UdpNode : INode
             await Task.WhenAll(_workers).WaitAsync(cancellationToken).ConfigureAwait(false);
             stopCompleted = true;
         }
+        catch (OperationCanceledException) when (callerToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (OperationCanceledException)
         {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
+            // DrainTimeout fired — complete gracefully without rethrowing.
         }
         finally
         {
             lock (_stateLock)
             {
                 if (_state != NodeState.Disposed && stopCompleted)
+                {
+                    _state = NodeState.Stopped;
+                }
+                else if (_state == NodeState.Stopping)
                 {
                     _state = NodeState.Stopped;
                 }

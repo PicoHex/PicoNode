@@ -5,10 +5,12 @@ namespace PicoNode.Actor.Abs;
 /// Starts a consumption loop in the constructor that reads from a Channel{Envelope}.
 /// Subclasses override OnMessageAsync for command dispatch.
 /// </summary>
-public abstract class Actor : IActor, IDisposable
+public abstract class Actor : IActor, IAsyncDisposable
 {
     private readonly Channel<Envelope> _mailbox;
     private readonly CancellationTokenSource _cts = new();
+    private readonly Task _loopTask;
+    private int _stopped;
 
     /// <inheritdoc/>
     public Guid Id { get; }
@@ -17,7 +19,7 @@ public abstract class Actor : IActor, IDisposable
     {
         Id = id;
         _mailbox = Channel.CreateUnbounded<Envelope>();
-        _ = RunAsync(_cts.Token);
+        _loopTask = RunAsync(_cts.Token);
     }
 
     /// <summary>Called by IActorSystem to deliver an envelope.</summary>
@@ -56,14 +58,17 @@ public abstract class Actor : IActor, IDisposable
     /// <summary>Override to dispatch commands via switch/pattern match.</summary>
     protected abstract ValueTask<object?> OnMessageAsync(ICommand command);
 
-    /// <summary>Stop the consumption loop and dispose resources.</summary>
-    internal void Stop()
+    /// <summary>Stop the consumption loop, wait for it to finish, and dispose resources.</summary>
+    internal async ValueTask StopAsync()
     {
+        if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
+
         _cts.Cancel();
         _mailbox.Writer.Complete();
+        await _loopTask.ConfigureAwait(false);
         _cts.Dispose();
     }
 
-    /// <summary>IDisposable — delegates to Stop.</summary>
-    void IDisposable.Dispose() => Stop();
+    /// <summary>IAsyncDisposable — delegates to StopAsync.</summary>
+    async ValueTask IAsyncDisposable.DisposeAsync() => await StopAsync();
 }

@@ -5,8 +5,19 @@ namespace PicoAgent;
 public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
 {
     private readonly PicoNode.Agent.Domain.Agent _agent;
+    private readonly HttpClient? _httpClient;
+
+    private static readonly HttpClient SharedClient = new(
+        new SocketsHttpHandler { UseProxy = false }
+    );
 
     public DynamicLLmClient(PicoNode.Agent.Domain.Agent agent) => _agent = agent;
+
+    public DynamicLLmClient(PicoNode.Agent.Domain.Agent agent, HttpClient httpClient)
+    {
+        _agent = agent;
+        _httpClient = httpClient;
+    }
 
     public async IAsyncEnumerable<PicoNode.AI.AssistantMessageEvent> StreamAsync(
         PicoNode.AI.Model model,
@@ -21,30 +32,7 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
             yield break;
         }
 
-        await foreach (var evt in CreateClientAndStream(llm, context, ct))
-            yield return evt;
-    }
-
-    private static async IAsyncEnumerable<PicoNode.AI.AssistantMessageEvent> CreateClientAndStream(
-        Llm llm, PicoNode.AI.Types.ChatContext context, [EnumeratorCancellation] CancellationToken ct)
-    {
-        string? errorMsg = null;
-        PicoNode.AI.ILLmClient? client = null;
-        try
-        {
-            var handler = new SocketsHttpHandler { UseProxy = false };
-            client = llm.ApiFormat == AiApiFormat.AnthropicMessages
-                ? new AnthropicLLmClient(new HttpClient(handler))
-                : new OpenAILlmClient(new HttpClient(handler));
-        }
-        catch (Exception ex) { errorMsg = ex.Message; }
-
-        if (errorMsg is not null || client is null)
-        {
-            yield return DoneMsg($"[Error: {errorMsg ?? "unknown"}]");
-            yield break;
-        }
-
+        var http = _httpClient ?? SharedClient;
         var realModel = new PicoNode.AI.Model
         {
             Id = llm.ModelId, Provider = llm.ProviderName, BaseUrl = llm.BaseUrl,
@@ -56,16 +44,55 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
             Reasoning = llm.ThinkingEnabled ? llm.ThinkingLevel : null,
         };
 
-        List<PicoNode.AI.AssistantMessageEvent> events;
+        PicoNode.AI.ILLmClient? client = null;
+        Exception? initError = null;
         try
         {
-            events = new List<PicoNode.AI.AssistantMessageEvent>();
-            await foreach (var evt in client.StreamAsync(realModel, context, realOptions, ct))
-                events.Add(evt);
+            client = llm.ApiFormat == AiApiFormat.AnthropicMessages
+                ? new AnthropicLLmClient(http)
+                : new OpenAILlmClient(http);
         }
-        catch (Exception ex) { events = [DoneMsg($"[LLM error: {ex.Message}]")]; }
+        catch (Exception ex)
+        {
+            initError = ex;
+        }
 
-        foreach (var evt in events) yield return evt;
+        if (initError is not null || client is null)
+        {
+            yield return DoneMsg($"[Error: {initError?.Message ?? "unknown"}]");
+            yield break;
+        }
+
+        await using var enumerator = client
+            .StreamAsync(realModel, context, realOptions, ct)
+            .GetAsyncEnumerator(ct);
+
+        while (true)
+        {
+            Exception? moveError = null;
+            bool hasNext;
+
+            try
+            {
+                hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                moveError = ex;
+                hasNext = false;
+            }
+
+            if (moveError is not null)
+            {
+                yield return DoneMsg($"[LLM error: {moveError.Message}]");
+                yield break;
+            }
+
+            if (!hasNext)
+                yield break;
+
+            yield return enumerator.Current;
+        }
     }
 
     private static PicoNode.AI.AssistantMessageEvent.Done DoneMsg(string text) => new()

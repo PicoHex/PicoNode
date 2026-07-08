@@ -550,6 +550,58 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
+    public async Task DataFrame_decrements_receive_window_and_sends_WINDOW_UPDATE()
+    {
+        var connection = new TestTcpConnectionContext();
+        var runtimeState = new ConnectionRuntimeState();
+        connection.UserState = runtimeState;
+
+        // Create stream 1 via HEADERS (no EndStream — body follows in DATA)
+        var headersFrame = BuildFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders,
+            1,
+            MinimalHpackPayload
+        );
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            headersFrame,
+            static (_, _) => default,
+            null,
+            CancellationToken.None
+        );
+
+        // Send DATA frames totalling > 65535 (initial receive window).
+        // After ~half the window is consumed, a WINDOW_UPDATE must be sent.
+        var chunkSize = 16384;
+        var chunk = new byte[chunkSize];
+        for (var i = 0; i < 5; i++)
+        {
+            var dataFrame = BuildDataFrame(1, chunk, endStream: false);
+            await Http2StreamHandler.ProcessDataFrame(
+                connection,
+                dataFrame,
+                static (_, _) => default,
+                null,
+                CancellationToken.None
+            );
+        }
+
+        // At least one WINDOW_UPDATE frame must have been sent.
+        var hasWindowUpdate = false;
+        foreach (var sent in connection.SentFrames)
+        {
+            if (TryReadFrame(sent, out var frame) && frame is not null)
+            {
+                if (frame.Type == Http2FrameType.WindowUpdate)
+                    hasWindowUpdate = true;
+            }
+        }
+
+        await Assert.That(hasWindowUpdate).IsTrue();
+    }
+
+    [Test]
     public async Task Response_body_larger_than_max_frame_size_is_chunked()
     {
         var connection = new TestTcpConnectionContext();

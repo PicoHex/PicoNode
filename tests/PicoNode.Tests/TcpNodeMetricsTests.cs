@@ -191,6 +191,40 @@ public sealed class TcpNodeMetricsTests
         return node.GetMetrics(); // last attempt, test assertion will show the actual value
     }
 
+    [Test]
+    public async Task TryTrackConnection_rejects_when_count_reaches_MaxConnections()
+    {
+        // Simulates the TLS path: TryTrackConnection is called after an async
+        // handshake, so the advisory count check in the accept loop may have
+        // been bypassed. The lock-protected count check must enforce the limit.
+        var handler = new EchoTcpHandler();
+        await using var node = CreateNode(handler, maxConnections: 1);
+        await node.StartAsync();
+
+        // Fill the single connection slot.
+        using var client1 = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+        await client1.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+        await handler.WaitConnectedAsync();
+
+        // Create a second connection (as TrackAndRunAsync would after TLS).
+        using var sock2 = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+        var conn2 = new TcpConnection(node, sock2);
+
+        var accepted = node.TryTrackConnection(conn2);
+
+        await Assert.That(accepted).IsFalse();
+
+        await conn2.DisposeAsync();
+    }
+
     private static TcpNode CreateNode(ITcpConnectionHandler handler, int maxConnections = 100) =>
         new(
             new TcpNodeOptions

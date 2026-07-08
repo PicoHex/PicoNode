@@ -614,7 +614,87 @@ internal static class Http2StreamHandler
         }
 
         stream.PendingDataFrame = null;
-        stream.ResponseSent = true;
+
+        // Resume reading from BodyStream if present (streaming response was
+        // interrupted by flow-control backpressure).
+        if (stream.ResponseBodyStream is { } bodyStream)
+        {
+            var bufferSize = 4096;
+            var resumeBuffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+            try
+            {
+                int bytesRead;
+                while (
+                    (bytesRead = await bodyStream
+                        .ReadAsync(resumeBuffer.AsMemory(0, bufferSize), ct)
+                        .ConfigureAwait(false)) > 0
+                )
+                {
+                    var resumeOffset = 0;
+                    while (resumeOffset < bytesRead)
+                    {
+                        var available = Math.Min(
+                            state.ConnectionSendWindow,
+                            stream.SendWindow
+                        );
+                        if (available <= 0)
+                        {
+                            stream.PendingDataFrame = resumeBuffer[resumeOffset..bytesRead];
+                            return;
+                        }
+
+                        var chunkSize = Math.Min(bytesRead - resumeOffset, maxFrame);
+                        var toSend = Math.Min(chunkSize, available);
+
+                        await WriteDataFrameAsync(
+                            connection,
+                            stream.StreamId,
+                            Http2FrameFlags.None,
+                            resumeBuffer.AsMemory(resumeOffset, toSend),
+                            ct
+                        ).ConfigureAwait(false);
+
+                        state.AddConnectionSendWindow(-toSend);
+                        stream.SendWindow -= toSend;
+                        resumeOffset += toSend;
+                    }
+                }
+
+                // Stream complete — send final DATA with EndStream
+                await WriteDataFrameAsync(
+                    connection,
+                    stream.StreamId,
+                    Http2FrameFlags.EndStream,
+                    ReadOnlyMemory<byte>.Empty,
+                    ct
+                ).ConfigureAwait(false);
+
+                stream.ResponseSent = true;
+                stream.ResponseBodyStream = null;
+                await bodyStream.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                await SendRstStreamAsync(
+                    connection,
+                    stream.StreamId,
+                    Http2ErrorCode.Cancel,
+                    ct
+                ).ConfigureAwait(false);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(resumeBuffer);
+            }
+        }
+        else
+        {
+            stream.ResponseSent = true;
+        }
     }
 
     public static ValueTask<bool> ProcessRstStreamFrame(
@@ -678,6 +758,36 @@ internal static class Http2StreamHandler
                 return false;
             }
             state.DataBuffer.Write(frame.Payload.Span);
+
+            // Flow control: decrement receive windows and send WINDOW_UPDATE
+            // when they drop below half the initial window size.
+            const int initialWindow = 65535;
+            const int windowThreshold = initialWindow / 2;
+
+            state.ReceiveWindow -= frame.Payload.Length;
+
+            if (runtimeState is not null)
+            {
+                runtimeState.AddConnectionReceiveWindow(-frame.Payload.Length);
+
+                if (runtimeState.ConnectionReceiveWindow <= windowThreshold)
+                {
+                    var connIncrement = initialWindow - runtimeState.ConnectionReceiveWindow;
+                    runtimeState.ConnectionReceiveWindow = initialWindow;
+                    await WriteWindowUpdateFrameAsync(
+                        connection, 0, connIncrement, ct
+                    ).ConfigureAwait(false);
+                }
+            }
+
+            if (state.ReceiveWindow <= windowThreshold)
+            {
+                var streamIncrement = initialWindow - state.ReceiveWindow;
+                state.ReceiveWindow = initialWindow;
+                await WriteWindowUpdateFrameAsync(
+                    connection, frame.StreamId, streamIncrement, ct
+                ).ConfigureAwait(false);
+            }
         }
 
         // If END_STREAM, complete the request and invoke the handler
@@ -823,9 +933,10 @@ internal static class Http2StreamHandler
                         if (available <= 0)
                         {
                             if (state is not null)
-                                state.PendingDataFrame = buffer[
-                                    offset..(offset + bytesRead - offset)
-                                ];
+                            {
+                                state.PendingDataFrame = buffer[offset..bytesRead];
+                                state.ResponseBodyStream = stream;
+                            }
                             return;
                         }
 
@@ -1020,6 +1131,42 @@ internal static class Http2StreamHandler
         try
         {
             Http2FrameCodec.WriteFrame(rented, Http2FrameType.Data, flags, streamId, payload.Span);
+            await connection.SendAsync(
+                new ReadOnlySequence<byte>(rented.AsMemory(0, totalSize)),
+                ct
+            );
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
+    private static async ValueTask WriteWindowUpdateFrameAsync(
+        ITcpConnectionContext connection,
+        int streamId,
+        int increment,
+        CancellationToken ct
+    )
+    {
+        var totalSize = Http2FrameCodec.FrameHeaderSize + 4;
+        var rented = ArrayPool<byte>.Shared.Rent(totalSize);
+        try
+        {
+            Span<byte> payload = stackalloc byte[4];
+            payload[0] = (byte)((increment >> 24) & 0x7F);
+            payload[1] = (byte)((increment >> 16) & 0xFF);
+            payload[2] = (byte)((increment >> 8) & 0xFF);
+            payload[3] = (byte)(increment & 0xFF);
+
+            var dest = rented.AsSpan(0, totalSize);
+            Http2FrameCodec.WriteFrame(
+                dest,
+                Http2FrameType.WindowUpdate,
+                Http2FrameFlags.None,
+                streamId,
+                payload
+            );
             await connection.SendAsync(
                 new ReadOnlySequence<byte>(rented.AsMemory(0, totalSize)),
                 ct

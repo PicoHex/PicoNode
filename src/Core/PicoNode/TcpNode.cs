@@ -477,11 +477,16 @@ public sealed class TcpNode : INode
         }
     }
 
-    private bool TryTrackConnection(TcpConnection connection)
+    internal bool TryTrackConnection(TcpConnection connection)
     {
         lock (_stateLock)
         {
             if (_state is NodeState.Stopping or NodeState.Stopped or NodeState.Disposed)
+            {
+                return false;
+            }
+
+            if (_connections.Count >= Options.MaxConnections)
             {
                 return false;
             }

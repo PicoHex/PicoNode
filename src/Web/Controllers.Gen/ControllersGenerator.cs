@@ -289,8 +289,39 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 var fullRoute = methodRoute.StartsWith("/")
                     ? controller.RoutePrefix + methodRoute
                     : controller.RoutePrefix + "/" + methodRoute;
+
+                // Analyze return type before emitting the lambda so we know
+                // whether to add 'async'.
+                var retType = method.Symbol.ReturnType;
+                var isVoid = retType.SpecialType == SpecialType.System_Void;
+                var isAsync = false;
+                var isAsyncVoid = false;
+                var resultTypeName = retType.ToDisplayString(
+                    SymbolDisplayFormat.FullyQualifiedFormat
+                );
+
+                if (retType is INamedTypeSymbol namedRet)
+                {
+                    var name = namedRet.Name;
+                    if (name is "Task" or "ValueTask")
+                    {
+                        isAsync = true;
+                        if (namedRet.TypeArguments.Length == 1)
+                        {
+                            resultTypeName = namedRet
+                                .TypeArguments[0]
+                                .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                        }
+                        else
+                        {
+                            isAsyncVoid = true;
+                        }
+                    }
+                }
+
+                var asyncPrefix = isAsync ? "async " : "";
                 endpointsCode.AppendLine(
-                    $"            app.{mapMethod}(\"{fullRoute}\", (WebContext ctx, CancellationToken _) =>"
+                    $"            app.{mapMethod}(\"{fullRoute}\", {asyncPrefix}(WebContext ctx, CancellationToken _) =>"
                 );
                 endpointsCode.AppendLine("            {");
 
@@ -305,27 +336,10 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
                     if (!IsComplexType(param.Type))
                     {
-                        // Simple type — bind from route values (AOT-safe: no Convert.ChangeType)
-                        if (typeName == "int" || typeName == "global::System.Int32")
-                            endpointsCode.AppendLine(
-                                $"                var __{paramName} = int.Parse(ctx.RouteValues[\"{paramName}\"]);"
-                            );
-                        else if (typeName == "string" || typeName == "global::System.String")
-                            endpointsCode.AppendLine(
-                                $"                var __{paramName} = ctx.RouteValues[\"{paramName}\"];"
-                            );
-                        else if (typeName == "long" || typeName == "global::System.Int64")
-                            endpointsCode.AppendLine(
-                                $"                var __{paramName} = long.Parse(ctx.RouteValues[\"{paramName}\"]);"
-                            );
-                        else if (typeName == "double" || typeName == "global::System.Double")
-                            endpointsCode.AppendLine(
-                                $"                var __{paramName} = double.Parse(ctx.RouteValues[\"{paramName}\"]);"
-                            );
-                        else
-                            endpointsCode.AppendLine(
-                                $"                var __{paramName} = ({typeName})System.Convert.ChangeType(ctx.RouteValues[\"{paramName}\"], typeof({typeName}));"
-                            );
+                        var parseExpr = GetRouteValueParseExpression(typeName, paramName);
+                        endpointsCode.AppendLine(
+                            $"                var __{paramName} = {parseExpr};"
+                        );
                     }
                     else
                     {
@@ -342,36 +356,19 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                     $"                var __controller = ctx.Services.GetService(typeof({controller.FullName}))!;"
                 );
 
-                // Call the original method
-                var retType = method.Symbol.ReturnType;
-                var isVoid = retType.SpecialType == SpecialType.System_Void;
-                var isAsync = false;
-                var resultTypeName = retType.ToDisplayString(
-                    SymbolDisplayFormat.FullyQualifiedFormat
-                );
-
-                if (retType is INamedTypeSymbol namedRet && namedRet.TypeArguments.Length == 1)
-                {
-                    var name = namedRet.Name;
-                    if (name is "Task" or "ValueTask")
-                    {
-                        isAsync = true;
-                        resultTypeName = namedRet
-                            .TypeArguments[0]
-                            .ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-                    }
-                }
-
                 var awaitPrefix = isAsync ? "await " : "";
 
-                if (isVoid)
+                if (isVoid || isAsyncVoid)
                 {
                     endpointsCode.AppendLine(
                         $"                {awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});"
                     );
-                    endpointsCode.AppendLine(
-                        $"                return ValueTask.FromResult(PicoWeb.Results.Empty(204));"
-                    );
+                    if (isAsync)
+                        endpointsCode.AppendLine("                return PicoWeb.Results.Empty(204);");
+                    else
+                        endpointsCode.AppendLine(
+                            "                return ValueTask.FromResult(PicoWeb.Results.Empty(204));"
+                        );
                 }
                 else
                 {
@@ -379,11 +376,16 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                         $"                var __result = ({resultTypeName}){awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});"
                     );
                     endpointsCode.AppendLine(
-                        $"                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);"
+                        "                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);"
                     );
-                    endpointsCode.AppendLine(
-                        $"                return ValueTask.FromResult(PicoWeb.Results.Json(200, __bytes));"
-                    );
+                    if (isAsync)
+                        endpointsCode.AppendLine(
+                            "                return PicoWeb.Results.Json(200, __bytes);"
+                        );
+                    else
+                        endpointsCode.AppendLine(
+                            "                return ValueTask.FromResult(PicoWeb.Results.Json(200, __bytes));"
+                        );
                 }
 
                 endpointsCode.AppendLine("            });");
@@ -454,6 +456,37 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         context.AddSource("ControllerServiceRegistrations.g.cs", diCode.ToString());
     }
 
+    private static string GetRouteValueParseExpression(string typeName, string paramName)
+    {
+        var key = $"ctx.RouteValues[\"{paramName}\"]";
+        var inv = "System.Globalization.CultureInfo.InvariantCulture";
+
+        return typeName switch
+        {
+            "int" or "global::System.Int32" => $"int.Parse({key}, {inv})",
+            "long" or "global::System.Int64" => $"long.Parse({key}, {inv})",
+            "short" or "global::System.Int16" => $"short.Parse({key}, {inv})",
+            "ushort" or "global::System.UInt16" => $"ushort.Parse({key}, {inv})",
+            "uint" or "global::System.UInt32" => $"uint.Parse({key}, {inv})",
+            "ulong" or "global::System.UInt64" => $"ulong.Parse({key}, {inv})",
+            "byte" or "global::System.Byte" => $"byte.Parse({key}, {inv})",
+            "sbyte" or "global::System.SByte" => $"sbyte.Parse({key}, {inv})",
+            "float" or "global::System.Single" => $"float.Parse({key}, {inv})",
+            "double" or "global::System.Double" => $"double.Parse({key}, {inv})",
+            "decimal" or "global::System.Decimal" => $"decimal.Parse({key}, {inv})",
+            "bool" or "global::System.Boolean" => $"bool.Parse({key})",
+            "char" or "global::System.Char" => $"char.Parse({key})",
+            "global::System.Guid" => $"global::System.Guid.Parse({key})",
+            "global::System.DateTime" => $"global::System.DateTime.Parse({key}, {inv})",
+            "global::System.DateTimeOffset" => $"global::System.DateTimeOffset.Parse({key}, {inv})",
+            "global::System.TimeSpan" => $"global::System.TimeSpan.Parse({key}, {inv})",
+            "global::System.DateOnly" => $"global::System.DateOnly.Parse({key}, {inv})",
+            "global::System.TimeOnly" => $"global::System.TimeOnly.Parse({key}, {inv})",
+            "string" or "global::System.String" => key,
+            _ => $"({typeName})System.Enum.Parse(typeof({typeName}), {key})",
+        };
+    }
+
     private static bool IsComplexType(ITypeSymbol type)
     {
         if (type.SpecialType != SpecialType.None)
@@ -461,28 +494,36 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         if (type.TypeKind == TypeKind.Enum)
             return false;
         var name = type.ToDisplayString();
+        var fqName = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         if (
             name
-            is "string"
-                or "bool"
-                or "int"
-                or "long"
-                or "double"
-                or "float"
-                or "decimal"
-                or "char"
-                or "byte"
-                or "short"
-                or "uint"
-                or "ulong"
-                or "ushort"
-                or "sbyte"
-                or "Guid"
-                or "DateTime"
-                or "DateTimeOffset"
-                or "DateOnly"
-                or "TimeOnly"
-                or "TimeSpan"
+                is "string"
+                    or "bool"
+                    or "int"
+                    or "long"
+                    or "double"
+                    or "float"
+                    or "decimal"
+                    or "char"
+                    or "byte"
+                    or "short"
+                    or "uint"
+                    or "ulong"
+                    or "ushort"
+                    or "sbyte"
+                    or "Guid"
+                    or "DateTime"
+                    or "DateTimeOffset"
+                    or "DateOnly"
+                    or "TimeOnly"
+                    or "TimeSpan"
+            || fqName
+                is "global::System.Guid"
+                    or "global::System.DateTime"
+                    or "global::System.DateTimeOffset"
+                    or "global::System.DateOnly"
+                    or "global::System.TimeOnly"
+                    or "global::System.TimeSpan"
         )
             return false;
         return true;

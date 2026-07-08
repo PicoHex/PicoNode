@@ -33,7 +33,7 @@ internal static class HttpBodyParser
 
         if (
             contentLength > int.MaxValue
-            || reader.ConsumedBytes + contentLength > options.MaxRequestBytes
+            || contentLength > options.MaxRequestBodySize
         )
         {
             return HttpRequestParseResult.Rejected(
@@ -145,7 +145,7 @@ internal static class HttpBodyParser
             totalBodyLength += chunkSize;
             if (
                 totalBodyLength > int.MaxValue
-                || reader.ConsumedBytes + totalBodyLength > options.MaxRequestBytes
+                || totalBodyLength > options.MaxRequestBodySize
             )
             {
                 return HttpRequestParseResult.Rejected(

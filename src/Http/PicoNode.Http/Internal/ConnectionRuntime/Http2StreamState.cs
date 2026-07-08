@@ -39,6 +39,10 @@ internal sealed class Http2StreamState
     // Buffered response data when send window is exhausted
     public byte[]? PendingDataFrame { get; set; }
 
+    // The response body stream being read when flow-control backpressure
+    // interrupted streaming. FlushPendingDataAsync resumes reading from this.
+    public Stream? ResponseBodyStream { get; set; }
+
     // Timeout tracking
     public DateTime LastActivityUtc { get; set; } = DateTime.UtcNow;
 

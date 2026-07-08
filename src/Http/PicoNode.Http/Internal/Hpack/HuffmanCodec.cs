@@ -368,7 +368,7 @@ internal static class HuffmanCodec
     public static bool TryDecode(ReadOnlySpan<byte> data, out string? result)
     {
         result = null;
-        var output = new System.Text.StringBuilder(data.Length * 2);
+        var output = new List<byte>(data.Length * 2);
         int node = 0;
         long accumulator = 0;
         int bitsAvailable = 0;
@@ -392,7 +392,7 @@ internal static class HuffmanCodec
                     if (symbol == 256)
                         return false;
 
-                    output.Append((char)symbol);
+                    output.Add((byte)symbol);
                     node = 0;
                 }
             }
@@ -409,7 +409,7 @@ internal static class HuffmanCodec
                 return false;
         }
 
-        result = output.ToString();
+        result = Encoding.UTF8.GetString(output.ToArray());
         return true;
     }
 }
