@@ -10,10 +10,10 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="TUnit" />
     <PackageReference Include="PicoJetson" />
-    <ProjectReference Include="..\..\src\Analyzers\Controllers.Gen\Controllers.Gen.csproj" />
-    <ProjectReference Include="..\..\src\Analyzers\PicoWeb.Gen\PicoWeb.Gen.csproj" />
-    <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
-    <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />
-    <ProjectReference Include="..\..\src\PicoNode.Http\PicoNode.Http.csproj" />
+    <ProjectReference Include="..\..\src\Web\Controllers.Gen\Controllers.Gen.csproj" />
+    <ProjectReference Include="..\..\src\Web\PicoWeb.Gen\PicoWeb.Gen.csproj" />
+    <ProjectReference Include="..\..\src\Web\PicoWeb\PicoWeb.csproj" />
+    <ProjectReference Include="..\..\src\Web\PicoNode.Web\PicoNode.Web.csproj" />
+    <ProjectReference Include="..\..\src\Http\PicoNode.Http\PicoNode.Http.csproj" />
   </ItemGroup>
 </Project>

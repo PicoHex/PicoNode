@@ -10,10 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PicoNode\PicoNode.csproj" />
-    <ProjectReference Include="..\..\src\PicoNode.Http\PicoNode.Http.csproj" />
-    <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />
-    <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
+    <ProjectReference Include="..\..\src\Core\PicoNode\PicoNode.csproj" />
+    <ProjectReference Include="..\..\src\Http\PicoNode.Http\PicoNode.Http.csproj" />
+    <ProjectReference Include="..\..\src\Web\PicoNode.Web\PicoNode.Web.csproj" />
+    <ProjectReference Include="..\..\src\Web\PicoWeb\PicoWeb.csproj" />
   </ItemGroup>
 
   <ItemGroup>

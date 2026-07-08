@@ -15,7 +15,7 @@ public sealed class CodingConventionTests
     public async Task OnReceivedAsync_doc_comment_has_correct_grammar()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Abs", "ITcpConnectionHandler.cs")
+            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "ITcpConnectionHandler.cs")
         );
         await Assert.That(content).DoesNotContain("a earlier");
     }
@@ -24,7 +24,7 @@ public sealed class CodingConventionTests
     public async Task NodeFaultCode_enum_values_have_XML_doc()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Abs", "NodeFaultCode.cs")
+            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "NodeFaultCode.cs")
         );
         await Assert
             .That(content)
@@ -69,7 +69,7 @@ public sealed class CodingConventionTests
     public async Task TcpCloseReason_enum_values_have_XML_doc()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Abs", "TcpCloseReason.cs")
+            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "TcpCloseReason.cs")
         );
         await Assert
             .That(content)
@@ -113,7 +113,7 @@ public sealed class CodingConventionTests
     public async Task NodeState_enum_values_have_XML_doc()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Abs", "NodeState.cs")
+            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "NodeState.cs")
         );
         await Assert
             .That(content)
@@ -143,7 +143,7 @@ public sealed class CodingConventionTests
     public async Task UdpOverflowMode_enum_values_have_XML_doc()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Abs", "UdpOverflowMode.cs")
+            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "UdpOverflowMode.cs")
         );
         await Assert
             .That(content)
@@ -161,7 +161,7 @@ public sealed class CodingConventionTests
     public async Task ITcpConnectionContext_all_members_have_XML_doc()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Abs", "ITcpConnectionContext.cs")
+            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "ITcpConnectionContext.cs")
         );
         await Assert
             .That(content)
@@ -226,7 +226,7 @@ public sealed class CodingConventionTests
     public async Task MultipartFormDataParser_class_documents_Body_vs_BodyStream_strategy()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Web", "MultipartFormDataParser.cs")
+            Path.Combine(SrcPath, "Web", "PicoNode.Web", "MultipartFormDataParser.cs")
         );
         // Must have a summary comment on the class that explains Body vs BodyStream
         await Assert.That(content).Contains("/// <summary>");
@@ -242,7 +242,7 @@ public sealed class CodingConventionTests
     public async Task RouteTable_class_documents_shared_role()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Http", "Internal", "RouteTable.cs")
+            Path.Combine(SrcPath, "Http", "PicoNode.Http", "Internal", "RouteTable.cs")
         );
         await Assert.That(content).Contains("/// <summary>");
         await Assert.That(content).Contains("RouteTable");
@@ -252,7 +252,7 @@ public sealed class CodingConventionTests
     public async Task HttpRouter_class_documents_exact_path_matching()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Http", "HttpRouter.cs")
+            Path.Combine(SrcPath, "Http", "PicoNode.Http", "HttpRouter.cs")
         );
         await Assert.That(content).Contains("/// <summary>");
         await Assert.That(content).Contains("Exact");
@@ -262,7 +262,7 @@ public sealed class CodingConventionTests
     public async Task RadixTree_class_documents_parameterized_routing()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Web", "Internal", "RadixTree.cs")
+            Path.Combine(SrcPath, "Web", "PicoNode.Web", "Internal", "RadixTree.cs")
         );
         await Assert.That(content).Contains("/// <summary>");
         await Assert.That(content).Contains("parameterized");
@@ -272,7 +272,7 @@ public sealed class CodingConventionTests
     public async Task WebRouter_class_documents_exact_and_parameterized()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Web", "WebRouter.cs")
+            Path.Combine(SrcPath, "Web", "PicoNode.Web", "WebRouter.cs")
         );
         await Assert.That(content).Contains("/// <summary>");
         await Assert.That(content).Contains("RouteTable");
@@ -283,7 +283,7 @@ public sealed class CodingConventionTests
     public async Task WebResults_class_has_XML_doc_explaining_relationship_to_Results()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoNode.Web", "WebResults.cs")
+            Path.Combine(SrcPath, "Web", "PicoNode.Web", "WebResults.cs")
         );
         await Assert.That(content).Contains("/// <summary>");
     }
@@ -292,7 +292,7 @@ public sealed class CodingConventionTests
     public async Task Analyzer_pack_paths_use_Configuration_variable_not_hardcoded_Release()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "PicoWeb", "PicoWeb.csproj")
+            Path.Combine(SrcPath, "Web", "PicoWeb", "PicoWeb.csproj")
         );
         // Hardcoded 'Release' in analyzer path would break Debug builds
         await Assert.That(content).DoesNotContain("bin\\Release\\netstandard2.0");

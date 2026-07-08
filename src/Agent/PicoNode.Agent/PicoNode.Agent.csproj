@@ -7,20 +7,27 @@
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
     <IsPackable>true</IsPackable>
-    <PackageId>PicoNode.AI</PackageId>
-    <Description>PicoNode.AI — shared LLM communication layer for PicoHex ecosystem</Description>
-    <PackageTags>PicoHex;PicoNode;AI;LLM;AOT</PackageTags>
+    <PackageId>PicoNode.Agent</PackageId>
+    <Description>PicoAgent — AOT-first AI agent framework for PicoHex ecosystem</Description>
+    <PackageTags>PicoHex;PicoAgent;AI;Agent;AOT</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\PicoNode.Http\PicoNode.Http.csproj" />
-    <PackageReference Include="PicoJetson" />
-    <PackageReference Include="PicoDI" />
-    <PackageReference Include="PicoLog" />
+    <InternalsVisibleTo Include="PicoNode.Agent.Tests" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\README.md" Pack="true" PackagePath="" Visible="false" />
+    <ProjectReference Include="..\PicoNode.AI\PicoNode.AI.csproj" />
+    <PackageReference Include="PicoCfg" />
+    <PackageReference Include="PicoCfg.Json" />
+    <PackageReference Include="PicoJetson" />
+    <PackageReference Include="PicoDI" />
+    <PackageReference Include="PicoLog" />
+    <PackageReference Include="PicoLog.Abs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\..\README.md" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
 </Project>

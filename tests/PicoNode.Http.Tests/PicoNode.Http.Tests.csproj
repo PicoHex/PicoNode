@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="TUnit" />
-    <ProjectReference Include="..\..\src\PicoNode.Abs\PicoNode.Abs.csproj" />
-    <ProjectReference Include="..\..\src\PicoNode.Http\PicoNode.Http.csproj" />
+    <ProjectReference Include="..\..\src\Core\PicoNode.Abs\PicoNode.Abs.csproj" />
+    <ProjectReference Include="..\..\src\Http\PicoNode.Http\PicoNode.Http.csproj" />
   </ItemGroup>
 </Project>

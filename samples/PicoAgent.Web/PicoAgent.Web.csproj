@@ -10,9 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PicoAgent\PicoAgent.csproj" />
-    <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />
-    <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
+    <ProjectReference Include="..\..\src\Agent\PicoAgent\PicoAgent.csproj" />
+    <ProjectReference Include="..\..\src\Web\PicoNode.Web\PicoNode.Web.csproj" />
+    <ProjectReference Include="..\..\src\Web\PicoWeb\PicoWeb.csproj" />
     <PackageReference Include="PicoJetson" />
     <PackageReference Include="PicoCfg" />
     <PackageReference Include="PicoCfg.Json" />

@@ -10,12 +10,12 @@
   <ItemGroup>
     <PackageReference Include="PicoCfg" />
     <PackageReference Include="TUnit" />
-    <ProjectReference Include="..\..\src\PicoNode.Abs\PicoNode.Abs.csproj" />
-    <ProjectReference Include="..\..\src\PicoNode\PicoNode.csproj" />
-    <ProjectReference Include="..\..\src\PicoNode.Web\PicoNode.Web.csproj" />
-    <ProjectReference Include="..\..\src\PicoWeb\PicoWeb.csproj" />
-    <ProjectReference Include="..\..\src\PicoNode.Agent\PicoNode.Agent.csproj" />
-    <ProjectReference Include="..\..\src\PicoNode.AI\PicoNode.AI.csproj" />
-    <ProjectReference Include="..\..\src\PicoAgent\PicoAgent.csproj" />
+    <ProjectReference Include="..\..\src\Core\PicoNode.Abs\PicoNode.Abs.csproj" />
+    <ProjectReference Include="..\..\src\Core\PicoNode\PicoNode.csproj" />
+    <ProjectReference Include="..\..\src\Web\PicoNode.Web\PicoNode.Web.csproj" />
+    <ProjectReference Include="..\..\src\Web\PicoWeb\PicoWeb.csproj" />
+    <ProjectReference Include="..\..\src\Agent\PicoNode.Agent\PicoNode.Agent.csproj" />
+    <ProjectReference Include="..\..\src\Agent\PicoNode.AI\PicoNode.AI.csproj" />
+    <ProjectReference Include="..\..\src\Agent\PicoAgent\PicoAgent.csproj" />
   </ItemGroup>
 </Project>

@@ -39,14 +39,14 @@ jobs:
 
       - name: Pack PicoNode.Abs
         run: >
-          dotnet pack src/PicoNode.Abs/PicoNode.Abs.csproj
+          dotnet pack src/Core/PicoNode.Abs/PicoNode.Abs.csproj
           -c Release -p:Version=${{ env.PACKAGE_VERSION }}
           -p:UseProjectReferences=false
           -o packages
 
       - name: Pack PicoNode
         run: >
-          dotnet pack src/PicoNode/PicoNode.csproj
+          dotnet pack src/Core/PicoNode/PicoNode.csproj
           -c Release -p:Version=${{ env.PACKAGE_VERSION }}
           -p:UseProjectReferences=false
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
@@ -54,7 +54,7 @@ jobs:
 
       - name: Pack PicoNode.Http
         run: >
-          dotnet pack src/PicoNode.Http/PicoNode.Http.csproj
+          dotnet pack src/Http/PicoNode.Http/PicoNode.Http.csproj
           -c Release -p:Version=${{ env.PACKAGE_VERSION }}
           -p:UseProjectReferences=false
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
@@ -62,7 +62,7 @@ jobs:
 
       - name: Pack PicoNode.Web
         run: >
-          dotnet pack src/PicoNode.Web/PicoNode.Web.csproj
+          dotnet pack src/Web/PicoNode.Web/PicoNode.Web.csproj
           -c Release -p:Version=${{ env.PACKAGE_VERSION }}
           -p:UseProjectReferences=false
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
@@ -70,7 +70,7 @@ jobs:
 
       - name: Pack PicoWeb
         run: >
-          dotnet pack src/PicoWeb/PicoWeb.csproj
+          dotnet pack src/Web/PicoWeb/PicoWeb.csproj
           -c Release -p:Version=${{ env.PACKAGE_VERSION }}
           -p:UseProjectReferences=false
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages

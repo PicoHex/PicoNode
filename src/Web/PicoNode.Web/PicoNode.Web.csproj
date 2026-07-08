@@ -25,9 +25,9 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <ProjectReference Include="..\PicoNode.Abs\PicoNode.Abs.csproj" />
+    <ProjectReference Include="..\..\Core\PicoNode.Abs\PicoNode.Abs.csproj" />
     <ProjectReference Include="..\PicoNode.Web.Session.Abs\PicoNode.Web.Session.Abs.csproj" />
-    <ProjectReference Include="..\PicoNode.Http\PicoNode.Http.csproj" />
+    <ProjectReference Include="..\..\Http\PicoNode.Http\PicoNode.Http.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
@@ -37,6 +37,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\README.md" Pack="true" PackagePath="" Visible="false" />
+    <None Include="..\..\..\README.md" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
 </Project>

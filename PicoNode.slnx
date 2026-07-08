@@ -11,18 +11,18 @@
   </Folder>
   <Folder Name="/src/">
     <File Path="src\README.md" />
-    <Project Path="src/PicoNode.Abs/PicoNode.Abs.csproj" />
-    <Project Path="src/PicoNode.Web.Session.Abs/PicoNode.Web.Session.Abs.csproj" />
-    <Project Path="src/PicoNode.Http/PicoNode.Http.csproj" />
-    <Project Path="src/PicoNode.Web/PicoNode.Web.csproj" />
-    <Project Path="src/PicoNode/PicoNode.csproj" />
-    <Project Path="src/PicoWeb/PicoWeb.csproj" />
-    <Project Path="src/Analyzers/Controllers.Gen/Controllers.Gen.csproj" />
-    <Project Path="src/Analyzers/PicoWeb.Gen/PicoWeb.Gen.csproj" />
-    <Project Path="src/PicoNode.AI/PicoNode.AI.csproj" />
-    <Project Path="src/PicoNode.Agent.Core/PicoNode.Agent.Core.csproj" />
-    <Project Path="src/PicoNode.Agent/PicoNode.Agent.csproj" />
-    <Project Path="src/PicoAgent/PicoAgent.csproj" />
+    <Project Path="src/Core/PicoNode.Abs/PicoNode.Abs.csproj" />
+    <Project Path="src/Core/PicoNode/PicoNode.csproj" />
+    <Project Path="src/Http/PicoNode.Http/PicoNode.Http.csproj" />
+    <Project Path="src/Web/PicoNode.Web.Session.Abs/PicoNode.Web.Session.Abs.csproj" />
+    <Project Path="src/Web/PicoNode.Web/PicoNode.Web.csproj" />
+    <Project Path="src/Web/PicoWeb/PicoWeb.csproj" />
+    <Project Path="src/Web/Controllers.Gen/Controllers.Gen.csproj" />
+    <Project Path="src/Web/PicoWeb.Gen/PicoWeb.Gen.csproj" />
+    <Project Path="src/Agent/PicoNode.AI/PicoNode.AI.csproj" />
+    <Project Path="src/Agent/PicoNode.Agent.Core/PicoNode.Agent.Core.csproj" />
+    <Project Path="src/Agent/PicoNode.Agent/PicoNode.Agent.csproj" />
+    <Project Path="src/Agent/PicoAgent/PicoAgent.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <File Path="tests\README.md" />

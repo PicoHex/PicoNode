@@ -8,13 +8,13 @@
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageId>PicoNode</PackageId>
-    <Description>TCP/UDP transport layer for PicoNode. Provides TcpNode and UdpNode with pipe-based I/O, backpressure, TLS/ALPN support, connection lifecycle management, and config hot-reload.</Description>
-    <PackageTags>PicoHex;PicoNode;AOT;TCP;UDP;Networking;Transport</PackageTags>
+    <PackageId>PicoNode.Http</PackageId>
+    <Description>HTTP protocol layer for PicoNode. Implements HTTP/1.1, HTTP/2 (including h2c upgrade), WebSocket (RFC 6455), and HPACK (RFC 7541) with Huffman encoding. Includes request/response serialization and routing.</Description>
+    <PackageTags>PicoHex;PicoNode;AOT;HTTP;HTTP2;WebSocket;HPACK;Networking</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="PicoNode.Tests" />
+    <InternalsVisibleTo Include="PicoNode.Http.Tests" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,7 +23,7 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <ProjectReference Include="..\PicoNode.Abs\PicoNode.Abs.csproj" />
+    <ProjectReference Include="..\..\Core\PicoNode.Abs\PicoNode.Abs.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
@@ -31,6 +31,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\README.md" Pack="true" PackagePath="" Visible="false" />
+    <None Include="..\..\..\README.md" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
 </Project>

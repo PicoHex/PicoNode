@@ -24,49 +24,49 @@ public sealed class PackageReferenceTests
     [Test]
     public async Task PicoNode_csproj_has_PicoLog_Abs()
     {
-        var refs = GetPicoHexPackageRefs("src/PicoNode/PicoNode.csproj");
+        var refs = GetPicoHexPackageRefs("src/Core/PicoNode/PicoNode.csproj");
         await Assert.That(refs).Contains("PicoLog.Abs");
     }
 
     [Test]
     public async Task PicoNode_Http_csproj_has_PicoLog_Abs()
     {
-        var refs = GetPicoHexPackageRefs("src/PicoNode.Http/PicoNode.Http.csproj");
+        var refs = GetPicoHexPackageRefs("src/Http/PicoNode.Http/PicoNode.Http.csproj");
         await Assert.That(refs).Contains("PicoLog.Abs");
     }
 
     [Test]
     public async Task PicoNode_Web_csproj_has_PicoDI_Abs()
     {
-        var refs = GetPicoHexPackageRefs("src/PicoNode.Web/PicoNode.Web.csproj");
+        var refs = GetPicoHexPackageRefs("src/Web/PicoNode.Web/PicoNode.Web.csproj");
         await Assert.That(refs).Contains("PicoDI.Abs");
     }
 
     [Test]
     public async Task PicoNode_Web_csproj_has_PicoLog_Abs()
     {
-        var refs = GetPicoHexPackageRefs("src/PicoNode.Web/PicoNode.Web.csproj");
+        var refs = GetPicoHexPackageRefs("src/Web/PicoNode.Web/PicoNode.Web.csproj");
         await Assert.That(refs).Contains("PicoLog.Abs");
     }
 
     [Test]
     public async Task PicoNode_Web_csproj_has_PicoCfg_Abs()
     {
-        var refs = GetPicoHexPackageRefs("src/PicoNode.Web/PicoNode.Web.csproj");
+        var refs = GetPicoHexPackageRefs("src/Web/PicoNode.Web/PicoNode.Web.csproj");
         await Assert.That(refs).Contains("PicoCfg.Abs");
     }
 
     [Test]
     public async Task PicoWeb_csproj_has_PicoCfg_Abs()
     {
-        var refs = GetPicoHexPackageRefs("src/PicoWeb/PicoWeb.csproj");
+        var refs = GetPicoHexPackageRefs("src/Web/PicoWeb/PicoWeb.csproj");
         await Assert.That(refs).Contains("PicoCfg.Abs");
     }
 
     [Test]
     public async Task PicoNode_Abs_csproj_has_zero_PicoHex_refs()
     {
-        var refs = GetPicoHexPackageRefs("src/PicoNode.Abs/PicoNode.Abs.csproj");
+        var refs = GetPicoHexPackageRefs("src/Core/PicoNode.Abs/PicoNode.Abs.csproj");
         await Assert.That(refs.Length).IsEqualTo(0);
     }
 }

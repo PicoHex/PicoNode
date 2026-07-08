@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <ProjectReference Include="..\PicoNode\PicoNode.csproj" />
+    <ProjectReference Include="..\..\Core\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\PicoNode.Web\PicoNode.Web.csproj" />
   </ItemGroup>
 
@@ -36,11 +36,11 @@
   <!-- Ensure analyzers are built before packing (not needed as Analyzer items for PicoWeb itself) -->
   <ItemGroup>
     <ProjectReference
-      Include="..\Analyzers\Controllers.Gen\Controllers.Gen.csproj"
+      Include="..\Controllers.Gen\Controllers.Gen.csproj"
       ReferenceOutputAssembly="false"
     />
     <ProjectReference
-      Include="..\Analyzers\PicoWeb.Gen\PicoWeb.Gen.csproj"
+      Include="..\PicoWeb.Gen\PicoWeb.Gen.csproj"
       ReferenceOutputAssembly="false"
     />
   </ItemGroup>
@@ -48,13 +48,13 @@
   <!-- Pack analyzers into NuGet package for transitive consumption -->
   <ItemGroup>
     <None
-      Include="..\Analyzers\Controllers.Gen\bin\$(Configuration)\netstandard2.0\Controllers.Gen.dll"
+      Include="..\Controllers.Gen\bin\$(Configuration)\netstandard2.0\Controllers.Gen.dll"
       Pack="true"
       PackagePath="analyzers\dotnet\cs\"
       Visible="false"
     />
     <None
-      Include="..\Analyzers\PicoWeb.Gen\bin\$(Configuration)\netstandard2.0\PicoWeb.Gen.dll"
+      Include="..\PicoWeb.Gen\bin\$(Configuration)\netstandard2.0\PicoWeb.Gen.dll"
       Pack="true"
       PackagePath="analyzers\dotnet\cs\"
       Visible="false"
@@ -72,6 +72,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\README.md" Pack="true" PackagePath="" Visible="false" />
+    <None Include="..\..\..\README.md" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
 </Project>

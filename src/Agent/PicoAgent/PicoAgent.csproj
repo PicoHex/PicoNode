@@ -21,13 +21,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PicoNode.Agent.Core\PicoNode.Agent.Core.csproj" />
-    <ProjectReference Include="..\PicoNode.Web\PicoNode.Web.csproj" />
-    <ProjectReference Include="..\PicoWeb\PicoWeb.csproj" />
+    <ProjectReference Include="..\..\Web\PicoNode.Web\PicoNode.Web.csproj" />
+    <ProjectReference Include="..\..\Web\PicoWeb\PicoWeb.csproj" />
     <PackageReference Include="PicoJetson" />
     <PackageReference Include="PicoDI" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\README.md" Pack="true" PackagePath="" Visible="false" />
+    <None Include="..\..\..\README.md" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
 </Project>
