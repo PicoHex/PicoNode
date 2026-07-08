@@ -602,6 +602,110 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
+    public async Task Streaming_response_resumes_after_flow_control_backpressure()
+    {
+        var connection = new TestTcpConnectionContext();
+        var runtimeState = new ConnectionRuntimeState
+        {
+            RemoteInitialWindowSize = 100,
+            ConnectionSendWindow = 100,
+        };
+        connection.UserState = runtimeState;
+
+        // BodyStream larger than both windows — triggers backpressure.
+        var bodyData = new byte[500];
+        Array.Fill<byte>(bodyData, 0x41);
+
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    BodyStream = new MemoryStream(bodyData, writable: false),
+                }
+            );
+
+        var headersFrame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
+
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        // After initial send, some DATA should be sent but no EndStream yet
+        // (streaming paused by flow control).
+        var hasEndStreamBefore = false;
+        foreach (var sent in connection.SentFrames)
+        {
+            if (TryReadFrame(sent, out var f) && f is not null
+                && f.Type == Http2FrameType.Data
+                && f.HasFlag(Http2FrameFlags.EndStream))
+            {
+                hasEndStreamBefore = true;
+            }
+        }
+        await Assert.That(hasEndStreamBefore).IsFalse();
+
+        // Credit both windows via WINDOW_UPDATE.
+        var connWu = BuildFrame(
+            Http2FrameType.WindowUpdate,
+            Http2FrameFlags.None,
+            0,
+            BuildWindowUpdatePayload(500)
+        );
+        await Http2StreamHandler.ProcessWindowUpdateFrame(
+            connection,
+            connWu,
+            CancellationToken.None
+        );
+
+        var streamWu = BuildFrame(
+            Http2FrameType.WindowUpdate,
+            Http2FrameFlags.None,
+            1,
+            BuildWindowUpdatePayload(500)
+        );
+        await Http2StreamHandler.ProcessWindowUpdateFrame(
+            connection,
+            streamWu,
+            CancellationToken.None
+        );
+
+        // Now all data should be sent including EndStream.
+        var hasEndStreamAfter = false;
+        var totalDataSent = 0;
+        foreach (var sent in connection.SentFrames)
+        {
+            if (TryReadFrame(sent, out var f) && f is not null
+                && f.Type == Http2FrameType.Data)
+            {
+                totalDataSent += f.Length;
+                if (f.HasFlag(Http2FrameFlags.EndStream))
+                    hasEndStreamAfter = true;
+            }
+        }
+        await Assert.That(hasEndStreamAfter).IsTrue();
+        await Assert.That(totalDataSent).IsEqualTo(500);
+    }
+
+    private static byte[] BuildWindowUpdatePayload(int increment)
+    {
+        return
+        [
+            (byte)((increment >> 24) & 0x7F),
+            (byte)((increment >> 16) & 0xFF),
+            (byte)((increment >> 8) & 0xFF),
+            (byte)(increment & 0xFF),
+        ];
+    }
+
+    [Test]
     public async Task Response_body_larger_than_max_frame_size_is_chunked()
     {
         var connection = new TestTcpConnectionContext();

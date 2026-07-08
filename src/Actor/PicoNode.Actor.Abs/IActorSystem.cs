@@ -6,11 +6,24 @@ namespace PicoNode.Actor.Abs;
 /// </summary>
 public interface IActorSystem
 {
-    /// <summary>Create an actor and start its mailbox. ID is framework-generated (UUID v7).</summary>
-    ValueTask<T> CreateAsync<T>(ActorOptions? options = null) where T : IActor;
+    /// <summary>
+    /// Register a factory for creating a new actor from a creation command.
+    /// The factory receives the framework-generated UUID v7 and the caller's command.
+    /// </summary>
+    void Register<T>(Func<Guid, ICommand, T> factory) where T : IActor;
 
-    /// <summary>Get an actor proxy by UUID v7. Returns null if not found.</summary>
-    T? Get<T>(Guid id) where T : IActor;
+    /// <summary>
+    /// Create a new actor using the registered factory.
+    /// ID is framework-generated (UUID v7). The command carries construction data.
+    /// </summary>
+    ValueTask<T> CreateAsync<T>(ICommand command) where T : IActor;
+
+    /// <summary>
+    /// Get an actor by UUID v7. Returns from memory if active;
+    /// otherwise rebuilds from persisted events. Returns null if not found.
+    /// Rebuild path calls new T(id) + ReplayEvents — bypasses the creation factory.
+    /// </summary>
+    ValueTask<T?> GetAsync<T>(Guid id) where T : IActor;
 
     /// <summary>Send a fire-and-forget command to an actor.</summary>
     void Send(Guid id, ICommand command);
