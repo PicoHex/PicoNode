@@ -5,6 +5,6 @@ namespace PicoNode.Actor.Abs;
 /// </summary>
 public interface IActor
 {
-    /// <summary>Framework-generated UUID v7 identity. Guid.CreateVersion7() by ActorSystem.</summary>
+    /// <summary>Framework-generated UUID v7 identity. Assigned by IActorSystem after construction.</summary>
     Guid Id { get; }
 }

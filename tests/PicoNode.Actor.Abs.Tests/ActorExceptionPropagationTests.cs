@@ -7,10 +7,8 @@ internal sealed record TestCommand : ICommand;
 /// <summary>Actor that always throws — for testing exception propagation.</summary>
 internal sealed class ThrowingActor : Actor
 {
-    public ThrowingActor(Guid id) : base(id) { }
-
-    protected override ValueTask<object?> OnMessageAsync(ICommand command)
-        => throw new InvalidOperationException("boom");
+    protected override ValueTask<object?> OnMessageAsync(ICommand command) =>
+        throw new InvalidOperationException("boom");
 }
 
 public sealed class ActorExceptionPropagationTests
@@ -23,7 +21,11 @@ public sealed class ActorExceptionPropagationTests
     [Timeout(5000)]
     public async Task Post_when_OnMessageAsync_throws_sets_Tcs_to_faulted()
     {
-        var actor = new ThrowingActor(Guid.CreateVersion7());
+        var actor = new ThrowingActor();
+        // Simulate what ActorSystem does: assign Id, then release the gate
+        actor.Id = Guid.CreateVersion7();
+        actor.SignalReady();
+
         var tcs = new TaskCompletionSource<object?>();
 
         actor.Post(new Envelope { Command = new TestCommand(), Tcs = tcs });

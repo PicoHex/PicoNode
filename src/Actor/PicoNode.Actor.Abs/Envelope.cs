@@ -1,10 +1,10 @@
 namespace PicoNode.Actor.Abs;
 
 /// <summary>
-/// Internal envelope that wraps a command with an optional TaskCompletionSource for Ask semantics.
-/// Users never touch this type.
+/// Envelope that wraps a command with an optional TaskCompletionSource for Ask semantics.
+/// Not intended for user code — used by the framework and persistence layer.
 /// </summary>
-internal sealed class Envelope
+public sealed class Envelope
 {
     public ICommand Command { get; init; } = null!;
     public TaskCompletionSource<object?>? Tcs { get; init; }

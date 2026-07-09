@@ -2,7 +2,11 @@ namespace PicoNode.Actor.Abs;
 
 /// <summary>
 /// Base class for Event-Sourced actors.
-/// Inherits Actor; adds ApplyEvent, event management, and version tracking.
+/// Inherits Actor; adds RaiseEvent, event management, and version tracking.
+///
+/// RaiseEvent records the event AND immediately mutates state — the actor is the
+/// single authority over its own version and in-memory state. Persistence is
+/// a separate concern handled by the runtime layer after the fact.
 /// </summary>
 public abstract class EventSourcedActor : Actor, IEventSourcedActor
 {
@@ -11,24 +15,36 @@ public abstract class EventSourcedActor : Actor, IEventSourcedActor
     /// <inheritdoc/>
     public ulong Version { get; protected set; }
 
-    protected EventSourcedActor(Guid id) : base(id) { }
+    /// <summary>Creation path. Chains to Actor(ICommand).</summary>
+    protected EventSourcedActor(ICommand creationCommand)
+        : base(creationCommand) { }
+
+    /// <summary>Rebuild path. Chains to Actor().</summary>
+    protected EventSourcedActor() { }
 
     /// <summary>
-    /// Apply a domain event. Registers the event and immediately mutates state.
+    /// Record a domain event, mutate in-memory state, and increment Version.
     /// Called by subclasses within OnMessageAsync.
+    /// The actor manages its own version — each RaiseEvent is one version increment.
     /// </summary>
-    protected void ApplyEvent<T>(T @event) where T : notnull, IDomainEvent
+    protected void RaiseEvent<T>(T @event)
+        where T : notnull, IDomainEvent
     {
         _events.Add(@event);
         Mutate(@event);
         Version++;
     }
 
-    /// <summary>Override to mutate state based on a domain event.</summary>
+    /// <summary>
+    /// Mutate in-memory state from a domain event.
+    /// Called by RaiseEvent (normal flow) and ReplayEvents (recovery flow).
+    /// </summary>
     protected abstract void Mutate(IDomainEvent @event);
 
     IReadOnlyList<IDomainEvent> IEventSourcedActor.GetUncommittedEvents() => _events.AsReadOnly();
+
     void IEventSourcedActor.CommitEvents() => _events.Clear();
+
     void IEventSourcedActor.ReplayEvents(IReadOnlyList<IDomainEvent> events)
     {
         foreach (var e in events)
