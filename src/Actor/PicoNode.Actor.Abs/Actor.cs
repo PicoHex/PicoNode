@@ -40,12 +40,26 @@ public abstract class Actor : IActor, IAsyncDisposable
         // Process creation command synchronously for atomic initialization.
         // Subclasses must complete OnMessageAsync synchronously for creation commands —
         // use RaiseEvent (EventSourcedActor) or return a value inline.
-        var task = OnMessageAsync(creationCommand);
-        if (!task.IsCompleted)
-            throw new InvalidOperationException(
-                "OnMessageAsync must complete synchronously for creation commands. "
-                    + "Use RaiseEvent or return a value directly; do not await."
-            );
+        //
+        // If the creation command throws, clean up the consumption loop started by this()
+        // to prevent a zombie actor waiting forever on the gate.
+        try
+        {
+            var task = OnMessageAsync(creationCommand);
+            if (!task.IsCompleted)
+                throw new InvalidOperationException(
+                    "OnMessageAsync must complete synchronously for creation commands. "
+                        + "Use RaiseEvent or return a value directly; do not await."
+                );
+        }
+        catch
+        {
+            // Release gate so RunAsync can exit, then clean up
+            _ready.TrySetResult(true);
+            _cts.Cancel();
+            _mailbox.Writer.Complete();
+            throw;
+        }
     }
 
     /// <summary>
@@ -126,6 +140,10 @@ public abstract class Actor : IActor, IAsyncDisposable
     {
         if (Interlocked.Exchange(ref _stopped, 1) != 0)
             return;
+
+        // Release the gate in case it was never signaled (e.g., discarded after failed creation
+        // or duplicate GetAsync rebuild). This allows RunAsync to reach the cancellation.
+        _ready.TrySetResult(true);
 
         _cts.Cancel();
         _mailbox.Writer.Complete();
