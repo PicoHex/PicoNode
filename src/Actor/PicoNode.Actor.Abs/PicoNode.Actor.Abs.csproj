@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="PicoNode.Actor.Abs.Tests" />
+    <InternalsVisibleTo Include="PicoNode.Actor" />
   </ItemGroup>
 
   <ItemGroup>

@@ -18,6 +18,8 @@
     <!-- PicoNode internal (conditional package refs for NuGet publish) -->
     <PackageVersion Include="PicoNode" Version="$(Version)" />
     <PackageVersion Include="PicoNode.Abs" Version="$(Version)" />
+    <PackageVersion Include="PicoNode.Actor" Version="$(Version)" />
+    <PackageVersion Include="PicoNode.Actor.Abs" Version="$(Version)" />
     <PackageVersion Include="PicoNode.Http" Version="$(Version)" />
     <PackageVersion Include="PicoNode.Web.Session.Abs" Version="$(Version)" />
     <PackageVersion Include="PicoNode.Web" Version="$(Version)" />
