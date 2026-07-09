@@ -44,7 +44,6 @@ var app = PicoWeb.Samples.Abs.ShowcaseApp.Create(
     webSocketHandler: wsEcho,
     logger: logger
 );
-EndpointRegistrar.RegisterAll(app);
 
 // Use --http to force plain HTTP, --fresh-cert to create a new runtime cert
 var useHttp = args.Contains("--http");
