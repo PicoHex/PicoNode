@@ -24,7 +24,7 @@ public sealed class PackageReferenceTests
     [Test]
     public async Task PicoNode_csproj_has_PicoLog_Abs()
     {
-        var refs = GetPicoHexPackageRefs("src/Core/PicoNode/PicoNode.csproj");
+        var refs = GetPicoHexPackageRefs("src/Network/PicoNode/PicoNode.csproj");
         await Assert.That(refs).Contains("PicoLog.Abs");
     }
 
@@ -66,7 +66,7 @@ public sealed class PackageReferenceTests
     [Test]
     public async Task PicoNode_Abs_csproj_has_zero_PicoHex_refs()
     {
-        var refs = GetPicoHexPackageRefs("src/Core/PicoNode.Abs/PicoNode.Abs.csproj");
+        var refs = GetPicoHexPackageRefs("src/Network/PicoNode.Abs/PicoNode.Abs.csproj");
         await Assert.That(refs.Length).IsEqualTo(0);
     }
 }

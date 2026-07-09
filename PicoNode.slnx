@@ -11,8 +11,8 @@
   </Folder>
   <Folder Name="/src/">
     <File Path="src\README.md" />
-    <Project Path="src/Core/PicoNode.Abs/PicoNode.Abs.csproj" />
-    <Project Path="src/Core/PicoNode/PicoNode.csproj" />
+    <Project Path="src/Network/PicoNode.Abs/PicoNode.Abs.csproj" />
+    <Project Path="src/Network/PicoNode/PicoNode.csproj" />
     <Project Path="src/Http/PicoNode.Http/PicoNode.Http.csproj" />
     <Project Path="src/Web/PicoNode.Web.Session.Abs/PicoNode.Web.Session.Abs.csproj" />
     <Project Path="src/Web/PicoNode.Web/PicoNode.Web.csproj" />
