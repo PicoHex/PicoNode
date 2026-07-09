@@ -78,6 +78,10 @@ public abstract class Actor : IActor, IAsyncDisposable
         // Messages posted during this wait safely queue in the Channel.
         await _ready.Task.ConfigureAwait(false);
 
+        // Hook: flush any events produced during construction (EventSourcedActor).
+        // Base implementation is a no-op.
+        await OnReadyAsync().ConfigureAwait(false);
+
         try
         {
             await foreach (var envelope in _mailbox.Reader.ReadAllAsync(ct).ConfigureAwait(false))
@@ -110,6 +114,12 @@ public abstract class Actor : IActor, IAsyncDisposable
 
     /// <summary>Override to dispatch commands via switch/pattern match.</summary>
     protected abstract ValueTask<object?> OnMessageAsync(ICommand command);
+
+    /// <summary>
+    /// Lifecycle hook called after SignalReady() and before the first mailbox message.
+    /// EventSourcedActor overrides this to flush uncommitted construction events.
+    /// </summary>
+    protected virtual ValueTask OnReadyAsync() => default;
 
     /// <summary>Stop the consumption loop, wait for it to finish, and dispose resources.</summary>
     internal async ValueTask StopAsync()
