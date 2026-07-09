@@ -16,13 +16,17 @@ PicoNode 需要一个基于 PicoHex 生态的 in-memory Actor 框架。当前 re
 | **Actor 持有自己的 Mailbox** | `Channel<Envelope>`，构造时启动消费循环（被闸门阻塞直到就绪） |
 | **send/ask 消息模型** | `IActorSystem.Send(id, cmd)` / `AskAsync<T>(id, cmd)` |
 | **纯领域对象，无 DI 依赖** | Actor 只接收 `ICommand` 产生 `IDomainEvent`，构造只需 `new T()` |
+| **Persist-then-Mutate** | 持久化成功后才会变更内存状态——参照 Akka Persistence |
 | **AOT First** | 零反射、零 dynamic |
-| **极简 Abs** | 无 SG 代理、无 Orleans 风格接口 |
-| **遵循 PicoHex 惯例** | PicoDI、PicoLog、PicoCfg 在运行时层集成 |
+| **极简 Abs** | 无 SG 代理、无 Orleans 风格接口，IEventStore 也在 Abs 中定义 |
+
+### 为什么 IEventStore 在 Abs 层
+
+`EventSourcedActor.ProcessAsync` 需要调用 `IEventStore.AppendAsync`——持久化是 Actor 生命周期的内在组成部分，不是外部关注点。把 IEventStore 定义在 Abs 等同于 `System.Threading.Channels` 在 Abs 中——Abstract（契约）归 Abs，Implementation（具体存储）归运行时。
 
 ### 为什么 Actor 不依赖 DI
 
-Actor 是纯领域对象。业务标识（orderId 等）是命令的属性，不属于框架。框架只关心技术标识（UUID v7）。无 DI 意味着两条路径（工厂创建 vs 事件重建）最终都收敛到同一组构造函数——消除了"重建时如何注入依赖"的复杂性。
+Actor 是纯领域对象。业务标识（orderId 等）是命令的属性，不属于框架。框架只关心技术标识（UUID v7）。无 DI 意味着两条路径（工厂创建 vs 事件重建）最终都收敛到同一组构造函数。
 
 ---
 
@@ -50,57 +54,51 @@ public interface ICommand { }
 public interface IDomainEvent { }
 ```
 
-### 3.2 Actor 接口
+### 3.2 IEventStore（事件流持久化契约）
+
+```csharp
+/// <summary>
+/// Event stream persistence contract. Append-only with optimistic concurrency.
+/// Defined in Abs because EventSourcedActor.ProcessAsync owns the persist step.
+/// </summary>
+public interface IEventStore
+{
+    /// <summary>
+    /// Append events to an actor's event stream.
+    /// expectedVersion is the version before these events — for optimistic concurrency.
+    /// Throws ConcurrencyException if the stream has diverged.
+    /// </summary>
+    ValueTask<ulong> AppendAsync(Guid actorId, ulong expectedVersion, IReadOnlyList<IDomainEvent> events);
+
+    /// <summary>Load all events for an actor, ordered by version ascending.</summary>
+    ValueTask<IReadOnlyList<IDomainEvent>> LoadAsync(Guid actorId);
+}
+```
+
+### 3.3 Actor 接口
 
 ```csharp
 public interface IActor
 {
-    /// <summary>UUID v7 标识。由 IActorSystem 在构造后分配。</summary>
     Guid Id { get; }
 }
 
 public interface IEventSourcedActor : IActor
 {
-    /// <summary>当前版本。由 Actor 自己在 RaiseEvent / ReplayEvents 中管理。</summary>
     ulong Version { get; }
-
     IReadOnlyList<IDomainEvent> GetUncommittedEvents();
     void CommitEvents();
-
-    /// <summary>
-    /// 从已持久化事件重建内存状态。
-    /// 在第一条消息投递前调用一次。消息在重建期间排队但不投递。
-    /// </summary>
     void ReplayEvents(IReadOnlyList<IDomainEvent> events);
 }
 ```
 
-### 3.3 IActorSystem
+### 3.4 IActorSystem
 
 ```csharp
 public interface IActorSystem
 {
-    /// <summary>
-    /// 注册创建工厂。工厂接收创建命令，返回构造完毕的 Actor。
-    /// UUID v7 由 ActorSystem 内部生成并分配，不暴露给工厂。
-    /// </summary>
     void Register<T>(Func<ICommand, T> factory) where T : IActor;
-
-    /// <summary>
-    /// 用注册的工厂创建 Actor。
-    /// 1. factory(cmd) —— 构造 Actor，创建命令同步处理
-    /// 2. 分配 UUID v7
-    /// 3. 注册到系统
-    /// 4. SignalReady() 释放消费循环
-    /// </summary>
     ValueTask<T> CreateAsync<T>(ICommand command) where T : IActor;
-
-    /// <summary>
-    /// 按 UUID v7 查找 Actor。在内存中则直接返回；
-    /// 否则从事件重建。未找到返回 null。
-    /// 重建路径：new T() → 分配 Id → ReplayEvents → SignalReady。
-    /// new() 约束是 AOT 安全的——编译器生成直接调用，零反射。
-    /// </summary>
     ValueTask<T?> GetAsync<T>(Guid id) where T : IActor, new();
 
     void Send(Guid id, ICommand command);
@@ -111,14 +109,11 @@ public interface IActorSystem
 
 **为什么工厂签名没有 Guid**：UUID v7 是框架内部的技术标识。把它暴露给工厂是信息泄露。
 
-**为什么 Register<T> 和 CreateAsync<T> 分离**：注册是编译时/启动时的事，创建是运行时的事。分离支持批量注册 + 工厂闭包捕获外部上下文。
-
 **为什么 GetAsync 有 new() 约束而非 InternalsVisibleTo**：
-- `new()` 约束是 AOT 安全的——NativeAOT 编译器为每个 T 生成直接调用，零反射
-- 用户体验同 ENode——两个 public 构造各司其职（创建构造 + 无参构造）
-- 避免 InternalsVisibleTo 的"为什么需要 internal"困惑
+- `new()` 约束是 AOT 安全的——NativeAOT 编译器为每个 T 生成直接调用
+- 用户体验同 ENode——两个 public 构造各司其职
 
-### 3.4 Actor 基类（双构造函数 + 闸门）
+### 3.5 Actor 基类（双构造函数 + 闸门 + 生命周期钩子）
 
 ```csharp
 public abstract class Actor : IActor, IAsyncDisposable
@@ -127,61 +122,44 @@ public abstract class Actor : IActor, IAsyncDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly TaskCompletionSource<bool> _ready = new();
     private readonly Task _loopTask;
-    private int _stopped;
 
     public Guid Id { get; internal set; }
 
-    /// <summary>
-    /// 创建路径。构造 Actor 并同步处理创建命令，保证原子初始化。
-    /// 消费循环在构造函数中启动但被闸门阻塞，SignalReady() 后释放。
-    /// </summary>
+    // 创建路径：构造时同步处理创建命令
     protected Actor(ICommand creationCommand) : this()
     {
         var task = OnMessageAsync(creationCommand);
         if (!task.IsCompleted)
             throw new InvalidOperationException(
-                "OnMessageAsync must complete synchronously for creation commands. " +
-                "Use RaiseEvent or return a value directly; do not await.");
+                "OnMessageAsync must complete synchronously for creation commands.");
     }
 
-    /// <summary>
-    /// 重建路径。构造 Actor 不做任何业务逻辑。
-    /// 状态由调用方通过 ReplayEvents 恢复。
-    /// 必须可被子类的 public 无参构造链入（GetAsync 的 new() 约束要求）。
-    /// </summary>
+    // 重建路径：无业务逻辑，状态后续由 ReplayEvents 恢复
     protected Actor()
     {
         _mailbox = Channel.CreateUnbounded<Envelope>();
         _loopTask = RunAsync(_cts.Token);
     }
 
-    /// <summary>
-    /// ActorSystem 在 Actor 完全初始化后调用（Id 已分配、已注册、事件已重放）。
-    /// 释放闸门，消费循环开始处理消息。
-    /// </summary>
     internal void SignalReady() => _ready.TrySetResult(true);
-
     internal void Post(Envelope envelope) => _mailbox.Writer.TryWrite(envelope);
 
     private async Task RunAsync(CancellationToken ct)
     {
-        // 闸门：等待 ActorSystem 调用 SignalReady()。
-        // 保证 Id 已分配、Actor 已注册、ReplayEvents（如有）已完成。
-        // 等待期间 Post() 的消息在 Channel 中安全排队。
+        // 闸门：等待 ActorSystem 完成注册 + ReplayEvents
         await _ready.Task.ConfigureAwait(false);
 
-        try
+        // 生命周期钩子：EventSourcedActor 在此处 flush 构造事件
+        await OnReadyAsync().ConfigureAwait(false);
+
+        // 消费循环
+        await foreach (var envelope in _mailbox.Reader.ReadAllAsync(ct).ConfigureAwait(false))
         {
-            await foreach (var envelope in _mailbox.Reader.ReadAllAsync(ct).ConfigureAwait(false))
-            {
-                try { await ProcessAsync(envelope).ConfigureAwait(false); }
-                catch (Exception ex) { envelope.Tcs?.TrySetException(ex); }
-            }
+            try { await ProcessAsync(envelope).ConfigureAwait(false); }
+            catch (Exception ex) { envelope.Tcs?.TrySetException(ex); }
         }
-        catch (OperationCanceledException) { /* Stop 时预期 */ }
     }
 
-    /// <summary>可被运行时层重写以注入持久化。</summary>
     protected virtual async ValueTask ProcessAsync(Envelope envelope)
     {
         var result = await OnMessageAsync(envelope.Command).ConfigureAwait(false);
@@ -190,13 +168,18 @@ public abstract class Actor : IActor, IAsyncDisposable
 
     protected abstract ValueTask<object?> OnMessageAsync(ICommand command);
 
-    internal async ValueTask StopAsync() { /* 幂等差止逻辑 */ }
-
-    async ValueTask IAsyncDisposable.DisposeAsync() => await StopAsync();
+    /// <summary>
+    /// Lifecycle hook called after SignalReady() and before the first mailbox message.
+    /// EventSourcedActor overrides this to flush uncommitted construction events.
+    /// </summary>
+    protected virtual ValueTask OnReadyAsync() => default;
 }
 ```
 
-### 3.5 EventSourcedActor（版本自管理）
+**为什么有 OnReadyAsync 钩子**：
+构造路径中创建命令在构造函数里同步处理，产生的事件（RaiseEvent）暂存在 `_events` 列表中。消费循环直到闸门释放后才会运行。OnReadyAsync 是闸门和第一条消息之间的桥梁——EventSourcedActor 在此处 flush 构造事件（持久化 → Mutate → Commit）。
+
+### 3.6 EventSourcedActor（Persist-then-Mutate）
 
 ```csharp
 public abstract class EventSourcedActor : Actor, IEventSourcedActor
@@ -205,32 +188,53 @@ public abstract class EventSourcedActor : Actor, IEventSourcedActor
 
     public ulong Version { get; protected set; }
 
-    /// <summary>创建路径。</summary>
-    protected EventSourcedActor(ICommand creationCommand) : base(creationCommand) { }
+    /// <summary>Set by IActorSystem after construction, before SignalReady.</summary>
+    internal IEventStore? EventStore { get; set; }
 
-    /// <summary>重建路径。</summary>
+    protected EventSourcedActor(ICommand creationCommand) : base(creationCommand) { }
     protected EventSourcedActor() { }
 
     /// <summary>
-    /// 记录事件、变更状态、递增 Version。
-    /// 子类在 OnMessageAsync 中调用。
-    /// Actor 是自身版本号的唯一权威——每个 RaiseEvent = 一次版本递增。
+    /// Record a domain event and increment Version. Does NOT mutate state.
+    /// State is mutated later, after successful persistence, by FlushEventsAsync.
     /// </summary>
     protected void RaiseEvent<T>(T @event) where T : notnull, IDomainEvent
     {
         _events.Add(@event);
-        Mutate(@event);
         Version++;
     }
 
     /// <summary>
-    /// 从领域事件变更内存状态。
-    /// 由 RaiseEvent（正常流程）和 ReplayEvents（恢复流程）调用。
+    /// Mutate in-memory state from a domain event.
+    /// Called by FlushEventsAsync (after persistence) and ReplayEvents (recovery).
+    /// Must be a pure function — no validation, no side effects.
     /// </summary>
     protected abstract void Mutate(IDomainEvent @event);
 
-    IReadOnlyList<IDomainEvent> IEventSourcedActor.GetUncommittedEvents() => _events.AsReadOnly();
-    void IEventSourcedActor.CommitEvents() => _events.Clear();
+    protected override async ValueTask OnReadyAsync()
+        => await FlushEventsAsync().ConfigureAwait(false);
+
+    protected override async ValueTask ProcessAsync(Envelope envelope)
+    {
+        var result = await OnMessageAsync(envelope.Command).ConfigureAwait(false);
+        await FlushEventsAsync().ConfigureAwait(false);
+        envelope.Tcs?.TrySetResult(result);
+    }
+
+    private async ValueTask FlushEventsAsync()
+    {
+        if (_events.Count == 0) return;
+
+        if (EventStore is not null)
+            await EventStore.AppendAsync(Id, Version - (ulong)_events.Count, _events)
+                .ConfigureAwait(false);
+
+        foreach (var e in _events) Mutate(e);
+        ClearEvents();
+    }
+
+    private void ClearEvents() => _events.Clear();
+
     void IEventSourcedActor.ReplayEvents(IReadOnlyList<IDomainEvent> events)
     {
         foreach (var e in events) Mutate(e);
@@ -239,22 +243,30 @@ public abstract class EventSourcedActor : Actor, IEventSourcedActor
 }
 ```
 
-**为什么 Version 由 Actor 管理（而非持久化层）**：
-Version 的本质是"已形成事件的序号"，不是"已持久化事件的序号"。Actor 产生了事件就应该知道自己的版本号。这和 ENode 一致——聚合根追踪自己的版本。
+**为什么 Persist-then-Mutate**：
 
-**为什么 RaiseEvent 立即 Mutate**：
-- 性能：事件形成和状态变更是同一个逻辑步骤，拆开反而增加复杂度
-- 一致性：Actor 是自身状态的唯一写入者，不存在并发
-- 持久化失败：新创建 Actor 的失败意味着整个 Actor 被丢弃；运行时消息的失败由 TCS 传播异常，调用方决定重试或放弃
+```
+ProcessAsync(envelope):
+  1. OnMessageAsync(cmd)
+     └─ RaiseEvent(e) → Add + Version++（状态不变）
+  2. FlushEventsAsync:
+     ├─ SaveAsync(events)    ← 持久化
+     ├─ foreach Mutate(e)   ← 成功后变更状态
+     └─ ClearEvents()
+  3. Tcs.TrySetResult()      ← 成功后才回复
 
-### 3.6 Envelope
+持久化失败 → 异常 → TCS 异常 → 状态未被 Mutate → 下条消息基于干净状态重试
+```
+
+**为什么 Version 在每个 RaiseEvent 时递增**：
+Version 的本质是"已形成事件的序号"，不是"已持久化事件的序号"。Actor 产生了事件就应该知道自己的版本号——与 ENode 一致。
+
+**为什么 EventStore 可为 null**：
+纯内存模式下（测试、无持久化场景）不需要持久化。此时 `FlushEventsAsync` 跳过 SaveAsync，直接 Mutate + Commit。
+
+### 3.7 Envelope
 
 ```csharp
-/// <summary>
-/// 包装命令和可选 TaskCompletionSource 的消息信封。
-/// 不面向用户代码——框架和持久化层使用。
-/// public 是因为 protected ProcessAsync 暴露给了外部程序集（C# 可访问性约束）。
-/// </summary>
 public sealed class Envelope
 {
     public ICommand Command { get; init; } = null!;
@@ -262,7 +274,7 @@ public sealed class Envelope
 }
 ```
 
-### 3.7 兼容性文件
+### 3.8 兼容性文件
 
 ```csharp
 // GlobalUsings.cs
@@ -277,119 +289,96 @@ internal class IsExternalInit { }
 
 ## 4. Actor 生命周期协议
 
-### 4.1 CreateAsync（创建 + 初始化）
+### 4.1 CreateAsync（创建路径）
 
 ```
 CreateAsync<Counter>(new CreateCounter(0)):
   1. counter = factory(cmd)
      └─ new Counter(CreateCounter(0))
         ├─ base(cmd):
-        │  ├─ base()                            ← Channel + 消费循环启动（闸门阻塞）
-        │  └─ OnMessageAsync(CreateCounter(0))  ← 同步处理
-        │     └─ RaiseEvent(CounterCreated(0))  ← 记录 + Mutate + Version=1
+        │  ├─ base()                            ← Channel + 消费循环（闸门）
+        │  └─ OnMessageAsync(CreateCounter(0))  ← 同步：RaiseEvent 只记录，不改状态
         └─ 无额外子类逻辑
   2. counter.Id = CreateVersion7()
-  3. _registry[id] = counter
-  4. counter.SignalReady()                      ← 释放闸门
-  5. return counter                             ← 调用方拿到已就绪的 Actor
+  3. counter.EventStore = _store                 ← 设置持久化
+  4. _registry[id] = counter
+  5. counter.SignalReady()                       ← 释放闸门
+     └─ RunAsync:
+        ├─ OnReadyAsync()
+        │  └─ FlushEventsAsync:
+        │     ├─ SaveAsync([CounterCreated])
+        │     ├─ foreach Mutate(e)              ← 状态第一次变更
+        │     └─ ClearEvents()
+        └─ 进入消费循环，等待 mailbox 消息
+  6. return counter                              ← 已就绪
 ```
 
-### 4.2 GetAsync（查找 + 重建）
+### 4.2 GetAsync（重建路径）
 
 ```
 GetAsync<Counter>(id):
-  1. 查 _registry → 命中则直接返回
+  1. 查 _registry → 命中则返回
   2. 未命中 + typeof(T) : IEventSourcedActor:
-     a. events = await _eventStore.LoadAsync(id)
+     a. events = await _store.LoadAsync(id)
      b. events 为空 → return null
      c. counter = new Counter()                 ← public 无参构造
      d. counter.Id = id
-     e. counter.ReplayEvents(events)            ← 重放事件流
-     f. _registry[id] = counter
-     g. counter.SignalReady()
-     h. return counter
+     e. counter.EventStore = _store
+     f. counter.ReplayEvents(events)            ← 直接 Mutate，不走持久化
+     g. _registry[id] = counter
+     h. counter.SignalReady()
+        └─ OnReadyAsync() → _events 为空 → no-op
+     i. return counter
 ```
 
-### 4.3 Send / Ask
+### 4.3 正常消息处理
 
 ```
-Send(id, cmd):
-  actor = _registry[id] ?? throw
-  actor.Post(new Envelope { Command = cmd })    ← TCS=null
-
-AskAsync<T>(id, cmd):
-  actor = _registry[id] ?? throw
-  tcs = new TaskCompletionSource<object?>()
+Send / AskAsync:
   actor.Post(new Envelope { Command = cmd, Tcs = tcs })
-  return (T)await tcs.Task
+    └─ ProcessAsync(envelope):
+       1. OnMessageAsync(cmd)
+          └─ RaiseEvent(e) × N → 记录事件，不改状态
+       2. FlushEventsAsync:
+          ├─ SaveAsync(events)   ← 持久化
+          ├─ foreach Mutate(e)  ← 成功后变更状态
+          └─ ClearEvents()
+       3. TCS.TrySetResult()
 ```
 
 ### 4.4 Stop
 
 ```
 StopAsync(id):
-  1. 原子移除 _registry[id]（不存则幂等返回）
+  1. 原子移除 _registry[id]
   2. await actor.StopAsync()
-     └─ _cts.Cancel() → Channel 停止读取
-     └─ await _loopTask → 等待当前消息处理完毕
-     └─ _cts.Dispose()
-  二次调用：Interlocked 保证幂等
+     └─ _cts.Cancel() + Writer.Complete() + await _loopTask
 ```
 
 ---
 
-## 5. 双构造函数模式 vs ENode
-
-| | ENode | PicoNode.Actor |
-|---|---|---|
-| 创建构造 | `Order(CreateOrder cmd)` | `Counter(CreateCounter cmd) : base(cmd)` |
-| 重建构造 | `Order()`（框架用反射调） | `Counter()`（框架用 `new()` 约束调） |
-| 重建机制 | `Activator.CreateInstance<T>()` | `new T()` —— AOT 安全 |
-| 用户感知 | 需写两个构造，无参构造"为什么需要"不透明 | 需写两个构造，`new()` 约束显式化 |
-
----
-
-## 6. 为什么用 Channel 而非 ConcurrentQueue
-
-Erlang 通过轻量进程实现"无消息时暂停"，不消耗 OS 线程。.NET 没有等价机制：
-- `ConcurrentQueue` 轮询 → 空转 CPU
-- `Thread.Sleep` → 引入延迟
-
-`Channel.ReadAllAsync` 在队列空时把 Task 挂起（不占线程），新消息入队时 Write 端自动唤醒 Read 端——等价于 Erlang 的 `receive` 阻塞语义。
-
----
-
-## 7. 使用示例
+## 5. 开发者视角——三步分离
 
 ```csharp
-// ── 命令 ──
-public sealed record CreateCounter(int InitialValue) : ICommand;
-public sealed record Increment(int Delta) : ICommand;
-public sealed record GetValue : ICommand;
-
-// ── 事件 ──
-public sealed record CounterCreated(int InitialValue) : IDomainEvent;
-public sealed record CounterIncremented(int Delta) : IDomainEvent;
-
-// ── ES Actor ──
 public sealed class Counter : EventSourcedActor
 {
     private int _value;
 
-    // 创建路径 —— 构造时原子初始化
     public Counter(CreateCounter cmd) : base(cmd) { }
-
-    // 重建路径 —— GetAsync 的 new() 约束需要
     public Counter() { }
 
+    // Step 1: 构建领域事件
     protected override ValueTask<object?> OnMessageAsync(ICommand command) => command switch
     {
         CreateCounter c => { RaiseEvent(new CounterCreated(c.InitialValue)); return default; },
-        Increment i     => { RaiseEvent(new CounterIncremented(i.Delta)); return default; },
+        Increment i     => { RaiseEvent(new CounterIncremented(i.Delta));       return default; },
         GetValue        => new ValueTask<object?>(_value),
         _               => default,
     };
 
+    // Step 2: 框架自动持久化（ProcessAsync → FlushEventsAsync）
+
+    // Step 3: 变更状态
     protected override void Mutate(IDomainEvent @event)
     {
         switch (@event)
@@ -399,18 +388,53 @@ public sealed class Counter : EventSourcedActor
         }
     }
 }
-
-// ── 消费 ──
-system.Register<Counter>(cmd => cmd switch
-{
-    CreateCounter c => new Counter(c),
-    _               => throw new InvalidOperationException(),
-});
-
-var counter = await system.CreateAsync<Counter>(new CreateCounter(0));
-system.Send(counter.Id, new Increment(5));
-var value = await system.AskAsync<int>(counter.Id, new GetValue());
 ```
+
+### 复杂聚合示例：OnMessageAsync 内的级联事件
+
+```csharp
+// 添加订单明细 + 检查阈值
+case AddOrderDetail cmd:
+    // 验证用当前状态（_details 是已持久化的干净状态）
+    if (_details.Any(d => d.Sku == cmd.Sku))
+        throw new InvalidOperationException("Duplicate SKU");
+
+    // 计算——用局部变量追踪中间结果
+    var newTotal = TotalPrice + cmd.UnitPrice * cmd.Quantity;
+
+    // 事件 1
+    RaiseEvent(new OrderDetailAdded(cmd.Sku, cmd.Quantity, cmd.UnitPrice, newTotal));
+
+    // 事件 2——不要读 TotalPrice（它还是旧值），用局部变量
+    if (newTotal > 1000)
+        RaiseEvent(new HighValueOrderDetected(Id, newTotal));
+
+    return default;
+```
+
+**规则**：`OnMessageAsync` 内所有 `RaiseEvent` 都在同一快照——状态是命令到达瞬间的版本。事件间的级联依赖存在于事件携带的数据中，不存在于聚合状态中。
+
+---
+
+## 6. 双构造函数模式 vs ENode
+
+| | ENode | PicoNode.Actor |
+|---|---|---|
+| 创建构造 | `Order(CreateOrder cmd)` | `Counter(CreateCounter cmd) : base(cmd)` |
+| 重建构造 | `Order()`（框架用反射调） | `Counter()`（框架用 `new()` 约束调） |
+| 重建机制 | `Activator.CreateInstance<T>()` | `new T()` —— AOT 安全 |
+| 持久化 | Repository 外部调用 | EventSourcedActor.ProcessAsync 内置 |
+| 用户感知 | 两个构造 + 外部 Save | 两个构造，持久化透明 |
+
+---
+
+## 7. 为什么用 Channel 而非 ConcurrentQueue
+
+Erlang 通过轻量进程实现"无消息时暂停"，不消耗 OS 线程。.NET 没有等价机制：
+- `ConcurrentQueue` 轮询 → 空转 CPU
+- `Thread.Sleep` → 引入延迟
+
+`Channel.ReadAllAsync` 在队列空时把 Task 挂起（不占线程），新消息入队时 Write 端自动唤醒 Read 端。
 
 ---
 
@@ -442,17 +466,18 @@ PicoNode.Actor (net10.0, AOT-compatible)
 
 ```
 src/Actor/PicoNode.Actor.Abs/
-├── PicoNode.Actor.Abs.csproj    ← netstandard2.0, Channels + AsyncInterfaces
+├── PicoNode.Actor.Abs.csproj    ← netstandard2.0
 ├── GlobalUsings.cs              ← System.Threading.Channels
 ├── IsExternalInit.cs            ← netstandard2.0 init polyfill
 ├── ICommand.cs                  ← 命令标记
 ├── IDomainEvent.cs              ← 事件标记
+├── IEventStore.cs               ← 事件流持久化契约
 ├── IActor.cs                    ← Id getter
 ├── IEventSourcedActor.cs        ← Version + ES 合约
 ├── IActorSystem.cs              ← Register/Create/Get/Send/Ask/Stop
-├── Actor.cs                     ← 双构造 + 闸门 + Channel 消费循环
-├── EventSourcedActor.cs         ← RaiseEvent + Mutate + 版本自管理
-└── Envelope.cs                  ← 命令信封（public，技术约束）
+├── Actor.cs                     ← 双构造 + 闸门 + OnReadyAsync + 消费循环
+├── EventSourcedActor.cs         ← RaiseEvent + Persist-then-Mutate + 版本自管理
+└── Envelope.cs                  ← 命令信封
 ```
 
 ---
@@ -460,11 +485,14 @@ src/Actor/PicoNode.Actor.Abs/
 ## 11. Self-Review
 
 - [x] 无 TBD/TODO
+- [x] Abs: 6 接口（ICommand, IDomainEvent, IEventStore, IActor, IEventSourcedActor, IActorSystem）+ 2 基类 + 1 信封
+- [x] IEventStore 在 Abs——EventSourcedActor.ProcessAsync 内置持久化
+- [x] Persist-then-Mutate：持久化成功后才 Mutate，失败时状态保持干净
 - [x] 双构造函数：创建（atomic via ctor） vs 重建（ReplayEvents）
-- [x] `new()` 约束替代 InternalsVisibleTo + 反射：AOT 安全
+- [x] `new()` 约束替代反射：AOT 安全
 - [x] Version 由 Actor 在 RaiseEvent 中自管理
-- [x] SignalReady 闸门：ENode 式"重建完毕前不投递"
-- [x] 工厂不暴露 Guid：技术 ID 不泄露到业务层
-- [x] ProcessAsync 为 protected：运行时层可重写
+- [x] SignalReady 闸门 + OnReadyAsync 钩子：构造事件在首条消息前 flush
+- [x] FlushEventsAsync 统一所有持久化代码路径
+- [x] EventStore 可为 null——支持纯内存模式
 - [x] AOT 安全：零反射、零 dynamic
-- [x] netstandard2.0 兼容：TaskCompletionSource<bool> + IsExternalInit
+- [x] netstandard2.0 兼容
