@@ -29,13 +29,13 @@ public sealed class AgentFactory
     public void Register()
     {
         _system.Register<Agent>(
-            create: cmd =>
+            createFactory: cmd =>
                 cmd switch
                 {
                     CreateAgent c => new Agent(c, _llmClient, _toolRunner),
                     _ => throw new InvalidOperationException(),
                 },
-            rebuild: () => new Agent(_llmClient, _toolRunner));
+            rebuildFactory: () => new Agent(_llmClient, _toolRunner));
     }
 
     public async ValueTask<Agent> BuildAsync(AgentConfig config, string homeDir)
@@ -48,7 +48,7 @@ public sealed class AgentFactory
 
         var agent = await _system.CreateAsync<Agent>(
             new CreateAgent(llms, currentProvider, currentModel, homeDir,
-                packages: config.Packages));
+                Packages: config.Packages));
 
         if (_withBuiltInTools)
             RegisterBuiltInTools(agent);
