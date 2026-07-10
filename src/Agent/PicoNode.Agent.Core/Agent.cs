@@ -26,6 +26,7 @@ public sealed class Agent : EventSourcedActor
 
     internal ILlmClient? LlmClient { get; init; }
     internal IToolRunner? ToolRunner { get; init; }
+    internal List<SkillInfo>? Skills { get; set; }
     public Session? Session { get; private set; }
 
     // ── Constructors ──
@@ -182,6 +183,8 @@ public sealed class Agent : EventSourcedActor
                     break;
 
                 var ctx = await session.BuildContext();
+                var prompt = SystemPromptBuilder.Build(ToolsSnapshot, Skills);
+                ctx.Insert(0, new Message { Role = "system", Content = prompt });
 
                 var contentBlocks = new List<ContentBlock>();
                 var contentAccum = new StringBuilder();

@@ -127,7 +127,15 @@ public sealed class LlmClientAdapter : ILlmClient
             ThinkingLevel = llm.ThinkingLevel,
         };
 
-        var chatContext = new NetAITypes.ChatContext { Messages = context.ToArray() };
+        var chatContext = new NetAITypes.ChatContext
+        {
+            Messages = context.Where(m => m.Role != "system").ToArray(),
+        };
+
+        // Extract system prompt from context messages
+        var systemMsg = context.FirstOrDefault(m => m.Role == "system")?.Content;
+        if (systemMsg is { Length: > 0 })
+            chatContext.SystemPrompt = systemMsg;
 
         if (tools.Count > 0)
         {
