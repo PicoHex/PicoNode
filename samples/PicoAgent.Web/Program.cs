@@ -26,7 +26,7 @@ if (string.IsNullOrEmpty(config.Model))
     config.Model = "unconfigured";
 
 var system = new ActorSystem(new InMemoryEventStore());
-var adapter = new LlmClientAdapter(new PicoAgent.DynamicLLmClient(null!));
+var adapter = PicoAgent.Bootstrap.BuildLlmAdapter(config);
 var factory = new AgentFactory(system, adapter).WithBuiltInTools();
 var agent = await factory.BuildAsync(config, homeDir);
 system.Send(agent.Id, new StartAgent());
