@@ -217,14 +217,18 @@ public sealed class Server : IAsyncDisposable
                 var toRemove = a
                     .LlmsSnapshot.Where(l => !newProviderNames.Contains(l.ProviderName))
                     .ToList();
-                var newCurrent = newProviderNames.FirstOrDefault() ?? a.LlmsSnapshot[0].ProviderName;
+                var newCurrent =
+                    newProviderNames.FirstOrDefault() ?? a.LlmsSnapshot[0].ProviderName;
                 var newModel = newConfig.Model ?? newCurrent;
                 if (toRemove.Any(r => r.ProviderName == a.CurrentLlm.ProviderName))
                     _system.Send(a.Id, new DomainCommands.SwitchLlmCmd(newCurrent, newModel));
                 foreach (var old in toRemove)
                 {
                     if (a.LlmsSnapshot.Count > 1 && old.ProviderName != a.CurrentLlm.ProviderName)
-                        _system.Send(a.Id, new DomainCommands.RemoveLlmCmd(old.ProviderName, old.ModelId));
+                        _system.Send(
+                            a.Id,
+                            new DomainCommands.RemoveLlmCmd(old.ProviderName, old.ModelId)
+                        );
                 }
                 _system.Send(a.Id, new DomainCommands.SwitchLlmCmd(newCurrent, newModel));
 

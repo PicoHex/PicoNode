@@ -19,16 +19,25 @@ public sealed class ServerActorIntegrationTests
         var toolRunner = new FakeToolRunner();
 
         system.Register<DomainAgent>(
-            createFactory: cmd => cmd switch
-            {
-                CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
-                _ => throw new InvalidOperationException(),
-            },
-            rebuildFactory: () => new DomainAgent(llmClient, toolRunner));
+            createFactory: cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
+                    _ => throw new InvalidOperationException(),
+                },
+            rebuildFactory: () => new DomainAgent(llmClient, toolRunner)
+        );
 
-        var llms = new List<Llm> { new() { ProviderName = "x", ModelId = "y", ApiKey = "sk" } };
-        var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent(llms, "x", "y", "/tmp"));
+        var llms = new List<Llm>
+        {
+            new()
+            {
+                ProviderName = "x",
+                ModelId = "y",
+                ApiKey = "sk",
+            },
+        };
+        var agent = await system.CreateAsync<DomainAgent>(new CreateAgent(llms, "x", "y", "/tmp"));
 
         // Start via command
         system.Send(agent.Id, new StartAgent());
@@ -50,15 +59,30 @@ public sealed class ServerActorIntegrationTests
         var toolRunner = new FakeToolRunner();
 
         system.Register<DomainAgent>(
-            createFactory: cmd => cmd switch
-            {
-                CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
-                _ => throw new InvalidOperationException(),
-            },
-            rebuildFactory: () => new DomainAgent(llmClient, toolRunner));
+            createFactory: cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
+                    _ => throw new InvalidOperationException(),
+                },
+            rebuildFactory: () => new DomainAgent(llmClient, toolRunner)
+        );
 
         var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent([new() { ProviderName = "x", ModelId = "y", ApiKey = "sk" }], "x", "y", "/tmp"));
+            new CreateAgent(
+                [
+                    new()
+                    {
+                        ProviderName = "x",
+                        ModelId = "y",
+                        ApiKey = "sk",
+                    },
+                ],
+                "x",
+                "y",
+                "/tmp"
+            )
+        );
         await system.StopAsync(agent.Id);
 
         // Second stop is idempotent

@@ -56,7 +56,9 @@ public sealed class ServerActorWireTests
         await system.StopAsync(agent.Id);
     }
 
-    private static async Task<(ActorSystem System, DomainAgent Agent)> CreateAgent(bool extraLlms = false)
+    private static async Task<(ActorSystem System, DomainAgent Agent)> CreateAgent(
+        bool extraLlms = false
+    )
     {
         var store = new InMemoryEventStore();
         var system = new ActorSystem(store);
@@ -64,18 +66,37 @@ public sealed class ServerActorWireTests
         var toolRunner = new FakeToolRunner();
 
         system.Register<DomainAgent>(
-            cmd => cmd switch { CreateAgent c => new DomainAgent(c, llmClient, toolRunner), _ => throw new InvalidOperationException() },
-            () => new DomainAgent(llmClient, toolRunner));
+            cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new DomainAgent(llmClient, toolRunner)
+        );
 
         var llms = new List<Llm>
         {
-            new() { ProviderName = "deepseek", ModelId = "chat", ApiKey = "sk" },
+            new()
+            {
+                ProviderName = "deepseek",
+                ModelId = "chat",
+                ApiKey = "sk",
+            },
         };
         if (extraLlms)
-            llms.Add(new() { ProviderName = "openai", ModelId = "gpt-4o", ApiKey = "sk" });
+            llms.Add(
+                new()
+                {
+                    ProviderName = "openai",
+                    ModelId = "gpt-4o",
+                    ApiKey = "sk",
+                }
+            );
 
         var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent(llms, "deepseek", "chat", "/tmp"));
+            new CreateAgent(llms, "deepseek", "chat", "/tmp")
+        );
         return (system, agent);
     }
 }

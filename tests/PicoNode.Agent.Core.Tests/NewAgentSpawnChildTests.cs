@@ -16,13 +16,40 @@ public sealed class AgentSpawnChildTests
         var toolRunner = new FakeToolRunner();
 
         system.Register<DomainAgent>(
-            cmd => cmd switch { CreateAgent c => new DomainAgent(c, llmClient, toolRunner), _ => throw new InvalidOperationException() },
-            () => new DomainAgent(llmClient, toolRunner));
+            cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new DomainAgent(llmClient, toolRunner)
+        );
 
         var parent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent([new() { ProviderName = "x", ModelId = "y", ApiKey = "sk" }], "x", "y", "/tmp"));
+            new CreateAgent(
+                [
+                    new()
+                    {
+                        ProviderName = "x",
+                        ModelId = "y",
+                        ApiKey = "sk",
+                    },
+                ],
+                "x",
+                "y",
+                "/tmp"
+            )
+        );
 
-        var childLlms = new List<Llm> { new() { ProviderName = "a", ModelId = "b", ApiKey = "sk" } };
+        var childLlms = new List<Llm>
+        {
+            new()
+            {
+                ProviderName = "a",
+                ModelId = "b",
+                ApiKey = "sk",
+            },
+        };
         system.Send(parent.Id, new SpawnChildCmd(childLlms, "a", "b", []));
         await Task.Delay(200);
 

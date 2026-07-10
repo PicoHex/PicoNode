@@ -21,11 +21,30 @@ public sealed class ServerOutputChannelTests
         var tr = new FakeToolRunner();
 
         system.Register<DomainAgent>(
-            cmd => cmd switch { CreateAgent c => new DomainAgent(c, llm, tr), _ => throw new InvalidOperationException() },
-            () => new DomainAgent(llm, tr));
+            cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c, llm, tr),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new DomainAgent(llm, tr)
+        );
 
         var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent([new() { ProviderName = "x", ModelId = "y", ApiKey = "sk" }], "x", "y", "/tmp"));
+            new CreateAgent(
+                [
+                    new()
+                    {
+                        ProviderName = "x",
+                        ModelId = "y",
+                        ApiKey = "sk",
+                    },
+                ],
+                "x",
+                "y",
+                "/tmp"
+            )
+        );
 
         // Simulate Server: create Channel, set OutputWriter, run background reader
         var channel = Channel.CreateUnbounded<ActorOutputEvent>();
@@ -60,11 +79,30 @@ public sealed class ServerOutputChannelTests
         var tr = new FakeToolRunner();
 
         system.Register<DomainAgent>(
-            cmd => cmd switch { CreateAgent c => new DomainAgent(c, llm, tr), _ => throw new InvalidOperationException() },
-            () => new DomainAgent(llm, tr));
+            cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c, llm, tr),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new DomainAgent(llm, tr)
+        );
 
         var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent([new() { ProviderName = "x", ModelId = "y", ApiKey = "sk" }], "x", "y", "/tmp"));
+            new CreateAgent(
+                [
+                    new()
+                    {
+                        ProviderName = "x",
+                        ModelId = "y",
+                        ApiKey = "sk",
+                    },
+                ],
+                "x",
+                "y",
+                "/tmp"
+            )
+        );
 
         // No OutputWriter set — Agent should still complete RunTurn normally
         system.Send(agent.Id, new RunTurn("Hi"));
@@ -80,10 +118,21 @@ public sealed class ServerOutputChannelTests
 internal sealed class FakeTextLlm : ILlmClient
 {
     private readonly string _text;
+
     public FakeTextLlm(string text) => _text = text;
 
-    public Task<Message> CompleteAsync(Llm llm, List<Message> context,
-        IReadOnlyList<Tool> tools, CancellationToken ct)
-        => Task.FromResult(new Message { Role = "assistant", Content = _text,
-            ContentBlocks = [new ContentBlock { Type = "text", Text = _text }] });
+    public Task<Message> CompleteAsync(
+        Llm llm,
+        List<Message> context,
+        IReadOnlyList<Tool> tools,
+        CancellationToken ct
+    ) =>
+        Task.FromResult(
+            new Message
+            {
+                Role = "assistant",
+                Content = _text,
+                ContentBlocks = [new ContentBlock { Type = "text", Text = _text }],
+            }
+        );
 }

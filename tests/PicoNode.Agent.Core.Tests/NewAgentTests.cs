@@ -8,13 +8,21 @@ namespace PicoNode.Agent.Core.Tests;
 /// <summary>Fake ILlmClient for unit tests.</summary>
 internal sealed class FakeLlmClient : ILlmClient
 {
-    public Task<Message> CompleteAsync(Llm llm, List<Message> context,
-        IReadOnlyList<Tool> tools, CancellationToken ct) => Task.FromResult(new Message());
+    public Task<Message> CompleteAsync(
+        Llm llm,
+        List<Message> context,
+        IReadOnlyList<Tool> tools,
+        CancellationToken ct
+    ) => Task.FromResult(new Message());
 }
+
 internal sealed class FakeToolRunner : IToolRunner
 {
-    public Task<string> ExecuteAsync(string n, Dictionary<string, object?> a, CancellationToken ct)
-        => Task.FromResult("ok");
+    public Task<string> ExecuteAsync(
+        string n,
+        Dictionary<string, object?> a,
+        CancellationToken ct
+    ) => Task.FromResult("ok");
 }
 
 public sealed class AgentLifecycleTests
@@ -24,14 +32,29 @@ public sealed class AgentLifecycleTests
     {
         var store = new InMemoryEventStore();
         var system = new ActorSystem(store);
-        var llms = new List<Llm> { new() { ProviderName = "deepseek", ModelId = "chat", ApiKey = "sk" } };
+        var llms = new List<Llm>
+        {
+            new()
+            {
+                ProviderName = "deepseek",
+                ModelId = "chat",
+                ApiKey = "sk",
+            },
+        };
 
         system.Register<DomainAgent>(
-            cmd => cmd switch { CreateAgent c => new DomainAgent(c), _ => throw new InvalidOperationException() },
-            () => new DomainAgent(new FakeLlmClient(), new FakeToolRunner()));
+            cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new DomainAgent(new FakeLlmClient(), new FakeToolRunner())
+        );
 
         var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent(llms, "deepseek", "chat", "/tmp"));
+            new CreateAgent(llms, "deepseek", "chat", "/tmp")
+        );
         system.Send(agent.Id, new StartAgent());
         await Task.Delay(100);
         await Assert.That(agent.Status).IsEqualTo(AgentStatus.Running);

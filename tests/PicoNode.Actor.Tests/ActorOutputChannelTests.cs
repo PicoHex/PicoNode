@@ -14,7 +14,9 @@ public sealed class ActorOutputChannelTests
     /// <summary>Test actor that writes output events.</summary>
     private sealed class OutputTestActor : ActorBase
     {
-        public OutputTestActor(NoOpCmd cmd) : base(cmd) { }
+        public OutputTestActor(NoOpCmd cmd)
+            : base(cmd) { }
+
         public OutputTestActor() { }
 
         protected override ValueTask<object?> OnMessageAsync(ICommand command)
@@ -35,8 +37,14 @@ public sealed class ActorOutputChannelTests
         var results = new List<ActorOutputEvent>();
 
         system.Register<OutputTestActor>(
-            cmd => cmd switch { NoOpCmd c => new OutputTestActor(c), _ => throw new InvalidOperationException() },
-            () => new OutputTestActor());
+            cmd =>
+                cmd switch
+                {
+                    NoOpCmd c => new OutputTestActor(c),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new OutputTestActor()
+        );
 
         var actor = await system.CreateAsync<OutputTestActor>(new NoOpCmd());
 
@@ -67,8 +75,14 @@ public sealed class ActorOutputChannelTests
         var system = new ActorSystem(store);
 
         system.Register<OutputTestActor>(
-            cmd => cmd switch { NoOpCmd c => new OutputTestActor(c), _ => throw new InvalidOperationException() },
-            () => new OutputTestActor());
+            cmd =>
+                cmd switch
+                {
+                    NoOpCmd c => new OutputTestActor(c),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new OutputTestActor()
+        );
 
         var actor = await system.CreateAsync<OutputTestActor>(new NoOpCmd());
 

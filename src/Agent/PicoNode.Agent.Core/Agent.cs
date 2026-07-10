@@ -29,15 +29,18 @@ public sealed class Agent : EventSourcedActor
 
     // ── Constructors ──
 
-    public Agent(CreateAgent cmd) : base(cmd) { }
+    public Agent(CreateAgent cmd)
+        : base(cmd) { }
 
-    public Agent(CreateAgent cmd, ILlmClient llmClient, IToolRunner toolRunner) : base(cmd)
+    public Agent(CreateAgent cmd, ILlmClient llmClient, IToolRunner toolRunner)
+        : base(cmd)
     {
         LlmClient = llmClient;
         ToolRunner = toolRunner;
     }
 
-    public Agent(ILlmClient llmClient, IToolRunner toolRunner) : base()
+    public Agent(ILlmClient llmClient, IToolRunner toolRunner)
+        : base()
     {
         LlmClient = llmClient;
         ToolRunner = toolRunner;
@@ -51,8 +54,16 @@ public sealed class Agent : EventSourcedActor
         {
             case CreateAgent c:
                 ValidateCreate(c);
-                RaiseEvent(new AgentCreated(c.Llms, c.CurrentProvider, c.CurrentModel,
-                    c.HomeDir, c.ParentId, c.Packages));
+                RaiseEvent(
+                    new AgentCreated(
+                        c.Llms,
+                        c.CurrentProvider,
+                        c.CurrentModel,
+                        c.HomeDir,
+                        c.ParentId,
+                        c.Packages
+                    )
+                );
                 return default;
 
             case StartAgent:
@@ -75,7 +86,9 @@ public sealed class Agent : EventSourcedActor
 
             case SwitchLlmCmd s:
                 if (_llms.All(l => l.ProviderName != s.ProviderName || l.ModelId != s.ModelId))
-                    throw new DomainInvariantException($"Llm not found: {s.ProviderName}/{s.ModelId}");
+                    throw new DomainInvariantException(
+                        $"Llm not found: {s.ProviderName}/{s.ModelId}"
+                    );
                 RaiseEvent(new LlmSwitched(s.ProviderName, s.ModelId));
                 return default;
 
@@ -89,9 +102,12 @@ public sealed class Agent : EventSourcedActor
                 if (_llms.Count <= 1)
                     throw new DomainInvariantException("Cannot remove the only Llm");
                 var match = _llms.FirstOrDefault(l =>
-                    l.ProviderName == r.ProviderName && l.ModelId == r.ModelId);
+                    l.ProviderName == r.ProviderName && l.ModelId == r.ModelId
+                );
                 if (match is null)
-                    throw new DomainInvariantException($"Llm not found: {r.ProviderName}/{r.ModelId}");
+                    throw new DomainInvariantException(
+                        $"Llm not found: {r.ProviderName}/{r.ModelId}"
+                    );
                 if (match.Equals(CurrentLlm))
                     throw new DomainInvariantException("Cannot remove CurrentLlm; switch first");
                 RaiseEvent(new LlmRemoved(r.ProviderName, r.ModelId));
@@ -118,8 +134,7 @@ public sealed class Agent : EventSourcedActor
                 return default;
 
             default:
-                throw new DomainInvariantException(
-                    $"Unknown command: {command.GetType().Name}");
+                throw new DomainInvariantException($"Unknown command: {command.GetType().Name}");
         }
     }
 
@@ -130,7 +145,8 @@ public sealed class Agent : EventSourcedActor
         if (this.System is not null)
         {
             var child = await this.System.CreateAsync<Agent>(
-                new CreateAgent(s.Llms, s.CurrentProvider, s.CurrentModel, HomeDir, Id));
+                new CreateAgent(s.Llms, s.CurrentProvider, s.CurrentModel, HomeDir, Id)
+            );
             RaiseEvent(new ChildSpawned(child.Id));
         }
         return default;
@@ -142,13 +158,15 @@ public sealed class Agent : EventSourcedActor
     {
         if (LlmClient is null || ToolRunner is null)
             throw new InvalidOperationException(
-                "RunTurn requires LlmClient and ToolRunner — register them via the Agent constructor.");
+                "RunTurn requires LlmClient and ToolRunner — register them via the Agent constructor."
+            );
 
         var session = Session!;
 
         var userMsg = new Message
         {
-            Role = "user", Content = message,
+            Role = "user",
+            Content = message,
             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         };
         await session.Append(new MessageEntry { Message = userMsg });
@@ -157,14 +175,17 @@ public sealed class Agent : EventSourcedActor
         var iterations = 0;
         do
         {
-            if (++iterations > 100) break;
+            if (++iterations > 100)
+                break;
 
             var ctx = await session.BuildContext();
-            var response = await LlmClient!.CompleteAsync(
-                CurrentLlm, ctx, ToolsSnapshot, ct);
+            var response = await LlmClient!.CompleteAsync(CurrentLlm, ctx, ToolsSnapshot, ct);
 
             if (response.ContentBlocks is not { Length: > 0 })
-                response.ContentBlocks = [new ContentBlock { Type = "text", Text = "[No response from LLM]" }];
+                response.ContentBlocks =
+                [
+                    new ContentBlock { Type = "text", Text = "[No response from LLM]" },
+                ];
 
             await session.Append(new MessageEntry { Message = response });
 
@@ -181,10 +202,15 @@ public sealed class Agent : EventSourcedActor
                 foreach (var tc in toolCalls!)
                 {
                     var toolResult = await ToolRunner!.ExecuteAsync(
-                        tc.Name ?? "", tc.Arguments, ct);
+                        tc.Name ?? "",
+                        tc.Arguments,
+                        ct
+                    );
                     var toolMsg = new Message
                     {
-                        Role = "toolResult", ToolCallId = tc.Id, ToolName = tc.Name,
+                        Role = "toolResult",
+                        ToolCallId = tc.Id,
+                        ToolName = tc.Name,
                         ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
                         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     };
@@ -205,22 +231,50 @@ public sealed class Agent : EventSourcedActor
         switch (@event)
         {
             case AgentCreated c:
-                _llms.Clear(); _llms.AddRange(c.Llms);
-                CurrentLlm = c.Llms.First(l => l.ProviderName == c.CurrentProvider && l.ModelId == c.CurrentModel);
-                HomeDir = c.HomeDir; ParentId = c.ParentId; Packages = c.Packages;
+                _llms.Clear();
+                _llms.AddRange(c.Llms);
+                CurrentLlm = c.Llms.First(l =>
+                    l.ProviderName == c.CurrentProvider && l.ModelId == c.CurrentModel
+                );
+                HomeDir = c.HomeDir;
+                ParentId = c.ParentId;
+                Packages = c.Packages;
                 Status = AgentStatus.Pending;
                 Session = new Session(Guid.CreateVersion7(), new InMemorySessionStorage());
                 break;
-            case AgentStarted: Status = AgentStatus.Running; break;
-            case AgentCompleted: Status = AgentStatus.Completed; break;
-            case AgentFailed f: Status = AgentStatus.Failed; FailureReason = f.Reason; break;
-            case LlmSwitched s: CurrentLlm = _llms.First(l => l.ProviderName == s.ProviderName && l.ModelId == s.ModelId); break;
-            case LlmAdded a: _llms.Add(a.Llm); break;
-            case LlmRemoved r: _llms.RemoveAll(l => l.ProviderName == r.ProviderName && l.ModelId == r.ModelId); break;
-            case ToolAdded a: _tools.Add(a.Tool); break;
-            case ToolRemoved r: _tools.RemoveAll(t => t.Name == r.Name); break;
-            case ChildSpawned c: _childIds.Add(c.ChildId); break;
-            case ThinkingLevelSet s: CurrentLlm.ThinkingLevel = ParseLevel(s.Level); break;
+            case AgentStarted:
+                Status = AgentStatus.Running;
+                break;
+            case AgentCompleted:
+                Status = AgentStatus.Completed;
+                break;
+            case AgentFailed f:
+                Status = AgentStatus.Failed;
+                FailureReason = f.Reason;
+                break;
+            case LlmSwitched s:
+                CurrentLlm = _llms.First(l =>
+                    l.ProviderName == s.ProviderName && l.ModelId == s.ModelId
+                );
+                break;
+            case LlmAdded a:
+                _llms.Add(a.Llm);
+                break;
+            case LlmRemoved r:
+                _llms.RemoveAll(l => l.ProviderName == r.ProviderName && l.ModelId == r.ModelId);
+                break;
+            case ToolAdded a:
+                _tools.Add(a.Tool);
+                break;
+            case ToolRemoved r:
+                _tools.RemoveAll(t => t.Name == r.Name);
+                break;
+            case ChildSpawned c:
+                _childIds.Add(c.ChildId);
+                break;
+            case ThinkingLevelSet s:
+                CurrentLlm.ThinkingLevel = ParseLevel(s.Level);
+                break;
         }
     }
 
@@ -230,7 +284,11 @@ public sealed class Agent : EventSourcedActor
             throw new DomainInvariantException("At least one Llm required");
         if (cmd.Llms.Any(l => string.IsNullOrEmpty(l.ApiKey)))
             throw new DomainInvariantException("All Llms must have ApiKey");
-        if (!cmd.Llms.Any(l => l.ProviderName == cmd.CurrentProvider && l.ModelId == cmd.CurrentModel))
+        if (
+            !cmd.Llms.Any(l =>
+                l.ProviderName == cmd.CurrentProvider && l.ModelId == cmd.CurrentModel
+            )
+        )
             throw new DomainInvariantException("CurrentLlm not in Llms");
     }
 

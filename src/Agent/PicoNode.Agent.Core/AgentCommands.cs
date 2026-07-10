@@ -12,13 +12,21 @@ public sealed record CreateAgent(
 ) : ICommand;
 
 public sealed record RunTurn(string Message) : ICommand;
+
 public sealed record StartAgent : ICommand;
+
 public sealed record CompleteAgent : ICommand;
+
 public sealed record FailAgent(string Reason) : ICommand;
+
 public sealed record SwitchLlmCmd(string ProviderName, string ModelId) : ICommand;
+
 public sealed record AddLlmCmd(Llm Llm) : ICommand;
+
 public sealed record RemoveLlmCmd(string ProviderName, string ModelId) : ICommand;
+
 public sealed record AddToolCmd(Tool Tool) : ICommand;
+
 public sealed record RemoveToolCmd(string Name) : ICommand;
 
 public sealed record SpawnChildCmd(

@@ -16,11 +16,30 @@ public sealed class AgentEdgeCaseTests
         var store = new InMemoryEventStore();
         var system = new ActorSystem(store);
         system.Register<DomainAgent>(
-            cmd => cmd switch { CreateAgent c => new DomainAgent(c), _ => throw new InvalidOperationException() },
-            () => new DomainAgent(new FakeLlmClient(), new FakeToolRunner()));
+            cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new DomainAgent(new FakeLlmClient(), new FakeToolRunner())
+        );
 
         var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent([new() { ProviderName = "x", ModelId = "y", ApiKey = "sk" }], "x", "y", "/tmp"));
+            new CreateAgent(
+                [
+                    new()
+                    {
+                        ProviderName = "x",
+                        ModelId = "y",
+                        ApiKey = "sk",
+                    },
+                ],
+                "x",
+                "y",
+                "/tmp"
+            )
+        );
 
         try
         {
@@ -42,11 +61,30 @@ public sealed class AgentEdgeCaseTests
         var store = new InMemoryEventStore();
         var system = new ActorSystem(store);
         system.Register<DomainAgent>(
-            cmd => cmd switch { CreateAgent c => new DomainAgent(c), _ => throw new InvalidOperationException() },
-            rebuildFactory: null);
+            cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c),
+                    _ => throw new InvalidOperationException(),
+                },
+            rebuildFactory: null
+        );
 
         var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent([new() { ProviderName = "x", ModelId = "y", ApiKey = "sk" }], "x", "y", "/tmp"));
+            new CreateAgent(
+                [
+                    new()
+                    {
+                        ProviderName = "x",
+                        ModelId = "y",
+                        ApiKey = "sk",
+                    },
+                ],
+                "x",
+                "y",
+                "/tmp"
+            )
+        );
 
         await Assert
             .That(async () => await system.AskAsync<object?>(agent.Id, new RunTurn("Hi")))
