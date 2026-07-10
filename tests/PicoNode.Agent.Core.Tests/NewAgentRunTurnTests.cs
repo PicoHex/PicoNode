@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using PicoNode.Actor;
 using PicoNode.Actor.Abs;
 using PicoNode.Agent.Domain;
@@ -37,5 +38,34 @@ public sealed class AgentRunTurnTests
         var ctx = await agent.Session!.BuildContext();
         await Assert.That(ctx.Count(m => m.Role == "user")).IsGreaterThan(0);
         await Assert.That(ctx.Count(m => m.Role == "assistant")).IsGreaterThan(0);
+    }
+
+    [Test]
+    public async Task RunTurn_WritesToOutputChannel()
+    {
+        var store = new InMemoryEventStore();
+        var system = new ActorSystem(store);
+        var llm = new ScriptedLlmClient().AddText("Hello!");
+        var tr = new FakeToolRunner();
+        var channel = Channel.CreateUnbounded<ActorOutputEvent>();
+        var events = new List<ActorOutputEvent>();
+
+        system.Register<DomainAgent>(
+            cmd => cmd switch { CreateAgent c => new DomainAgent(c, llm, tr), _ => throw new InvalidOperationException() },
+            () => new DomainAgent(llm, tr));
+
+        var agent = await system.CreateAsync<DomainAgent>(
+            new CreateAgent([new() { ProviderName = "x", ModelId = "y", ApiKey = "sk" }], "x", "y", "/tmp"));
+
+        agent.OutputWriter = channel.Writer;
+        _ = Task.Run(async () => { await foreach (var e in channel.Reader.ReadAllAsync()) events.Add(e); });
+
+        system.Send(agent.Id, new RunTurn("Hi"));
+        await Task.Delay(300);
+        channel.Writer.Complete();
+        await Task.Delay(100);
+
+        await Assert.That(events.Any(e => e.Type == "text")).IsTrue();
+        await Assert.That(events.Any(e => e.Type == "done")).IsTrue();
     }
 }

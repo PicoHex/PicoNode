@@ -164,6 +164,11 @@ public sealed class Agent : EventSourcedActor
 
             await session.Append(new MessageEntry { Message = response });
 
+            // Output text to progress channel
+            var respText = response.ContentBlocks?.FirstOrDefault(cb => cb.Type == "text")?.Text;
+            if (respText is not null)
+                WriteOutput("text", respText);
+
             var toolCalls = response.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray();
             hasTools = toolCalls is { Length: > 0 };
 
@@ -180,10 +185,12 @@ public sealed class Agent : EventSourcedActor
                         Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     };
                     await session.Append(new MessageEntry { Message = toolMsg });
+                    WriteOutput("tool_result", toolResult);
                 }
             }
         } while (hasTools && !ct.IsCancellationRequested);
 
+        WriteOutput("done");
         return default;
     }
 

@@ -95,6 +95,23 @@ public abstract class Actor : IActor, IAsyncDisposable
     protected internal IActorSystem? System { get; set; }
 
     /// <summary>
+    /// Outbound channel writer. External subscribers (e.g., SSE Server) set this
+    /// to receive progress/diagnostic events from the actor.
+    /// Symmetric to the Mailbox: Mailbox receives commands (入站),
+    /// OutputChannel broadcasts events (出站).
+    /// Weak guarantee — TryWrite silently drops if no subscriber or channel full.
+    /// Actor state is never affected by output events.
+    /// </summary>
+    public ChannelWriter<ActorOutputEvent>? OutputWriter { get; set; }
+
+    /// <summary>
+    /// Write an event to the OutputChannel. No-op if no subscriber.
+    /// Subclasses call this during OnMessageAsync to notify external observers.
+    /// </summary>
+    protected void WriteOutput(string type, string? data = null)
+        => OutputWriter?.TryWrite(new ActorOutputEvent(type, data));
+
+    /// <summary>
     /// Task that completes when initialization finishes (OnReadyAsync succeeds or fails).
     /// Used by ActorSystem.CreateAsync to wait for persistence before returning.
     /// </summary>
