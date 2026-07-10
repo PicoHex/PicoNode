@@ -177,7 +177,10 @@ public sealed class OpenAILlmClient : ILLmClient
 
             var text = textBlocks.Select(cb => cb.Text).FirstOrDefault() ?? "";
 
-            // Per OpenAI spec, content must be null (not "") when only tool_calls are present.
+            // Include reasoning_content for thinking mode (DeepSeek)
+            if (m.ReasoningContent is { Length: > 0 })
+                sb.Append($"\"reasoning_content\":\"{EscapeJson(m.ReasoningContent)}\",");
+
             if (toolCallBlocks.Length > 0 && string.IsNullOrEmpty(text))
                 sb.Append("\"content\":null");
             else

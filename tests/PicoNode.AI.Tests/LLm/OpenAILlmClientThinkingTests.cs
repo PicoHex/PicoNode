@@ -51,8 +51,9 @@ public sealed class OpenAILlmClientThinkingTests
         ) { }
 
         var json = handler.CapturedRequestBody!;
-        // reasoning_effort is OpenAI o1-specific; not sent to generic OpenAI-compatible endpoints
-        await Assert.That(json).DoesNotContain("reasoning_effort");
+        // reasoning_effort now sent for thinking mode (DeepSeek supports it)
+        await Assert.That(json).Contains("\"reasoning_effort\":\"medium\"");
+        await Assert.That(json).Contains("\"thinking\":{\"type\":\"enabled\"}");
         await Assert.That(json).DoesNotContain("\"thinking\":{\"type\":\"disabled\"}");
     }
 

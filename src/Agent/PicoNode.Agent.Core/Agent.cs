@@ -185,6 +185,7 @@ public sealed class Agent : EventSourcedActor
 
                 var contentBlocks = new List<ContentBlock>();
                 var contentAccum = new StringBuilder();
+                var thinkingAccum = new StringBuilder();
                 var argAccum = new Dictionary<int, StringBuilder>();
 
                 await foreach (var evt in LlmClient.StreamAsync(CurrentLlm, ctx, ToolsSnapshot, ct))
@@ -197,6 +198,7 @@ public sealed class Agent : EventSourcedActor
                             contentAccum.Append(evt.Content);
                             break;
                         case "thinking":
+                            thinkingAccum.Append(evt.Content);
                             break;
                         case "tool_call_delta":
                             if (int.TryParse(evt.ToolCallId, out var di))
@@ -234,6 +236,7 @@ public sealed class Agent : EventSourcedActor
                 {
                     Role = "assistant",
                     ContentBlocks = contentBlocks.ToArray(),
+                    ReasoningContent = thinkingAccum.Length > 0 ? thinkingAccum.ToString() : null,
                 };
                 await session.Append(new MessageEntry { Message = finalMessage });
 
