@@ -191,6 +191,10 @@ public sealed class Agent : EventSourcedActor
 
             await session.Append(new MessageEntry { Message = response });
 
+            // Forward reasoning/thinking content
+            if (response.ReasoningContent is { Length: > 0 })
+                WriteOutput("thinking", response.ReasoningContent);
+
             // Forward all content blocks to progress channel
             if (response.ContentBlocks is { Length: > 0 })
             {

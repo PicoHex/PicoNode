@@ -82,9 +82,20 @@ public sealed class OpenAILlmClient : ILLmClient
         sb.Append(',');
         sb.Append("\"stream\":true");
 
-        // NOTE: Do NOT send reasoning_effort or thinking params to OpenAI-compatible
-        // endpoints. These are OpenAI o1-specific. Models like DeepSeek handle thinking
-        // internally — sending unrecognized params can break output or disable tool calling.
+        // Enable thinking mode for providers that support it (DeepSeek, etc.)
+        if (options?.Reasoning is not null && options.ThinkingDisabled is false)
+        {
+            sb.Append(',');
+            sb.Append("\"thinking\":{\"type\":\"enabled\"}");
+            var effort = options.Reasoning switch
+            {
+                ThinkingLevel.Minimal or ThinkingLevel.Low => "low",
+                ThinkingLevel.Medium => "medium",
+                ThinkingLevel.High or ThinkingLevel.XHigh => "high",
+                _ => "high",
+            };
+            sb.Append($",\"reasoning_effort\":\"{effort}\"");
+        }
 
         sb.Append(',');
         sb.Append("\"messages\":[");

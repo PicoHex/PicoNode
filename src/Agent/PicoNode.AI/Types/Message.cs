@@ -15,6 +15,7 @@ public sealed class Message
 
     // Assistant message fields
     public ContentBlock[]? ContentBlocks { get; set; }
+    public string? ReasoningContent { get; set; }
     public string Model { get; set; } = string.Empty;
     public string Provider { get; set; } = string.Empty;
     public AiApiFormat Api { get; set; }
