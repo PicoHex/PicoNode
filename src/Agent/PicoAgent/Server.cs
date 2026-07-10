@@ -422,7 +422,8 @@ public sealed class Server : IAsyncDisposable
         return e > s ? json[s..e] : null;
     }
 
-    private static string EscapeJson(string s) => s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    private static string EscapeJson(string s) =>
+        s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
 
     private static IPEndPoint ParseEndpoint(string uri)
     {
