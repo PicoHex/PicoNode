@@ -161,7 +161,9 @@ public sealed class Agent : EventSourcedActor
                 "RunTurn requires LlmClient and ToolRunner — register them via the Agent constructor."
             );
 
-        var session = Session!;
+        try
+        {
+            var session = Session!;
 
         var userMsg = new Message
         {
@@ -222,6 +224,11 @@ public sealed class Agent : EventSourcedActor
 
         WriteOutput("done");
         return default;
+    }
+    finally
+    {
+        OutputWriter?.Complete();
+    }
     }
 
     // ── State recovery ──
