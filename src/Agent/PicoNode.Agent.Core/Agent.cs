@@ -23,7 +23,7 @@ public sealed class Agent : EventSourcedActor
 
     internal ILlmClient? LlmClient { get; init; }
     internal IToolRunner? ToolRunner { get; init; }
-    internal List<SkillInfo>? Skills { get; set; }
+    public List<SkillInfo>? Skills { get; set; }
     public Session? Session { get; private set; }
 
     // ── Constructors ──

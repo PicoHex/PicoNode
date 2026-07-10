@@ -244,7 +244,16 @@ public sealed class Server : IAsyncDisposable
         );
         app.MapGet(
             $"{p}/system-prompt",
-            (_, _) => V(Json($"{{\"prompt\":\"{EscapeJson(sp ?? "")}\"}}"))
+            (_, _) =>
+            {
+                var prompt = sp
+                    ?? PicoNode.Agent.Domain.SystemPromptBuilder.Build(
+                        a.ToolsSnapshot.ToArray(),
+                        a.Skills,
+                        a.HomeDir
+                    );
+                return V(Json($"{{\"prompt\":\"{EscapeJson(prompt)}\"}}"));
+            }
         );
         app.MapPost(
             $"{p}/system-prompt",
