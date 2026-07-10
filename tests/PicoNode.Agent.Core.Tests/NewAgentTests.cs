@@ -67,6 +67,8 @@ public sealed class NewAgent : EventSourcedActor
 
     // State
     public Llm CurrentLlm { get; private set; } = null!;
+    public IReadOnlyList<Llm> LlmsSnapshot => _llms;
+    public IReadOnlyList<Tool> ToolsSnapshot => _tools;
     public AgentStatus Status { get; private set; }
     public Guid? ParentId { get; private set; }
     public IReadOnlyList<Guid> ChildIds => _childIds;
@@ -192,6 +194,12 @@ public sealed class NewAgent : EventSourcedActor
 
             case RemoveToolCmd r:
                 RaiseEvent(new ToolRemoved(r.Name));
+                return default;
+
+            case SpawnChildCmd s:
+                // Generate child Id here; ActorSystem creates the child actor.
+                var childId = Guid.CreateVersion7();
+                RaiseEvent(new ChildSpawned(childId));
                 return default;
         }
 
