@@ -40,6 +40,8 @@ public sealed record CreateAgent(
     List<string>? Packages = null
 ) : ICommand;
 
+public sealed record RunTurn(string Message) : ICommand;
+
 public sealed record StartAgent : ICommand;
 public sealed record CompleteAgent : ICommand;
 public sealed record FailAgent(string Reason) : ICommand;
@@ -197,11 +199,90 @@ public sealed class NewAgent : EventSourcedActor
                 return default;
 
             case SpawnChildCmd s:
-                // Generate child Id here; ActorSystem creates the child actor.
                 var childId = Guid.CreateVersion7();
                 RaiseEvent(new ChildSpawned(childId));
                 return default;
+
+            case RunTurn r:
+                return RunTurnAsync(r.Message, StopToken);
         }
+
+        return default;
+    }
+
+    // ── RunTurn: nested do...while LLM + tool loop ──
+
+    private async ValueTask<object?> RunTurnAsync(string message, CancellationToken ct)
+    {
+        var session = Session!;
+
+        // Append user message
+        var userMsg = new Message
+        {
+            Role = "user",
+            Content = message,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+        await session.Append(new MessageEntry { Message = userMsg });
+
+        bool hasTools;
+        var iterations = 0;
+        do
+        {
+            if (++iterations > 100)
+                break;
+
+            var ctx = await session.BuildContext();
+            var response = await LlmClient!.CompleteAsync(
+                CurrentLlm, ctx, ToolsSnapshot.ToList(), ct
+            );
+
+            // Handle empty/error response
+            if (response.ContentBlocks is not { Length: > 0 })
+            {
+                response.ContentBlocks =
+                [
+                    new ContentBlock
+                    {
+                        Type = "text",
+                        Text = "[No response from LLM]",
+                    },
+                ];
+            }
+
+            await session.Append(new MessageEntry { Message = response });
+
+            var toolCalls = response
+                .ContentBlocks?.Where(cb => cb.Type == "tool_call")
+                .ToArray();
+            hasTools = toolCalls is { Length: > 0 };
+
+            if (hasTools)
+            {
+                foreach (var tc in toolCalls!)
+                {
+                    var toolResult = await ToolRunner!.ExecuteAsync(
+                        tc.Name ?? "", tc.Arguments ?? new Dictionary<string, object?>(), ct
+                    );
+                    var toolMsg = new Message
+                    {
+                        Role = "toolResult",
+                        ToolCallId = tc.Id,
+                        ToolName = tc.Name,
+                        ContentBlocks =
+                        [
+                            new ContentBlock
+                            {
+                                Type = "text",
+                                Text = toolResult,
+                            },
+                        ],
+                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    };
+                    await session.Append(new MessageEntry { Message = toolMsg });
+                }
+            }
+        } while (hasTools && !ct.IsCancellationRequested);
 
         return default;
     }
@@ -224,6 +305,7 @@ public sealed class NewAgent : EventSourcedActor
                 ParentId = c.ParentId;
                 Packages = c.Packages;
                 Status = AgentStatus.Pending;
+                Session = new Session(Guid.CreateVersion7(), new InMemorySessionStorage());
                 break;
 
             case AgentStarted:

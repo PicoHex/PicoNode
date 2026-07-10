@@ -83,6 +83,13 @@ public abstract class Actor : IActor, IAsyncDisposable
     internal void SignalReady() => _ready.TrySetResult(true);
 
     /// <summary>
+    /// The actor's cancellation token. Canceled when StopAsync is called.
+    /// Subclasses should pass this to async operations (LLM calls, tool execution)
+    /// so that Stop can interrupt long-running work.
+    /// </summary>
+    protected CancellationToken StopToken => _cts.Token;
+
+    /// <summary>
     /// Task that completes when initialization finishes (OnReadyAsync succeeds or fails).
     /// Used by ActorSystem.CreateAsync to wait for persistence before returning.
     /// </summary>
