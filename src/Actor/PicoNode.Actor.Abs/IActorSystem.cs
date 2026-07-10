@@ -7,11 +7,13 @@ namespace PicoNode.Actor.Abs;
 public interface IActorSystem
 {
     /// <summary>
-    /// Register a factory for creating a new actor from a creation command.
-    /// The factory receives only the caller's command — the UUID v7 is generated internally
-    /// by the ActorSystem and assigned to the actor's Id property after construction.
+    /// Register factories for creating and rebuilding an actor.
+    /// <paramref name="createFactory"/> receives the caller's command and returns a new actor.
+    /// <paramref name="rebuildFactory"/> returns an actor without a command — used by GetAsync
+    /// to rebuild from persisted events. If null, GetAsync cannot rebuild this type.
+    /// Both factories should inject the same infrastructure dependencies (ILlmClient, etc.).
     /// </summary>
-    void Register<T>(Func<ICommand, T> factory)
+    void Register<T>(Func<ICommand, T> createFactory, Func<T>? rebuildFactory = null)
         where T : IActor;
 
     /// <summary>
@@ -26,13 +28,11 @@ public interface IActorSystem
 
     /// <summary>
     /// Get an actor by UUID v7. Returns from memory if active;
-    /// otherwise rebuilds from persisted events. Returns null if not found.
-    /// Rebuild path: new T() → assign Id → ReplayEvents → SignalReady.
-    /// No factory involved — the public parameterless constructor is used.
-    /// The new() constraint is AOT-safe (compiler generates direct call, zero reflection).
+    /// otherwise rebuilds from persisted events using the registered rebuildFactory.
+    /// Returns null if not found or no rebuildFactory was registered.
     /// </summary>
     ValueTask<T?> GetAsync<T>(Guid id)
-        where T : IActor, new();
+        where T : IActor;
 
     /// <summary>Send a fire-and-forget command to an actor.</summary>
     void Send(Guid id, ICommand command);

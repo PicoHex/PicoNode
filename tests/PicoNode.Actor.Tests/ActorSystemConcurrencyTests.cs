@@ -15,12 +15,14 @@ public sealed class ActorSystemConcurrencyTests
         var store = new InMemoryEventStore();
         var system = new ActorSystem(store);
 
-        system.Register<Counter>(cmd =>
-            cmd switch
-            {
-                CreateCounter c => new Counter(c),
-                _ => throw new InvalidOperationException(),
-            }
+        system.Register<Counter>(
+            cmd =>
+                cmd switch
+                {
+                    CreateCounter c => new Counter(c),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new Counter()
         );
 
         // Create actor and persist state

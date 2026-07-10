@@ -13,6 +13,7 @@ public sealed class ActorSystem : IActorSystem
 {
     private readonly ConcurrentDictionary<Guid, ActorBase> _registry = new();
     private readonly ConcurrentDictionary<Type, Func<ICommand, object>> _factories = new();
+    private readonly ConcurrentDictionary<Type, Func<object>> _rebuildFactories = new();
     private readonly IEventStore _eventStore;
     private readonly ILogger? _logger;
 
@@ -31,10 +32,12 @@ public sealed class ActorSystem : IActorSystem
     // ═══════════════════════════════════════════════════════════
 
     /// <inheritdoc/>
-    public void Register<T>(Func<ICommand, T> factory)
+    public void Register<T>(Func<ICommand, T> createFactory, Func<T>? rebuildFactory = null)
         where T : IActor
     {
-        _factories[typeof(T)] = cmd => factory(cmd)!;
+        _factories[typeof(T)] = cmd => createFactory(cmd)!;
+        if (rebuildFactory is not null)
+            _rebuildFactories[typeof(T)] = () => rebuildFactory()!;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -91,30 +94,28 @@ public sealed class ActorSystem : IActorSystem
 
     /// <inheritdoc/>
     public async ValueTask<T?> GetAsync<T>(Guid id)
-        where T : IActor, new()
+        where T : IActor
     {
-        // In-memory hit — returns immediately
         if (_registry.TryGetValue(id, out var existing))
             return (T)(IActor)existing;
 
-        // Non-ES actors are ephemeral — cannot be rebuilt, return null
+        if (!_rebuildFactories.TryGetValue(typeof(T), out var rebuildFactory))
+            return default;
+
         if (!typeof(IEventSourcedActor).IsAssignableFrom(typeof(T)))
             return default;
 
-        // Load events from store
         var events = await _eventStore.LoadAsync(id).ConfigureAwait(false);
         if (events.Count == 0)
             return default;
 
-        // Rebuild: parameterless constructor (AOT-safe new() constraint)
-        var actor = (ActorBase)(IActor)new T();
+        var actor = (ActorBase)(IActor)rebuildFactory();
         actor.Id = id;
 
         var es = (IEventSourcedActor)actor;
         ((EventSourcedActor)actor).EventStore = _eventStore;
         es.ReplayEvents(events);
 
-        // TryAdd: if another thread already rebuilt this actor, discard ours
         if (!_registry.TryAdd(id, actor))
         {
             _logger?.Warning(
