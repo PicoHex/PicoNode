@@ -191,10 +191,15 @@ public sealed class Agent : EventSourcedActor
 
             await session.Append(new MessageEntry { Message = response });
 
-            // Output text to progress channel
-            var respText = response.ContentBlocks?.FirstOrDefault(cb => cb.Type == "text")?.Text;
-            if (respText is not null)
-                WriteOutput("text", respText);
+            // Forward all content blocks to progress channel
+            if (response.ContentBlocks is { Length: > 0 })
+            {
+                foreach (var cb in response.ContentBlocks)
+                {
+                    if (cb.Type is "text" or "thinking" or "reasoning")
+                        WriteOutput(cb.Type, cb.Text);
+                }
+            }
 
             var toolCalls = response.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray();
             hasTools = toolCalls is { Length: > 0 };
