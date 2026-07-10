@@ -42,7 +42,7 @@ public sealed class ActorSystem : IActorSystem
     // ═══════════════════════════════════════════════════════════
 
     /// <inheritdoc/>
-    public ValueTask<T> CreateAsync<T>(ICommand command)
+    public async ValueTask<T> CreateAsync<T>(ICommand command)
         where T : IActor
     {
         if (!_factories.TryGetValue(typeof(T), out var factory))
@@ -67,9 +67,22 @@ public sealed class ActorSystem : IActorSystem
         // 5. Release the consumption loop gate
         actor.SignalReady();
 
+        // 6. Wait for initialization (OnReadyAsync: persist + mutate).
+        //    If persistence fails, remove from registry and propagate exception.
+        try
+        {
+            await actor.InitCompletedTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            _registry.TryRemove(id, out _);
+            _logger?.Error($"Actor {typeof(T).Name} {id} initialization failed, removed");
+            throw;
+        }
+
         _logger?.Info($"Actor {typeof(T).Name} created: {id}");
 
-        return new ValueTask<T>((T)(IActor)actor);
+        return (T)(IActor)actor;
     }
 
     // ═══════════════════════════════════════════════════════════

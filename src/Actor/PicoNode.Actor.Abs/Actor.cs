@@ -19,6 +19,7 @@ public abstract class Actor : IActor, IAsyncDisposable
 
     // TaskCompletionSource (non-generic) not available on netstandard2.0.
     private readonly TaskCompletionSource<bool> _ready = new();
+    private readonly TaskCompletionSource<bool> _initCompleted = new();
     private readonly Task _loopTask;
     private int _stopped;
 
@@ -81,6 +82,12 @@ public abstract class Actor : IActor, IAsyncDisposable
     /// </summary>
     internal void SignalReady() => _ready.TrySetResult(true);
 
+    /// <summary>
+    /// Task that completes when initialization finishes (OnReadyAsync succeeds or fails).
+    /// Used by ActorSystem.CreateAsync to wait for persistence before returning.
+    /// </summary>
+    internal Task InitCompletedTask => _initCompleted.Task;
+
     /// <summary>Called by IActorSystem to deliver an envelope.</summary>
     internal void Post(Envelope envelope) => _mailbox.Writer.TryWrite(envelope);
 
@@ -94,7 +101,16 @@ public abstract class Actor : IActor, IAsyncDisposable
 
         // Hook: flush any events produced during construction (EventSourcedActor).
         // Base implementation is a no-op.
-        await OnReadyAsync().ConfigureAwait(false);
+        try
+        {
+            await OnReadyAsync().ConfigureAwait(false);
+            _initCompleted.TrySetResult(true);
+        }
+        catch (Exception ex)
+        {
+            _initCompleted.TrySetException(ex);
+            throw;
+        }
 
         try
         {
