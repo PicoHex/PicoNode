@@ -415,3 +415,4 @@ FodyWeavers.xsd
 **/superpowers/
 .omo/samples/PicoAgent.Web/settings.json
 .omo/
+samples/PicoAgent.Web/data/
