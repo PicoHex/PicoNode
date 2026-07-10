@@ -1,23 +1,119 @@
-namespace PicoNode.Agent.Domain;
-
+using System.Runtime.CompilerServices;
 using NetAI = PicoNode.AI;
 using NetAITypes = PicoNode.AI.Types;
+
+namespace PicoNode.Agent.Domain;
 
 public sealed class LlmClientAdapter : ILlmClient
 {
     private readonly NetAI.ILLmClient _inner;
 
-    public LlmClientAdapter(NetAI.ILLmClient inner)
-    {
-        _inner = inner;
-    }
+    public LlmClientAdapter(NetAI.ILLmClient inner) => _inner = inner;
 
     public async Task<Message> CompleteAsync(
-        Llm llm,
-        List<Message> context,
-        IReadOnlyList<Tool> tools,
-        CancellationToken ct
-    )
+        Llm llm, List<Message> context, IReadOnlyList<Tool> tools, CancellationToken ct)
+    {
+        NetAI.ContentBlock[]? blocks = null;
+        var stopReason = "end_turn";
+        string? errorMsg = null;
+        string? reasoningContent = null;
+
+        await foreach (var evt in StreamInner(llm, context, tools, ct))
+        {
+            switch (evt)
+            {
+                case NetAI.AssistantMessageEvent.Done d:
+                    blocks = d.Message.ContentBlocks;
+                    stopReason = d.Message.StopReason ?? stopReason;
+                    reasoningContent = d.Message.ReasoningContent;
+                    break;
+                case NetAI.AssistantMessageEvent.ThinkingDelta td:
+                    reasoningContent = (reasoningContent ?? "") + td.Delta;
+                    break;
+                case NetAI.AssistantMessageEvent.Error e:
+                    errorMsg = e.Message.ErrorMessage ?? "Unknown error";
+                    break;
+            }
+        }
+
+        if (errorMsg is not null)
+            blocks ??= [new NetAI.ContentBlock { Type = "text", Text = $"[API Error: {errorMsg}]" }];
+
+        return new Message
+        {
+            Role = "assistant",
+            ContentBlocks = blocks ?? [],
+            StopReason = stopReason,
+            ReasoningContent = reasoningContent,
+        };
+    }
+
+    public async IAsyncEnumerable<StreamEvent> StreamAsync(
+        Llm llm, List<Message> context, IReadOnlyList<Tool> tools,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        await foreach (var evt in StreamInner(llm, context, tools, ct))
+        {
+            switch (evt)
+            {
+                case NetAI.AssistantMessageEvent.Start s:
+                    yield return new StreamEvent { Type = "start" };
+                    break;
+                case NetAI.AssistantMessageEvent.TextDelta td:
+                    yield return new StreamEvent { Type = "text", Content = td.Delta };
+                    break;
+                case NetAI.AssistantMessageEvent.ThinkingDelta tdd:
+                    yield return new StreamEvent { Type = "thinking", Content = tdd.Delta };
+                    break;
+                case NetAI.AssistantMessageEvent.ToolCallStart ts:
+                    yield return new StreamEvent
+                    {
+                        Type = "tool_call_start",
+                        ToolCallId = ts.Index.ToString(),
+                    };
+                    break;
+                case NetAI.AssistantMessageEvent.ToolCallDelta tcd:
+                    yield return new StreamEvent
+                    {
+                        Type = "tool_call_delta",
+                        ToolCallId = tcd.Index.ToString(),
+                        Content = tcd.Delta,
+                    };
+                    break;
+                case NetAI.AssistantMessageEvent.ToolCallEnd te:
+                    yield return new StreamEvent
+                    {
+                        Type = "tool_call_end",
+                        ToolCallId = te.Index.ToString(),
+                        ToolName = te.Call?.Name,
+                    };
+                    break;
+                case NetAI.AssistantMessageEvent.ToolResult tr:
+                    yield return new StreamEvent
+                    {
+                        Type = "tool_result",
+                        Content = tr.Content,
+                        ToolCallId = tr.ToolCallId,
+                        ToolName = tr.ToolName,
+                    };
+                    break;
+                case NetAI.AssistantMessageEvent.Done d:
+                    yield return new StreamEvent { Type = "done" };
+                    yield break;
+                case NetAI.AssistantMessageEvent.Error e:
+                    yield return new StreamEvent
+                    {
+                        Type = "error",
+                        Content = e.Message.ErrorMessage ?? "Unknown error",
+                    };
+                    yield break;
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<NetAI.AssistantMessageEvent> StreamInner(
+        Llm llm, List<Message> context, IReadOnlyList<Tool> tools,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         var model = new NetAI.Model
         {
@@ -49,38 +145,7 @@ public sealed class LlmClientAdapter : ILlmClient
             Reasoning = llm.ThinkingEnabled ? llm.ThinkingLevel : null,
         };
 
-        NetAI.ContentBlock[]? blocks = null;
-        var stopReason = "end_turn";
-        string? errorMsg = null;
-        string? reasoningContent = null;
-
         await foreach (var evt in _inner.StreamAsync(model, chatContext, options, ct))
-        {
-            switch (evt)
-            {
-                case NetAI.AssistantMessageEvent.Done d:
-                    blocks = d.Message.ContentBlocks;
-                    stopReason = d.Message.StopReason ?? stopReason;
-                    reasoningContent = d.Message.ReasoningContent;
-                    break;
-                case NetAI.AssistantMessageEvent.Error e:
-                    errorMsg = e.Message.ErrorMessage ?? "Unknown error";
-                    break;
-                case NetAI.AssistantMessageEvent.ThinkingDelta td:
-                    reasoningContent = (reasoningContent ?? "") + td.Delta;
-                    break;
-            }
-        }
-
-        if (errorMsg is not null)
-            blocks ??= [new NetAI.ContentBlock { Type = "text", Text = $"[API Error: {errorMsg}]" }];
-
-        return new Message
-        {
-            Role = "assistant",
-            ContentBlocks = blocks ?? [],
-            StopReason = stopReason,
-            ReasoningContent = reasoningContent,
-        };
+            yield return evt;
     }
 }

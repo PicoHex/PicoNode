@@ -1,3 +1,4 @@
+using System.Text;
 using PicoNode.Actor.Abs;
 
 namespace PicoNode.Agent.Domain;
@@ -165,84 +166,105 @@ public sealed class Agent : EventSourcedActor
         {
             var session = Session!;
 
-        var userMsg = new Message
-        {
-            Role = "user",
-            Content = message,
-            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        };
-        await session.Append(new MessageEntry { Message = userMsg });
-
-        bool hasTools;
-        var iterations = 0;
-        do
-        {
-            if (++iterations > 100)
-                break;
-
-            var ctx = await session.BuildContext();
-            var response = await LlmClient!.CompleteAsync(CurrentLlm, ctx, ToolsSnapshot, ct);
-
-            if (response.ContentBlocks is not { Length: > 0 })
-                response.ContentBlocks =
-                [
-                    new ContentBlock { Type = "text", Text = "[No response from LLM]" },
-                ];
-
-            await session.Append(new MessageEntry { Message = response });
-
-            // Forward reasoning/thinking content
-            if (response.ReasoningContent is { Length: > 0 })
-                WriteOutput("thinking", response.ReasoningContent);
-
-            // Forward all content blocks to progress channel
-            if (response.ContentBlocks is { Length: > 0 })
+            var userMsg = new Message
             {
-                foreach (var cb in response.ContentBlocks)
-                {
-                    if (cb.Type is "text" or "thinking" or "reasoning")
-                        WriteOutput(cb.Type, cb.Text);
-                }
-            }
+                Role = "user",
+                Content = message,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            };
+            await session.Append(new MessageEntry { Message = userMsg });
 
-            var toolCalls = response.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray();
-            hasTools = toolCalls is { Length: > 0 };
-
-            if (hasTools)
+            bool hasTools;
+            var iterations = 0;
+            do
             {
-                foreach (var tc in toolCalls!)
+                if (++iterations > 100)
+                    break;
+
+                var ctx = await session.BuildContext();
+
+                // Build full message from streaming events
+                var contentAccum = new StringBuilder();
+                var thinkingAccum = new StringBuilder();
+                var contentBlocks = new List<ContentBlock>();
+                var toolCallMap = new Dictionary<int, (string Id, string Name, StringBuilder Args)>();
+
+                await foreach (var evt in LlmClient.StreamAsync(CurrentLlm, ctx, ToolsSnapshot.ToList(), ct))
                 {
-                    var toolResult = await ToolRunner!.ExecuteAsync(
-                        tc.Name ?? "",
-                        tc.Arguments,
-                        ct
-                    );
-                    var toolMsg = new Message
+                    WriteOutput(evt.Type, evt.Content);
+
+                    switch (evt.Type)
                     {
-                        Role = "toolResult",
-                        ToolCallId = tc.Id,
-                        ToolName = tc.Name,
-                        ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
-                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                    };
-                    await session.Append(new MessageEntry { Message = toolMsg });
-                    WriteOutput("tool_result", toolResult);
+                        case "text":
+                            contentAccum.Append(evt.Content);
+                            break;
+                        case "thinking":
+                            thinkingAccum.Append(evt.Content);
+                            break;
+                        case "tool_call_start":
+                            var idx = int.Parse(evt.ToolCallId ?? "0");
+                            toolCallMap[idx] = (evt.ToolCallId!, evt.ToolName!, new StringBuilder());
+                            break;
+                        case "tool_call_delta":
+                            if (int.TryParse(evt.ToolCallId, out var di) && toolCallMap.TryGetValue(di, out var tc))
+                                tc.Args.Append(evt.Content);
+                            break;
+                        case "done":
+                            goto streamDone;
+                        case "error":
+                            throw new InvalidOperationException(evt.Content ?? "LLM error");
+                    }
                 }
-            }
-        } while (hasTools && !ct.IsCancellationRequested);
+                streamDone:
 
-        WriteOutput("done");
-        return default;
-    }
-    catch (Exception ex)
-    {
-        WriteOutput("error", ex.Message);
-        throw;
-    }
-    finally
-    {
-        OutputWriter?.Complete();
-    }
+                // Flush accumulated content
+                if (contentAccum.Length > 0)
+                    contentBlocks.Add(new ContentBlock { Type = "text", Text = contentAccum.ToString() });
+
+                var finalMessage = new Message
+                {
+                    Role = "assistant",
+                    ContentBlocks = contentBlocks.ToArray(),
+                    ReasoningContent = thinkingAccum.Length > 0 ? thinkingAccum.ToString() : null,
+                };
+                await session.Append(new MessageEntry { Message = finalMessage });
+
+                // Check for tool calls
+                var toolCalls = contentBlocks.Where(cb => cb.Type == "tool_call").ToArray();
+                hasTools = toolCalls.Length > 0;
+
+                if (hasTools)
+                {
+                    foreach (var tc in toolCalls)
+                    {
+                        var toolResult = await ToolRunner!.ExecuteAsync(
+                            tc.Name ?? "", tc.Arguments, ct);
+                        var toolMsg = new Message
+                        {
+                            Role = "toolResult",
+                            ToolCallId = tc.Id,
+                            ToolName = tc.Name,
+                            ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
+                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        };
+                        await session.Append(new MessageEntry { Message = toolMsg });
+                        WriteOutput("tool_result", toolResult);
+                    }
+                }
+            } while (hasTools && !ct.IsCancellationRequested);
+
+            WriteOutput("done");
+            return default;
+        }
+        catch (Exception ex)
+        {
+            WriteOutput("error", ex.Message);
+            throw;
+        }
+        finally
+        {
+            OutputWriter?.Complete();
+        }
     }
 
     // ── State recovery ──

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using PicoNode.Actor;
 using PicoNode.Actor.Abs;
@@ -26,14 +27,20 @@ public sealed class AgentRunTurnTests
         }
 
         public Task<Message> CompleteAsync(
-            Llm l,
-            List<Message> c,
-            IReadOnlyList<Tool> t,
-            CancellationToken ct
-        ) =>
-            _r.Count > 0
-                ? Task.FromResult(_r.Dequeue())
-                : Task.FromResult(new Message { Role = "assistant", Content = "done" });
+            Llm l, List<Message> c, IReadOnlyList<Tool> t, CancellationToken ct) =>
+            _r.Count > 0 ? Task.FromResult(_r.Dequeue()) : Task.FromResult(new Message { Role = "assistant", Content = "done" });
+
+        public async IAsyncEnumerable<StreamEvent> StreamAsync(
+            Llm l, List<Message> c, IReadOnlyList<Tool> t, [EnumeratorCancellation] CancellationToken ct)
+        {
+            if (_r.Count > 0)
+            {
+                var msg = _r.Dequeue();
+                if (msg.Content is { Length: > 0 })
+                    yield return new StreamEvent { Type = "text", Content = msg.Content };
+            }
+            yield return new StreamEvent { Type = "done" };
+        }
     }
 
     [Test]
