@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PicoNode.AI\PicoNode.AI.csproj" />
+    <ProjectReference Include="..\..\Actor\PicoNode.Actor\PicoNode.Actor.csproj" />
+    <ProjectReference Include="..\..\Actor\PicoNode.Actor.Abs\PicoNode.Actor.Abs.csproj" />
     <PackageReference Include="PicoJetson" />
   </ItemGroup>
 </Project>

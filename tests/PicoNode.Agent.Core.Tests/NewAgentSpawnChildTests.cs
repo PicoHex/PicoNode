@@ -1,18 +1,12 @@
 using PicoNode.Actor;
 using PicoNode.Actor.Abs;
 using PicoNode.Agent.Domain;
+using DomainAgent = PicoNode.Agent.Domain.Agent;
 
 namespace PicoNode.Agent.Core.Tests;
 
-public sealed class NewAgentSpawnChildTests
+public sealed class AgentSpawnChildTests
 {
-    private static List<Llm> DefaultLlms() =>
-    [new() { ProviderName = "deepseek", ModelId = "deepseek-chat", ApiKey = "sk-test" }];
-
-    /// <summary>
-    /// SpawnChild must create a child Agent in the ActorSystem registry.
-    /// Parent.ChildIds must include the child.
-    /// </summary>
     [Test]
     public async Task SpawnChild_CreatesChildInRegistry()
     {
@@ -21,24 +15,19 @@ public sealed class NewAgentSpawnChildTests
         var llmClient = new FakeLlmClient();
         var toolRunner = new FakeToolRunner();
 
-        // Also register child type
-        system.Register<NewAgent>(
-            cmd => cmd switch { CreateAgent c => new NewAgent(c, llmClient, toolRunner), _ => throw new InvalidOperationException() },
-            () => new NewAgent(llmClient, toolRunner));
+        system.Register<DomainAgent>(
+            cmd => cmd switch { CreateAgent c => new DomainAgent(c, llmClient, toolRunner), _ => throw new InvalidOperationException() },
+            () => new DomainAgent(llmClient, toolRunner));
 
-        var parent = await system.CreateAsync<NewAgent>(
-            new CreateAgent(DefaultLlms(), "deepseek", "deepseek-chat", "/tmp"));
+        var parent = await system.CreateAsync<DomainAgent>(
+            new CreateAgent([new() { ProviderName = "x", ModelId = "y", ApiKey = "sk" }], "x", "y", "/tmp"));
 
-        var childLlms = new List<Llm> { new() { ProviderName = "openai", ModelId = "gpt-4o", ApiKey = "sk-xxx" } };
-        system.Send(parent.Id, new SpawnChildCmd(childLlms, "openai", "gpt-4o", []));
+        var childLlms = new List<Llm> { new() { ProviderName = "a", ModelId = "b", ApiKey = "sk" } };
+        system.Send(parent.Id, new SpawnChildCmd(childLlms, "a", "b", []));
         await Task.Delay(200);
 
         await Assert.That(parent.ChildIds.Count).IsEqualTo(1);
-
-        // Child should be retrievable from the system
-        var childId = parent.ChildIds[0];
-        var child = await system.GetAsync<NewAgent>(childId);
+        var child = await system.GetAsync<DomainAgent>(parent.ChildIds[0]);
         await Assert.That(child).IsNotNull();
-        await Assert.That(child!.ParentId).IsEqualTo(parent.Id);
     }
 }

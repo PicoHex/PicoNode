@@ -1,9 +1,24 @@
+using PicoNode.Actor;
+using PicoNode.Actor.Abs;
+
 namespace PicoNode.Agent.Domain;
 
+/// <summary>
+/// Builds an Agent from configuration and registers it with ActorSystem.
+/// Replaces the old AgentFactory — uses commands + ActorSystem instead of direct methods.
+/// </summary>
 public sealed class AgentFactory
 {
+    private readonly ActorSystem _system;
     private readonly ToolRunner _toolRunner = new();
+    private readonly ILlmClient _llmClient;
     private bool _withBuiltInTools;
+
+    public AgentFactory(ActorSystem system, ILlmClient llmClient)
+    {
+        _system = system;
+        _llmClient = llmClient;
+    }
 
     public AgentFactory WithBuiltInTools()
     {
@@ -11,74 +26,39 @@ public sealed class AgentFactory
         return this;
     }
 
-    public Agent Build(AgentConfig config, string homeDir)
+    public void Register()
     {
-        // Build Llms from providers
-        var llms = new List<Llm>();
-        string? firstProvider = null;
-        string? firstModel = null;
-
-        foreach (var (name, entry) in config.Providers)
-        {
-            var apiFormat = entry.ApiFormat?.ToLowerInvariant() switch
-            {
-                "anthropic" => AiApiFormat.AnthropicMessages,
-                _ => AiApiFormat.OpenAIChatCompletions,
-            };
-
-            var thinkingLevel = ParseThinkingLevel(
-                config.ThinkingLevel ?? AgentConfig.DefaultThinkingLevel.ToString()
-            );
-
-            var modelId = config.Model;
-            llms.Add(
-                new Llm
+        _system.Register<Agent>(
+            create: cmd =>
+                cmd switch
                 {
-                    ProviderName = name,
-                    ModelId = modelId,
-                    ApiKey = entry.ApiKey,
-                    BaseUrl = entry.BaseUrl ?? "",
-                    ApiFormat = apiFormat,
-                    ThinkingLevel = thinkingLevel,
-                    MaxTokens = config.MaxTokens ?? 393216,
-                    ThinkingEnabled = config.ThinkingEnabled,
-                }
-            );
+                    CreateAgent c => new Agent(c, _llmClient, _toolRunner),
+                    _ => throw new InvalidOperationException(),
+                },
+            rebuild: () => new Agent(_llmClient, _toolRunner));
+    }
 
-            firstProvider ??= name;
-            firstModel ??= modelId;
-        }
+    public async ValueTask<Agent> BuildAsync(AgentConfig config, string homeDir)
+    {
+        Register();
 
-        // Determine current Llm
-        var currentProvider = firstProvider!;
-        if (config.Model is not { Length: > 0 })
-            throw new DomainInvariantException("config.Model must be set");
-        var currentModel = config.Model;
+        var llms = BuildLlms(config);
+        var currentProvider = llms[0].ProviderName;
+        var currentModel = config.Model!;
 
-        var agent = new Agent(
-            Guid.CreateVersion7(),
-            llms,
-            currentProvider,
-            currentModel,
-            homeDir,
-            packages: config.Packages
-        );
+        var agent = await _system.CreateAsync<Agent>(
+            new CreateAgent(llms, currentProvider, currentModel, homeDir,
+                packages: config.Packages));
 
-        // Register built-in tools with handlers
         if (_withBuiltInTools)
-        {
             RegisterBuiltInTools(agent);
-        }
 
-        // Resolve packages if any
+        // Register package capabilities
         if (config.Packages is { Count: > 0 })
         {
             var pkgEntries = PackageResolver.Resolve(homeDir, config.Packages);
             foreach (var entry in pkgEntries)
             {
-                if (entry.IsGit)
-                    ; // git clone handled by PackageInstaller in PicoNode.Agent
-
                 var pkgSkillsDir = Path.Combine(entry.DisplayPath, "skills");
                 if (Directory.Exists(pkgSkillsDir))
                 {
@@ -86,18 +66,11 @@ public sealed class AgentFactory
                     var skills = scanner.ScanFromDir(pkgSkillsDir);
                     foreach (var skill in skills)
                     {
-                        var tool = new Tool
-                        {
-                            Name = skill.Name,
-                            Description = skill.Description,
-                            Kind = ToolKind.Capability,
-                        };
-                        agent.AddTool(tool);
-                        _toolRunner.Add(
-                            tool,
-                            (args, ct) =>
-                                Task.FromResult($"[Capability {skill.Name}: not yet implemented]")
-                        );
+                        var tool = new Tool { Name = skill.Name, Description = skill.Description,
+                            Kind = ToolKind.Capability };
+                        _system.Send(agent.Id, new AddToolCmd(tool));
+                        _toolRunner.Add(tool, (args, ct) =>
+                            Task.FromResult($"[Capability {skill.Name}: not yet implemented]"));
                     }
                 }
             }
@@ -106,159 +79,90 @@ public sealed class AgentFactory
         return agent;
     }
 
+    public IToolRunner GetToolRunner() => _toolRunner;
+
     private void RegisterBuiltInTools(Agent agent)
     {
-        RegisterTool(
-            agent,
-            "read",
-            "Read file contents",
-            """{"type":"object","properties":{"path":{"type":"string","description":"Path to the file to read"},"offset":{"type":"integer","description":"Line number to start from (1-indexed)"},"limit":{"type":"integer","description":"Max lines to read"}},"required":["path"]}""",
-            async (args, ct) =>
-            {
-                var path = args.GetValueOrDefault("path", "") as string ?? "";
-                if (!File.Exists(path))
-                    return $"[Error: File not found: {path}]";
-                return await File.ReadAllTextAsync(path, ct);
-            }
-        );
-
-        RegisterTool(
-            agent,
-            "write",
-            "Write file contents",
-            """{"type":"object","properties":{"path":{"type":"string","description":"Path to write to"},"content":{"type":"string","description":"Content to write"}},"required":["path","content"]}""",
-            async (args, ct) =>
-            {
-                var path = args.GetValueOrDefault("path", "") as string ?? "";
-                var content = args.GetValueOrDefault("content", "") as string ?? "";
-                var dir = Path.GetDirectoryName(path);
-                if (dir is not null)
-                    Directory.CreateDirectory(dir);
-                await File.WriteAllTextAsync(path, content, ct);
-                return $"[Wrote {content.Length} bytes]";
-            }
-        );
-
-        RegisterTool(
-            agent,
-            "bash",
-            "Execute shell command",
-            """{"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute"}},"required":["command"]}""",
-            async (args, ct) =>
-            {
-                var command = args.GetValueOrDefault("command", "") as string ?? "";
-                if (string.IsNullOrEmpty(command))
-                    return "[Error: command required]";
-                try
-                {
-                    using var process = new Process
-                    {
-                        StartInfo = new ProcessStartInfo
-                        {
-                            FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/bash",
-                            Arguments = OperatingSystem.IsWindows()
-                                ? $"/c \"{command}\""
-                                : $"-c \"{command}\"",
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            UseShellExecute = false,
-                            CreateNoWindow = true,
-                        },
-                    };
-                    process.Start();
-                    var stdout = await process.StandardOutput.ReadToEndAsync(ct);
-                    var stderr = await process.StandardError.ReadToEndAsync(ct);
-                    await process.WaitForExitAsync(ct);
-                    return stdout + (stderr.Length > 0 ? "\n" + stderr : "");
-                }
-                catch (Exception ex)
-                {
-                    return $"[bash error: {ex.Message}]";
-                }
-            }
-        );
-
-        RegisterTool(
-            agent,
-            "edit",
-            "Make precise file edits with exact text replacement",
+        RegisterTool(agent, "read", "Read file contents",
+            """{"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer"}},"required":["path"]}""",
+            async (args, ct) => { var p = GetArg(args, "path"); return File.Exists(p) ? await File.ReadAllTextAsync(p, ct) : $"[Error: File not found: {p}]"; });
+        RegisterTool(agent, "write", "Write file contents",
+            """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""",
+            async (args, ct) => { var p = GetArg(args, "path"); var c = GetArg(args, "content"); var d = Path.GetDirectoryName(p); if (d is not null) Directory.CreateDirectory(d); await File.WriteAllTextAsync(p, c, ct); return $"[Wrote {c.Length} bytes]"; });
+        RegisterTool(agent, "bash", "Execute shell command",
+            """{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}""",
+            async (args, ct) => { var cmd = GetArg(args, "command"); return await RunBashAsync(cmd, ct); });
+        RegisterTool(agent, "edit", "Precise file edits",
             """{"type":"object","properties":{"path":{"type":"string"},"oldText":{"type":"string"},"newText":{"type":"string"}},"required":["path","oldText","newText"]}""",
-            async (args, ct) =>
-            {
-                var path = args.GetValueOrDefault("path", "") as string ?? "";
-                return $"[edit stub: {path}]";
-            }
-        );
-
-        RegisterTool(
-            agent,
-            "grep",
-            "Search files for patterns",
-            """{"type":"object","properties":{"pattern":{"type":"string","description":"Regex pattern to search for"}},"required":["pattern"]}""",
-            async (args, ct) =>
-            {
-                var pattern = args.GetValueOrDefault("pattern", "") as string ?? "";
-                return $"[grep stub: {pattern}]";
-            }
-        );
-
-        RegisterTool(
-            agent,
-            "find",
-            "Find files by name",
-            """{"type":"object","properties":{"name":{"type":"string","description":"File name pattern"}},"required":["name"]}""",
-            async (args, ct) =>
-            {
-                var name = args.GetValueOrDefault("name", "") as string ?? "";
-                return $"[find stub: {name}]";
-            }
-        );
-
-        RegisterTool(
-            agent,
-            "ls",
-            "List directory contents",
-            """{"type":"object","properties":{"path":{"type":"string","description":"Directory path"}},"required":[]}""",
-            async (args, ct) =>
-            {
-                var dir = args.GetValueOrDefault("path", ".") as string ?? ".";
-                if (!Directory.Exists(dir))
-                    return $"[Error: Directory not found: {dir}]";
-                var entries = Directory.GetFileSystemEntries(dir);
-                return string.Join("\n", entries);
-            }
-        );
+            (args, ct) => Task.FromResult($"[edit stub: {GetArg(args, "path")}]"));
+        RegisterTool(agent, "grep", "Search files for patterns",
+            """{"type":"object","properties":{"pattern":{"type":"string"}},"required":["pattern"]}""",
+            (args, ct) => Task.FromResult($"[grep stub: {GetArg(args, "pattern")}]"));
+        RegisterTool(agent, "find", "Find files by name",
+            """{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}""",
+            (args, ct) => Task.FromResult($"[find stub: {GetArg(args, "name")}]"));
+        RegisterTool(agent, "ls", "List directory contents",
+            """{"type":"object","properties":{"path":{"type":"string"}}}""",
+            async (args, ct) => { var d = GetArg(args, "path", "."); return Directory.Exists(d) ? string.Join("\n", Directory.GetFileSystemEntries(d)) : $"[Error: Directory not found: {d}]"; });
     }
 
-    private void RegisterTool(
-        Agent agent,
-        string name,
-        string description,
-        string? inputSchema,
-        Func<Dictionary<string, object?>, CancellationToken, Task<string>> handler
-    )
+    private void RegisterTool(Agent agent, string name, string desc, string? schema,
+        Func<Dictionary<string, object?>, CancellationToken, Task<string>> handler)
     {
-        var tool = new Tool
-        {
-            Name = name,
-            Description = description,
-            Kind = ToolKind.BuiltIn,
-            InputSchema = inputSchema,
-        };
-        agent.AddTool(tool);
+        var tool = new Tool { Name = name, Description = desc, Kind = ToolKind.BuiltIn, InputSchema = schema };
+        _system.Send(agent.Id, new AddToolCmd(tool));
         _toolRunner.Add(tool, handler);
     }
 
-    public IToolRunner GetToolRunner() => _toolRunner;
+    private static string GetArg(Dictionary<string, object?> args, string key, string def = "")
+        => args.GetValueOrDefault(key)?.ToString() ?? def;
+
+    private static async Task<string> RunBashAsync(string command, CancellationToken ct)
+    {
+        try
+        {
+            using var p = new Process { StartInfo = new ProcessStartInfo
+            {
+                FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/bash",
+                Arguments = OperatingSystem.IsWindows() ? $"/c \"{command}\"" : $"-c \"{command}\"",
+                RedirectStandardOutput = true, RedirectStandardError = true,
+                UseShellExecute = false, CreateNoWindow = true,
+            }};
+            p.Start();
+            var stdout = await p.StandardOutput.ReadToEndAsync(ct);
+            var stderr = await p.StandardError.ReadToEndAsync(ct);
+            await p.WaitForExitAsync(ct);
+            return stdout + (stderr.Length > 0 ? "\n" + stderr : "");
+        }
+        catch (Exception ex) { return $"[bash error: {ex.Message}]"; }
+    }
+
+    private static List<Llm> BuildLlms(AgentConfig config)
+    {
+        var list = new List<Llm>();
+        foreach (var (name, entry) in config.Providers)
+        {
+            list.Add(new Llm
+            {
+                ProviderName = name, ModelId = config.Model,
+                ApiKey = entry.ApiKey, BaseUrl = entry.BaseUrl ?? "",
+                ApiFormat = entry.ApiFormat?.ToLowerInvariant() switch
+                {
+                    "anthropic" => AiApiFormat.AnthropicMessages, _ => AiApiFormat.OpenAIChatCompletions,
+                },
+                ThinkingLevel = ParseThinkingLevel(config.ThinkingLevel ?? "XHigh"),
+                MaxTokens = config.MaxTokens ?? 393216,
+                ThinkingEnabled = config.ThinkingEnabled,
+            });
+        }
+        return list;
+    }
 
     private static ThinkingLevel ParseThinkingLevel(string level) =>
         level.ToLower() switch
         {
-            "minimal" => ThinkingLevel.Minimal,
-            "low" => ThinkingLevel.Low,
-            "medium" => ThinkingLevel.Medium,
-            "high" => ThinkingLevel.High,
-            "xhigh" => ThinkingLevel.XHigh,
-            _ => ThinkingLevel.XHigh,
+            "minimal" => ThinkingLevel.Minimal, "low" => ThinkingLevel.Low,
+            "medium" => ThinkingLevel.Medium, "high" => ThinkingLevel.High,
+            "xhigh" => ThinkingLevel.XHigh, _ => ThinkingLevel.XHigh,
         };
 }
