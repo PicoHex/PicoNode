@@ -231,7 +231,7 @@ public sealed class AgentFactory
                 new Llm
                 {
                     ProviderName = name,
-                    ModelId = config.Model,
+                    ModelId = config.Model ?? name,
                     ApiKey = entry.ApiKey,
                     BaseUrl = entry.BaseUrl ?? "",
                     ApiFormat = entry.ApiFormat?.ToLowerInvariant() switch

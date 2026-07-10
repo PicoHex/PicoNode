@@ -16,7 +16,6 @@ public sealed class Server : IAsyncDisposable
     private WebServer? _webServer;
     private bool _isListening;
     private readonly SemaphoreSlim _turnLock = new(1, 1);
-    private string? _systemPrompt;
 
     public int Port => _webServer?.LocalEndPoint is IPEndPoint ep ? ep.Port : 0;
 
