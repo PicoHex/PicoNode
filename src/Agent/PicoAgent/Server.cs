@@ -380,7 +380,7 @@ public sealed class Server : IAsyncDisposable
     private WebApp BuildWebApp()
     {
         var app = new WebApp(new SvcContainer(), new WebAppOptions());
-        AddEndpoints(app, _agent, _system, _llmClient, _toolRunner);
+        AddEndpoints(app, _agent, _system, _llmClient, _toolRunner, "/api");
         return app;
     }
 

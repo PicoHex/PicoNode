@@ -225,6 +225,11 @@ public sealed class Agent : EventSourcedActor
         WriteOutput("done");
         return default;
     }
+    catch (Exception ex)
+    {
+        WriteOutput("error", ex.Message);
+        throw;
+    }
     finally
     {
         OutputWriter?.Complete();
