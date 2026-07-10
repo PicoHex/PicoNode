@@ -1,3 +1,4 @@
+using PicoLog.Abs;
 using PicoNode.Actor.Abs;
 using ActorBase = PicoNode.Actor.Abs.Actor;
 
@@ -13,14 +14,16 @@ public sealed class ActorSystem : IActorSystem
     private readonly ConcurrentDictionary<Guid, ActorBase> _registry = new();
     private readonly ConcurrentDictionary<Type, Func<ICommand, object>> _factories = new();
     private readonly IEventStore _eventStore;
+    private readonly ILogger? _logger;
 
     /// <summary>
-    /// Creates an ActorSystem with the given event store.
+    /// Creates an ActorSystem with the given event store and optional logger.
     /// Pass <see cref="InMemoryEventStore"/> for pure in-memory mode.
     /// </summary>
-    public ActorSystem(IEventStore eventStore)
+    public ActorSystem(IEventStore eventStore, ILogger? logger = null)
     {
         _eventStore = eventStore;
+        _logger = logger;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -64,6 +67,8 @@ public sealed class ActorSystem : IActorSystem
         // 5. Release the consumption loop gate
         actor.SignalReady();
 
+        _logger?.Info($"Actor {typeof(T).Name} created: {id}");
+
         return new ValueTask<T>((T)(IActor)actor);
     }
 
@@ -99,11 +104,16 @@ public sealed class ActorSystem : IActorSystem
         // TryAdd: if another thread already rebuilt this actor, discard ours
         if (!_registry.TryAdd(id, actor))
         {
+            _logger?.Warning(
+                $"Actor {typeof(T).Name} {id} already rebuilt by another thread, discarding duplicate"
+            );
             await actor.StopAsync().ConfigureAwait(false);
             return (T)(IActor)_registry[id];
         }
 
         actor.SignalReady();
+
+        _logger?.Info($"Actor {typeof(T).Name} rebuilt from events: {id} (v{es.Version})");
 
         return (T)(IActor)actor;
     }
@@ -144,6 +154,8 @@ public sealed class ActorSystem : IActorSystem
         if (!_registry.TryRemove(id, out var actor))
             return; // Idempotent: already stopped or never existed
 
+        _logger?.Info($"Stopping actor {id}");
         await actor.StopAsync().ConfigureAwait(false);
+        _logger?.Info($"Actor {id} stopped");
     }
 }

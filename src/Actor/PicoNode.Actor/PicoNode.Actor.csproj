@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <PackageReference Include="PicoDI" />
+    <PackageReference Include="PicoDI.Abs" />
     <PackageReference Include="PicoLog.Abs" />
   </ItemGroup>
 
