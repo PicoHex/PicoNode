@@ -371,13 +371,11 @@ public sealed class Server : IAsyncDisposable
                                     "text" =>
                                         $"{{\"type\":\"delta\",\"content\":\"{EscapeJson(evt.Data ?? "")}\"}}",
                                     "done" => "{\"type\":\"done\"}",
+                                    "tool_call_start" or "tool_call_end" or "tool_call_delta" or "tool_result" =>
+                                        $"{{\"type\":\"{evt.Type}\",\"content\":\"{EscapeJson(evt.Data ?? "")}\",\"toolCallId\":\"{evt.ToolCallId}\",\"toolName\":\"{evt.ToolName ?? ""}\"}}",
                                     _ =>
                                         $"{{\"type\":\"{evt.Type}\",\"content\":\"{EscapeJson(evt.Data ?? "")}\"}}",
                                 };
-                                await pipe.Writer.WriteAsync(
-                                    Encoding.UTF8.GetBytes($"data: {json}\n\n"),
-                                    ct
-                                );
                             }
                         }
                         catch (Exception ex)

@@ -6,4 +6,9 @@ namespace PicoNode.Actor.Abs;
 /// It is a fire-and-forget notification to external subscribers (SSE, monitoring, etc.).
 /// Symmetric concept to the Mailbox: Mailbox receives commands, OutputChannel broadcasts events.
 /// </summary>
-public sealed record ActorOutputEvent(string Type, string? Data);
+public sealed record ActorOutputEvent(
+    string Type,
+    string? Data,
+    string? ToolCallId = null,
+    string? ToolName = null
+);

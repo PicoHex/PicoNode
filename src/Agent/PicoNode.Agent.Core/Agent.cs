@@ -190,7 +190,7 @@ public sealed class Agent : EventSourcedActor
 
                 await foreach (var evt in LlmClient.StreamAsync(CurrentLlm, ctx, ToolsSnapshot, ct))
                 {
-                    WriteOutput(evt.Type, evt.Content);
+                    WriteOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName);
 
                     switch (evt.Type)
                     {
