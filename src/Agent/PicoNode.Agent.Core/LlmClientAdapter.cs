@@ -85,7 +85,10 @@ public sealed class LlmClientAdapter : ILlmClient
                     {
                         Type = "tool_call_end",
                         ToolCallId = te.Index.ToString(),
-                        ToolName = te.Call?.Name,
+                        ToolName = te.Call?.Name ?? "",
+                        Content = te.Call?.Arguments is { Count: > 0 } args
+                            ? "{" + string.Join(",", args.Select(kv => $"\"{kv.Key}\":{JsonValue(kv.Value)}")) + "}"
+                            : "{}",
                     };
                     break;
                 case NetAI.AssistantMessageEvent.ToolResult tr:
@@ -148,4 +151,12 @@ public sealed class LlmClientAdapter : ILlmClient
         await foreach (var evt in _inner.StreamAsync(model, chatContext, options, ct))
             yield return evt;
     }
+
+    private static string JsonValue(object? v) => v switch
+    {
+        null => "null",
+        string s => $"\"{s.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"",
+        bool b => b.ToString().ToLower(),
+        _ => v.ToString() ?? "null",
+    };
 }

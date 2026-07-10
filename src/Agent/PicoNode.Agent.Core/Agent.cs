@@ -183,13 +183,11 @@ public sealed class Agent : EventSourcedActor
 
                 var ctx = await session.BuildContext();
 
-                // Build full message from streaming events
-                var contentAccum = new StringBuilder();
-                var thinkingAccum = new StringBuilder();
                 var contentBlocks = new List<ContentBlock>();
-                var toolCallMap = new Dictionary<int, (string Id, string Name, StringBuilder Args)>();
+                var contentAccum = new StringBuilder();
+                var argAccum = new Dictionary<int, StringBuilder>();
 
-                await foreach (var evt in LlmClient.StreamAsync(CurrentLlm, ctx, ToolsSnapshot.ToList(), ct))
+                await foreach (var evt in LlmClient.StreamAsync(CurrentLlm, ctx, ToolsSnapshot, ct))
                 {
                     WriteOutput(evt.Type, evt.Content);
 
@@ -199,15 +197,26 @@ public sealed class Agent : EventSourcedActor
                             contentAccum.Append(evt.Content);
                             break;
                         case "thinking":
-                            thinkingAccum.Append(evt.Content);
-                            break;
-                        case "tool_call_start":
-                            var idx = int.Parse(evt.ToolCallId ?? "0");
-                            toolCallMap[idx] = (evt.ToolCallId!, evt.ToolName!, new StringBuilder());
                             break;
                         case "tool_call_delta":
-                            if (int.TryParse(evt.ToolCallId, out var di) && toolCallMap.TryGetValue(di, out var tc))
-                                tc.Args.Append(evt.Content);
+                            if (int.TryParse(evt.ToolCallId, out var di))
+                            {
+                                if (!argAccum.TryGetValue(di, out var sb))
+                                    argAccum[di] = sb = new StringBuilder();
+                                sb.Append(evt.Content);
+                            }
+                            break;
+                        case "tool_call_end":
+                            if (int.TryParse(evt.ToolCallId, out var ei) && evt.ToolName is { Length: > 0 })
+                            {
+                                var args = argAccum.TryGetValue(ei, out var a) ? a.ToString() : "{}";
+                                contentBlocks.Add(new ContentBlock
+                                {
+                                    Type = "tool_call",
+                                    Name = evt.ToolName,
+                                    Arguments = ParseSimpleJson(args),
+                                });
+                            }
                             break;
                         case "done":
                             goto streamDone;
@@ -225,7 +234,6 @@ public sealed class Agent : EventSourcedActor
                 {
                     Role = "assistant",
                     ContentBlocks = contentBlocks.ToArray(),
-                    ReasoningContent = thinkingAccum.Length > 0 ? thinkingAccum.ToString() : null,
                 };
                 await session.Append(new MessageEntry { Message = finalMessage });
 
@@ -333,6 +341,23 @@ public sealed class Agent : EventSourcedActor
             )
         )
             throw new DomainInvariantException("CurrentLlm not in Llms");
+    }
+
+    private static Dictionary<string, object?> ParseSimpleJson(string json)
+    {
+        var result = new Dictionary<string, object?>();
+        if (json is not { Length: > 2 } || json[0] != '{' || json[^1] != '}')
+            return result;
+        var inner = json[1..^1];
+        foreach (var part in inner.Split(','))
+        {
+            var colon = part.IndexOf(':');
+            if (colon < 0) continue;
+            var key = part[..colon].Trim().Trim('"');
+            var value = part[(colon + 1)..].Trim();
+            result[key] = value.Trim('"');
+        }
+        return result;
     }
 
     private static ThinkingLevel ParseLevel(string level) =>
