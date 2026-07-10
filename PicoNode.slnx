@@ -21,7 +21,6 @@
     <Project Path="src/Web/PicoWeb.Gen/PicoWeb.Gen.csproj" />
     <Project Path="src/Agent/PicoNode.AI/PicoNode.AI.csproj" />
     <Project Path="src/Agent/PicoNode.Agent.Core/PicoNode.Agent.Core.csproj" />
-    <Project Path="src/Agent/PicoNode.Agent/PicoNode.Agent.csproj" />
     <Project Path="src/Agent/PicoAgent/PicoAgent.csproj" />
     <Project Path="src/Actor/PicoNode.Actor.Abs/PicoNode.Actor.Abs.csproj" />
     <Project Path="src/Actor/PicoNode.Actor/PicoNode.Actor.csproj" />
@@ -38,7 +37,6 @@
     <Project Path="tests/PicoWeb.Integration.Tests/PicoWeb.Integration.Tests.csproj" />
     <Project Path="tests/PicoNode.AI.Tests/PicoNode.AI.Tests.csproj" />
     <Project Path="tests/PicoNode.Agent.Core.Tests/PicoNode.Agent.Core.Tests.csproj" />
-    <Project Path="tests/PicoNode.Agent.Tests/PicoNode.Agent.Tests.csproj" />
     <Project Path="tests/PicoNode.Actor.Abs.Tests/PicoNode.Actor.Abs.Tests.csproj" />
     <Project Path="tests/PicoNode.Actor.Tests/PicoNode.Actor.Tests.csproj" />
     <Project Path="tests/PicoNode.E2E/SseTestServer/SseTestServer.csproj" />
