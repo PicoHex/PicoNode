@@ -1,0 +1,15 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>SSE EventSource</title></head><body>
+<textarea id="inp">hello</textarea><button onclick="s()">Send</button>
+<pre id="log" style="border:1px solid #ccc;padding:10px;min-height:100px"></pre>
+<script>
+async function s(){
+  const L=document.getElementById('log');L.textContent='Starting...\n';
+  const msg=document.getElementById('inp').value;
+  const r=await fetch('/api/session/test/message',{method:'POST',headers:{'Content-Type':'text/plain'},body:msg});
+  L.textContent+='Status: '+r.status+' '+r.statusText+'\n';
+  L.textContent+='Type: '+r.headers.get('Content-Type')+'\n';
+  const t=await r.text();
+  L.textContent+='Body length: '+t.length+'\n';
+  L.textContent+='Body: '+t.substring(0,500);
+}
+</script></body></html>

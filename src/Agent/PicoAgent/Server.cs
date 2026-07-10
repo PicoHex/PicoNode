@@ -370,6 +370,7 @@ public sealed class Server : IAsyncDisposable
                     [
                         new("Content-Type", "text/event-stream"),
                         new("Cache-Control", "no-cache"),
+                        new("Connection", "close"),
                     ],
                     BodyStream = pipe.Reader.AsStream(),
                 };
