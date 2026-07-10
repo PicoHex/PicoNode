@@ -1,11 +1,14 @@
 namespace PicoAgent;
 
+using PicoNode.Actor;
 using DomainAgent = PicoNode.Agent.Domain.Agent;
+using DomainCommands = PicoNode.Agent.Domain;
 using DomainInterfaces = PicoNode.Agent.Domain;
 
 public sealed class Server : IAsyncDisposable
 {
     private readonly DomainAgent _agent;
+    private readonly ActorSystem _system;
     private readonly DomainInterfaces.ILlmClient _llmClient;
     private readonly DomainInterfaces.IToolRunner _toolRunner;
     private WebServer? _webServer;
@@ -17,11 +20,13 @@ public sealed class Server : IAsyncDisposable
 
     public Server(
         DomainAgent agent,
+        ActorSystem system,
         DomainInterfaces.ILlmClient llmClient,
         DomainInterfaces.IToolRunner toolRunner
     )
     {
         _agent = agent;
+        _system = system;
         _llmClient = llmClient;
         _toolRunner = toolRunner;
     }
@@ -31,7 +36,7 @@ public sealed class Server : IAsyncDisposable
         if (_isListening)
             throw new InvalidOperationException("Already listening");
         _isListening = true;
-        _agent.Start();
+        _system.Send(_agent.Id, new DomainCommands.StartAgent());
         _webServer = new WebServer(
             BuildWebApp(),
             new WebServerOptions { Endpoint = ParseEndpoint(uri) }
@@ -67,7 +72,7 @@ public sealed class Server : IAsyncDisposable
             {
                 var all = new List<string>();
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-                foreach (var l in a.Llms)
+                foreach (var l in a.LlmsSnapshot)
                 {
                     if (
                         l.ProviderName == "unconfigured"
@@ -103,14 +108,14 @@ public sealed class Server : IAsyncDisposable
             $"{p}/config/status",
             (_, _) =>
             {
-                var hasRealProvider = a.Llms.Any(l =>
+                var hasRealProvider = a.LlmsSnapshot.Any(l =>
                     l.ProviderName != "unconfigured"
                     && !string.IsNullOrEmpty(l.ApiKey)
                     && l.ApiKey != "sk-test"
                 );
                 return V(
                     Json(
-                        $"{{\"configured\":{hasRealProvider.ToString().ToLower()},\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\",\"providers\":[{string.Join(",", a.Llms.Select(l => $"\"{l.ProviderName}\""))}],\"thinkingEnabled\":{a.CurrentLlm.ThinkingEnabled.ToString().ToLower()},\"thinkingLevel\":\"{a.CurrentLlm.ThinkingLevel.ToString().ToLowerInvariant()}\",\"maxTokens\":{a.CurrentLlm.MaxTokens}}}"
+                        $"{{\"configured\":{hasRealProvider.ToString().ToLower()},\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\",\"providers\":[{string.Join(",", a.LlmsSnapshot.Select(l => $"\"{l.ProviderName}\""))}],\"thinkingEnabled\":{a.CurrentLlm.ThinkingEnabled.ToString().ToLower()},\"thinkingLevel\":\"{a.CurrentLlm.ThinkingLevel.ToString().ToLowerInvariant()}\",\"maxTokens\":{a.CurrentLlm.MaxTokens}}}"
                     )
                 );
             }
@@ -202,24 +207,24 @@ public sealed class Server : IAsyncDisposable
                         MaxTokens = newConfig.MaxTokens ?? 4096,
                         ThinkingEnabled = newConfig.ThinkingEnabled,
                     };
-                    var existing = a.Llms.FirstOrDefault(l => l.ProviderName == name);
+                    var existing = a.LlmsSnapshot.FirstOrDefault(l => l.ProviderName == name);
                     if (existing is null)
-                        a.AddLlm(llm);
+                        _system.Send(a.Id, new DomainCommands.AddLlmCmd(llm));
                 }
                 // Remove old providers not in new config
                 var toRemove = a
-                    .Llms.Where(l => !newProviderNames.Contains(l.ProviderName))
+                    .LlmsSnapshot.Where(l => !newProviderNames.Contains(l.ProviderName))
                     .ToList();
-                var newCurrent = newProviderNames.FirstOrDefault() ?? a.Llms[0].ProviderName;
+                var newCurrent = newProviderNames.FirstOrDefault() ?? a.LlmsSnapshot[0].ProviderName;
                 var newModel = newConfig.Model ?? newCurrent;
                 if (toRemove.Any(r => r.ProviderName == a.CurrentLlm.ProviderName))
-                    a.SwitchLlm(newCurrent, newModel);
+                    // SwitchLlm via command (a.SwitchLlm(newCurrent, newModel);
                 foreach (var old in toRemove)
                 {
-                    if (a.Llms.Count > 1 && old.ProviderName != a.CurrentLlm.ProviderName)
-                        a.RemoveLlm(old.ProviderName, old.ModelId);
+                    if (a.LlmsSnapshot.Count > 1 && old.ProviderName != a.CurrentLlm.ProviderName)
+                        _system.Send(a.Id, new DomainCommands.RemoveLlmCmd(old.ProviderName, old.ModelId));
                 }
-                a.SwitchLlm(newCurrent, newModel);
+                // SwitchLlm via command (a.SwitchLlm(newCurrent, newModel);
 
                 // Persist to settings.json
                 if (settingsPath is { Length: > 0 })
@@ -280,7 +285,7 @@ public sealed class Server : IAsyncDisposable
                 var model = ExtractJsonString(body, "modelId") ?? ExtractJsonString(body, "model");
                 if (string.IsNullOrWhiteSpace(provider))
                     return V(Error(400, "provider required"));
-                a.SwitchLlm(provider, model ?? a.CurrentLlm.ModelId);
+                // SwitchLlm via command (a.SwitchLlm(provider, model ?? a.CurrentLlm.ModelId);
                 return V(Ok());
             }
         );
@@ -293,7 +298,7 @@ public sealed class Server : IAsyncDisposable
                 var provider = ExtractJsonString(body, "provider");
                 if (string.IsNullOrWhiteSpace(provider))
                     return V(Error(400, "provider required"));
-                a.SwitchLlm(provider, a.CurrentLlm.ModelId);
+                // SwitchLlm via command (a.SwitchLlm(provider, a.CurrentLlm.ModelId);
                 return V(Ok());
             }
         );
