@@ -199,9 +199,9 @@ public sealed class NewAgent : EventSourcedActor
                 return default;
 
             case SpawnChildCmd s:
-                var childId = Guid.CreateVersion7();
-                RaiseEvent(new ChildSpawned(childId));
-                return default;
+            {
+                return SpawnChildAsync(s);
+            }
 
             case RunTurn r:
                 return RunTurnAsync(r.Message, StopToken);
@@ -211,6 +211,17 @@ public sealed class NewAgent : EventSourcedActor
     }
 
     // ── RunTurn: nested do...while LLM + tool loop ──
+
+    private async ValueTask<object?> SpawnChildAsync(SpawnChildCmd s)
+    {
+        if (this.System is not null)
+        {
+            var child = await this.System.CreateAsync<NewAgent>(
+                new CreateAgent(s.Llms, s.CurrentProvider, s.CurrentModel, HomeDir, Id));
+            RaiseEvent(new ChildSpawned(child.Id));
+        }
+        return default;
+    }
 
     private async ValueTask<object?> RunTurnAsync(string message, CancellationToken ct)
     {
@@ -234,7 +245,7 @@ public sealed class NewAgent : EventSourcedActor
 
             var ctx = await session.BuildContext();
             var response = await LlmClient!.CompleteAsync(
-                CurrentLlm, ctx, ToolsSnapshot.ToList(), ct
+                CurrentLlm, ctx, ToolsSnapshot, ct
             );
 
             // Handle empty/error response
@@ -262,7 +273,7 @@ public sealed class NewAgent : EventSourcedActor
                 foreach (var tc in toolCalls!)
                 {
                     var toolResult = await ToolRunner!.ExecuteAsync(
-                        tc.Name ?? "", tc.Arguments ?? new Dictionary<string, object?>(), ct
+                        tc.Name ?? "", tc.Arguments, ct
                     );
                     var toolMsg = new Message
                     {

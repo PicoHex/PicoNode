@@ -67,7 +67,7 @@ public abstract class Actor : IActor, IAsyncDisposable
     /// Rebuild path. Constructs the actor with no business logic.
     /// State is restored later by the caller via ReplayEvents.
     /// Must be chainable from a public parameterless constructor on subclasses
-    /// (required by the new() constraint on IActorSystem.GetAsync).
+    /// (used by GetAsync with the registered rebuildFactory).
     /// </summary>
     protected Actor()
     {
@@ -84,10 +84,15 @@ public abstract class Actor : IActor, IAsyncDisposable
 
     /// <summary>
     /// The actor's cancellation token. Canceled when StopAsync is called.
-    /// Subclasses should pass this to async operations (LLM calls, tool execution)
-    /// so that Stop can interrupt long-running work.
+    /// Subclasses pass this to async operations so Stop can interrupt long-running work.
     /// </summary>
     protected CancellationToken StopToken => _cts.Token;
+
+    /// <summary>
+    /// Reference to the owning IActorSystem. Set by ActorSystem during CreateAsync/GetAsync.
+    /// Subclasses use this for spawn operations.
+    /// </summary>
+    protected internal IActorSystem? System { get; set; }
 
     /// <summary>
     /// Task that completes when initialization finishes (OnReadyAsync succeeds or fails).

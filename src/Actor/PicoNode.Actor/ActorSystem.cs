@@ -60,6 +60,9 @@ public sealed class ActorSystem : IActorSystem
         var id = Guid.CreateVersion7();
         actor.Id = id;
 
+        // 2b. Set system reference for spawn operations
+        actor.System = this;
+
         // 3. Wire event store if this is an ES actor
         if (actor is EventSourcedActor es)
             es.EventStore = _eventStore;
@@ -111,6 +114,7 @@ public sealed class ActorSystem : IActorSystem
 
         var actor = (ActorBase)(IActor)rebuildFactory();
         actor.Id = id;
+        actor.System = this;
 
         var es = (IEventSourcedActor)actor;
         ((EventSourcedActor)actor).EventStore = _eventStore;
