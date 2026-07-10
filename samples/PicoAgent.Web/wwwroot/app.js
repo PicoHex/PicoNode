@@ -358,7 +358,15 @@ async function sendMessage(overrideText) {
                         const tid = evt.toolCallId;
                         if (tid && toolBlocks[tid]) {
                             const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
-                            if (tcDiv) { tcDiv.open = true; }
+                            if (tcDiv) {
+                                tcDiv.open = true;
+                                // Update tool name (available at end)
+                                if (evt.toolName) {
+                                    toolBlocks[tid].name = evt.toolName;
+                                    const strong = tcDiv.querySelector('summary strong');
+                                    if (strong) strong.textContent = evt.toolName;
+                                }
+                            }
                         }
                     }
                     else if (evt.type === 'tool_result') {

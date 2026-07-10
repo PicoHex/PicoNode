@@ -209,23 +209,16 @@ public sealed class Agent : EventSourcedActor
                             }
                             break;
                         case "tool_call_end":
-                            if (
-                                int.TryParse(evt.ToolCallId, out var ei)
-                                && evt.ToolName is { Length: > 0 }
-                            )
+                            if (int.TryParse(evt.ToolCallId, out var ei) && evt.ToolName is { Length: > 0 })
                             {
-                                var args = argAccum.TryGetValue(ei, out var a)
-                                    ? a.ToString()
-                                    : "{}";
-                                contentBlocks.Add(
-                                    new ContentBlock
-                                    {
-                                        Id = Guid.CreateVersion7().ToString(),
-                                        Type = "tool_call",
-                                        Name = evt.ToolName,
-                                        Arguments = ParseSimpleJson(args),
-                                    }
-                                );
+                                var args = argAccum.TryGetValue(ei, out var a) ? a.ToString() : "{}";
+                                contentBlocks.Add(new ContentBlock
+                                {
+                                    Id = Guid.CreateVersion7().ToString(),
+                                    Type = "tool_call",
+                                    Name = evt.ToolName,
+                                    Arguments = ParseSimpleJson(args),
+                                });
                             }
                             break;
                         case "done":
