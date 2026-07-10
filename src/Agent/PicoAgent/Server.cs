@@ -211,8 +211,9 @@ public sealed class Server : IAsyncDisposable
                         ThinkingEnabled = newConfig.ThinkingEnabled,
                     };
                     var existing = a.LlmsSnapshot.FirstOrDefault(l => l.ProviderName == name);
-                    if (existing is null)
-                        system.Send(a.Id, new DomainCommands.AddLlmCmd(llm));
+                    if (existing is not null)
+                        system.Send(a.Id, new DomainCommands.RemoveLlmCmd(name, existing.ModelId));
+                    system.Send(a.Id, new DomainCommands.AddLlmCmd(llm));
                 }
                 // Remove old providers not in new config
                 var toRemove = a
