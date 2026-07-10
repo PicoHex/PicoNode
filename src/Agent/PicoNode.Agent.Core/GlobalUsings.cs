@@ -8,3 +8,4 @@ global using PicoNode.AI;
 global using PicoNode.AI.Types;
 global using NetAI = PicoNode.AI;
 global using NetAITypes = PicoNode.AI.Types;
+global using PicoLog.Abs;
