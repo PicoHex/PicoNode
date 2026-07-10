@@ -22,6 +22,7 @@ public static class OpenAISseParser
         using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
         var contentAccum = new StringBuilder();
         var contentBlocks = new List<ContentBlock>();
+        var reasoningAccum = new StringBuilder();
         var message = new Message
         {
             Role = "assistant",
@@ -55,6 +56,8 @@ public static class OpenAISseParser
                     );
                 message.ContentBlocks = contentBlocks.ToArray();
                 message.StopReason = "stop";
+                if (reasoningAccum.Length > 0)
+                    message.ReasoningContent = reasoningAccum.ToString();
                 yield return new AssistantMessageEvent.Done { Message = message };
                 yield break;
             }
@@ -163,6 +166,7 @@ public static class OpenAISseParser
                 var text = reasoning.GetStringOrNull();
                 if (text is not null)
                 {
+                    reasoningAccum.Append(text);
                     yield return new AssistantMessageEvent.ThinkingDelta
                     {
                         Index = 0,
@@ -270,6 +274,8 @@ public static class OpenAISseParser
 
                 message.ContentBlocks = contentBlocks.ToArray();
                 message.StopReason = reason;
+                if (reasoningAccum.Length > 0)
+                    message.ReasoningContent = reasoningAccum.ToString();
                 yield return new AssistantMessageEvent.Done { Message = message };
                 yield break;
             }
