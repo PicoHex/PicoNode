@@ -1,5 +1,10 @@
 global using System.Diagnostics;
+global using System.Runtime.CompilerServices;
 global using System.Text;
 global using System.Text.RegularExpressions;
+global using NetAI = PicoNode.AI;
+global using NetAITypes = PicoNode.AI.Types;
+global using PicoNode.Actor;
+global using PicoNode.Actor.Abs;
 global using PicoNode.AI;
 global using PicoNode.AI.Types;

@@ -1,8 +1,3 @@
-using PicoDI;
-using PicoDI.Abs;
-using PicoLog.Abs;
-using PicoNode.Actor.Abs;
-
 namespace PicoNode.Actor;
 
 /// <summary>PicoDI registration extensions for PicoNode.Actor.</summary>

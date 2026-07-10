@@ -1,5 +1,3 @@
-using System.Text;
-
 namespace PicoNode.Agent.Domain;
 
 public static class SystemPromptBuilder

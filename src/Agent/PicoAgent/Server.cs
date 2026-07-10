@@ -1,8 +1,5 @@
 namespace PicoAgent;
 
-using System.Threading.Channels;
-using PicoNode.Actor;
-using PicoNode.Actor.Abs;
 using DomainAgent = PicoNode.Agent.Domain.Agent;
 using DomainCommands = PicoNode.Agent.Domain;
 using DomainInterfaces = PicoNode.Agent.Domain;

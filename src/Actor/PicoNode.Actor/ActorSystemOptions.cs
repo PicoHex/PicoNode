@@ -1,6 +1,3 @@
-using PicoLog.Abs;
-using PicoNode.Actor.Abs;
-
 namespace PicoNode.Actor;
 
 /// <summary>Configuration options for the Actor system.</summary>

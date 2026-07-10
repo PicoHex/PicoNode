@@ -1,5 +1,3 @@
-using PicoNode.Actor.Abs;
-
 namespace PicoNode.Agent.Domain;
 
 public sealed record CreateAgent(
