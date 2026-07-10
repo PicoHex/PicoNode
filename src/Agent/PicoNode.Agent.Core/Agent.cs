@@ -112,9 +112,11 @@ public sealed class Agent : EventSourcedActor
 
             case RunTurn r:
                 return RunTurnAsync(r.Message, StopToken);
-        }
 
-        return default;
+            default:
+                throw new DomainInvariantException(
+                    $"Unknown command: {command.GetType().Name}");
+        }
     }
 
     // ── SpawnChild ──
@@ -134,6 +136,10 @@ public sealed class Agent : EventSourcedActor
 
     private async ValueTask<object?> RunTurnAsync(string message, CancellationToken ct)
     {
+        if (LlmClient is null || ToolRunner is null)
+            throw new InvalidOperationException(
+                "RunTurn requires LlmClient and ToolRunner — register them via the Agent constructor.");
+
         var session = Session!;
 
         var userMsg = new Message
