@@ -265,35 +265,7 @@ public sealed class Server : IAsyncDisposable
                 return Ok();
             }
         );
-        app.MapPost(
-            $"{p}/reload",
-            async (_, ct) =>
-            {
-                if (settingsPath is { Length: > 0 } && File.Exists(settingsPath))
-                {
-                    var raw = await File.ReadAllTextAsync(settingsPath, ct);
-                    var cfg = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(
-                        Encoding.UTF8.GetBytes(raw));
-                    if (cfg?.Packages is { Count: > 0 })
-                    {
-                        var entries = PackageResolver.Resolve(a.HomeDir, cfg.Packages);
-                        await PackageInstaller.EnsureAsync(entries, null, ct);
-                        var allSkills = new List<SkillInfo>();
-                        foreach (var entry in entries)
-                        {
-                            var skillsDir = Path.Combine(entry.DisplayPath, "skills");
-                            if (Directory.Exists(skillsDir))
-                            {
-                                var scanner = new KnowledgeScanner();
-                                allSkills.AddRange(scanner.ScanFromDir(skillsDir));
-                            }
-                        }
-                        a.Skills = allSkills;
-                    }
-                }
-                return Ok();
-            }
-        );
+        app.MapPost($"{p}/reload", (_, _) => V(Ok()));
         app.MapPost(
             $"{p}/thinking",
             (ctx, _) =>
@@ -371,11 +343,13 @@ public sealed class Server : IAsyncDisposable
                                     "text" =>
                                         $"{{\"type\":\"delta\",\"content\":\"{EscapeJson(evt.Data ?? "")}\"}}",
                                     "done" => "{\"type\":\"done\"}",
-                                    "tool_call_start" or "tool_call_end" or "tool_call_delta" or "tool_result" =>
-                                        $"{{\"type\":\"{evt.Type}\",\"content\":\"{EscapeJson(evt.Data ?? "")}\",\"toolCallId\":\"{evt.ToolCallId}\",\"toolName\":\"{evt.ToolName ?? ""}\"}}",
                                     _ =>
-                                        $"{{\"type\":\"{evt.Type}\",\"content\":\"{EscapeJson(evt.Data ?? "")}\"}}",
+                                        $"{{\"type\":\"{evt.Type}\",\"content\":\"{EscapeJson(evt.Data ?? "")}\",\"toolCallId\":\"{evt.ToolCallId}\",\"toolName\":\"{evt.ToolName ?? ""}\"}}",
                                 };
+                                await pipe.Writer.WriteAsync(
+                                    Encoding.UTF8.GetBytes($"data: {json}\n\n"),
+                                    ct
+                                );
                             }
                         }
                         catch (Exception ex)
