@@ -7,24 +7,27 @@ public sealed class ReadTool : IBuiltInTool
     private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB warning threshold
 
     public string Name => "read";
-    public string Description => "Read file contents. Supports text files. Use offset/limit for large files.";
+    public string Description =>
+        "Read file contents. Supports text files. Use offset/limit for large files.";
 
-    public string? InputSchema => """
-    {
-      "type": "object",
-      "properties": {
-        "path": { "type": "string", "description": "Path to the file to read" },
-        "offset": { "type": "integer", "description": "Line number to start reading from (1-indexed)" },
-        "limit": { "type": "integer", "description": "Maximum number of lines to read" }
-      },
-      "required": ["path"]
-    }
-    """;
+    public string? InputSchema =>
+        """
+            {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string", "description": "Path to the file to read" },
+                "offset": { "type": "integer", "description": "Line number to start reading from (1-indexed)" },
+                "limit": { "type": "integer", "description": "Maximum number of lines to read" }
+              },
+              "required": ["path"]
+            }
+            """;
 
     public Task<(string Content, bool IsError)> ExecuteAsync(
         IReadOnlyDictionary<string, object?> args,
         string workingDirectory,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var path = BuiltInToolHelpers.GetStringArg(args, "path");
         if (string.IsNullOrWhiteSpace(path))
@@ -37,7 +40,12 @@ public sealed class ReadTool : IBuiltInTool
 
         var fileInfo = new FileInfo(fullPath);
         if (fileInfo.Length > MaxFileSize)
-            return Task.FromResult(($"[File too large: {fileInfo.Length} bytes. Use offset/limit to read segments.]", true));
+            return Task.FromResult(
+                (
+                    $"[File too large: {fileInfo.Length} bytes. Use offset/limit to read segments.]",
+                    true
+                )
+            );
 
         // Binary detection: check first 8KB for null bytes
         using var fs = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read);

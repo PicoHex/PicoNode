@@ -62,7 +62,12 @@ public sealed class AgentLlmAdapter : IAgentLlm
             MaxTokens = 393216,
         };
 
-        var context = new ChatContext { SystemPrompt = systemPrompt, Messages = messages, Tools = Tools };
+        var context = new ChatContext
+        {
+            SystemPrompt = systemPrompt,
+            Messages = messages,
+            Tools = Tools,
+        };
 
         // Thinking configuration — used by Anthropic for budget tokens.
         // OpenAI/DeepSeek clients ignore these fields.
@@ -126,8 +131,13 @@ public sealed class AgentLlmAdapter : IAgentLlm
                     );
                     break;
                 case AssistantMessageEvent.Done d:
-                    yield return new LlmStreamEvent("done", null, d.Message.StopReason, null,
-                        ContentBlocks: d.Message.ContentBlocks);
+                    yield return new LlmStreamEvent(
+                        "done",
+                        null,
+                        d.Message.StopReason,
+                        null,
+                        ContentBlocks: d.Message.ContentBlocks
+                    );
                     break;
                 case AssistantMessageEvent.Error e:
                     yield return new LlmStreamEvent("error", null, null, e.Message.ErrorMessage);

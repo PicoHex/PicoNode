@@ -23,10 +23,15 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
         PicoNode.AI.Model model,
         PicoNode.AI.Types.ChatContext context,
         PicoNode.AI.StreamOptions? options,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         var llm = _agent.CurrentLlm;
-        if (llm.ProviderName == "unconfigured" || string.IsNullOrEmpty(llm.ApiKey) || llm.ApiKey == "sk-test")
+        if (
+            llm.ProviderName == "unconfigured"
+            || string.IsNullOrEmpty(llm.ApiKey)
+            || llm.ApiKey == "sk-test"
+        )
         {
             yield return DoneMsg("[No API key configured. Please set up a provider in Settings.]");
             yield break;
@@ -35,12 +40,16 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
         var http = _httpClient ?? SharedClient;
         var realModel = new PicoNode.AI.Model
         {
-            Id = llm.ModelId, Provider = llm.ProviderName, BaseUrl = llm.BaseUrl,
-            Api = llm.ApiFormat, MaxTokens = llm.MaxTokens,
+            Id = llm.ModelId,
+            Provider = llm.ProviderName,
+            BaseUrl = llm.BaseUrl,
+            Api = llm.ApiFormat,
+            MaxTokens = llm.MaxTokens,
         };
         var realOptions = new PicoNode.AI.StreamOptions
         {
-            ApiKey = llm.ApiKey, MaxTokens = llm.MaxTokens,
+            ApiKey = llm.ApiKey,
+            MaxTokens = llm.MaxTokens,
             Reasoning = llm.ThinkingEnabled ? llm.ThinkingLevel : null,
         };
 
@@ -48,9 +57,10 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
         Exception? initError = null;
         try
         {
-            client = llm.ApiFormat == AiApiFormat.AnthropicMessages
-                ? new AnthropicLLmClient(http)
-                : new OpenAILlmClient(http);
+            client =
+                llm.ApiFormat == AiApiFormat.AnthropicMessages
+                    ? new AnthropicLLmClient(http)
+                    : new OpenAILlmClient(http);
         }
         catch (Exception ex)
         {
@@ -95,12 +105,14 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
         }
     }
 
-    private static PicoNode.AI.AssistantMessageEvent.Done DoneMsg(string text) => new()
-    {
-        Message = new PicoNode.AI.Message
+    private static PicoNode.AI.AssistantMessageEvent.Done DoneMsg(string text) =>
+        new()
         {
-            Role = "assistant", StopReason = "end_turn",
-            ContentBlocks = [new PicoNode.AI.ContentBlock { Type = "text", Text = text }],
-        },
-    };
+            Message = new PicoNode.AI.Message
+            {
+                Role = "assistant",
+                StopReason = "end_turn",
+                ContentBlocks = [new PicoNode.AI.ContentBlock { Type = "text", Text = text }],
+            },
+        };
 }

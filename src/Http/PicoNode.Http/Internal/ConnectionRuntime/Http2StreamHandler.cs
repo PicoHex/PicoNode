@@ -625,18 +625,17 @@ internal static class Http2StreamHandler
             {
                 int bytesRead;
                 while (
-                    (bytesRead = await bodyStream
-                        .ReadAsync(resumeBuffer.AsMemory(0, bufferSize), ct)
-                        .ConfigureAwait(false)) > 0
+                    (
+                        bytesRead = await bodyStream
+                            .ReadAsync(resumeBuffer.AsMemory(0, bufferSize), ct)
+                            .ConfigureAwait(false)
+                    ) > 0
                 )
                 {
                     var resumeOffset = 0;
                     while (resumeOffset < bytesRead)
                     {
-                        var available = Math.Min(
-                            state.ConnectionSendWindow,
-                            stream.SendWindow
-                        );
+                        var available = Math.Min(state.ConnectionSendWindow, stream.SendWindow);
                         if (available <= 0)
                         {
                             stream.PendingDataFrame = resumeBuffer[resumeOffset..bytesRead];
@@ -647,12 +646,13 @@ internal static class Http2StreamHandler
                         var toSend = Math.Min(chunkSize, available);
 
                         await WriteDataFrameAsync(
-                            connection,
-                            stream.StreamId,
-                            Http2FrameFlags.None,
-                            resumeBuffer.AsMemory(resumeOffset, toSend),
-                            ct
-                        ).ConfigureAwait(false);
+                                connection,
+                                stream.StreamId,
+                                Http2FrameFlags.None,
+                                resumeBuffer.AsMemory(resumeOffset, toSend),
+                                ct
+                            )
+                            .ConfigureAwait(false);
 
                         state.AddConnectionSendWindow(-toSend);
                         stream.SendWindow -= toSend;
@@ -662,12 +662,13 @@ internal static class Http2StreamHandler
 
                 // Stream complete — send final DATA with EndStream
                 await WriteDataFrameAsync(
-                    connection,
-                    stream.StreamId,
-                    Http2FrameFlags.EndStream,
-                    ReadOnlyMemory<byte>.Empty,
-                    ct
-                ).ConfigureAwait(false);
+                        connection,
+                        stream.StreamId,
+                        Http2FrameFlags.EndStream,
+                        ReadOnlyMemory<byte>.Empty,
+                        ct
+                    )
+                    .ConfigureAwait(false);
 
                 stream.ResponseSent = true;
                 stream.ResponseBodyStream = null;
@@ -679,12 +680,8 @@ internal static class Http2StreamHandler
             }
             catch (Exception)
             {
-                await SendRstStreamAsync(
-                    connection,
-                    stream.StreamId,
-                    Http2ErrorCode.Cancel,
-                    ct
-                ).ConfigureAwait(false);
+                await SendRstStreamAsync(connection, stream.StreamId, Http2ErrorCode.Cancel, ct)
+                    .ConfigureAwait(false);
             }
             finally
             {
@@ -774,9 +771,8 @@ internal static class Http2StreamHandler
                 {
                     var connIncrement = initialWindow - runtimeState.ConnectionReceiveWindow;
                     runtimeState.ConnectionReceiveWindow = initialWindow;
-                    await WriteWindowUpdateFrameAsync(
-                        connection, 0, connIncrement, ct
-                    ).ConfigureAwait(false);
+                    await WriteWindowUpdateFrameAsync(connection, 0, connIncrement, ct)
+                        .ConfigureAwait(false);
                 }
             }
 
@@ -784,9 +780,8 @@ internal static class Http2StreamHandler
             {
                 var streamIncrement = initialWindow - state.ReceiveWindow;
                 state.ReceiveWindow = initialWindow;
-                await WriteWindowUpdateFrameAsync(
-                    connection, frame.StreamId, streamIncrement, ct
-                ).ConfigureAwait(false);
+                await WriteWindowUpdateFrameAsync(connection, frame.StreamId, streamIncrement, ct)
+                    .ConfigureAwait(false);
             }
         }
 

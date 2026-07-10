@@ -9,7 +9,8 @@ public class BashToolTests
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?> { ["command"] = "echo \"hello world\"" },
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsFalse();
         await Assert.That(result.Content).Contains("hello world");
@@ -22,7 +23,8 @@ public class BashToolTests
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?> { ["command"] = "echo hello" },
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsFalse();
         await Assert.That(result.Content).Contains("hello");
@@ -35,7 +37,8 @@ public class BashToolTests
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?> { ["command"] = "this_command_does_not_exist_12345" },
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsTrue();
     }
@@ -47,7 +50,8 @@ public class BashToolTests
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?>(),
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsTrue();
         await Assert.That(result.Content).Contains("command is required");
@@ -58,14 +62,13 @@ public class BashToolTests
     public async Task FastTimeout_ReturnsTimeoutMessage()
     {
         var tool = new BashTool();
-        var cmd = OperatingSystem.IsWindows()
-            ? "ping -n 30 127.0.0.1 > nul"
-            : "sleep 30";
+        var cmd = OperatingSystem.IsWindows() ? "ping -n 30 127.0.0.1 > nul" : "sleep 30";
 
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?> { ["command"] = cmd, ["timeout"] = 1L },
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsTrue();
         await Assert.That(result.Content).Contains("timed out");
@@ -84,7 +87,8 @@ public class BashToolTests
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?> { ["command"] = cmd, ["timeout"] = 1L },
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsTrue();
         await Assert.That(result.Content).Contains("BUFFERED_OUTPUT");

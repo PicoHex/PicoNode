@@ -7,30 +7,34 @@ public sealed class BashTool : IBuiltInTool
     private const int MaxBytes = 50000;
 
     public string Name => "bash";
-    public string Description => "Execute a shell command. Returns stdout+stderr. Set timeout to limit execution time.";
+    public string Description =>
+        "Execute a shell command. Returns stdout+stderr. Set timeout to limit execution time.";
 
-    public string? InputSchema => """
-    {
-      "type": "object",
-      "properties": {
-        "command": { "type": "string", "description": "Shell command to execute" },
-        "timeout": { "type": "integer", "description": "Timeout in seconds (default 30)" },
-        "workdir": { "type": "string", "description": "Working directory for the command" }
-      },
-      "required": ["command"]
-    }
-    """;
+    public string? InputSchema =>
+        """
+            {
+              "type": "object",
+              "properties": {
+                "command": { "type": "string", "description": "Shell command to execute" },
+                "timeout": { "type": "integer", "description": "Timeout in seconds (default 30)" },
+                "workdir": { "type": "string", "description": "Working directory for the command" }
+              },
+              "required": ["command"]
+            }
+            """;
 
     public async Task<(string Content, bool IsError)> ExecuteAsync(
         IReadOnlyDictionary<string, object?> args,
         string workingDirectory,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var command = BuiltInToolHelpers.GetStringArg(args, "command");
         if (string.IsNullOrWhiteSpace(command))
             return ("[Error: command is required]", true);
 
-        var timeoutSecs = (int)BuiltInToolHelpers.GetLongArg(args, "timeout", DefaultTimeoutSeconds);
+        var timeoutSecs = (int)
+            BuiltInToolHelpers.GetLongArg(args, "timeout", DefaultTimeoutSeconds);
         var workdir = BuiltInToolHelpers.GetStringArg(args, "workdir");
         if (string.IsNullOrWhiteSpace(workdir))
             workdir = workingDirectory;
@@ -82,7 +86,8 @@ public sealed class BashTool : IBuiltInTool
             TryKill(process);
 
             // Drain any buffered output that was written before the process was killed
-            string stdout = "", stderr = "";
+            string stdout = "",
+                stderr = "";
             try
             {
                 if (stdoutTask is { IsCompletedSuccessfully: true })
@@ -90,7 +95,9 @@ public sealed class BashTool : IBuiltInTool
                 if (stderrTask is { IsCompletedSuccessfully: true })
                     stderr = stderrTask.Result;
             }
-            catch { /* best-effort: pipes may already be closed */ }
+            catch
+            { /* best-effort: pipes may already be closed */
+            }
 
             var prefix = stdout;
             if (!string.IsNullOrWhiteSpace(stderr))
@@ -115,7 +122,13 @@ public sealed class BashTool : IBuiltInTool
 
     private static void TryKill(Process process)
     {
-        try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-        catch { /* best-effort */ }
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch
+        { /* best-effort */
+        }
     }
 }

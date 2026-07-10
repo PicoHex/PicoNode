@@ -7,8 +7,18 @@ public class SkillsIntegrationTests
     {
         var skills = new List<SkillInfo>
         {
-            new() { Name = "pdf", Description = "PDF manipulation", Path = "/skills/pdf/SKILL.md" },
-            new() { Name = "xlsx", Description = "Spreadsheet tools", Path = "/skills/xlsx/SKILL.md" },
+            new()
+            {
+                Name = "pdf",
+                Description = "PDF manipulation",
+                Path = "/skills/pdf/SKILL.md",
+            },
+            new()
+            {
+                Name = "xlsx",
+                Description = "Spreadsheet tools",
+                Path = "/skills/xlsx/SKILL.md",
+            },
         };
 
         var prompt = SkillFormatter.FormatSkillsPrompt(skills);
@@ -26,7 +36,12 @@ public class SkillsIntegrationTests
         var skills = new List<SkillInfo>
         {
             new() { Name = "visible", Description = "V" },
-            new() { Name = "hidden", Description = "H", DisableModelInvocation = true },
+            new()
+            {
+                Name = "hidden",
+                Description = "H",
+                DisableModelInvocation = true,
+            },
         };
 
         var prompt = SkillFormatter.FormatSkillsPrompt(skills);
@@ -38,17 +53,23 @@ public class SkillsIntegrationTests
     [Test]
     public async Task ScanFromDir_FindsSkills()
     {
-        var tmpDir = Path.Combine(Path.GetTempPath(), "pico_skills_" + Guid.NewGuid().ToString("N")[..8]);
+        var tmpDir = Path.Combine(
+            Path.GetTempPath(),
+            "pico_skills_" + Guid.NewGuid().ToString("N")[..8]
+        );
         Directory.CreateDirectory(tmpDir);
-        File.WriteAllText(Path.Combine(tmpDir, "SKILL.md"), """
-        ---
-        name: test-skill
-        description: A test skill for TDD
-        ---
+        File.WriteAllText(
+            Path.Combine(tmpDir, "SKILL.md"),
+            """
+            ---
+            name: test-skill
+            description: A test skill for TDD
+            ---
 
-        # Test Skill
-        Content here.
-        """);
+            # Test Skill
+            Content here.
+            """
+        );
 
         try
         {

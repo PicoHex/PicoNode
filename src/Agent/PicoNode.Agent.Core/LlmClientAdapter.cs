@@ -72,7 +72,10 @@ public sealed class LlmClientAdapter : ILlmClient
         }
 
         if (errorMsg is not null)
-            blocks ??= [new NetAI.ContentBlock { Type = "text", Text = $"[API Error: {errorMsg}]" }];
+            blocks ??=
+            [
+                new NetAI.ContentBlock { Type = "text", Text = $"[API Error: {errorMsg}]" },
+            ];
 
         return new Message
         {

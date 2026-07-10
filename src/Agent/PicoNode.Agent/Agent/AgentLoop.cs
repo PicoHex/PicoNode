@@ -25,7 +25,12 @@ public sealed class AgentLoop
     public AgentLoop(IAgentLlm llm, CapabilityRegistry registry, CapabilityRunner runner)
         : this(llm, registry, runner, new BuiltInToolSet()) { }
 
-    public AgentLoop(IAgentLlm llm, CapabilityRegistry registry, CapabilityRunner runner, BuiltInToolSet builtInTools)
+    public AgentLoop(
+        IAgentLlm llm,
+        CapabilityRegistry registry,
+        CapabilityRunner runner,
+        BuiltInToolSet builtInTools
+    )
     {
         _llm = llm;
         _registry = registry;
@@ -66,7 +71,8 @@ public sealed class AgentLoop
         do
         {
             iterations++;
-            if (iterations > 100) break; // safety net, LLM should stop naturally
+            if (iterations > 100)
+                break; // safety net, LLM should stop naturally
             var messages = await session.BuildContext();
             var valid = messages.Where(m => !string.IsNullOrEmpty(m.Role)).ToArray();
 
@@ -104,7 +110,11 @@ public sealed class AgentLoop
                                     Args = tc.Arguments,
                                 }
                             );
-                            var biHookResult = await _hookRunner.EmitAsync(TriggerKind.OnToolCall, biHookInput, ct);
+                            var biHookResult = await _hookRunner.EmitAsync(
+                                TriggerKind.OnToolCall,
+                                biHookInput,
+                                ct
+                            );
                             if (
                                 biHookResult is { } biH
                                 && biH.RootElement.TryGetProperty("action", out var biAction)
@@ -112,18 +122,25 @@ public sealed class AgentLoop
                             )
                             {
                                 if (onEvent is not null)
-                                    await onEvent(new AssistantMessageEvent.ToolResult
-                                    {
-                                        ToolCallId = tc.Id ?? "",
-                                        ToolName = tc.Name ?? "",
-                                        Content = "Blocked by hook",
-                                        IsError = true,
-                                    }, ct);
+                                    await onEvent(
+                                        new AssistantMessageEvent.ToolResult
+                                        {
+                                            ToolCallId = tc.Id ?? "",
+                                            ToolName = tc.Name ?? "",
+                                            Content = "Blocked by hook",
+                                            IsError = true,
+                                        },
+                                        ct
+                                    );
                                 continue;
                             }
 
                             // Execute built-in tool
-                            var (content, isError) = await builtIn.ExecuteAsync(tc.Arguments, WorkingDirectory, ct);
+                            var (content, isError) = await builtIn.ExecuteAsync(
+                                tc.Arguments,
+                                WorkingDirectory,
+                                ct
+                            );
 
                             // Truncate output
                             var truncated = CapabilityRunner.TruncateOutput(content, 50000, 2000);
@@ -149,13 +166,16 @@ public sealed class AgentLoop
 
                             // Emit tool result event so frontend can show it
                             if (onEvent is not null)
-                                await onEvent(new AssistantMessageEvent.ToolResult
-                                {
-                                    ToolCallId = tc.Id ?? "",
-                                    ToolName = tc.Name ?? "",
-                                    Content = truncated.Content,
-                                    IsError = isError,
-                                }, ct);
+                                await onEvent(
+                                    new AssistantMessageEvent.ToolResult
+                                    {
+                                        ToolCallId = tc.Id ?? "",
+                                        ToolName = tc.Name ?? "",
+                                        Content = truncated.Content,
+                                        IsError = isError,
+                                    },
+                                    ct
+                                );
 
                             continue;
                         }
@@ -185,13 +205,16 @@ public sealed class AgentLoop
                         await session.AppendMessage(notFound);
                         result.Add(notFound);
                         if (onEvent is not null)
-                            await onEvent(new AssistantMessageEvent.ToolResult
-                            {
-                                ToolCallId = tc.Id ?? "",
-                                ToolName = tc.Name ?? "",
-                                Content = $"Tool not found: {tc.Name}",
-                                IsError = true,
-                            }, ct);
+                            await onEvent(
+                                new AssistantMessageEvent.ToolResult
+                                {
+                                    ToolCallId = tc.Id ?? "",
+                                    ToolName = tc.Name ?? "",
+                                    Content = $"Tool not found: {tc.Name}",
+                                    IsError = true,
+                                },
+                                ct
+                            );
                         continue;
                     }
 
@@ -217,13 +240,16 @@ public sealed class AgentLoop
                     )
                     {
                         if (onEvent is not null)
-                            await onEvent(new AssistantMessageEvent.ToolResult
-                            {
-                                ToolCallId = tc.Id ?? "",
-                                ToolName = tc.Name ?? "",
-                                Content = "Blocked by hook",
-                                IsError = true,
-                            }, ct);
+                            await onEvent(
+                                new AssistantMessageEvent.ToolResult
+                                {
+                                    ToolCallId = tc.Id ?? "",
+                                    ToolName = tc.Name ?? "",
+                                    Content = "Blocked by hook",
+                                    IsError = true,
+                                },
+                                ct
+                            );
                         continue;
                     }
 
@@ -272,13 +298,16 @@ public sealed class AgentLoop
 
                     // Emit tool result event so frontend can show it
                     if (onEvent is not null)
-                        await onEvent(new AssistantMessageEvent.ToolResult
-                        {
-                            ToolCallId = tc.Id ?? "",
-                            ToolName = tc.Name ?? "",
-                            Content = toolMsg.ContentBlocks?[0].Text ?? "",
-                            IsError = toolMsg.IsError,
-                        }, ct);
+                        await onEvent(
+                            new AssistantMessageEvent.ToolResult
+                            {
+                                ToolCallId = tc.Id ?? "",
+                                ToolName = tc.Name ?? "",
+                                Content = toolMsg.ContentBlocks?[0].Text ?? "",
+                                IsError = toolMsg.IsError,
+                            },
+                            ct
+                        );
                 }
             }
         } while (hasTools);

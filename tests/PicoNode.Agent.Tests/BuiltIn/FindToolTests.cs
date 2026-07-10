@@ -5,7 +5,10 @@ public class FindToolTests
     [Test]
     public async Task FindByGlob_ReturnsMatchingFiles()
     {
-        var tmpDir = Path.Combine(Path.GetTempPath(), "pico_find_" + Guid.NewGuid().ToString("N")[..8]);
+        var tmpDir = Path.Combine(
+            Path.GetTempPath(),
+            "pico_find_" + Guid.NewGuid().ToString("N")[..8]
+        );
         Directory.CreateDirectory(tmpDir);
         File.WriteAllText(Path.Combine(tmpDir, "a.cs"), "");
         File.WriteAllText(Path.Combine(tmpDir, "b.cs"), "");
@@ -19,7 +22,8 @@ public class FindToolTests
             var result = await tool.ExecuteAsync(
                 new Dictionary<string, object?> { ["pattern"] = "*.cs", ["path"] = tmpDir },
                 Directory.GetCurrentDirectory(),
-                CancellationToken.None);
+                CancellationToken.None
+            );
 
             await Assert.That(result.IsError).IsFalse();
             await Assert.That(result.Content).Contains("a.cs");
@@ -40,7 +44,8 @@ public class FindToolTests
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?> { ["pattern"] = "*.txt", ["path"] = "/nonexistent" },
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsTrue();
     }
@@ -52,7 +57,8 @@ public class FindToolTests
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?>(),
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsTrue();
     }
@@ -60,17 +66,27 @@ public class FindToolTests
     [Test]
     public async Task FindWithLimit_TruncatesResults()
     {
-        var tmpDir = Path.Combine(Path.GetTempPath(), "pico_find_limit_" + Guid.NewGuid().ToString("N")[..8]);
+        var tmpDir = Path.Combine(
+            Path.GetTempPath(),
+            "pico_find_limit_" + Guid.NewGuid().ToString("N")[..8]
+        );
         Directory.CreateDirectory(tmpDir);
-        for (int i = 0; i < 10; i++) File.WriteAllText(Path.Combine(tmpDir, $"f{i}.txt"), "");
+        for (int i = 0; i < 10; i++)
+            File.WriteAllText(Path.Combine(tmpDir, $"f{i}.txt"), "");
 
         try
         {
             var tool = new FindTool();
             var result = await tool.ExecuteAsync(
-                new Dictionary<string, object?> { ["pattern"] = "*.txt", ["path"] = tmpDir, ["limit"] = 3L },
+                new Dictionary<string, object?>
+                {
+                    ["pattern"] = "*.txt",
+                    ["path"] = tmpDir,
+                    ["limit"] = 3L,
+                },
                 Directory.GetCurrentDirectory(),
-                CancellationToken.None);
+                CancellationToken.None
+            );
 
             await Assert.That(result.IsError).IsFalse();
             var lines = result.Content.Split('\n', StringSplitOptions.RemoveEmptyEntries);

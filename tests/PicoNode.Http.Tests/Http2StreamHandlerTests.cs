@@ -643,9 +643,12 @@ public sealed class Http2StreamHandlerTests
         var hasEndStreamBefore = false;
         foreach (var sent in connection.SentFrames)
         {
-            if (TryReadFrame(sent, out var f) && f is not null
+            if (
+                TryReadFrame(sent, out var f)
+                && f is not null
                 && f.Type == Http2FrameType.Data
-                && f.HasFlag(Http2FrameFlags.EndStream))
+                && f.HasFlag(Http2FrameFlags.EndStream)
+            )
             {
                 hasEndStreamBefore = true;
             }
@@ -682,8 +685,7 @@ public sealed class Http2StreamHandlerTests
         var totalDataSent = 0;
         foreach (var sent in connection.SentFrames)
         {
-            if (TryReadFrame(sent, out var f) && f is not null
-                && f.Type == Http2FrameType.Data)
+            if (TryReadFrame(sent, out var f) && f is not null && f.Type == Http2FrameType.Data)
             {
                 totalDataSent += f.Length;
                 if (f.HasFlag(Http2FrameFlags.EndStream))

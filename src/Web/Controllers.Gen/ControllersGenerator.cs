@@ -364,7 +364,9 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                         $"                {awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});"
                     );
                     if (isAsync)
-                        endpointsCode.AppendLine("                return PicoWeb.Results.Empty(204);");
+                        endpointsCode.AppendLine(
+                            "                return PicoWeb.Results.Empty(204);"
+                        );
                     else
                         endpointsCode.AppendLine(
                             "                return ValueTask.FromResult(PicoWeb.Results.Empty(204));"

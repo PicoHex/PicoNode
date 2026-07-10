@@ -7,7 +7,11 @@ internal static class BuiltInToolHelpers
         return args.TryGetValue(key, out var v) && v is string s ? s : "";
     }
 
-    internal static long GetLongArg(IReadOnlyDictionary<string, object?> args, string key, long fallback)
+    internal static long GetLongArg(
+        IReadOnlyDictionary<string, object?> args,
+        string key,
+        long fallback
+    )
     {
         if (!args.TryGetValue(key, out var v))
             return fallback;

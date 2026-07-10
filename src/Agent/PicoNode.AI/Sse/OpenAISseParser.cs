@@ -50,7 +50,9 @@ public static class OpenAISseParser
             {
                 FlushToolCalls(contentBlocks, toolCalls);
                 if (contentAccum.Length > 0)
-                    contentBlocks.Add(new ContentBlock { Type = "text", Text = contentAccum.ToString() });
+                    contentBlocks.Add(
+                        new ContentBlock { Type = "text", Text = contentAccum.ToString() }
+                    );
                 message.ContentBlocks = contentBlocks.ToArray();
                 message.StopReason = "stop";
                 yield return new AssistantMessageEvent.Done { Message = message };
@@ -85,15 +87,21 @@ public static class OpenAISseParser
                 for (int i = 0; i < tcArray.GetArrayLength(); i++)
                 {
                     var tc = tcArray[i];
-                    var index = tc.TryGetProperty("index", out var idxProp) ? idxProp.GetInt32() : 0;
+                    var index = tc.TryGetProperty("index", out var idxProp)
+                        ? idxProp.GetInt32()
+                        : 0;
 
                     if (!toolCalls.TryGetValue(index, out var tcState))
                     {
                         // First chunk — create new tool call
-                        var id = tc.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "" : "";
+                        var id = tc.TryGetProperty("id", out var idProp)
+                            ? idProp.GetString() ?? ""
+                            : "";
                         string name = "";
-                        if (tc.TryGetProperty(JsonPropFunction, out var func)
-                            && func.TryGetProperty("name", out var nameProp))
+                        if (
+                            tc.TryGetProperty(JsonPropFunction, out var func)
+                            && func.TryGetProperty("name", out var nameProp)
+                        )
                             name = nameProp.GetString() ?? "";
                         tcState = (id, name, new StringBuilder());
                         toolCalls[index] = tcState;
@@ -118,8 +126,10 @@ public static class OpenAISseParser
                     }
 
                     // Accumulate arguments
-                    if (tc.TryGetProperty(JsonPropFunction, out var tcFunc)
-                        && tcFunc.TryGetProperty(JsonPropArguments, out var argsProp))
+                    if (
+                        tc.TryGetProperty(JsonPropFunction, out var tcFunc)
+                        && tcFunc.TryGetProperty(JsonPropArguments, out var argsProp)
+                    )
                     {
                         var argsFrag = argsProp.GetString() ?? "";
                         tcState.Args.Append(argsFrag);
@@ -176,7 +186,11 @@ public static class OpenAISseParser
                                 Model = model,
                                 ContentBlocks =
                                 [
-                                    new ContentBlock { Type = "text", Text = contentAccum.ToString() },
+                                    new ContentBlock
+                                    {
+                                        Type = "text",
+                                        Text = contentAccum.ToString(),
+                                    },
                                 ],
                             },
                         };
@@ -225,13 +239,15 @@ public static class OpenAISseParser
                 foreach (var (_, state) in toolCalls)
                 {
                     var parsed = ParseToolArgs(state.Args.ToString());
-                    contentBlocks.Add(new ContentBlock
-                    {
-                        Type = "tool_call",
-                        Id = state.Id,
-                        Name = state.Name,
-                        Arguments = parsed,
-                    });
+                    contentBlocks.Add(
+                        new ContentBlock
+                        {
+                            Type = "tool_call",
+                            Id = state.Id,
+                            Name = state.Name,
+                            Arguments = parsed,
+                        }
+                    );
                     yield return new AssistantMessageEvent.ToolCallEnd
                     {
                         Index = 0,
@@ -248,7 +264,9 @@ public static class OpenAISseParser
                 toolCalls.Clear();
 
                 if (contentAccum.Length > 0)
-                    contentBlocks.Add(new ContentBlock { Type = "text", Text = contentAccum.ToString() });
+                    contentBlocks.Add(
+                        new ContentBlock { Type = "text", Text = contentAccum.ToString() }
+                    );
 
                 message.ContentBlocks = contentBlocks.ToArray();
                 message.StopReason = reason;
@@ -260,17 +278,20 @@ public static class OpenAISseParser
 
     private static void FlushToolCalls(
         List<ContentBlock> contentBlocks,
-        Dictionary<int, (string Id, string Name, StringBuilder Args)> toolCalls)
+        Dictionary<int, (string Id, string Name, StringBuilder Args)> toolCalls
+    )
     {
         foreach (var (_, state) in toolCalls)
         {
-            contentBlocks.Add(new ContentBlock
-            {
-                Type = "tool_call",
-                Id = state.Id,
-                Name = state.Name,
-                Arguments = ParseToolArgs(state.Args.ToString()),
-            });
+            contentBlocks.Add(
+                new ContentBlock
+                {
+                    Type = "tool_call",
+                    Id = state.Id,
+                    Name = state.Name,
+                    Arguments = ParseToolArgs(state.Args.ToString()),
+                }
+            );
         }
         toolCalls.Clear();
     }
@@ -321,5 +342,6 @@ public static class OpenAISseParser
     }
 
     /// <summary>Test-only entry point for SSE deserialization tests.</summary>
-    internal static AssistantMessageEvent ParseForTest(string json) => throw new NotSupportedException("Use ParseStreamAsync for tests");
+    internal static AssistantMessageEvent ParseForTest(string json) =>
+        throw new NotSupportedException("Use ParseStreamAsync for tests");
 }

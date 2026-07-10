@@ -5,7 +5,10 @@ public class RealServerIntegrationTests
     [Test]
     public async Task FullStack_ServerFactoryAdapter_SseWorks()
     {
-        var tmp = Path.Combine(Path.GetTempPath(), "pico_real_" + Guid.NewGuid().ToString("N")[..8]);
+        var tmp = Path.Combine(
+            Path.GetTempPath(),
+            "pico_real_" + Guid.NewGuid().ToString("N")[..8]
+        );
         Directory.CreateDirectory(tmp);
         try
         {
@@ -24,7 +27,10 @@ public class RealServerIntegrationTests
             await using var server = new PicoAgent.Server(agent, adapter, factory.GetToolRunner());
             await server.ListenAsync("http://localhost:0");
 
-            using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{server.Port}/") };
+            using var http = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{server.Port}/"),
+            };
 
             // Health
             var health = await http.GetStringAsync("/health");
@@ -36,7 +42,8 @@ public class RealServerIntegrationTests
         }
         finally
         {
-            if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true);
+            if (Directory.Exists(tmp))
+                Directory.Delete(tmp, recursive: true);
         }
     }
 }

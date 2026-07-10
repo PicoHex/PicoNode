@@ -6,15 +6,30 @@ public class AgentLoopBuiltInToolTests
     public async Task RunTurnAsync_BuiltInToolCalled_ExecutesAndReturnsResult()
     {
         var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
-        await session.AppendMessage(new Message { Role = "user", Content = "read file", Timestamp = 1 });
+        await session.AppendMessage(
+            new Message
+            {
+                Role = "user",
+                Content = "read file",
+                Timestamp = 1,
+            }
+        );
 
-        var llm = new DoneWithToolCallLlm("read", "call_read_1",
-            new Dictionary<string, object?> { ["path"] = "/nonexistent.txt" });
+        var llm = new DoneWithToolCallLlm(
+            "read",
+            "call_read_1",
+            new Dictionary<string, object?> { ["path"] = "/nonexistent.txt" }
+        );
 
         var builtInTools = new BuiltInToolSet();
         builtInTools.Register(new ReadTool());
 
-        var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner(), builtInTools);
+        var loop = new AgentLoop(
+            llm,
+            new CapabilityRegistry(),
+            new CapabilityRunner(),
+            builtInTools
+        );
 
         var result = await loop.RunTurnAsync(session, CancellationToken.None);
 
@@ -29,13 +44,28 @@ public class AgentLoopBuiltInToolTests
     public async Task RunTurnAsync_UnknownTool_ReturnsNotFound()
     {
         var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
-        await session.AppendMessage(new Message { Role = "user", Content = "hi", Timestamp = 1 });
+        await session.AppendMessage(
+            new Message
+            {
+                Role = "user",
+                Content = "hi",
+                Timestamp = 1,
+            }
+        );
 
-        var llm = new DoneWithToolCallLlm("unknown_tool", "call_x",
-            new Dictionary<string, object?>());
+        var llm = new DoneWithToolCallLlm(
+            "unknown_tool",
+            "call_x",
+            new Dictionary<string, object?>()
+        );
 
         var builtInTools = new BuiltInToolSet();
-        var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner(), builtInTools);
+        var loop = new AgentLoop(
+            llm,
+            new CapabilityRegistry(),
+            new CapabilityRunner(),
+            builtInTools
+        );
 
         var result = await loop.RunTurnAsync(session, CancellationToken.None);
 
@@ -49,14 +79,25 @@ public class AgentLoopBuiltInToolTests
     public async Task RunTurnAsync_BuiltInToolBeforeCapability()
     {
         var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
-        await session.AppendMessage(new Message { Role = "user", Content = "stub", Timestamp = 1 });
+        await session.AppendMessage(
+            new Message
+            {
+                Role = "user",
+                Content = "stub",
+                Timestamp = 1,
+            }
+        );
 
-        var llm = new DoneWithToolCallLlm("echo", "call_echo",
-            new Dictionary<string, object?>());
+        var llm = new DoneWithToolCallLlm("echo", "call_echo", new Dictionary<string, object?>());
 
         var builtInTools = new BuiltInToolSet();
         builtInTools.Register(new StubTool("echo"));
-        var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner(), builtInTools);
+        var loop = new AgentLoop(
+            llm,
+            new CapabilityRegistry(),
+            new CapabilityRunner(),
+            builtInTools
+        );
 
         var result = await loop.RunTurnAsync(session, CancellationToken.None);
 
@@ -70,14 +111,25 @@ public class AgentLoopBuiltInToolTests
     public async Task RunTurnAsync_BuiltInToolWithoutArgs_UsesDefaults()
     {
         var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
-        await session.AppendMessage(new Message { Role = "user", Content = "noargs", Timestamp = 1 });
+        await session.AppendMessage(
+            new Message
+            {
+                Role = "user",
+                Content = "noargs",
+                Timestamp = 1,
+            }
+        );
 
-        var llm = new DoneWithToolCallLlm("noargs", "call_na",
-            new Dictionary<string, object?>());
+        var llm = new DoneWithToolCallLlm("noargs", "call_na", new Dictionary<string, object?>());
 
         var builtInTools = new BuiltInToolSet();
         builtInTools.Register(new StubTool("noargs"));
-        var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner(), builtInTools);
+        var loop = new AgentLoop(
+            llm,
+            new CapabilityRegistry(),
+            new CapabilityRunner(),
+            builtInTools
+        );
 
         var result = await loop.RunTurnAsync(session, CancellationToken.None);
 
@@ -90,24 +142,38 @@ public class AgentLoopBuiltInToolTests
     public async Task RunTurnAsync_EmitsToolResultEvent_WithCorrectFields()
     {
         var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
-        await session.AppendMessage(new Message { Role = "user", Content = "read", Timestamp = 1 });
+        await session.AppendMessage(
+            new Message
+            {
+                Role = "user",
+                Content = "read",
+                Timestamp = 1,
+            }
+        );
 
-        var llm = new DoneWithToolCallLlm("stub", "call_1",
-            new Dictionary<string, object?>());
+        var llm = new DoneWithToolCallLlm("stub", "call_1", new Dictionary<string, object?>());
 
         var builtInTools = new BuiltInToolSet();
         builtInTools.Register(new StubTool("stub"));
 
-        var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner(), builtInTools);
+        var loop = new AgentLoop(
+            llm,
+            new CapabilityRegistry(),
+            new CapabilityRunner(),
+            builtInTools
+        );
 
         var toolResults = new List<AssistantMessageEvent.ToolResult>();
-        await loop.RunTurnAsync(session, CancellationToken.None,
+        await loop.RunTurnAsync(
+            session,
+            CancellationToken.None,
             onEvent: (e, _) =>
             {
                 if (e is AssistantMessageEvent.ToolResult tr)
                     toolResults.Add(tr);
                 return ValueTask.CompletedTask;
-            });
+            }
+        );
 
         await Assert.That(toolResults.Count).IsEqualTo(1);
         await Assert.That(toolResults[0].ToolCallId).IsEqualTo("call_1");
@@ -120,7 +186,14 @@ public class AgentLoopBuiltInToolTests
     public async Task RunTurnAsync_NoToolResultWhenNoToolCalled()
     {
         var session = new PicoNode.Agent.Session(new InMemorySessionStorage());
-        await session.AppendMessage(new Message { Role = "user", Content = "hi", Timestamp = 1 });
+        await session.AppendMessage(
+            new Message
+            {
+                Role = "user",
+                Content = "hi",
+                Timestamp = 1,
+            }
+        );
 
         // LLM returns text only, no tool_call
         var llm = new TextOnlyLlm("hello");
@@ -128,16 +201,24 @@ public class AgentLoopBuiltInToolTests
         var builtInTools = new BuiltInToolSet();
         builtInTools.Register(new StubTool("stub"));
 
-        var loop = new AgentLoop(llm, new CapabilityRegistry(), new CapabilityRunner(), builtInTools);
+        var loop = new AgentLoop(
+            llm,
+            new CapabilityRegistry(),
+            new CapabilityRunner(),
+            builtInTools
+        );
 
         var toolResults = new List<AssistantMessageEvent.ToolResult>();
-        await loop.RunTurnAsync(session, CancellationToken.None,
+        await loop.RunTurnAsync(
+            session,
+            CancellationToken.None,
             onEvent: (e, _) =>
             {
                 if (e is AssistantMessageEvent.ToolResult tr)
                     toolResults.Add(tr);
                 return ValueTask.CompletedTask;
-            });
+            }
+        );
 
         await Assert.That(toolResults.Count).IsEqualTo(0);
     }
@@ -153,7 +234,11 @@ public class AgentLoopBuiltInToolTests
         private readonly Dictionary<string, object?> _args;
         private bool _sent;
 
-        public DoneWithToolCallLlm(string toolName, string toolCallId, Dictionary<string, object?> args)
+        public DoneWithToolCallLlm(
+            string toolName,
+            string toolCallId,
+            Dictionary<string, object?> args
+        )
         {
             _toolName = toolName;
             _toolCallId = toolCallId;
@@ -161,26 +246,46 @@ public class AgentLoopBuiltInToolTests
         }
 
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl,
-            [EnumeratorCancellation] CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            [EnumeratorCancellation] CancellationToken ct
+        )
         {
             if (!_sent)
             {
                 _sent = true;
-                yield return new LlmStreamEvent("done", null, "tool_use", null,
+                yield return new LlmStreamEvent(
+                    "done",
+                    null,
+                    "tool_use",
+                    null,
                     ContentBlocks: new ContentBlock[]
                     {
                         new() { Type = "text", Text = "" },
-                        new() { Type = ProtocolConstants.BlockTypeToolCall, Id = _toolCallId, Name = _toolName, Arguments = _args },
-                    });
+                        new()
+                        {
+                            Type = ProtocolConstants.BlockTypeToolCall,
+                            Id = _toolCallId,
+                            Name = _toolName,
+                            Arguments = _args,
+                        },
+                    }
+                );
             }
             else
             {
-                yield return new LlmStreamEvent("done", null, "end_turn", null,
+                yield return new LlmStreamEvent(
+                    "done",
+                    null,
+                    "end_turn",
+                    null,
                     ContentBlocks: new ContentBlock[]
                     {
                         new() { Type = "text", Text = "ok" },
-                    });
+                    }
+                );
             }
             await Task.CompletedTask;
         }
@@ -192,11 +297,16 @@ public class AgentLoopBuiltInToolTests
         public string Description => "stub";
         public string? InputSchema => null;
 
-        public StubTool(string name) { Name = name; }
+        public StubTool(string name)
+        {
+            Name = name;
+        }
 
         public Task<(string, bool)> ExecuteAsync(
-            IReadOnlyDictionary<string, object?> args, string wd, CancellationToken ct)
-            => Task.FromResult(("ok", false));
+            IReadOnlyDictionary<string, object?> args,
+            string wd,
+            CancellationToken ct
+        ) => Task.FromResult(("ok", false));
     }
 
     /// <summary>
@@ -205,17 +315,27 @@ public class AgentLoopBuiltInToolTests
     private sealed class TextOnlyLlm : IAgentLlm
     {
         private readonly string _text;
+
         public TextOnlyLlm(string text) => _text = text;
 
         public async IAsyncEnumerable<LlmStreamEvent> StreamAsync(
-            string? sp, Message[] msgs, string mid, string? rl,
-            [EnumeratorCancellation] CancellationToken ct)
+            string? sp,
+            Message[] msgs,
+            string mid,
+            string? rl,
+            [EnumeratorCancellation] CancellationToken ct
+        )
         {
-            yield return new LlmStreamEvent("done", null, "end_turn", null,
+            yield return new LlmStreamEvent(
+                "done",
+                null,
+                "end_turn",
+                null,
                 ContentBlocks: new ContentBlock[]
                 {
                     new() { Type = "text", Text = _text },
-                });
+                }
+            );
             await Task.CompletedTask;
         }
     }

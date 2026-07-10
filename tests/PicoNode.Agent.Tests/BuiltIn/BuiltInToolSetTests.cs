@@ -56,12 +56,17 @@ public class BuiltInToolSetTests
         public string Description { get; }
         public string? InputSchema => null;
 
-        public StubTool(string name, string desc) { Name = name; Description = desc; }
+        public StubTool(string name, string desc)
+        {
+            Name = name;
+            Description = desc;
+        }
 
         public Task<(string, bool)> ExecuteAsync(
             IReadOnlyDictionary<string, object?> args,
             string wd,
-            CancellationToken ct) => Task.FromResult(("ok", false));
+            CancellationToken ct
+        ) => Task.FromResult(("ok", false));
     }
 
     [Test]

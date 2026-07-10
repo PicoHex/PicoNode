@@ -203,7 +203,13 @@ public sealed class UdpNode : INode
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        if (_state is NodeState.Stopping or NodeState.Stopped or NodeState.Disposed or NodeState.Created)
+        if (
+            _state
+            is NodeState.Stopping
+                or NodeState.Stopped
+                or NodeState.Disposed
+                or NodeState.Created
+        )
         {
             return;
         }
@@ -223,7 +229,13 @@ public sealed class UdpNode : INode
 
         lock (_stateLock)
         {
-            if (_state is NodeState.Stopping or NodeState.Stopped or NodeState.Disposed or NodeState.Created)
+            if (
+                _state
+                is NodeState.Stopping
+                    or NodeState.Stopped
+                    or NodeState.Disposed
+                    or NodeState.Created
+            )
             {
                 return;
             }

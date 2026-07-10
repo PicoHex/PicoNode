@@ -16,15 +16,22 @@ public class EditToolTests
                 ["path"] = tmp,
                 ["edits"] = new List<object?>
                 {
-                    new Dictionary<string, object?> { ["oldText"] = "hello", ["newText"] = "hi" }
-                }
+                    new Dictionary<string, object?> { ["oldText"] = "hello", ["newText"] = "hi" },
+                },
             };
-            var result = await tool.ExecuteAsync(args, Directory.GetCurrentDirectory(), CancellationToken.None);
+            var result = await tool.ExecuteAsync(
+                args,
+                Directory.GetCurrentDirectory(),
+                CancellationToken.None
+            );
 
             await Assert.That(result.IsError).IsFalse();
             await Assert.That(File.ReadAllText(tmp)).IsEqualTo("hi world");
         }
-        finally { File.Delete(tmp); }
+        finally
+        {
+            File.Delete(tmp);
+        }
     }
 
     [Test]
@@ -43,14 +50,21 @@ public class EditToolTests
                 {
                     new Dictionary<string, object?> { ["oldText"] = "aaa", ["newText"] = "111" },
                     new Dictionary<string, object?> { ["oldText"] = "ccc", ["newText"] = "333" },
-                }
+                },
             };
-            var result = await tool.ExecuteAsync(args, Directory.GetCurrentDirectory(), CancellationToken.None);
+            var result = await tool.ExecuteAsync(
+                args,
+                Directory.GetCurrentDirectory(),
+                CancellationToken.None
+            );
 
             await Assert.That(result.IsError).IsFalse();
             await Assert.That(File.ReadAllText(tmp)).IsEqualTo("111 bbb 333");
         }
-        finally { File.Delete(tmp); }
+        finally
+        {
+            File.Delete(tmp);
+        }
     }
 
     [Test]
@@ -67,17 +81,28 @@ public class EditToolTests
                 ["path"] = tmp,
                 ["edits"] = new List<object?>
                 {
-                    new Dictionary<string, object?> { ["oldText"] = "nonexistent", ["newText"] = "x" }
-                }
+                    new Dictionary<string, object?>
+                    {
+                        ["oldText"] = "nonexistent",
+                        ["newText"] = "x",
+                    },
+                },
             };
-            var result = await tool.ExecuteAsync(args, Directory.GetCurrentDirectory(), CancellationToken.None);
+            var result = await tool.ExecuteAsync(
+                args,
+                Directory.GetCurrentDirectory(),
+                CancellationToken.None
+            );
 
             await Assert.That(result.IsError).IsTrue();
             await Assert.That(result.Content).Contains("not found");
             // File unchanged
             await Assert.That(File.ReadAllText(tmp)).IsEqualTo("hello world");
         }
-        finally { File.Delete(tmp); }
+        finally
+        {
+            File.Delete(tmp);
+        }
     }
 
     [Test]
@@ -94,15 +119,22 @@ public class EditToolTests
                 ["path"] = tmp,
                 ["edits"] = new List<object?>
                 {
-                    new Dictionary<string, object?> { ["oldText"] = "hello", ["newText"] = "hi" }
-                }
+                    new Dictionary<string, object?> { ["oldText"] = "hello", ["newText"] = "hi" },
+                },
             };
-            var result = await tool.ExecuteAsync(args, Directory.GetCurrentDirectory(), CancellationToken.None);
+            var result = await tool.ExecuteAsync(
+                args,
+                Directory.GetCurrentDirectory(),
+                CancellationToken.None
+            );
 
             await Assert.That(result.IsError).IsTrue();
             await Assert.That(result.Content).Contains("multiple");
         }
-        finally { File.Delete(tmp); }
+        finally
+        {
+            File.Delete(tmp);
+        }
     }
 
     [Test]
@@ -111,7 +143,9 @@ public class EditToolTests
         var tool = new EditTool();
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?> { ["edits"] = new List<object?>() },
-            Directory.GetCurrentDirectory(), CancellationToken.None);
+            Directory.GetCurrentDirectory(),
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsTrue();
     }

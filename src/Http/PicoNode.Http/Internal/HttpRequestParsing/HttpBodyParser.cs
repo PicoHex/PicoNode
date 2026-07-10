@@ -31,10 +31,7 @@ internal static class HttpBodyParser
                 reader.Position
             );
 
-        if (
-            contentLength > int.MaxValue
-            || contentLength > options.MaxRequestBodySize
-        )
+        if (contentLength > int.MaxValue || contentLength > options.MaxRequestBodySize)
         {
             return HttpRequestParseResult.Rejected(
                 reader.BufferStart,
@@ -143,10 +140,7 @@ internal static class HttpBodyParser
             }
 
             totalBodyLength += chunkSize;
-            if (
-                totalBodyLength > int.MaxValue
-                || totalBodyLength > options.MaxRequestBodySize
-            )
+            if (totalBodyLength > int.MaxValue || totalBodyLength > options.MaxRequestBodySize)
             {
                 return HttpRequestParseResult.Rejected(
                     reader.BufferStart,

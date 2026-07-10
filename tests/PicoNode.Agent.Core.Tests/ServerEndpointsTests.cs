@@ -111,7 +111,10 @@ public class ServerEndpointsTests
     {
         var config = new Domain.AgentConfig
         {
-            Providers = new Dictionary<string, Domain.ProviderEntry> { ["unconfigured"] = new() { ApiKey = "unconfigured" } },
+            Providers = new Dictionary<string, Domain.ProviderEntry>
+            {
+                ["unconfigured"] = new() { ApiKey = "unconfigured" },
+            },
             Model = "unconfigured",
         };
         var factory = new AgentFactory().WithBuiltInTools();

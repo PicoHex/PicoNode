@@ -3,23 +3,26 @@ namespace PicoNode.Agent;
 public sealed class WriteTool : IBuiltInTool
 {
     public string Name => "write";
-    public string Description => "Create or overwrite a file with content. Creates parent directories automatically.";
+    public string Description =>
+        "Create or overwrite a file with content. Creates parent directories automatically.";
 
-    public string? InputSchema => """
-    {
-      "type": "object",
-      "properties": {
-        "path": { "type": "string", "description": "Path to the file to write" },
-        "content": { "type": "string", "description": "Content to write to the file" }
-      },
-      "required": ["path", "content"]
-    }
-    """;
+    public string? InputSchema =>
+        """
+            {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string", "description": "Path to the file to write" },
+                "content": { "type": "string", "description": "Content to write to the file" }
+              },
+              "required": ["path", "content"]
+            }
+            """;
 
     public Task<(string Content, bool IsError)> ExecuteAsync(
         IReadOnlyDictionary<string, object?> args,
         string workingDirectory,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var path = BuiltInToolHelpers.GetStringArg(args, "path");
         if (string.IsNullOrWhiteSpace(path))

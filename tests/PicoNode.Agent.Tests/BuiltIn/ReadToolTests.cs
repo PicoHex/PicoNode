@@ -12,7 +12,8 @@ public class ReadToolTests
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?> { ["path"] = tmp },
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsFalse();
         await Assert.That(result.Content).Contains("hello");
@@ -28,7 +29,8 @@ public class ReadToolTests
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?> { ["path"] = "/nonexistent/file.txt" },
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsTrue();
         await Assert.That(result.Content).Contains("File not found");
@@ -42,9 +44,15 @@ public class ReadToolTests
 
         var tool = new ReadTool();
         var result = await tool.ExecuteAsync(
-            new Dictionary<string, object?> { ["path"] = tmp, ["offset"] = 2L, ["limit"] = 2L },
+            new Dictionary<string, object?>
+            {
+                ["path"] = tmp,
+                ["offset"] = 2L,
+                ["limit"] = 2L,
+            },
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsFalse();
         await Assert.That(result.Content).Contains("line2");
@@ -65,7 +73,8 @@ public class ReadToolTests
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?> { ["path"] = tmp },
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsTrue();
         await Assert.That(result.Content).Contains("Binary file");
@@ -80,7 +89,8 @@ public class ReadToolTests
         var result = await tool.ExecuteAsync(
             new Dictionary<string, object?>(),
             Directory.GetCurrentDirectory(),
-            CancellationToken.None);
+            CancellationToken.None
+        );
 
         await Assert.That(result.IsError).IsTrue();
     }

@@ -4,6 +4,7 @@ public interface IBuiltInTool
 {
     string Name { get; }
     string Description { get; }
+
     /// <summary>
     /// JSON Schema string for native tool calling (Anthropic/OpenAI tools parameter).
     /// Return null to send tool description only via system prompt text.
@@ -14,5 +15,6 @@ public interface IBuiltInTool
     Task<(string Content, bool IsError)> ExecuteAsync(
         IReadOnlyDictionary<string, object?> args,
         string workingDirectory,
-        CancellationToken ct);
+        CancellationToken ct
+    );
 }

@@ -108,7 +108,10 @@ public sealed class AgentFactory
 
     private void RegisterBuiltInTools(Agent agent)
     {
-        RegisterTool(agent, "read", "Read file contents",
+        RegisterTool(
+            agent,
+            "read",
+            "Read file contents",
             """{"type":"object","properties":{"path":{"type":"string","description":"Path to the file to read"},"offset":{"type":"integer","description":"Line number to start from (1-indexed)"},"limit":{"type":"integer","description":"Max lines to read"}},"required":["path"]}""",
             async (args, ct) =>
             {
@@ -119,7 +122,10 @@ public sealed class AgentFactory
             }
         );
 
-        RegisterTool(agent, "write", "Write file contents",
+        RegisterTool(
+            agent,
+            "write",
+            "Write file contents",
             """{"type":"object","properties":{"path":{"type":"string","description":"Path to write to"},"content":{"type":"string","description":"Content to write"}},"required":["path","content"]}""",
             async (args, ct) =>
             {
@@ -133,7 +139,10 @@ public sealed class AgentFactory
             }
         );
 
-        RegisterTool(agent, "bash", "Execute shell command",
+        RegisterTool(
+            agent,
+            "bash",
+            "Execute shell command",
             """{"type":"object","properties":{"command":{"type":"string","description":"Shell command to execute"}},"required":["command"]}""",
             async (args, ct) =>
             {
@@ -181,7 +190,10 @@ public sealed class AgentFactory
             }
         );
 
-        RegisterTool(agent, "grep", "Search files for patterns",
+        RegisterTool(
+            agent,
+            "grep",
+            "Search files for patterns",
             """{"type":"object","properties":{"pattern":{"type":"string","description":"Regex pattern to search for"}},"required":["pattern"]}""",
             async (args, ct) =>
             {
@@ -190,7 +202,10 @@ public sealed class AgentFactory
             }
         );
 
-        RegisterTool(agent, "find", "Find files by name",
+        RegisterTool(
+            agent,
+            "find",
+            "Find files by name",
             """{"type":"object","properties":{"name":{"type":"string","description":"File name pattern"}},"required":["name"]}""",
             async (args, ct) =>
             {
@@ -199,7 +214,10 @@ public sealed class AgentFactory
             }
         );
 
-        RegisterTool(agent, "ls", "List directory contents",
+        RegisterTool(
+            agent,
+            "ls",
+            "List directory contents",
             """{"type":"object","properties":{"path":{"type":"string","description":"Directory path"}},"required":[]}""",
             async (args, ct) =>
             {

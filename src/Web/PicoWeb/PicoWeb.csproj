@@ -39,10 +39,7 @@
       Include="..\Controllers.Gen\Controllers.Gen.csproj"
       ReferenceOutputAssembly="false"
     />
-    <ProjectReference
-      Include="..\PicoWeb.Gen\PicoWeb.Gen.csproj"
-      ReferenceOutputAssembly="false"
-    />
+    <ProjectReference Include="..\PicoWeb.Gen\PicoWeb.Gen.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <!-- Pack analyzers into NuGet package for transitive consumption -->

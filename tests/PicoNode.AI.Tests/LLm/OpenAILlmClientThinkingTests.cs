@@ -96,7 +96,9 @@ public sealed class OpenAILlmClientThinkingTests
         ) { }
 
         await Assert.That(handler.CapturedRequestBody!).DoesNotContain("reasoning_effort");
-        await Assert.That(handler.CapturedRequestBody!).DoesNotContain("\"thinking\":{\"type\":\"disabled\"}");
+        await Assert
+            .That(handler.CapturedRequestBody!)
+            .DoesNotContain("\"thinking\":{\"type\":\"disabled\"}");
     }
 
     [Test]

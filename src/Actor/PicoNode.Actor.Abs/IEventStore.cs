@@ -17,7 +17,8 @@ public interface IEventStore
     ValueTask<ulong> AppendAsync(
         Guid actorId,
         ulong expectedVersion,
-        IReadOnlyList<IDomainEvent> events);
+        IReadOnlyList<IDomainEvent> events
+    );
 
     /// <summary>
     /// Load all events for an actor, ordered by version ascending.

@@ -7,26 +7,29 @@ public sealed class GrepTool : IBuiltInTool
     private const int MaxFiles = 5000;
 
     public string Name => "grep";
-    public string Description => "Search file contents for a pattern. Returns matching lines with file path and line number.";
+    public string Description =>
+        "Search file contents for a pattern. Returns matching lines with file path and line number.";
 
-    public string? InputSchema => """
-    {
-      "type": "object",
-      "properties": {
-        "pattern": { "type": "string", "description": "Pattern to search for (regex)" },
-        "path": { "type": "string", "description": "Directory to search (default: cwd)" },
-        "include": { "type": "string", "description": "File glob filter (e.g. *.cs)" },
-        "ignoreCase": { "type": "boolean", "description": "Case-insensitive search" },
-        "limit": { "type": "integer", "description": "Maximum matches (default 100)" }
-      },
-      "required": ["pattern"]
-    }
-    """;
+    public string? InputSchema =>
+        """
+            {
+              "type": "object",
+              "properties": {
+                "pattern": { "type": "string", "description": "Pattern to search for (regex)" },
+                "path": { "type": "string", "description": "Directory to search (default: cwd)" },
+                "include": { "type": "string", "description": "File glob filter (e.g. *.cs)" },
+                "ignoreCase": { "type": "boolean", "description": "Case-insensitive search" },
+                "limit": { "type": "integer", "description": "Maximum matches (default 100)" }
+              },
+              "required": ["pattern"]
+            }
+            """;
 
     public Task<(string Content, bool IsError)> ExecuteAsync(
         IReadOnlyDictionary<string, object?> args,
         string workingDirectory,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var pattern = BuiltInToolHelpers.GetStringArg(args, "pattern");
         if (string.IsNullOrWhiteSpace(pattern))
@@ -36,7 +39,9 @@ public sealed class GrepTool : IBuiltInTool
         if (string.IsNullOrWhiteSpace(path))
             path = workingDirectory;
 
-        var fullPath = Path.IsPathRooted(path) ? Path.GetFullPath(path) : Path.GetFullPath(Path.Combine(workingDirectory, path));
+        var fullPath = Path.IsPathRooted(path)
+            ? Path.GetFullPath(path)
+            : Path.GetFullPath(Path.Combine(workingDirectory, path));
 
         if (!Directory.Exists(fullPath))
             return Task.FromResult(($"[Error: Directory not found: {path}]", true));
@@ -47,8 +52,14 @@ public sealed class GrepTool : IBuiltInTool
 
         var options = ignoreCase ? RegexOptions.IgnoreCase : RegexOptions.None;
         Regex regex;
-        try { regex = new Regex(pattern, options | RegexOptions.Compiled); }
-        catch (ArgumentException) { return Task.FromResult(($"[Error: Invalid regex pattern: {pattern}]", true)); }
+        try
+        {
+            regex = new Regex(pattern, options | RegexOptions.Compiled);
+        }
+        catch (ArgumentException)
+        {
+            return Task.FromResult(($"[Error: Invalid regex pattern: {pattern}]", true));
+        }
 
         var results = new List<string>();
         var filesScanned = 0;
@@ -56,11 +67,16 @@ public sealed class GrepTool : IBuiltInTool
         try
         {
             var searchPattern = string.IsNullOrWhiteSpace(include) ? "*" : include;
-            var files = Directory.EnumerateFiles(fullPath, searchPattern, SearchOption.AllDirectories);
+            var files = Directory.EnumerateFiles(
+                fullPath,
+                searchPattern,
+                SearchOption.AllDirectories
+            );
 
             foreach (var file in files)
             {
-                if (filesScanned++ >= MaxFiles || results.Count >= limit) break;
+                if (filesScanned++ >= MaxFiles || results.Count >= limit)
+                    break;
 
                 try
                 {
@@ -68,7 +84,8 @@ public sealed class GrepTool : IBuiltInTool
                     var lineNum = 0;
                     foreach (var line in lines)
                     {
-                        if (results.Count >= limit) break;
+                        if (results.Count >= limit)
+                            break;
                         lineNum++;
                         if (regex.IsMatch(line))
                         {
@@ -77,8 +94,14 @@ public sealed class GrepTool : IBuiltInTool
                         }
                     }
                 }
-                catch (UnauthorizedAccessException) { continue; }
-                catch (IOException) { continue; }
+                catch (UnauthorizedAccessException)
+                {
+                    continue;
+                }
+                catch (IOException)
+                {
+                    continue;
+                }
             }
         }
         catch (DirectoryNotFoundException)

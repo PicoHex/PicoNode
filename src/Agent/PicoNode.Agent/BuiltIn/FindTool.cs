@@ -6,24 +6,27 @@ public sealed class FindTool : IBuiltInTool
     private const int MaxBytes = 50000;
 
     public string Name => "find";
-    public string Description => "Find files by glob pattern. Returns matching file paths relative to search directory.";
+    public string Description =>
+        "Find files by glob pattern. Returns matching file paths relative to search directory.";
 
-    public string? InputSchema => """
-    {
-      "type": "object",
-      "properties": {
-        "pattern": { "type": "string", "description": "Glob pattern (e.g. *.cs). Supports *, ?, [...]" },
-        "path": { "type": "string", "description": "Directory to search (default: cwd)" },
-        "limit": { "type": "integer", "description": "Maximum results (default 1000)" }
-      },
-      "required": ["pattern"]
-    }
-    """;
+    public string? InputSchema =>
+        """
+            {
+              "type": "object",
+              "properties": {
+                "pattern": { "type": "string", "description": "Glob pattern (e.g. *.cs). Supports *, ?, [...]" },
+                "path": { "type": "string", "description": "Directory to search (default: cwd)" },
+                "limit": { "type": "integer", "description": "Maximum results (default 1000)" }
+              },
+              "required": ["pattern"]
+            }
+            """;
 
     public Task<(string Content, bool IsError)> ExecuteAsync(
         IReadOnlyDictionary<string, object?> args,
         string workingDirectory,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         var pattern = BuiltInToolHelpers.GetStringArg(args, "pattern");
         if (string.IsNullOrWhiteSpace(pattern))
@@ -33,7 +36,9 @@ public sealed class FindTool : IBuiltInTool
         if (string.IsNullOrWhiteSpace(path))
             path = workingDirectory;
 
-        var fullPath = Path.IsPathRooted(path) ? Path.GetFullPath(path) : Path.GetFullPath(Path.Combine(workingDirectory, path));
+        var fullPath = Path.IsPathRooted(path)
+            ? Path.GetFullPath(path)
+            : Path.GetFullPath(Path.Combine(workingDirectory, path));
 
         if (!Directory.Exists(fullPath))
             return Task.FromResult(($"[Error: Directory not found: {path}]", true));
@@ -46,7 +51,8 @@ public sealed class FindTool : IBuiltInTool
             var files = Directory.EnumerateFiles(fullPath, pattern, SearchOption.AllDirectories);
             foreach (var file in files)
             {
-                if (results.Count >= limit) break;
+                if (results.Count >= limit)
+                    break;
                 results.Add(Path.GetRelativePath(fullPath, file));
             }
         }
