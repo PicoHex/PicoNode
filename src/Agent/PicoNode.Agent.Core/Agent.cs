@@ -113,6 +113,10 @@ public sealed class Agent : EventSourcedActor
             case RunTurn r:
                 return RunTurnAsync(r.Message, StopToken);
 
+            case SetThinkingLevelCmd s:
+                RaiseEvent(new ThinkingLevelSet(s.Level));
+                return default;
+
             default:
                 throw new DomainInvariantException(
                     $"Unknown command: {command.GetType().Name}");
@@ -216,6 +220,7 @@ public sealed class Agent : EventSourcedActor
             case ToolAdded a: _tools.Add(a.Tool); break;
             case ToolRemoved r: _tools.RemoveAll(t => t.Name == r.Name); break;
             case ChildSpawned c: _childIds.Add(c.ChildId); break;
+            case ThinkingLevelSet s: CurrentLlm.ThinkingLevel = ParseLevel(s.Level); break;
         }
     }
 
@@ -228,4 +233,15 @@ public sealed class Agent : EventSourcedActor
         if (!cmd.Llms.Any(l => l.ProviderName == cmd.CurrentProvider && l.ModelId == cmd.CurrentModel))
             throw new DomainInvariantException("CurrentLlm not in Llms");
     }
+
+    private static ThinkingLevel ParseLevel(string level) =>
+        level.ToLower() switch
+        {
+            "minimal" => ThinkingLevel.Minimal,
+            "low" => ThinkingLevel.Low,
+            "medium" => ThinkingLevel.Medium,
+            "high" => ThinkingLevel.High,
+            "xhigh" => ThinkingLevel.XHigh,
+            _ => ThinkingLevel.XHigh,
+        };
 }

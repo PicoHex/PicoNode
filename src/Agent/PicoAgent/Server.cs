@@ -1,6 +1,8 @@
 namespace PicoAgent;
 
+using System.Threading.Channels;
 using PicoNode.Actor;
+using PicoNode.Actor.Abs;
 using DomainAgent = PicoNode.Agent.Domain.Agent;
 using DomainCommands = PicoNode.Agent.Domain;
 using DomainInterfaces = PicoNode.Agent.Domain;
@@ -218,13 +220,13 @@ public sealed class Server : IAsyncDisposable
                 var newCurrent = newProviderNames.FirstOrDefault() ?? a.LlmsSnapshot[0].ProviderName;
                 var newModel = newConfig.Model ?? newCurrent;
                 if (toRemove.Any(r => r.ProviderName == a.CurrentLlm.ProviderName))
-                    // SwitchLlm via command (a.SwitchLlm(newCurrent, newModel);
+                    _system.Send(a.Id, new DomainCommands.SwitchLlmCmd(newCurrent, newModel));
                 foreach (var old in toRemove)
                 {
                     if (a.LlmsSnapshot.Count > 1 && old.ProviderName != a.CurrentLlm.ProviderName)
                         _system.Send(a.Id, new DomainCommands.RemoveLlmCmd(old.ProviderName, old.ModelId));
                 }
-                // SwitchLlm via command (a.SwitchLlm(newCurrent, newModel);
+                _system.Send(a.Id, new DomainCommands.SwitchLlmCmd(newCurrent, newModel));
 
                 // Persist to settings.json
                 if (settingsPath is { Length: > 0 })
@@ -262,15 +264,7 @@ public sealed class Server : IAsyncDisposable
                 var lvl = ExtractJsonString(body, "level");
                 if (lvl is { Length: > 0 })
                 {
-                    a.CurrentLlm.ThinkingLevel = lvl.ToLower() switch
-                    {
-                        "minimal" => ThinkingLevel.Minimal,
-                        "low" => ThinkingLevel.Low,
-                        "medium" => ThinkingLevel.Medium,
-                        "high" => ThinkingLevel.High,
-                        "xhigh" => ThinkingLevel.XHigh,
-                        _ => a.CurrentLlm.ThinkingLevel,
-                    };
+                    _system.Send(a.Id, new DomainCommands.SetThinkingLevelCmd(lvl));
                 }
                 return V(Ok());
             }
@@ -326,27 +320,26 @@ public sealed class Server : IAsyncDisposable
                         await turnLock.WaitAsync(ct);
                         try
                         {
-                            await a.RunTurn(
-                                message,
-                                llm,
-                                tr,
-                                ct,
-                                async (k, t) =>
+                            var outputChannel = Channel.CreateUnbounded<ActorOutputEvent>();
+                            a.OutputWriter = outputChannel.Writer;
+
+                            _system.Send(a.Id, new DomainCommands.RunTurn(message));
+
+                            await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
+                            {
+                                var json = evt.Type switch
                                 {
-                                    var json = k switch
-                                    {
-                                        "text" =>
-                                            $"{{\"type\":\"delta\",\"content\":\"{EscapeJson(t ?? "")}\"}}",
-                                        "done" => "{\"type\":\"done\"}",
-                                        _ =>
-                                            $"{{\"type\":\"{k}\",\"content\":\"{EscapeJson(t ?? "")}\"}}",
-                                    };
-                                    await pipe.Writer.WriteAsync(
-                                        Encoding.UTF8.GetBytes($"data: {json}\n\n"),
-                                        ct
-                                    );
-                                }
-                            );
+                                    "text" =>
+                                        $"{{\"type\":\"delta\",\"content\":\"{EscapeJson(evt.Data ?? "")}\"}}",
+                                    "done" => "{\"type\":\"done\"}",
+                                    _ =>
+                                        $"{{\"type\":\"{evt.Type}\",\"content\":\"{EscapeJson(evt.Data ?? "")}\"}}",
+                                };
+                                await pipe.Writer.WriteAsync(
+                                    Encoding.UTF8.GetBytes($"data: {json}\n\n"),
+                                    ct
+                                );
+                            }
                         }
                         catch (Exception ex)
                         {

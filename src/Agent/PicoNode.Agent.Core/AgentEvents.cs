@@ -20,3 +20,4 @@ public sealed record LlmRemoved(string ProviderName, string ModelId) : IDomainEv
 public sealed record ToolAdded(Tool Tool) : IDomainEvent;
 public sealed record ToolRemoved(string Name) : IDomainEvent;
 public sealed record ChildSpawned(Guid ChildId) : IDomainEvent;
+public sealed record ThinkingLevelSet(string Level) : IDomainEvent;

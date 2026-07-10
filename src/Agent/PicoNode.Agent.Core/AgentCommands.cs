@@ -27,3 +27,5 @@ public sealed record SpawnChildCmd(
     string CurrentModel,
     List<Tool> Tools
 ) : ICommand;
+
+public sealed record SetThinkingLevelCmd(string Level) : ICommand;
