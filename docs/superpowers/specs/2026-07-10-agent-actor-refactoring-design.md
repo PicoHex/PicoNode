@@ -1,6 +1,6 @@
 # Spec: PicoNode.Agent — Actor-Based Domain Refactoring
 
-**Date:** 2026-07-10 | **Status:** design
+**Date:** 2026-07-10 | **Status:** implementing
 
 ## 1. Motivation
 
@@ -23,7 +23,7 @@ Agent : EventSourcedActor
 
 **为什么 Session 不走 ES**：Session 是数据（输入/输出记录），不影响 Agent 行为。多一条消息、少一条消息，Agent 仍能处理命令。且 spec 已确定 JSONL 文件持久化。
 
-### 2.2 双工厂注册
+### 2.2 双工厂注册（✅ 已实现）
 
 ```
 Register<T>(createFactory, rebuildFactory?)
@@ -35,11 +35,15 @@ Register<T>(createFactory, rebuildFactory?)
 
 ### 2.3 基础设施通过构造函数注入
 
-```
-Agent(CreateAgent cmd, ILlmClient llmClient, IToolRunner toolRunner)
-```
+Agent 有三个构造路径，全部通过构造函数接收依赖：
 
-不再使用 `internal set` 属性或 `Initialize(ActorContext)`。Agent 的依赖从构造函数获得，编译期保证完整。
+| 构造 | 用途 | 签名 |
+|------|------|------|
+| 创建路径 | `CreateAsync` | `Agent(CreateAgent cmd, ILlmClient llm, IToolRunner runner)` |
+| 创建路径（简化） | `CreateAsync`（无基础设施测试） | `Agent(CreateAgent cmd)` |
+| 重建路径 | `GetAsync` | `Agent(ILlmClient llm, IToolRunner runner)` |
+
+不再使用 `internal set` 属性或 `Initialize(ActorContext)`。编译期保证依赖完整。
 
 ## 3. Agent 设计
 
@@ -58,22 +62,24 @@ Agent(CreateAgent cmd, ILlmClient llmClient, IToolRunner toolRunner)
 | `FailureReason` | ✅ | 失败原因 |
 | `Session` | ❌ | 对话记录，JSONL 文件 |
 
-### 3.2 命令 → 领域事件
+### 3.2 命令 → 领域事件（✅ 原型已实现）
 
-| 命令 | 领域事件 | 说明 |
-|------|---------|------|
-| `Start` | `AgentStarted` | Pending → Running |
-| `Complete` | `AgentCompleted` | Running → Completed |
-| `Fail(reason)` | `AgentFailed(reason)` | Running → Failed |
-| `SwitchLlm(p, m)` | `LlmSwitched(p, m)` | 切换 CurrentLlm |
-| `AddLlm(llm)` | `LlmAdded(llm)` | 新增 LLM |
-| `RemoveLlm(p, m)` | `LlmRemoved(p, m)` | 移除 LLM |
-| `AddTool(tool)` | `ToolAdded(tool)` | 新增工具 |
-| `RemoveTool(name)` | `ToolRemoved(name)` | 移除工具 |
-| `SpawnChild(...)` | `ChildSpawned(id)` | 添加子 Agent |
-| `RunTurn(message)` | ❌ | 对话记录在 Session，不影响 Agent 行为 |
+```csharp
+// 命令
+CreateAgent(Llms, Provider, Model, HomeDir, ParentId?, Packages?)  →  AgentCreated(...)
+StartAgent                                                          →  AgentStarted
+CompleteAgent                                                       →  AgentCompleted
+FailAgent(reason)                                                   →  AgentFailed(reason)
+SwitchLlmCmd(provider, model)                                       →  LlmSwitched(provider, model)
+AddLlmCmd(llm)                                                      →  LlmAdded(llm)
+RemoveLlmCmd(provider, model)                                       →  LlmRemoved(provider, model)
+AddToolCmd(tool)                                                    →  ToolAdded(tool)
+RemoveToolCmd(name)                                                 →  ToolRemoved(name)
+SpawnChildCmd(llms, provider, model, tools)                         →  ChildSpawned(id)
+RunTurn(message)                                                    →  ❌ 不产生事件
+```
 
-### 3.3 RunTurn — 嵌套循环
+### 3.3 RunTurn — 嵌套循环（待实现）
 
 ```
 OnMessageAsync:
@@ -93,55 +99,61 @@ RunTurnAsync(message, ct):
   } while (hasTools && !ct.IsCancellationRequested)
 ```
 
-**为什么 RunTurn 不 RaiseEvent**：对话记录是数据，不影响 Agent 行为。Session 自行管理 Append + JSONL 持久化。
+**为什么 RunTurn 不 RaiseEvent**：对话记录是数据，不影响 Agent 行为。Session 自行管理。
 
-**为什么 ct 传播**：StopAsync → _cts.Cancel → ct 传播到 LLM/工具调用 → RunTurn 在下一个 await 处中断。不需要系统消息优先机制。
+**为什么 ct 传播**：StopAsync → _cts.Cancel → ct 传播到 LLM/工具调用 → RunTurn 在下一个 await 处中断。
 
-### 3.4 Mutate — 状态恢复
+### 3.4 OnMessageAsync 命令分发（✅ 原型已实现）
+
+```csharp
+protected override ValueTask<object?> OnMessageAsync(ICommand command)
+{
+    switch (command)
+    {
+        case CreateAgent c:   Validate(c); RaiseEvent(new AgentCreated(...));
+        case StartAgent:      Guard(Status==Pending); RaiseEvent(new AgentStarted());
+        case CompleteAgent:   Guard(Status==Running); RaiseEvent(new AgentCompleted());
+        case FailAgent f:     Guard(Status==Running); RaiseEvent(new AgentFailed(f.Reason));
+        case SwitchLlmCmd s:  Guard(Llm exists);      RaiseEvent(new LlmSwitched(...));
+        case AddLlmCmd a:     Guard(ApiKey non-empty); RaiseEvent(new LlmAdded(...));
+        case RemoveLlmCmd r:   Guard(not last/not current); RaiseEvent(new LlmRemoved(...));
+        case AddToolCmd a:    Guard(name unique);      RaiseEvent(new ToolAdded(...));
+        case RemoveToolCmd r: RaiseEvent(new ToolRemoved(...));
+    }
+}
+```
+
+**不变性校验在 RaiseEvent 之前**，通过 `DomainInvariantException` 拒绝无效命令。
+
+### 3.5 Mutate — 状态恢复
 
 ```
 Mutate(IDomainEvent):
-  case AgentStarted:       Status = Running
-  case AgentCompleted:     Status = Completed
-  case AgentFailed(e):     Status = Failed; FailureReason = e.Reason
-  case LlmSwitched(e):     CurrentLlm = Llms.Find(e.Provider, e.Model)
-  case LlmAdded(e):        Llms.Add(e.Llm)
-  case LlmRemoved(e):      Llms.Remove(e.Provider, e.Model)
-  case ToolAdded(e):       Tools.Add(e.Tool)
-  case ToolRemoved(e):     Tools.Remove(e.Name)
-  case ChildSpawned(e):    ChildIds.Add(e.Id)
+  case AgentCreated:   Llms.Clear+AddRange, CurrentLlm=findMatch, HomeDir, ParentId, Packages
+  case AgentStarted:   Status = Running
+  case AgentCompleted: Status = Completed
+  case AgentFailed:    Status = Failed; FailureReason = e.Reason
+  case LlmSwitched:    CurrentLlm = Llms.Find(e.Provider, e.Model)
+  case LlmAdded:       Llms.Add(e.Llm)
+  case LlmRemoved:     Llms.RemoveAll(match)
+  case ToolAdded:      Tools.Add(e.Tool)
+  case ToolRemoved:    Tools.RemoveAll(match)
+  case ChildSpawned:   ChildIds.Add(e.ChildId)
 ```
 
-### 3.5 不变性校验
+**Mutate 不重复验证**——事件来自已成功处理的命令，数据已被确认有效。
 
-不变性校验在 `OnMessageAsync` 中（命令验证）和 `Mutate` 中（事件恢复）都需要。通过提取私有 validate 方法复用：
-
-```
-SwitchLlm(cmd):
-  // 验证
-  var match = Llms.Find(cmd.Provider, cmd.Model);
-  if (match == null) throw DomainInvariantException;
-
-  // 事件
-  RaiseEvent(new LlmSwitched(cmd.Provider, cmd.Model));
-```
-
-`Mutate` 不重复验证——事件来自已成功处理的命令，不需要二次校验。
-
-## 4. IActorSystem 接口变更
+## 4. IActorSystem 接口（✅ 已实现）
 
 ```csharp
 public interface IActorSystem
 {
-    // 新增可选 rebuildFactory 参数
     void Register<T>(
         Func<ICommand, T> createFactory,
         Func<T>? rebuildFactory = null
     ) where T : IActor;
 
     ValueTask<T> CreateAsync<T>(ICommand command) where T : IActor;
-
-    // GetAsync 不再需要 new() 约束
     ValueTask<T?> GetAsync<T>(Guid id) where T : IActor;
 
     void Send(Guid id, ICommand command);
@@ -150,18 +162,40 @@ public interface IActorSystem
 }
 ```
 
-**为什么去掉 `new()` 约束**：`GetAsync` 不再用 `new T()` 重建，改为 `rebuildFactory()`。约束从编译时（`new()`）移到注册时（工厂闭包）。
+**为什么去掉 `new()` 约束**：`GetAsync` 不再用 `new T()` 重建，改为 `rebuildFactory()`。约束从编译时移到注册时。
 
-## 5. AgentFactory 适配
+## 5. 实现进度
+
+### 已完成
+
+| 组件 | 状态 |
+|------|------|
+| `IActorSystem` 双工厂签名 | ✅ |
+| `ActorSystem.Register` + `GetAsync` 适配 | ✅ |
+| Agent 领域事件（9 个 + 1 个创建事件） | ✅ 原型 |
+| Agent 命令（10 个） | ✅ 原型 |
+| `OnMessageAsync` 命令分发 + 不变性校验 | ✅ 原型 |
+| `Mutate` 状态恢复 | ✅ 原型 |
+| TDD: Create + Start 生命周期 | ✅ 1 test |
+
+### 待实现
+
+| 组件 | 状态 |
+|------|------|
+| RunTurn 嵌套循环 | ❌ |
+| SpawnChild 通过 ActorSystem | ❌ |
+| Session 集成 | ❌ |
+| 全部不变性 TDD 测试 | ❌ 1/11 |
+| 替换旧 `Agent.cs` | ❌ |
+| 删除 `AgentMailbox.cs` | ❌ |
+| 删除 `AgentFactory.cs` | ❌ |
+
+### 使用示例
 
 ```csharp
-// 旧：手工创建，独立的 AgentMailbox
-var agent = AgentFactory.Build(config, homeDir);
-
-// 新：通过 ActorSystem 创建
-var system = new ActorSystem(new InMemoryEventStore());
-
-// 注册 + 封闭基础设施
+// 注册
+var llmClient = new LlmClientAdapter(innerLlm);
+var toolRunner = new ToolRunner();
 system.Register<Agent>(
     create: cmd => {
         var c = (CreateAgent)cmd;
@@ -170,25 +204,13 @@ system.Register<Agent>(
     rebuild: () => new Agent(llmClient, toolRunner)
 );
 
-var createCmd = new CreateAgent(config, homeDir);
-var agent = await system.CreateAsync<Agent>(createCmd);
-agent.Start();
+// 创建 + 启动
+var agent = await system.CreateAsync<Agent>(
+    new CreateAgent(llms, "deepseek", "deepseek-chat", "/tmp")
+);
+system.Send(agent.Id, new StartAgent());
+
+// RunTurn
+system.Send(agent.Id, new RunTurn("帮我查天气"));
+var ctx = await system.AskAsync<List<Message>>(agent.Id, new GetContext());
 ```
-
-## 6. 删除清单
-
-| 文件 | 原因 |
-|------|------|
-| `AgentMailbox.cs` | PicoNode.Actor 的 `Actor.Post()` + Channel 替代 |
-| `AgentFactory.cs` | `Register<T>` + `CreateAsync` 替代 |
-| 部分 `Agent.cs` 方法 | 迁移为 `OnMessageAsync` 命令分发 + `Mutate` |
-
-## 7. Self-Review
-
-- [x] Agent 继承 EventSourcedActor
-- [x] 双工厂注册：创建/重建均构造注入
-- [x] RunTurn 不产生领域事件，Session 自行管理
-- [x] ct 传播到内层循环，Stop 可中断 RunTurn
-- [x] 不变性在命令处理时验证，Mutate 不重复
-- [x] AOT 安全：无反射、无 `new()` 约束硬编码
-- [x] 删除 AgentMailbox + AgentFactory
