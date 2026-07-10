@@ -11,6 +11,6 @@
 
   <ItemGroup>
     <PackageReference Include="TUnit" />
-    <ProjectReference Include="..\..\src\Core\PicoNode\PicoNode.csproj" />
+    <ProjectReference Include="..\..\src\Network\PicoNode\PicoNode.csproj" />
   </ItemGroup>
 </Project>

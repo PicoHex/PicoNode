@@ -27,11 +27,21 @@ public sealed class AgentRunTurnTests
         }
 
         public Task<Message> CompleteAsync(
-            Llm l, List<Message> c, IReadOnlyList<Tool> t, CancellationToken ct) =>
-            _r.Count > 0 ? Task.FromResult(_r.Dequeue()) : Task.FromResult(new Message { Role = "assistant", Content = "done" });
+            Llm l,
+            List<Message> c,
+            IReadOnlyList<Tool> t,
+            CancellationToken ct
+        ) =>
+            _r.Count > 0
+                ? Task.FromResult(_r.Dequeue())
+                : Task.FromResult(new Message { Role = "assistant", Content = "done" });
 
         public async IAsyncEnumerable<StreamEvent> StreamAsync(
-            Llm l, List<Message> c, IReadOnlyList<Tool> t, [EnumeratorCancellation] CancellationToken ct)
+            Llm l,
+            List<Message> c,
+            IReadOnlyList<Tool> t,
+            [EnumeratorCancellation] CancellationToken ct
+        )
         {
             if (_r.Count > 0)
             {
@@ -129,7 +139,7 @@ public sealed class AgentRunTurnTests
         });
 
         system.Send(agent.Id, new RunTurn("Hi"));
-        await Task.Delay(500);  // Wait for Agent to complete the writer
+        await Task.Delay(500); // Wait for Agent to complete the writer
 
         await Assert.That(events.Any(e => e.Type == "text")).IsTrue();
         await Assert.That(events.Any(e => e.Type == "done")).IsTrue();

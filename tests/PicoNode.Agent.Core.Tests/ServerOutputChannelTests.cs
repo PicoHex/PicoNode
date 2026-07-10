@@ -60,7 +60,7 @@ public sealed class ServerOutputChannelTests
 
         // Send RunTurn — no callback, pure command
         system.Send(agent.Id, new RunTurn("Hi"));
-        await Task.Delay(500);  // Wait for Agent to complete writer
+        await Task.Delay(500); // Wait for Agent to complete writer
         await readerTask;
 
         await Assert.That(events.Any(e => e.Type == "text")).IsTrue();
@@ -119,12 +119,26 @@ internal sealed class FakeTextLlm : ILlmClient
     public FakeTextLlm(string text) => _text = text;
 
     public Task<Message> CompleteAsync(
-        Llm llm, List<Message> context, IReadOnlyList<Tool> tools, CancellationToken ct) =>
-        Task.FromResult(new Message { Role = "assistant", Content = _text,
-            ContentBlocks = [new ContentBlock { Type = "text", Text = _text }] });
+        Llm llm,
+        List<Message> context,
+        IReadOnlyList<Tool> tools,
+        CancellationToken ct
+    ) =>
+        Task.FromResult(
+            new Message
+            {
+                Role = "assistant",
+                Content = _text,
+                ContentBlocks = [new ContentBlock { Type = "text", Text = _text }],
+            }
+        );
 
     public async IAsyncEnumerable<StreamEvent> StreamAsync(
-        Llm llm, List<Message> context, IReadOnlyList<Tool> tools, [EnumeratorCancellation] CancellationToken ct)
+        Llm llm,
+        List<Message> context,
+        IReadOnlyList<Tool> tools,
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         yield return new StreamEvent { Type = "text", Content = _text };
         yield return new StreamEvent { Type = "done" };

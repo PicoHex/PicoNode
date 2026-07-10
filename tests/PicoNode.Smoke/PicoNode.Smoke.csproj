@@ -11,8 +11,8 @@
 
   <ItemGroup>
     <PackageReference Include="TUnit" />
-    <ProjectReference Include="..\..\src\Core\PicoNode.Abs\PicoNode.Abs.csproj" />
-    <ProjectReference Include="..\..\src\Core\PicoNode\PicoNode.csproj" />
+    <ProjectReference Include="..\..\src\Network\PicoNode.Abs\PicoNode.Abs.csproj" />
+    <ProjectReference Include="..\..\src\Network\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\..\src\Http\PicoNode.Http\PicoNode.Http.csproj" />
     <ProjectReference Include="..\..\src\Web\PicoNode.Web\PicoNode.Web.csproj" />
     <ProjectReference Include="..\..\samples\PicoWeb.Samples.Abs\PicoWeb.Samples.Abs.csproj" />

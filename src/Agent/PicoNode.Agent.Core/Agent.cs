@@ -209,16 +209,23 @@ public sealed class Agent : EventSourcedActor
                             }
                             break;
                         case "tool_call_end":
-                            if (int.TryParse(evt.ToolCallId, out var ei) && evt.ToolName is { Length: > 0 })
+                            if (
+                                int.TryParse(evt.ToolCallId, out var ei)
+                                && evt.ToolName is { Length: > 0 }
+                            )
                             {
-                                var args = argAccum.TryGetValue(ei, out var a) ? a.ToString() : "{}";
-                                contentBlocks.Add(new ContentBlock
-                                {
-                                    Id = Guid.CreateVersion7().ToString(),
-                                    Type = "tool_call",
-                                    Name = evt.ToolName,
-                                    Arguments = ParseSimpleJson(args),
-                                });
+                                var args = argAccum.TryGetValue(ei, out var a)
+                                    ? a.ToString()
+                                    : "{}";
+                                contentBlocks.Add(
+                                    new ContentBlock
+                                    {
+                                        Id = Guid.CreateVersion7().ToString(),
+                                        Type = "tool_call",
+                                        Name = evt.ToolName,
+                                        Arguments = ParseSimpleJson(args),
+                                    }
+                                );
                             }
                             break;
                         case "done":
@@ -231,7 +238,9 @@ public sealed class Agent : EventSourcedActor
 
                 // Flush accumulated content
                 if (contentAccum.Length > 0)
-                    contentBlocks.Add(new ContentBlock { Type = "text", Text = contentAccum.ToString() });
+                    contentBlocks.Add(
+                        new ContentBlock { Type = "text", Text = contentAccum.ToString() }
+                    );
 
                 var finalMessage = new Message
                 {
@@ -250,7 +259,10 @@ public sealed class Agent : EventSourcedActor
                     foreach (var tc in toolCalls)
                     {
                         var toolResult = await ToolRunner!.ExecuteAsync(
-                            tc.Name ?? "", tc.Arguments, ct);
+                            tc.Name ?? "",
+                            tc.Arguments,
+                            ct
+                        );
                         var toolMsg = new Message
                         {
                             Role = "toolResult",
@@ -356,7 +368,8 @@ public sealed class Agent : EventSourcedActor
         foreach (var part in inner.Split(','))
         {
             var colon = part.IndexOf(':');
-            if (colon < 0) continue;
+            if (colon < 0)
+                continue;
             var key = part[..colon].Trim().Trim('"');
             var value = part[(colon + 1)..].Trim();
             result[key] = value.Trim('"').Replace("\\\\", "\\").Replace("\\\"", "\"");

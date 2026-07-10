@@ -13,14 +13,14 @@
     <ProjectReference Include="..\..\src\Web\PicoWeb\PicoWeb.csproj" />
     <ProjectReference Include="..\..\src\Web\PicoNode.Web\PicoNode.Web.csproj" />
     <ProjectReference Include="..\..\src\Http\PicoNode.Http\PicoNode.Http.csproj" />
-    <ProjectReference Include="..\..\src\Core\PicoNode\PicoNode.csproj" />
-    <ProjectReference Include="..\..\src\Core\PicoNode.Abs\PicoNode.Abs.csproj" />
+    <ProjectReference Include="..\..\src\Network\PicoNode\PicoNode.csproj" />
+    <ProjectReference Include="..\..\src\Network\PicoNode.Abs\PicoNode.Abs.csproj" />
   </ItemGroup>
 
   <!-- Source generators -->
   <ItemGroup>
     <ProjectReference
-      Include="..\..\src\Analyzers\Controllers.Gen\Controllers.Gen.csproj"
+      Include="..\..\src\Web\Controllers.Gen\Controllers.Gen.csproj"
       OutputItemType="Analyzer"
       ReferenceOutputAssembly="false"
     />

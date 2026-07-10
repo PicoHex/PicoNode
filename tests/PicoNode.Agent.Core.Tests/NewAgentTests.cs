@@ -9,10 +9,19 @@ namespace PicoNode.Agent.Core.Tests;
 /// <summary>Fake ILlmClient for unit tests.</summary>
 internal sealed class FakeLlmClient : ILlmClient
 {
-    public Task<Message> CompleteAsync(Llm llm, List<Message> context, IReadOnlyList<Tool> tools, CancellationToken ct)
-        => Task.FromResult(new Message());
+    public Task<Message> CompleteAsync(
+        Llm llm,
+        List<Message> context,
+        IReadOnlyList<Tool> tools,
+        CancellationToken ct
+    ) => Task.FromResult(new Message());
 
-    public async IAsyncEnumerable<StreamEvent> StreamAsync(Llm llm, List<Message> context, IReadOnlyList<Tool> tools, [EnumeratorCancellation] CancellationToken ct)
+    public async IAsyncEnumerable<StreamEvent> StreamAsync(
+        Llm llm,
+        List<Message> context,
+        IReadOnlyList<Tool> tools,
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         yield return new StreamEvent { Type = "done" };
         await Task.CompletedTask;

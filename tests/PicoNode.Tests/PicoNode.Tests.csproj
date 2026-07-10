@@ -10,8 +10,8 @@
   <ItemGroup>
     <PackageReference Include="PicoCfg" />
     <PackageReference Include="TUnit" />
-    <ProjectReference Include="..\..\src\Core\PicoNode.Abs\PicoNode.Abs.csproj" />
-    <ProjectReference Include="..\..\src\Core\PicoNode\PicoNode.csproj" />
+    <ProjectReference Include="..\..\src\Network\PicoNode.Abs\PicoNode.Abs.csproj" />
+    <ProjectReference Include="..\..\src\Network\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\..\src\Web\PicoNode.Web\PicoNode.Web.csproj" />
     <ProjectReference Include="..\..\src\Web\PicoWeb\PicoWeb.csproj" />
     <ProjectReference Include="..\..\src\Agent\PicoNode.Agent\PicoNode.Agent.csproj" />

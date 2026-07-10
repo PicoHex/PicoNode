@@ -7,7 +7,11 @@ public sealed class LlmClientAdapter : ILlmClient
     public LlmClientAdapter(NetAI.ILLmClient inner) => _inner = inner;
 
     public async Task<Message> CompleteAsync(
-        Llm llm, List<Message> context, IReadOnlyList<Tool> tools, CancellationToken ct)
+        Llm llm,
+        List<Message> context,
+        IReadOnlyList<Tool> tools,
+        CancellationToken ct
+    )
     {
         NetAI.ContentBlock[]? blocks = null;
         var stopReason = "end_turn";
@@ -33,7 +37,10 @@ public sealed class LlmClientAdapter : ILlmClient
         }
 
         if (errorMsg is not null)
-            blocks ??= [new NetAI.ContentBlock { Type = "text", Text = $"[API Error: {errorMsg}]" }];
+            blocks ??=
+            [
+                new NetAI.ContentBlock { Type = "text", Text = $"[API Error: {errorMsg}]" },
+            ];
 
         return new Message
         {
@@ -45,8 +52,11 @@ public sealed class LlmClientAdapter : ILlmClient
     }
 
     public async IAsyncEnumerable<StreamEvent> StreamAsync(
-        Llm llm, List<Message> context, IReadOnlyList<Tool> tools,
-        [EnumeratorCancellation] CancellationToken ct)
+        Llm llm,
+        List<Message> context,
+        IReadOnlyList<Tool> tools,
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         await foreach (var evt in StreamInner(llm, context, tools, ct))
         {
@@ -83,7 +93,12 @@ public sealed class LlmClientAdapter : ILlmClient
                         ToolCallId = te.Index.ToString(),
                         ToolName = te.Call?.Name ?? "",
                         Content = te.Call?.Arguments is { Count: > 0 } args
-                            ? "{" + string.Join(",", args.Select(kv => $"\"{kv.Key}\":{JsonValue(kv.Value)}")) + "}"
+                            ? "{"
+                                + string.Join(
+                                    ",",
+                                    args.Select(kv => $"\"{kv.Key}\":{JsonValue(kv.Value)}")
+                                )
+                                + "}"
                             : "{}",
                     };
                     break;
@@ -111,13 +126,18 @@ public sealed class LlmClientAdapter : ILlmClient
     }
 
     private async IAsyncEnumerable<NetAI.AssistantMessageEvent> StreamInner(
-        Llm llm, List<Message> context, IReadOnlyList<Tool> tools,
-        [EnumeratorCancellation] CancellationToken ct)
+        Llm llm,
+        List<Message> context,
+        IReadOnlyList<Tool> tools,
+        [EnumeratorCancellation] CancellationToken ct
+    )
     {
         var model = new NetAI.Model
         {
-            Id = llm.ModelId, Provider = llm.ProviderName,
-            BaseUrl = llm.BaseUrl, Api = llm.ApiFormat,
+            Id = llm.ModelId,
+            Provider = llm.ProviderName,
+            BaseUrl = llm.BaseUrl,
+            Api = llm.ApiFormat,
             MaxTokens = llm.MaxTokens,
             ThinkingEnabled = llm.ThinkingEnabled,
             ThinkingLevel = llm.ThinkingLevel,
@@ -135,14 +155,17 @@ public sealed class LlmClientAdapter : ILlmClient
 
         if (tools.Count > 0)
         {
-            chatContext.Tools = tools.Select(t => new NetAITypes.ToolSchema
-            {
-                Function = new NetAITypes.ToolSchemaFunction
+            chatContext.Tools = tools
+                .Select(t => new NetAITypes.ToolSchema
                 {
-                    Name = t.Name, Description = t.Description,
-                    Parameters = t.InputSchema ?? "{}",
-                },
-            }).ToArray();
+                    Function = new NetAITypes.ToolSchemaFunction
+                    {
+                        Name = t.Name,
+                        Description = t.Description,
+                        Parameters = t.InputSchema ?? "{}",
+                    },
+                })
+                .ToArray();
         }
 
         var options = new NetAI.StreamOptions
@@ -156,11 +179,12 @@ public sealed class LlmClientAdapter : ILlmClient
             yield return evt;
     }
 
-    private static string JsonValue(object? v) => v switch
-    {
-        null => "null",
-        string s => $"\"{s.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"",
-        bool b => b.ToString().ToLower(),
-        _ => v.ToString() ?? "null",
-    };
+    private static string JsonValue(object? v) =>
+        v switch
+        {
+            null => "null",
+            string s => $"\"{s.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"",
+            bool b => b.ToString().ToLower(),
+            _ => v.ToString() ?? "null",
+        };
 }

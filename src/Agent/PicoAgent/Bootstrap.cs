@@ -5,7 +5,8 @@ public static class Bootstrap
     public static async Task<(Server Server, IActorSystem System)> StartAsync(
         string homeDir,
         string[] args,
-        CancellationToken ct = default)
+        CancellationToken ct = default
+    )
     {
         var config = await LoadConfigAsync(homeDir);
 
@@ -42,20 +43,33 @@ public static class Bootstrap
                 "anthropic" => AiApiFormat.AnthropicMessages,
                 _ => AiApiFormat.OpenAIChatCompletions,
             };
-            providerConfigs.Add(new ProviderConfig
-            {
-                Name = name, BaseUrl = entry.BaseUrl ?? "", ApiKey = entry.ApiKey,
-                ApiFormat = apiFormat, Priority = 1,
-            });
-            clients[name] = apiFormat == AiApiFormat.AnthropicMessages
-                ? new AnthropicLLmClient(http)
-                : new OpenAILlmClient(http);
+            providerConfigs.Add(
+                new ProviderConfig
+                {
+                    Name = name,
+                    BaseUrl = entry.BaseUrl ?? "",
+                    ApiKey = entry.ApiKey,
+                    ApiFormat = apiFormat,
+                    Priority = 1,
+                }
+            );
+            clients[name] =
+                apiFormat == AiApiFormat.AnthropicMessages
+                    ? new AnthropicLLmClient(http)
+                    : new OpenAILlmClient(http);
         }
 
         var router = new ProviderRouter(providerConfigs);
-        var breakers = providerConfigs.ToDictionary(p => p.Name, _ => (ICircuitBreaker)new CircuitBreaker());
-        var resilient = new ResilientLLmClient(router,
-            providerConfigs.ToDictionary(p => p.Name), breakers, clients);
+        var breakers = providerConfigs.ToDictionary(
+            p => p.Name,
+            _ => (ICircuitBreaker)new CircuitBreaker()
+        );
+        var resilient = new ResilientLLmClient(
+            router,
+            providerConfigs.ToDictionary(p => p.Name),
+            breakers,
+            clients
+        );
         return new LlmClientAdapter(resilient);
     }
 
@@ -66,11 +80,14 @@ public static class Bootstrap
         {
             var def = new AgentConfig
             {
-                Providers = [], Model = "unconfigured", ThinkingEnabled = true,
+                Providers = [],
+                Model = "unconfigured",
+                ThinkingEnabled = true,
                 ThinkingLevel = AgentConfig.DefaultThinkingLevel.ToString().ToLowerInvariant(),
                 MaxTokens = 4096,
             };
-            var json = """{"providers":{},"model":"unconfigured","thinkingEnabled":true,"thinkingLevel":"xhigh","maxTokens":4096}""";
+            var json =
+                """{"providers":{},"model":"unconfigured","thinkingEnabled":true,"thinkingLevel":"xhigh","maxTokens":4096}""";
             await File.WriteAllTextAsync(path, json);
             return def;
         }

@@ -18,11 +18,30 @@ public sealed class OutputWriterCompletionTests
         var tr = new FakeToolRunner();
 
         system.Register<DomainAgent>(
-            cmd => cmd switch { CreateAgent c => new DomainAgent(c, llm, tr), _ => throw new InvalidOperationException() },
-            () => new DomainAgent(llm, tr));
+            cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c, llm, tr),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new DomainAgent(llm, tr)
+        );
 
         var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent([new() { ProviderName = "x", ModelId = "y", ApiKey = "sk" }], "x", "y", "/tmp"));
+            new CreateAgent(
+                [
+                    new()
+                    {
+                        ProviderName = "x",
+                        ModelId = "y",
+                        ApiKey = "sk",
+                    },
+                ],
+                "x",
+                "y",
+                "/tmp"
+            )
+        );
 
         var channel = Channel.CreateUnbounded<ActorOutputEvent>();
         agent.OutputWriter = channel.Writer;

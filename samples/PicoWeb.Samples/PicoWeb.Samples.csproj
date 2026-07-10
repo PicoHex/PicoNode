@@ -21,12 +21,12 @@
       NuGet consumers get analyzers automatically via buildTransitive/PicoWeb.props.
     -->
     <ProjectReference
-      Include="..\..\src\Analyzers\Controllers.Gen\Controllers.Gen.csproj"
+      Include="..\..\src\Web\Controllers.Gen\Controllers.Gen.csproj"
       OutputItemType="Analyzer"
       ReferenceOutputAssembly="false"
     />
     <ProjectReference
-      Include="..\..\src\Analyzers\PicoWeb.Gen\PicoWeb.Gen.csproj"
+      Include="..\..\src\Web\PicoWeb.Gen\PicoWeb.Gen.csproj"
       OutputItemType="Analyzer"
       ReferenceOutputAssembly="false"
     />

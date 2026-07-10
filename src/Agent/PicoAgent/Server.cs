@@ -420,7 +420,11 @@ public sealed class Server : IAsyncDisposable
     }
 
     private static string EscapeJson(string s) =>
-        s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+        s.Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("\n", "\\n")
+            .Replace("\r", "\\r")
+            .Replace("\t", "\\t");
 
     private static IPEndPoint ParseEndpoint(string uri)
     {
