@@ -214,6 +214,7 @@ public sealed class Agent : EventSourcedActor
                                 var args = argAccum.TryGetValue(ei, out var a) ? a.ToString() : "{}";
                                 contentBlocks.Add(new ContentBlock
                                 {
+                                    Id = Guid.CreateVersion7().ToString(),
                                     Type = "tool_call",
                                     Name = evt.ToolName,
                                     Arguments = ParseSimpleJson(args),
@@ -358,7 +359,7 @@ public sealed class Agent : EventSourcedActor
             if (colon < 0) continue;
             var key = part[..colon].Trim().Trim('"');
             var value = part[(colon + 1)..].Trim();
-            result[key] = value.Trim('"');
+            result[key] = value.Trim('"').Replace("\\\\", "\\").Replace("\\\"", "\"");
         }
         return result;
     }
