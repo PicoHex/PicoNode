@@ -122,9 +122,7 @@ public sealed class AgentRunTurnTests
         });
 
         system.Send(agent.Id, new RunTurn("Hi"));
-        await Task.Delay(300);
-        channel.Writer.Complete();
-        await Task.Delay(100);
+        await Task.Delay(500);  // Wait for Agent to complete the writer
 
         await Assert.That(events.Any(e => e.Type == "text")).IsTrue();
         await Assert.That(events.Any(e => e.Type == "done")).IsTrue();

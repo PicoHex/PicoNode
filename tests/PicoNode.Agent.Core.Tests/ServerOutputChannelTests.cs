@@ -59,11 +59,7 @@ public sealed class ServerOutputChannelTests
 
         // Send RunTurn — no callback, pure command
         system.Send(agent.Id, new RunTurn("Hi"));
-        await Task.Delay(300);
-
-        // Simulate RunTurn complete — Agent writes "done"
-        await Task.Delay(100);
-        channel.Writer.Complete();
+        await Task.Delay(500);  // Wait for Agent to complete writer
         await readerTask;
 
         await Assert.That(events.Any(e => e.Type == "text")).IsTrue();
