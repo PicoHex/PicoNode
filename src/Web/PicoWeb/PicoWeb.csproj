@@ -20,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <ProjectReference Include="..\..\Core\PicoNode\PicoNode.csproj" />
+    <ProjectReference Include="..\..\Network\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\PicoNode.Web\PicoNode.Web.csproj" />
   </ItemGroup>
 

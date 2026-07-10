@@ -1,17 +1,17 @@
+using PicoNode.Actor;
+using PicoNode.Actor.Abs;
 using PicoNode.AI;
 
 namespace PicoAgent;
 
 public static class Bootstrap
 {
-    public static async Task<(Server server, AgentFactory factory)> StartAsync(
+    public static async Task<(Server Server, IActorSystem System)> StartAsync(
         string homeDir,
         string[] args,
-        CancellationToken ct = default
-    )
+        CancellationToken ct = default)
     {
         var config = await LoadConfigAsync(homeDir);
-        var factory = new AgentFactory().WithBuiltInTools();
 
         if (config.Providers is null || config.Providers.Count == 0)
         {
@@ -22,13 +22,15 @@ public static class Bootstrap
             config.Model = string.IsNullOrEmpty(config.Model) ? "unconfigured" : config.Model;
         }
 
-        var agent = factory.Build(config, homeDir);
+        var system = new ActorSystem(new InMemoryEventStore());
         var llmAdapter = BuildLlmAdapter(config);
-        var server = new Server(agent, llmAdapter, factory.GetToolRunner());
+        var factory = new AgentFactory(system, llmAdapter).WithBuiltInTools();
+        var agent = await factory.BuildAsync(config, homeDir);
+        var server = new Server(agent, system, llmAdapter, factory.GetToolRunner());
 
         var uri = args.Length > 0 && args[0].StartsWith("http") ? args[0] : "http://localhost:8080";
         await server.ListenAsync(uri);
-        return (server, factory);
+        return (server, system);
     }
 
     public static ILlmClient BuildLlmAdapter(AgentConfig config)
@@ -44,33 +46,20 @@ public static class Bootstrap
                 "anthropic" => AiApiFormat.AnthropicMessages,
                 _ => AiApiFormat.OpenAIChatCompletions,
             };
-            providerConfigs.Add(
-                new ProviderConfig
-                {
-                    Name = name,
-                    BaseUrl = entry.BaseUrl ?? "",
-                    ApiKey = entry.ApiKey,
-                    ApiFormat = apiFormat,
-                    Priority = 1,
-                }
-            );
-            clients[name] =
-                apiFormat == AiApiFormat.AnthropicMessages
-                    ? new AnthropicLLmClient(http)
-                    : new OpenAILlmClient(http);
+            providerConfigs.Add(new ProviderConfig
+            {
+                Name = name, BaseUrl = entry.BaseUrl ?? "", ApiKey = entry.ApiKey,
+                ApiFormat = apiFormat, Priority = 1,
+            });
+            clients[name] = apiFormat == AiApiFormat.AnthropicMessages
+                ? new AnthropicLLmClient(http)
+                : new OpenAILlmClient(http);
         }
 
         var router = new ProviderRouter(providerConfigs);
-        var breakers = providerConfigs.ToDictionary(
-            p => p.Name,
-            _ => (ICircuitBreaker)new CircuitBreaker()
-        );
-        var resilient = new ResilientLLmClient(
-            router,
-            providerConfigs.ToDictionary(p => p.Name),
-            breakers,
-            clients
-        );
+        var breakers = providerConfigs.ToDictionary(p => p.Name, _ => (ICircuitBreaker)new CircuitBreaker());
+        var resilient = new ResilientLLmClient(router,
+            providerConfigs.ToDictionary(p => p.Name), breakers, clients);
         return new LlmClientAdapter(resilient);
     }
 
@@ -81,21 +70,16 @@ public static class Bootstrap
         {
             var def = new AgentConfig
             {
-                Providers = [],
-                Model = "unconfigured",
-                ThinkingEnabled = true,
+                Providers = [], Model = "unconfigured", ThinkingEnabled = true,
                 ThinkingLevel = AgentConfig.DefaultThinkingLevel.ToString().ToLowerInvariant(),
                 MaxTokens = 4096,
             };
-            var json =
-                "{\"providers\":{},\"model\":\"unconfigured\",\"thinkingEnabled\":true,\"thinkingLevel\":\"xhigh\",\"maxTokens\":4096}";
+            var json = """{"providers":{},"model":"unconfigured","thinkingEnabled":true,"thinkingLevel":"xhigh","maxTokens":4096}""";
             await File.WriteAllTextAsync(path, json);
             return def;
         }
         var raw = await File.ReadAllTextAsync(path);
-        var config = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(
-            Encoding.UTF8.GetBytes(raw)
-        );
-        return config ?? new AgentConfig { Providers = [], Model = "" };
+        return PicoJetson.JsonSerializer.Deserialize<AgentConfig>(Encoding.UTF8.GetBytes(raw))
+            ?? new AgentConfig { Providers = [], Model = "" };
     }
 }

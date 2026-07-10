@@ -49,6 +49,7 @@ public sealed class Server : IAsyncDisposable
     public static void AddEndpoints(
         WebApp app,
         DomainAgent a,
+        ActorSystem system,
         DomainInterfaces.ILlmClient llm,
         DomainInterfaces.IToolRunner tr,
         string prefix = "",
@@ -211,7 +212,7 @@ public sealed class Server : IAsyncDisposable
                     };
                     var existing = a.LlmsSnapshot.FirstOrDefault(l => l.ProviderName == name);
                     if (existing is null)
-                        _system.Send(a.Id, new DomainCommands.AddLlmCmd(llm));
+                        system.Send(a.Id, new DomainCommands.AddLlmCmd(llm));
                 }
                 // Remove old providers not in new config
                 var toRemove = a
@@ -221,16 +222,16 @@ public sealed class Server : IAsyncDisposable
                     newProviderNames.FirstOrDefault() ?? a.LlmsSnapshot[0].ProviderName;
                 var newModel = newConfig.Model ?? newCurrent;
                 if (toRemove.Any(r => r.ProviderName == a.CurrentLlm.ProviderName))
-                    _system.Send(a.Id, new DomainCommands.SwitchLlmCmd(newCurrent, newModel));
+                    system.Send(a.Id, new DomainCommands.SwitchLlmCmd(newCurrent, newModel));
                 foreach (var old in toRemove)
                 {
                     if (a.LlmsSnapshot.Count > 1 && old.ProviderName != a.CurrentLlm.ProviderName)
-                        _system.Send(
+                        system.Send(
                             a.Id,
                             new DomainCommands.RemoveLlmCmd(old.ProviderName, old.ModelId)
                         );
                 }
-                _system.Send(a.Id, new DomainCommands.SwitchLlmCmd(newCurrent, newModel));
+                system.Send(a.Id, new DomainCommands.SwitchLlmCmd(newCurrent, newModel));
 
                 // Persist to settings.json
                 if (settingsPath is { Length: > 0 })
@@ -268,7 +269,7 @@ public sealed class Server : IAsyncDisposable
                 var lvl = ExtractJsonString(body, "level");
                 if (lvl is { Length: > 0 })
                 {
-                    _system.Send(a.Id, new DomainCommands.SetThinkingLevelCmd(lvl));
+                    system.Send(a.Id, new DomainCommands.SetThinkingLevelCmd(lvl));
                 }
                 return V(Ok());
             }
@@ -327,7 +328,7 @@ public sealed class Server : IAsyncDisposable
                             var outputChannel = Channel.CreateUnbounded<ActorOutputEvent>();
                             a.OutputWriter = outputChannel.Writer;
 
-                            _system.Send(a.Id, new DomainCommands.RunTurn(message));
+                            system.Send(a.Id, new DomainCommands.RunTurn(message));
 
                             await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
                             {
@@ -379,7 +380,7 @@ public sealed class Server : IAsyncDisposable
     private WebApp BuildWebApp()
     {
         var app = new WebApp(new SvcContainer(), new WebAppOptions());
-        AddEndpoints(app, _agent, _llmClient, _toolRunner);
+        AddEndpoints(app, _agent, _system, _llmClient, _toolRunner);
         return app;
     }
 
