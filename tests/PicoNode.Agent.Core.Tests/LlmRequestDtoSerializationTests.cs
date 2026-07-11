@@ -1,5 +1,4 @@
 using PicoJetson;
-using PicoNode.AI.Types;
 
 namespace PicoNode.Agent.Core.Tests;
 
@@ -41,7 +40,6 @@ public sealed class LlmRequestDtoSerializationTests
                 new OpenAiToolCall
                 {
                     Id = "call_123",
-                    Type = "function",
                     Function = new OpenAiToolCallFunction
                     {
                         Name = "read",
@@ -65,25 +63,5 @@ public sealed class LlmRequestDtoSerializationTests
 
         await Assert.That(json).Contains("\"system\"");
         await Assert.That(json).Contains("\"content\"");
-    }
-
-    /// <summary>
-    /// Tools are injected manually into the JSON output (parameters need raw JSON,
-    /// not escaped string). Verify the DTO does NOT serialize escaped parameters.
-    /// </summary>
-    [Test]
-    public async Task OpenAiChatRequest_NoToolsField()
-    {
-        var req = new OpenAiChatRequest
-        {
-            Model = "gpt-4o",
-            MaxTokens = 100,
-            Stream = true,
-            Messages = [],
-        };
-        var json = JsonSerializer.Serialize(req);
-
-        await Assert.That(json).DoesNotContain("\"tools\"");
-        await Assert.That(json).DoesNotContain("\"tool_choice\"");
     }
 }

@@ -104,11 +104,12 @@ public sealed class OpenAILlmClient : ILLmClient
 
         var json = JsonSerializer.Serialize(req);
 
-        // Tools: parameters must be raw JSON (not escaped string), so inject manually
+        // Tools injected manually: "parameters" must be raw JSON, not escaped string.
+        // PicoJetson ISerializer<T> registration does not override SG-generated
+        // serializers for nested types, so we post-process the DTO output.
         if (context.Tools is { Length: > 0 })
         {
             var sb = new StringBuilder(json.Length + context.Tools.Length * 256);
-            // Drop the closing }, inject tools + tool_choice, re-close
             sb.Append(json.AsSpan(0, json.Length - 1));
             sb.Append(",\"tools\":[");
             for (int i = 0; i < context.Tools.Length; i++)
@@ -120,7 +121,7 @@ public sealed class OpenAILlmClient : ILLmClient
                 sb.Append("\",\"description\":\"");
                 JsonStringEscape(sb, context.Tools[i].Function.Description);
                 sb.Append("\",\"parameters\":");
-                sb.Append(context.Tools[i].Function.Parameters); // raw JSON, no escaping
+                sb.Append(context.Tools[i].Function.Parameters);
                 sb.Append("}}");
             }
             sb.Append("],\"tool_choice\":\"auto\"}");
@@ -280,5 +281,12 @@ public sealed class OpenAILlmClient : ILLmClient
                     break;
             }
         }
+    }
+
+    internal static string JsonStringEscapeToString(string s)
+    {
+        var sb = new StringBuilder(s.Length + 2);
+        JsonStringEscape(sb, s);
+        return sb.ToString();
     }
 }

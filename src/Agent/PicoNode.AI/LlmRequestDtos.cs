@@ -1,7 +1,8 @@
 namespace PicoNode.AI;
 
 /// <summary>
-/// OpenAI Chat Completions request DTOs (tools injected manually for raw JSON parameters).
+/// OpenAI Chat Completions request DTOs.
+/// Tools are injected manually after serialization (parameters needs raw JSON).
 /// </summary>
 [PicoSerializable]
 public sealed class OpenAiChatRequest
