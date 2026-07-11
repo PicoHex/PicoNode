@@ -8,7 +8,7 @@ namespace PicoNode.AI;
 public sealed class OpenAiChatRequest
 {
     [JsonPropertyName("model")]
-    public string Model { get; set; } = "";
+    public string Model { get; set; } = string.Empty;
 
     [JsonPropertyName("max_tokens")]
     public int MaxTokens { get; set; }
@@ -37,7 +37,7 @@ public sealed class OpenAiThinkingConfig
 public sealed class OpenAiMessage
 {
     [JsonPropertyName("role")]
-    public string Role { get; set; } = "";
+    public string Role { get; set; } = string.Empty;
 
     [JsonPropertyName("content")]
     public string? Content { get; set; }
@@ -69,7 +69,7 @@ public sealed class OpenAiToolCall
 public sealed class OpenAiToolCallFunction
 {
     [JsonPropertyName("name")]
-    public string Name { get; set; } = "";
+    public string Name { get; set; } = string.Empty;
 
     [JsonPropertyName("arguments")]
     public string Arguments { get; set; } = "{}";

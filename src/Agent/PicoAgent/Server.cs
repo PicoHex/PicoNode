@@ -411,9 +411,9 @@ public sealed class Server : IAsyncDisposable
                                         ? new SseEvent
                                         {
                                             Type = "done",
-                                            Content = "",
-                                            ToolCallId = "",
-                                            ToolName = "",
+                                            Content = string.Empty,
+                                            ToolCallId = string.Empty,
+                                            ToolName = string.Empty,
                                         }
                                         : new SseEvent
                                         {

@@ -8,9 +8,9 @@ namespace PicoNode.Agent.Domain;
 [JsonCamelCase]
 public sealed class HealthResponse
 {
-    public string Status { get; set; } = "";
-    public string Model { get; set; } = "";
-    public string Provider { get; set; } = "";
+    public string Status { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
 }
 
 [PicoSerializable]
@@ -18,11 +18,11 @@ public sealed class HealthResponse
 public sealed class ConfigStatusResponse
 {
     public bool Configured { get; set; }
-    public string Model { get; set; } = "";
-    public string Provider { get; set; } = "";
+    public string Model { get; set; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
     public List<string> Providers { get; set; } = [];
     public bool ThinkingEnabled { get; set; }
-    public string ThinkingLevel { get; set; } = "";
+    public string ThinkingLevel { get; set; } = string.Empty;
     public int MaxTokens { get; set; }
 }
 
@@ -30,17 +30,17 @@ public sealed class ConfigStatusResponse
 [JsonCamelCase]
 public sealed class ProviderTemplate
 {
-    public string Name { get; set; } = "";
-    public string Label { get; set; } = "";
-    public string BaseUrl { get; set; } = "";
-    public string ApiFormat { get; set; } = "";
+    public string Name { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public string BaseUrl { get; set; } = string.Empty;
+    public string ApiFormat { get; set; } = string.Empty;
 }
 
 [PicoSerializable]
 [JsonCamelCase]
 public sealed class PromptResponse
 {
-    public string Prompt { get; set; } = "";
+    public string Prompt { get; set; } = string.Empty;
 }
 
 [PicoSerializable]
@@ -56,8 +56,8 @@ public sealed class CompactResponse
 [JsonCamelCase]
 public sealed class ModelListItem
 {
-    public string Id { get; set; } = "";
-    public string OwnedBy { get; set; } = "";
+    public string Id { get; set; } = string.Empty;
+    public string OwnedBy { get; set; } = string.Empty;
 }
 
 /// <summary>SSE event emitted from Agent output channel to the frontend.</summary>
@@ -65,7 +65,7 @@ public sealed class ModelListItem
 [JsonCamelCase]
 public sealed class SseEvent
 {
-    public string Type { get; set; } = "";
+    public string Type { get; set; } = string.Empty;
     public string? Content { get; set; }
     public string? ToolCallId { get; set; }
     public string? ToolName { get; set; }
@@ -76,7 +76,7 @@ public sealed class SseEvent
 [JsonCamelCase]
 public sealed class StatusResponse
 {
-    public string Status { get; set; } = "";
+    public string Status { get; set; } = string.Empty;
 }
 
 /// <summary>Generic error response. Replaces anonymous type in JsonHelper.Error().</summary>
@@ -84,7 +84,7 @@ public sealed class StatusResponse
 [JsonCamelCase]
 public sealed class ErrorResponse
 {
-    public string Error { get; set; } = "";
+    public string Error { get; set; } = string.Empty;
 }
 
 /// <summary>Sessions list response — avoids raw string[] serialization.</summary>
