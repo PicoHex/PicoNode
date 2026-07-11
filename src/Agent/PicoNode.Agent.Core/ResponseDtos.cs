@@ -65,7 +65,7 @@ public sealed class ModelListItem
 [JsonCamelCase]
 public sealed class SseEvent
 {
-    public string? Type { get; set; }
+    public string Type { get; set; } = "";
     public string? Content { get; set; }
     public string? ToolCallId { get; set; }
     public string? ToolName { get; set; }

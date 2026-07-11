@@ -406,13 +406,22 @@ public sealed class Server : IAsyncDisposable
 
                             await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
                             {
-                                var sseEvent = new SseEvent
-                                {
-                                    Type = evt.Type == "text" ? "delta" : evt.Type,
-                                    Content = evt.Data,
-                                    ToolCallId = evt.ToolCallId,
-                                    ToolName = evt.ToolName,
-                                };
+                                var sseEvent =
+                                    evt.Type == "done"
+                                        ? new SseEvent
+                                        {
+                                            Type = "done",
+                                            Content = "",
+                                            ToolCallId = "",
+                                            ToolName = "",
+                                        }
+                                        : new SseEvent
+                                        {
+                                            Type = evt.Type == "text" ? "delta" : evt.Type,
+                                            Content = evt.Data ?? "",
+                                            ToolCallId = evt.ToolCallId ?? "",
+                                            ToolName = evt.ToolName ?? "",
+                                        };
                                 var json = JsonSerializer.Serialize(sseEvent);
                                 await pipe.Writer.WriteAsync(
                                     Encoding.UTF8.GetBytes($"data: {json}\n\n"),
