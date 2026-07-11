@@ -52,8 +52,11 @@ public static class ToolHandlers
         if (!Directory.Exists(dir))
             return $"[Error: Directory not found: {dir}]";
 
-        var command = $"grep -rn -I \"{pattern}\" \"{dir}\"";
+        var rg = await ToolManager.EnsureToolAsync("rg", ct);
+        if (rg is null)
+            return $"[Error: ripgrep not available]";
 
+        var command = $"\"{rg}\" -n --color=never --hidden -I \"{pattern}\" \"{dir}\"";
         var result = await RunShellAsync(command, ct);
         return string.IsNullOrWhiteSpace(result) ? "No matches found" : result;
     }
@@ -69,8 +72,11 @@ public static class ToolHandlers
         if (!Directory.Exists(dir))
             return $"[Error: Directory not found: {dir}]";
 
-        var command = $"find \"{dir}\" -name \"{name}\"";
+        var fd = await ToolManager.EnsureToolAsync("fd", ct);
+        if (fd is null)
+            return $"[Error: fd not available]";
 
+        var command = $"\"{fd}\" --glob --color=never --hidden \"{name}\" \"{dir}\"";
         var result = await RunShellAsync(command, ct);
         return string.IsNullOrWhiteSpace(result) ? "No files found" : result;
     }
