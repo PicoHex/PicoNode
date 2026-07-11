@@ -12,7 +12,7 @@ public sealed class HomeDir
 
     public static string Resolve()
     {
-        var portable = Path.Combine(Directory.GetCurrentDirectory(), "data");
+        var portable = Path.Combine(AppContext.BaseDirectory, "data");
         if (Directory.Exists(portable))
             return Path.GetFullPath(portable);
 
