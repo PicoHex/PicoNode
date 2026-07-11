@@ -28,14 +28,7 @@ public static class ToolManager
         return $"{os}-{arch}";
     }
 
-    public static string GetToolDir()
-    {
-        var baseDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".pico-agent"
-        );
-        return Path.Combine(baseDir, "tools");
-    }
+    public static string GetToolDir() => new HomeDir(HomeDir.Resolve()).ToolsDir;
 
     public static async Task<string?> EnsureToolAsync(string tool, CancellationToken ct)
     {
