@@ -82,7 +82,7 @@ public sealed class Server : IAsyncDisposable
             $"{p}/health",
             (_, _) =>
                 V(
-                    JsonHelper.Json(
+                    JsonHelper.JsonResponse(
                         new HealthResponse
                         {
                             Status = "ok",
@@ -137,7 +137,7 @@ public sealed class Server : IAsyncDisposable
         // Sessions
         app.MapGet(
             $"{p}/sessions",
-            (_, _) => V(JsonHelper.Json(new SessionsResponse { Sessions = ["default"] }))
+            (_, _) => V(JsonHelper.JsonResponse(new SessionsResponse { Sessions = ["default"] }))
         );
 
         // Config status
@@ -151,7 +151,7 @@ public sealed class Server : IAsyncDisposable
                     && l.ApiKey != "sk-test"
                 );
                 return V(
-                    JsonHelper.Json(
+                    JsonHelper.JsonResponse(
                         new ConfigStatusResponse
                         {
                             Configured = hasRealProvider,
@@ -333,7 +333,7 @@ public sealed class Server : IAsyncDisposable
                         a.ToolsSnapshot.ToArray(),
                         a.Skills
                     );
-                return V(JsonHelper.Json(new PromptResponse { Prompt = prompt }));
+                return V(JsonHelper.JsonResponse(new PromptResponse { Prompt = prompt }));
             }
         );
         app.MapPost(
@@ -396,7 +396,7 @@ public sealed class Server : IAsyncDisposable
             $"{p}/session/{{id}}/compact",
             (_, _) =>
                 V(
-                    JsonHelper.Json(
+                    JsonHelper.JsonResponse(
                         new CompactResponse
                         {
                             CompressedCount = 0,
