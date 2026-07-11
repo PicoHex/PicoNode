@@ -323,6 +323,7 @@ async function sendMessage(overrideText) {
                         rawText += evt.content;
                         if (!currentTextSeg) { streamDot.style.display = 'none'; currentTextSeg = createTextSeg(); msgContent.appendChild(currentTextSeg); }
                         currentTextSeg.textContent = rawText.substring(segStart);
+                        currentTextSeg.classList.remove('rendered');
                     }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked || !thinkBlock) continue; rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
                     else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => renderAllSegments(msgContent), 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
