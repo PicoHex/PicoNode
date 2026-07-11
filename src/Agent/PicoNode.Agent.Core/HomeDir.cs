@@ -13,12 +13,12 @@ public sealed class HomeDir
     /// <summary>
     /// Resolve home directory without side effects.
     /// </summary>
-    public static string Resolve() =>
-        Resolve(Environment.GetEnvironmentVariable("PICO_AGENT_HOME"));
+    public static string Resolve(string? customPath = null) =>
+        Resolve(customPath ?? Environment.GetEnvironmentVariable("PICO_AGENT_HOME"));
 
     internal static string Resolve(string? envVar)
     {
-        if (envVar is { Length: > 0 })
+        if (envVar is { Length: > 0 } && Directory.Exists(envVar))
             return Path.GetFullPath(envVar);
 
         var portable = Path.Combine(Directory.GetCurrentDirectory(), "data");
