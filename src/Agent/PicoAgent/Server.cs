@@ -6,23 +6,19 @@ namespace PicoAgent;
 /// </summary>
 internal static class JsonHelper
 {
-    public static HttpResponse Json<T>(T value, int statusCode = 200)
-    {
-        var json = JsonSerializer.Serialize(value);
-        return new HttpResponse
+    public static HttpResponse JsonResponse<T>(T value, int statusCode = 200) =>
+        new()
         {
             StatusCode = statusCode,
-            Body = Encoding.UTF8.GetBytes(json),
+            Body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value)),
             Headers = [new("Content-Type", "application/json; charset=utf-8")],
         };
-    }
 
-    public static HttpResponse Ok() => Json(new StatusResponse { Status = "ok" });
+    public static HttpResponse Ok() => JsonResponse(new StatusResponse { Status = "ok" });
 
     public static HttpResponse Error(int code, string msg) =>
-        Json(new ErrorResponse { Error = msg }, code);
+        JsonResponse(new ErrorResponse { Error = msg }, code);
 
-    /// <summary>Raw JSON string response — use only for trivial constants.</summary>
     public static HttpResponse RawJson(string json, int statusCode = 200) =>
         new()
         {
