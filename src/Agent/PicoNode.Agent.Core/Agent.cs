@@ -272,7 +272,7 @@ public sealed class Agent : EventSourcedActor
                             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                         };
                         await session.Append(new MessageEntry { Message = toolMsg });
-                        WriteOutput("tool_result", toolResult);
+                        WriteOutput("tool_result", toolResult, tc.Id, tc.Name);
                     }
                 }
             } while (hasTools && !ct.IsCancellationRequested);
