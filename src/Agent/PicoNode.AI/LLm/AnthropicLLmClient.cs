@@ -18,7 +18,6 @@ public sealed class AnthropicLLmClient : ILLmClient
         [EnumeratorCancellation] CancellationToken ct
     )
     {
-        // Prefer explicit key, then provider-specific env var (e.g. ANTHROPIC_API_KEY).
         var apiKey =
             options?.ApiKey
             ?? Environment.GetEnvironmentVariable($"{model.Provider.ToUpperInvariant()}_API_KEY")
@@ -48,7 +47,7 @@ public sealed class AnthropicLLmClient : ILLmClient
             var errorMessage = $"HTTP {(int)response.StatusCode}";
             try
             {
-                var errResp = PicoJetson.JsonSerializer.Deserialize<AnthropicErrorResponse>(
+                var errResp = JsonSerializer.Deserialize<AnthropicErrorResponse>(
                     Encoding.UTF8.GetBytes(errorBody)
                 );
                 if (errResp?.Error?.Message is { Length: > 0 } msg)
@@ -82,18 +81,20 @@ public sealed class AnthropicLLmClient : ILLmClient
     {
         var sb = new StringBuilder(4096);
         sb.Append('{');
-        AppendProp(sb, "model", model.Id);
-        sb.Append(',');
-        AppendProp(sb, "max_tokens", (options?.MaxTokens ?? model.MaxTokens).ToString());
-        sb.Append(',');
-        sb.Append("\"stream\":true");
+
+        // Use PicoJetson for the known outer structure, but build messages manually
+        // due to polymorphic content (user: string, assistant: ContentBlock[]).
+        sb.Append("\"model\":");
+        AppendJsonString(sb, model.Id);
+        sb.Append(",\"max_tokens\":");
+        sb.Append(options?.MaxTokens ?? model.MaxTokens);
+        sb.Append(",\"stream\":true");
 
         // Thinking block
         if (options?.Reasoning is { } level)
         {
-            var levelMap = options.ThinkingLevelMap;
-            var budget = levelMap is not null
-                ? MapResolver.Resolve(level, levelMap)
+            var budget = options.ThinkingLevelMap is { } map
+                ? MapResolver.Resolve(level, map)
                 : level switch
                 {
                     ThinkingLevel.Minimal => "2000",
@@ -106,17 +107,14 @@ public sealed class AnthropicLLmClient : ILLmClient
 
             if (budget is not null)
             {
-                sb.Append(',');
-                sb.Append("\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":");
+                sb.Append(",\"thinking\":{\"type\":\"enabled\",\"budget_tokens\":");
                 sb.Append(budget);
                 sb.Append('}');
             }
         }
 
-        sb.Append(',');
-
-        // Messages
-        sb.Append("\"messages\":[");
+        // Messages — manual due to polymorphic content
+        sb.Append(",\"messages\":[");
         for (int i = 0; i < context.Messages.Length; i++)
         {
             if (i > 0)
@@ -125,30 +123,28 @@ public sealed class AnthropicLLmClient : ILLmClient
         }
         sb.Append(']');
 
-        // System prompt
+        // System prompt — simple string, handled directly
         if (context.SystemPrompt != null)
         {
-            sb.Append(',');
-            sb.Append("\"system\":[{\"type\":\"text\",\"text\":");
-            sb.Append(EscapeString(context.SystemPrompt));
+            sb.Append(",\"system\":[{\"type\":\"text\",\"text\":");
+            AppendJsonString(sb, context.SystemPrompt);
             sb.Append("}]");
         }
 
         // Tools
         if (context.Tools is { Length: > 0 })
         {
-            sb.Append(',');
-            sb.Append("\"tools\":[");
+            sb.Append(",\"tools\":[");
             for (int i = 0; i < context.Tools.Length; i++)
             {
                 if (i > 0)
                     sb.Append(',');
                 sb.Append("{\"name\":");
-                sb.Append(EscapeString(context.Tools[i].Function.Name));
+                AppendJsonString(sb, context.Tools[i].Function.Name);
                 sb.Append(",\"description\":");
-                sb.Append(EscapeString(context.Tools[i].Function.Description));
+                AppendJsonString(sb, context.Tools[i].Function.Description);
                 sb.Append(",\"input_schema\":");
-                sb.Append(context.Tools[i].Function.Parameters); // raw JSON string
+                sb.Append(context.Tools[i].Function.Parameters);
                 sb.Append('}');
             }
             sb.Append(']');
@@ -158,12 +154,14 @@ public sealed class AnthropicLLmClient : ILLmClient
         return sb.ToString();
     }
 
+    // ── Message serialization (polymorphic content, kept manual) ────
+
     private static void AppendMessage(StringBuilder sb, Message m)
     {
         if (m.Role == "user")
         {
             sb.Append("{\"role\":\"user\",\"content\":");
-            sb.Append(EscapeString(m.Content));
+            AppendJsonString(sb, m.Content);
             sb.Append('}');
         }
         else if (m.Role == "assistant")
@@ -189,9 +187,9 @@ public sealed class AnthropicLLmClient : ILLmClient
                 ?? "";
             sb.Append("{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",");
             sb.Append("\"tool_use_id\":");
-            sb.Append(EscapeString(m.ToolCallId ?? ""));
+            AppendJsonString(sb, m.ToolCallId ?? "");
             sb.Append(",\"content\":");
-            sb.Append(EscapeString(text));
+            AppendJsonString(sb, text);
             sb.Append(",\"is_error\":");
             sb.Append(m.IsError ? "true" : "false");
             sb.Append("}]}");
@@ -203,141 +201,27 @@ public sealed class AnthropicLLmClient : ILLmClient
         if (cb.Type == "text")
         {
             sb.Append("{\"type\":\"text\",\"text\":");
-            sb.Append(EscapeString(cb.Text ?? ""));
+            AppendJsonString(sb, cb.Text ?? "");
             sb.Append('}');
         }
         else if (cb.Type == "tool_call")
         {
             sb.Append("{\"type\":\"tool_use\",\"id\":");
-            sb.Append(EscapeString(cb.Id ?? ""));
+            AppendJsonString(sb, cb.Id ?? "");
             sb.Append(",\"name\":");
-            sb.Append(EscapeString(cb.Name ?? ""));
+            AppendJsonString(sb, cb.Name ?? "");
             sb.Append(",\"input\":");
-            sb.Append(BuildArgsJson(cb.Arguments));
+            sb.Append(OpenAILlmClient.DictToJson(cb.Arguments));
             sb.Append('}');
         }
     }
 
-    private static string BuildArgsJson(Dictionary<string, object?> args)
-    {
-        if (args.Count == 0)
-            return "{}";
-        var sb = new StringBuilder(256);
-        sb.Append('{');
-        bool first = true;
-        foreach (var (k, v) in args)
-        {
-            if (!first)
-                sb.Append(',');
-            sb.Append(EscapeString(k));
-            sb.Append(':');
-            AppendValue(sb, v);
-            first = false;
-        }
-        sb.Append('}');
-        return sb.ToString();
-    }
+    // ── Canonical JSON string escape (shared with OpenAILlmClient) ──
 
-    private static void AppendValue(StringBuilder sb, object? v)
+    internal static void AppendJsonString(StringBuilder sb, string s)
     {
-        switch (v)
-        {
-            case null:
-                sb.Append("null");
-                break;
-            case string s:
-                sb.Append(EscapeString(s));
-                break;
-            case bool b:
-                sb.Append(b ? "true" : "false");
-                break;
-            case int i:
-                sb.Append(i);
-                break;
-            case long l:
-                sb.Append(l);
-                break;
-            case double d:
-                sb.Append(d.ToString("G"));
-                break;
-            case float f:
-                sb.Append(f.ToString("G"));
-                break;
-            case Dictionary<string, object?> dict:
-                sb.Append('{');
-                bool first = true;
-                foreach (var (dk, dv) in dict)
-                {
-                    if (!first)
-                        sb.Append(',');
-                    sb.Append(EscapeString(dk));
-                    sb.Append(':');
-                    AppendValue(sb, dv);
-                    first = false;
-                }
-                sb.Append('}');
-                break;
-            case System.Collections.IList list:
-                sb.Append('[');
-                for (int i = 0; i < list.Count; i++)
-                {
-                    if (i > 0)
-                        sb.Append(',');
-                    AppendValue(sb, list[i]);
-                }
-                sb.Append(']');
-                break;
-            default:
-                sb.Append(EscapeString(v.ToString() ?? "null"));
-                break;
-        }
-    }
-
-    private static string EscapeString(string s)
-    {
-        var sb = new StringBuilder(s.Length + 2);
         sb.Append('"');
-        foreach (var c in s)
-        {
-            switch (c)
-            {
-                case '"':
-                    sb.Append("\\\"");
-                    break;
-                case '\\':
-                    sb.Append("\\\\");
-                    break;
-                case '\n':
-                    sb.Append("\\n");
-                    break;
-                case '\r':
-                    sb.Append("\\r");
-                    break;
-                case '\t':
-                    sb.Append("\\t");
-                    break;
-                case '\b':
-                    sb.Append("\\b");
-                    break;
-                case '\f':
-                    sb.Append("\\f");
-                    break;
-                default:
-                    if (c < 0x20)
-                        sb.Append($"\\u{(int)c:X4}");
-                    else
-                        sb.Append(c);
-                    break;
-            }
-        }
+        OpenAILlmClient.JsonStringEscape(sb, s);
         sb.Append('"');
-        return sb.ToString();
-    }
-
-    private static void AppendProp(StringBuilder sb, string name, string value)
-    {
-        sb.Append(EscapeString(name));
-        sb.Append(':');
-        sb.Append(EscapeString(value));
     }
 }

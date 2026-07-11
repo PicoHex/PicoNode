@@ -209,16 +209,23 @@ public sealed class Agent : EventSourcedActor
                             }
                             break;
                         case "tool_call_end":
-                            if (int.TryParse(evt.ToolCallId, out var ei) && evt.ToolName is { Length: > 0 })
+                            if (
+                                int.TryParse(evt.ToolCallId, out var ei)
+                                && evt.ToolName is { Length: > 0 }
+                            )
                             {
-                                var args = argAccum.TryGetValue(ei, out var a) ? a.ToString() : "{}";
-                                contentBlocks.Add(new ContentBlock
-                                {
-                                    Id = Guid.CreateVersion7().ToString(),
-                                    Type = "tool_call",
-                                    Name = evt.ToolName,
-                                    Arguments = ParseSimpleJson(args),
-                                });
+                                var args = argAccum.TryGetValue(ei, out var a)
+                                    ? a.ToString()
+                                    : "{}";
+                                contentBlocks.Add(
+                                    new ContentBlock
+                                    {
+                                        Id = Guid.CreateVersion7().ToString(),
+                                        Type = "tool_call",
+                                        Name = evt.ToolName,
+                                        Arguments = ParseSimpleJson(args),
+                                    }
+                                );
                             }
                             break;
                         case "done":
@@ -354,20 +361,17 @@ public sealed class Agent : EventSourcedActor
 
     private static Dictionary<string, object?> ParseSimpleJson(string json)
     {
-        var result = new Dictionary<string, object?>();
-        if (json is not { Length: > 2 } || json[0] != '{' || json[^1] != '}')
-            return result;
-        var inner = json[1..^1];
-        foreach (var part in inner.Split(','))
+        if (string.IsNullOrWhiteSpace(json) || json is not { Length: > 2 })
+            return [];
+        try
         {
-            var colon = part.IndexOf(':');
-            if (colon < 0)
-                continue;
-            var key = part[..colon].Trim().Trim('"');
-            var value = part[(colon + 1)..].Trim();
-            result[key] = value.Trim('"').Replace("\\\\", "\\").Replace("\\\"", "\"");
+            var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(json));
+            return PicoElementConverter.ObjectToDict(doc.RootElement);
         }
-        return result;
+        catch (FormatException)
+        {
+            return [];
+        }
     }
 
     private static ThinkingLevel ParseLevel(string level) =>

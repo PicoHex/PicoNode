@@ -215,46 +215,15 @@ public static class SseParser
     private static Dictionary<string, object?> ParseJsonObject(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
-            return new();
+            return [];
         try
         {
             var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(json));
-            var result = ParseElement(doc.RootElement);
-            return (result as Dictionary<string, object?>) ?? new();
+            return PicoElementConverter.ObjectToDict(doc.RootElement);
         }
         catch (FormatException)
         {
-            return new();
+            return [];
         }
-    }
-
-    private static object? ParseElement(PicoElement el)
-    {
-        return el.ValueKind switch
-        {
-            PicoValueKind.Object => EnumerateObjectToDict(el),
-            PicoValueKind.Array => EnumerateArrayToList(el),
-            PicoValueKind.String => el.GetString(),
-            PicoValueKind.Number => el.TryGetInt64(out var l) ? l : el.GetDouble(),
-            PicoValueKind.True => true,
-            PicoValueKind.False => false,
-            _ => null,
-        };
-    }
-
-    private static Dictionary<string, object?> EnumerateObjectToDict(PicoElement el)
-    {
-        var dict = new Dictionary<string, object?>();
-        foreach (var prop in el.EnumerateObject())
-            dict[prop.Name] = ParseElement(prop.Value);
-        return dict;
-    }
-
-    private static List<object?> EnumerateArrayToList(PicoElement el)
-    {
-        var list = new List<object?>();
-        foreach (var item in el.EnumerateArray())
-            list.Add(ParseElement(item));
-        return list;
     }
 }

@@ -1,27 +1,41 @@
 namespace PicoAgent;
 
-using DomainAgent = PicoNode.Agent.Domain.Agent;
-using DomainCommands = PicoNode.Agent.Domain;
-using DomainInterfaces = PicoNode.Agent.Domain;
+/// <summary>
+/// Helper for producing JSON HTTP responses via PicoJetson.
+/// Replaces all hand-crafted JSON string interpolation.
+/// </summary>
+internal static class JsonHelper
+{
+    public static HttpResponse Json<T>(T value, int statusCode = 200)
+    {
+        var json = JsonSerializer.Serialize(value);
+        return new HttpResponse
+        {
+            StatusCode = statusCode,
+            Body = Encoding.UTF8.GetBytes(json),
+            Headers = [new("Content-Type", "application/json; charset=utf-8")],
+        };
+    }
+
+    public static HttpResponse Ok() => Json(new StatusResponse { Status = "ok" });
+
+    public static HttpResponse Error(int code, string msg) =>
+        Json(new ErrorResponse { Error = msg }, code);
+}
 
 public sealed class Server : IAsyncDisposable
 {
-    private readonly DomainAgent _agent;
+    private readonly Agent _agent;
     private readonly ActorSystem _system;
-    private readonly DomainInterfaces.ILlmClient _llmClient;
-    private readonly DomainInterfaces.IToolRunner _toolRunner;
+    private readonly ILlmClient _llmClient;
+    private readonly IToolRunner _toolRunner;
     private WebServer? _webServer;
     private bool _isListening;
     private readonly SemaphoreSlim _turnLock = new(1, 1);
 
     public int Port => _webServer?.LocalEndPoint is IPEndPoint ep ? ep.Port : 0;
 
-    public Server(
-        DomainAgent agent,
-        ActorSystem system,
-        DomainInterfaces.ILlmClient llmClient,
-        DomainInterfaces.IToolRunner toolRunner
-    )
+    public Server(Agent agent, ActorSystem system, ILlmClient llmClient, IToolRunner toolRunner)
     {
         _agent = agent;
         _system = system;
@@ -34,7 +48,7 @@ public sealed class Server : IAsyncDisposable
         if (_isListening)
             throw new InvalidOperationException("Already listening");
         _isListening = true;
-        _system.Send(_agent.Id, new DomainCommands.StartAgent());
+        _system.Send(_agent.Id, new StartAgent());
         _webServer = new WebServer(
             BuildWebApp(),
             new WebServerOptions { Endpoint = ParseEndpoint(uri) }
@@ -42,12 +56,14 @@ public sealed class Server : IAsyncDisposable
         await _webServer.StartAsync(CancellationToken.None);
     }
 
+    // ── HTTP Endpoints ──────────────────────────────────────────────
+
     public static void AddEndpoints(
         WebApp app,
-        DomainAgent a,
+        Agent a,
         ActorSystem system,
-        DomainInterfaces.ILlmClient llm,
-        DomainInterfaces.IToolRunner tr,
+        ILlmClient llm,
+        IToolRunner tr,
         string prefix = "",
         string? settingsPath = null
     )
@@ -56,20 +72,28 @@ public sealed class Server : IAsyncDisposable
         string? sp = null;
         var p = prefix;
 
+        // Health
         app.MapGet(
             $"{p}/health",
             (_, _) =>
                 V(
-                    Json(
-                        $"{{\"status\":\"ok\",\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\"}}"
+                    JsonHelper.Json(
+                        new HealthResponse
+                        {
+                            Status = "ok",
+                            Model = a.CurrentLlm.ModelId,
+                            Provider = a.CurrentLlm.ProviderName,
+                        }
                     )
                 )
         );
+
+        // Models
         app.MapGet(
             $"{p}/models",
             async (_, ct) =>
             {
-                var all = new List<string>();
+                var all = new List<ModelListItem>();
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
                 foreach (var l in a.LlmsSnapshot)
                 {
@@ -89,20 +113,21 @@ public sealed class Server : IAsyncDisposable
                             ApiFormat = l.ApiFormat,
                         };
                         var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(http, pc, ct);
-                        all.AddRange(
-                            models.Select(m =>
-                                $"{{\"id\":\"{EscapeJson(m.Id)}\",\"ownedBy\":\"{EscapeJson(m.OwnedBy)}\"}}"
-                            )
-                        );
+                        foreach (var m in models)
+                            all.Add(new ModelListItem { Id = m.Id, OwnedBy = m.OwnedBy });
                     }
                     catch
                     { /* skip failed */
                     }
                 }
-                return Json("[" + string.Join(",", all) + "]");
+                return JsonHelper.Json(all);
             }
         );
-        app.MapGet($"{p}/sessions", (_, _) => V(Json("[\"default\"]")));
+
+        // Sessions
+        app.MapGet($"{p}/sessions", (_, _) => V(JsonHelper.Json(new[] { "default" })));
+
+        // Config status
         app.MapGet(
             $"{p}/config/status",
             (_, _) =>
@@ -113,24 +138,48 @@ public sealed class Server : IAsyncDisposable
                     && l.ApiKey != "sk-test"
                 );
                 return V(
-                    Json(
-                        $"{{\"configured\":{hasRealProvider.ToString().ToLower()},\"model\":\"{a.CurrentLlm.ModelId}\",\"provider\":\"{a.CurrentLlm.ProviderName}\",\"providers\":[{string.Join(",", a.LlmsSnapshot.Select(l => $"\"{l.ProviderName}\""))}],\"thinkingEnabled\":{a.CurrentLlm.ThinkingEnabled.ToString().ToLower()},\"thinkingLevel\":\"{a.CurrentLlm.ThinkingLevel.ToString().ToLowerInvariant()}\",\"maxTokens\":{a.CurrentLlm.MaxTokens}}}"
+                    JsonHelper.Json(
+                        new ConfigStatusResponse
+                        {
+                            Configured = hasRealProvider,
+                            Model = a.CurrentLlm.ModelId,
+                            Provider = a.CurrentLlm.ProviderName,
+                            Providers = a.LlmsSnapshot.Select(l => l.ProviderName).ToList(),
+                            ThinkingEnabled = a.CurrentLlm.ThinkingEnabled,
+                            ThinkingLevel = a
+                                .CurrentLlm.ThinkingLevel.ToString()
+                                .ToLowerInvariant(),
+                            MaxTokens = a.CurrentLlm.MaxTokens,
+                        }
                     )
                 );
             }
         );
-        app.MapGet($"{p}/config/providers", (_, _) => V(Json(ProviderTemplates)));
+
+        // Provider templates
+        app.MapGet($"{p}/config/providers", (_, _) => V(JsonHelper.Json(DefaultProviderTemplates)));
+
+        // Config validate
         app.MapPost(
             $"{p}/config/validate",
             async (ctx, ct) =>
             {
                 using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
                 var body = await r.ReadToEndAsync(ct);
-                var name = ExtractJsonString(body, "provider") ?? ExtractJsonString(body, "name");
-                var key = ExtractJsonString(body, "apiKey");
-                var url = ExtractJsonString(body, "baseUrl");
+                var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
+                var name =
+                    doc.RootElement.TryGetProperty("provider", out var pv) ? pv.GetStringOrNull()
+                    : doc.RootElement.TryGetProperty("name", out var nm) ? nm.GetStringOrNull()
+                    : null;
+                var key = doc.RootElement.TryGetProperty("apiKey", out var ak)
+                    ? ak.GetStringOrNull()
+                    : null;
+                var url = doc.RootElement.TryGetProperty("baseUrl", out var bu)
+                    ? bu.GetStringOrNull()
+                    : null;
+
                 if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(key))
-                    return Error(400, "provider and apiKey required");
+                    return JsonHelper.Error(400, "provider and apiKey required");
                 try
                 {
                     var pc = new PicoNode.AI.ProviderConfig
@@ -143,24 +192,24 @@ public sealed class Server : IAsyncDisposable
                     using var http = new HttpClient();
                     var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(http, pc, ct);
                     if (models.Length == 0)
-                        return Error(400, "No models found. Check your API key or base URL.");
-                    var json =
-                        "["
-                        + string.Join(
-                            ",",
-                            models.Select(m =>
-                                $"{{\"id\":\"{EscapeJson(m.Id)}\",\"ownedBy\":\"{EscapeJson(m.OwnedBy)}\"}}"
-                            )
-                        )
-                        + "]";
-                    return Json(json);
+                        return JsonHelper.Error(
+                            400,
+                            "No models found. Check your API key or base URL."
+                        );
+                    return JsonHelper.Json(
+                        models
+                            .Select(m => new ModelListItem { Id = m.Id, OwnedBy = m.OwnedBy })
+                            .ToList()
+                    );
                 }
                 catch (Exception ex)
                 {
-                    return Error(400, ex.Message);
+                    return JsonHelper.Error(400, ex.Message);
                 }
             }
         );
+
+        // Config save
         app.MapPost(
             $"{p}/config",
             async (ctx, ct) =>
@@ -168,9 +217,8 @@ public sealed class Server : IAsyncDisposable
                 using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
                 var body = await r.ReadToEndAsync(ct);
                 if (string.IsNullOrWhiteSpace(body))
-                    return Error(400, "empty body");
+                    return JsonHelper.Error(400, "empty body");
 
-                // Parse and validate
                 AgentConfig? newConfig;
                 try
                 {
@@ -180,12 +228,11 @@ public sealed class Server : IAsyncDisposable
                 }
                 catch
                 {
-                    return Error(400, "invalid json");
+                    return JsonHelper.Error(400, "invalid json");
                 }
                 if (newConfig is null)
-                    return Error(400, "invalid config");
+                    return JsonHelper.Error(400, "invalid config");
 
-                // Add new providers first (can't remove all — invariant requires at least 1)
                 var newProviderNames = newConfig.Providers.Keys.ToList();
                 foreach (var (name, entry) in newConfig.Providers)
                 {
@@ -208,10 +255,9 @@ public sealed class Server : IAsyncDisposable
                     };
                     var existing = a.LlmsSnapshot.FirstOrDefault(l => l.ProviderName == name);
                     if (existing is not null)
-                        system.Send(a.Id, new DomainCommands.RemoveLlmCmd(name, existing.ModelId));
-                    system.Send(a.Id, new DomainCommands.AddLlmCmd(llm));
+                        system.Send(a.Id, new RemoveLlmCmd(name, existing.ModelId));
+                    system.Send(a.Id, new AddLlmCmd(llm));
                 }
-                // Remove old providers not in new config
                 var toRemove = a
                     .LlmsSnapshot.Where(l => !newProviderNames.Contains(l.ProviderName))
                     .ToList();
@@ -219,18 +265,14 @@ public sealed class Server : IAsyncDisposable
                     newProviderNames.FirstOrDefault() ?? a.LlmsSnapshot[0].ProviderName;
                 var newModel = newConfig.Model ?? newCurrent;
                 if (toRemove.Any(r => r.ProviderName == a.CurrentLlm.ProviderName))
-                    system.Send(a.Id, new DomainCommands.SwitchLlmCmd(newCurrent, newModel));
+                    system.Send(a.Id, new SwitchLlmCmd(newCurrent, newModel));
                 foreach (var old in toRemove)
                 {
                     if (a.LlmsSnapshot.Count > 1 && old.ProviderName != a.CurrentLlm.ProviderName)
-                        system.Send(
-                            a.Id,
-                            new DomainCommands.RemoveLlmCmd(old.ProviderName, old.ModelId)
-                        );
+                        system.Send(a.Id, new RemoveLlmCmd(old.ProviderName, old.ModelId));
                 }
-                system.Send(a.Id, new DomainCommands.SwitchLlmCmd(newCurrent, newModel));
+                system.Send(a.Id, new SwitchLlmCmd(newCurrent, newModel));
 
-                // Persist to settings.json
                 if (settingsPath is { Length: > 0 })
                 {
                     var dir = Path.GetDirectoryName(settingsPath);
@@ -239,20 +281,23 @@ public sealed class Server : IAsyncDisposable
                     await File.WriteAllTextAsync(settingsPath, body, ct);
                 }
 
-                return Ok();
+                return JsonHelper.Ok();
             }
         );
+
+        // System prompt
         app.MapGet(
             $"{p}/system-prompt",
             (_, _) =>
             {
-                var prompt = sp
+                var prompt =
+                    sp
                     ?? PicoNode.Agent.Domain.SystemPromptBuilder.Build(
                         a.ToolsSnapshot.ToArray(),
                         a.Skills,
                         a.HomeDir
                     );
-                return V(Json($"{{\"prompt\":\"{EscapeJson(prompt)}\"}}"));
+                return V(JsonHelper.Json(new PromptResponse { Prompt = prompt }));
             }
         );
         app.MapPost(
@@ -261,61 +306,75 @@ public sealed class Server : IAsyncDisposable
             {
                 using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
                 var body = await r.ReadToEndAsync();
-                sp = ExtractJsonString(body, "prompt");
-                return Ok();
+                var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
+                sp = doc.RootElement.TryGetProperty("prompt", out var pp)
+                    ? pp.GetStringOrNull()
+                    : null;
+                return JsonHelper.Ok();
             }
         );
-        app.MapPost($"{p}/reload", (_, _) => V(Ok()));
+
+        // Reload
+        app.MapPost($"{p}/reload", (_, _) => V(JsonHelper.Ok()));
+
+        // Thinking
         app.MapPost(
             $"{p}/thinking",
             (ctx, _) =>
             {
                 using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
                 var body = r.ReadToEnd();
-                var lvl = ExtractJsonString(body, "level");
+                var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
+                var lvl = doc.RootElement.TryGetProperty("level", out var lp)
+                    ? lp.GetStringOrNull()
+                    : null;
                 if (lvl is { Length: > 0 })
-                {
-                    system.Send(a.Id, new DomainCommands.SetThinkingLevelCmd(lvl));
-                }
-                return V(Ok());
+                    system.Send(a.Id, new SetThinkingLevelCmd(lvl));
+                return V(JsonHelper.Ok());
             }
         );
+
+        // Model/Provider switch (stub placeholders)
         app.MapPost(
             $"{p}/model/switch",
             (ctx, _) =>
             {
-                using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
-                var body = r.ReadToEnd();
-                var provider = ExtractJsonString(body, "provider");
-                var model = ExtractJsonString(body, "modelId") ?? ExtractJsonString(body, "model");
-                if (string.IsNullOrWhiteSpace(provider))
-                    return V(Error(400, "provider required"));
-                // SwitchLlm via command (a.SwitchLlm(provider, model ?? a.CurrentLlm.ModelId);
-                return V(Ok());
+                return V(JsonHelper.Ok());
             }
         );
         app.MapPost(
             $"{p}/provider/switch",
             (ctx, _) =>
             {
-                using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
-                var body = r.ReadToEnd();
-                var provider = ExtractJsonString(body, "provider");
-                if (string.IsNullOrWhiteSpace(provider))
-                    return V(Error(400, "provider required"));
-                // SwitchLlm via command (a.SwitchLlm(provider, a.CurrentLlm.ModelId);
-                return V(Ok());
+                return V(JsonHelper.Ok());
             }
         );
-        app.MapPost($"{p}/session/create/{{id}}", (_, _) => V(Ok()));
-        app.MapPost($"{p}/session/delete/{{id}}", (_, _) => V(Ok()));
-        app.MapPost($"{p}/session/save/{{id}}", (_, _) => V(Ok()));
-        app.MapGet($"{p}/session/{{id}}/messages", (_, _) => V(Json("[]")));
-        app.MapPost($"{p}/session/{{id}}/retry", (_, _) => V(Ok()));
+
+        // Session management
+        app.MapPost($"{p}/session/create/{{id}}", (_, _) => V(JsonHelper.Ok()));
+        app.MapPost($"{p}/session/delete/{{id}}", (_, _) => V(JsonHelper.Ok()));
+        app.MapPost($"{p}/session/save/{{id}}", (_, _) => V(JsonHelper.Ok()));
+        app.MapGet(
+            $"{p}/session/{{id}}/messages",
+            (_, _) => V(JsonHelper.Json(Array.Empty<object>()))
+        );
+        app.MapPost($"{p}/session/{{id}}/retry", (_, _) => V(JsonHelper.Ok()));
         app.MapPost(
             $"{p}/session/{{id}}/compact",
-            (_, _) => V(Json("{\"compressedCount\":0,\"summary\":null,\"tokensSaved\":0}"))
+            (_, _) =>
+                V(
+                    JsonHelper.Json(
+                        new CompactResponse
+                        {
+                            CompressedCount = 0,
+                            Summary = null,
+                            TokensSaved = 0,
+                        }
+                    )
+                )
         );
+
+        // SSE message endpoint
         app.MapPost(
             $"{p}/session/{{id}}/message",
             async (ctx, ct) =>
@@ -323,7 +382,7 @@ public sealed class Server : IAsyncDisposable
                 using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
                 var message = await reader.ReadToEndAsync(ct);
                 if (string.IsNullOrWhiteSpace(message))
-                    return Error(400, "empty message");
+                    return JsonHelper.Error(400, "empty message");
                 var pipe = new Pipe();
                 _ = Task.Run(
                     async () =>
@@ -334,18 +393,18 @@ public sealed class Server : IAsyncDisposable
                             var outputChannel = Channel.CreateUnbounded<ActorOutputEvent>();
                             a.OutputWriter = outputChannel.Writer;
 
-                            system.Send(a.Id, new DomainCommands.RunTurn(message));
+                            system.Send(a.Id, new RunTurn(message));
 
                             await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
                             {
-                                var json = evt.Type switch
+                                var sseEvent = new SseEvent
                                 {
-                                    "text" =>
-                                        $"{{\"type\":\"delta\",\"content\":\"{EscapeJson(evt.Data ?? "")}\"}}",
-                                    "done" => "{\"type\":\"done\"}",
-                                    _ =>
-                                        $"{{\"type\":\"{evt.Type}\",\"content\":\"{EscapeJson(evt.Data ?? "")}\",\"toolCallId\":\"{evt.ToolCallId}\",\"toolName\":\"{evt.ToolName ?? ""}\"}}",
+                                    Type = evt.Type == "text" ? "delta" : evt.Type,
+                                    Content = evt.Data,
+                                    ToolCallId = evt.ToolCallId,
+                                    ToolName = evt.ToolName,
                                 };
+                                var json = JsonSerializer.Serialize(sseEvent);
                                 await pipe.Writer.WriteAsync(
                                     Encoding.UTF8.GetBytes($"data: {json}\n\n"),
                                     ct
@@ -354,10 +413,11 @@ public sealed class Server : IAsyncDisposable
                         }
                         catch (Exception ex)
                         {
+                            var errJson = JsonSerializer.Serialize(
+                                new SseEvent { Type = "error", Content = ex.Message }
+                            );
                             await pipe.Writer.WriteAsync(
-                                Encoding.UTF8.GetBytes(
-                                    $"data: {{\"type\":\"error\",\"message\":\"{EscapeJson(ex.Message)}\"}}\n\n"
-                                ),
+                                Encoding.UTF8.GetBytes($"data: {errJson}\n\n"),
                                 ct
                             );
                         }
@@ -384,6 +444,8 @@ public sealed class Server : IAsyncDisposable
         );
     }
 
+    // ── Private helpers ─────────────────────────────────────────────
+
     private WebApp BuildWebApp()
     {
         var app = new WebApp(new SvcContainer(), new WebAppOptions());
@@ -393,58 +455,52 @@ public sealed class Server : IAsyncDisposable
 
     private static ValueTask<HttpResponse> V(HttpResponse r) => ValueTask.FromResult(r);
 
-    private static HttpResponse Ok() =>
-        new()
-        {
-            StatusCode = 200,
-            Body = "{\"status\":\"ok\"}"u8.ToArray(),
-            Headers = [new("Content-Type", "application/json; charset=utf-8")],
-        };
-
-    private static HttpResponse Error(int code, string msg) =>
-        new()
-        {
-            StatusCode = code,
-            Body = Encoding.UTF8.GetBytes($"{{\"error\":\"{msg}\"}}"),
-            Headers = [new("Content-Type", "application/json; charset=utf-8")],
-        };
-
-    private static HttpResponse Json(string body) =>
-        new()
-        {
-            StatusCode = 200,
-            Body = Encoding.UTF8.GetBytes(body),
-            Headers = [new("Content-Type", "application/json; charset=utf-8")],
-        };
-
-    private static string? ExtractJsonString(string json, string key)
-    {
-        var p = $"\"{key}\":\"";
-        var s = json.IndexOf(p, StringComparison.Ordinal);
-        if (s < 0)
-            return null;
-        s += p.Length;
-        var e = json.IndexOf('"', s);
-        return e > s ? json[s..e] : null;
-    }
-
-    private static string EscapeJson(string s) =>
-        s.Replace("\\", "\\\\")
-            .Replace("\"", "\\\"")
-            .Replace("\n", "\\n")
-            .Replace("\r", "\\r")
-            .Replace("\t", "\\t");
-
     private static IPEndPoint ParseEndpoint(string uri)
     {
         var u = new Uri(uri);
         return new IPEndPoint(IPAddress.Loopback, u.IsDefaultPort || u.Port < 0 ? 80 : u.Port);
     }
 
-    private static readonly string ProviderTemplates =
-        """[{"name":"openai","label":"OpenAI","baseUrl":"https://api.openai.com/v1","apiFormat":"openai"},{"name":"anthropic","label":"Anthropic","baseUrl":"https://api.anthropic.com","apiFormat":"anthropic"},{"name":"deepseek","label":"DeepSeek","baseUrl":"https://api.deepseek.com/v1","apiFormat":"openai"},{"name":"groq","label":"Groq","baseUrl":"https://api.groq.com/openai/v1","apiFormat":"openai"},{"name":"ollama","label":"Ollama","baseUrl":"http://localhost:11434/v1","apiFormat":"openai"}]""";
+    private static readonly List<ProviderTemplate> DefaultProviderTemplates =
+    [
+        new()
+        {
+            Name = "openai",
+            Label = "OpenAI",
+            BaseUrl = "https://api.openai.com/v1",
+            ApiFormat = "openai",
+        },
+        new()
+        {
+            Name = "anthropic",
+            Label = "Anthropic",
+            BaseUrl = "https://api.anthropic.com",
+            ApiFormat = "anthropic",
+        },
+        new()
+        {
+            Name = "deepseek",
+            Label = "DeepSeek",
+            BaseUrl = "https://api.deepseek.com/v1",
+            ApiFormat = "openai",
+        },
+        new()
+        {
+            Name = "groq",
+            Label = "Groq",
+            BaseUrl = "https://api.groq.com/openai/v1",
+            ApiFormat = "openai",
+        },
+        new()
+        {
+            Name = "ollama",
+            Label = "Ollama",
+            BaseUrl = "http://localhost:11434/v1",
+            ApiFormat = "openai",
+        },
+    ];
 
-    public async ValueTask DisposeAsync()
+    async ValueTask IAsyncDisposable.DisposeAsync()
     {
         if (_webServer is not null)
             await _webServer.DisposeAsync();

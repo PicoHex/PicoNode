@@ -1,3 +1,4 @@
+global using System.Globalization;
 global using System.IO;
 global using System.IO.Pipelines;
 global using System.Net;

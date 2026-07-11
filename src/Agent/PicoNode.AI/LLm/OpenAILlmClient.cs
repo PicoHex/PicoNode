@@ -22,7 +22,7 @@ public sealed class OpenAILlmClient : ILLmClient
             ?? Environment.GetEnvironmentVariable($"{model.Provider.ToUpperInvariant()}_API_KEY")
             ?? "";
 
-        var json = BuildRequestJson(model, context, options);
+        var json = JsonSerializer.Serialize(BuildRequest(model, context, options));
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{model.BaseUrl}{ChatPath}")
         {
@@ -42,7 +42,7 @@ public sealed class OpenAILlmClient : ILLmClient
             var errorMessage = $"HTTP {(int)response.StatusCode}";
             try
             {
-                var errResp = PicoJetson.JsonSerializer.Deserialize<OpenAiErrorResponse>(
+                var errResp = JsonSerializer.Deserialize<OpenAiErrorResponse>(
                     Encoding.UTF8.GetBytes(errorBody)
                 );
                 if (errResp?.Error?.Message is { Length: > 0 } msg)
@@ -72,152 +72,136 @@ public sealed class OpenAILlmClient : ILLmClient
         }
     }
 
-    private static string BuildRequestJson(Model model, ChatContext context, StreamOptions? options)
+    private static OpenAiChatRequest BuildRequest(
+        Model model,
+        ChatContext context,
+        StreamOptions? options
+    )
     {
-        var sb = new StringBuilder(2048);
-        sb.Append('{');
-        sb.Append($"\"model\":\"{EscapeJson(model.Id)}\"");
-        sb.Append(',');
-        sb.Append($"\"max_tokens\":{options?.MaxTokens ?? model.MaxTokens}");
-        sb.Append(',');
-        sb.Append("\"stream\":true");
+        var messages = new List<OpenAiMessage>();
 
-        // Enable thinking mode for providers that support it (DeepSeek, etc.)
+        // System prompt as first message
+        if (!string.IsNullOrEmpty(context.SystemPrompt))
+        {
+            messages.Add(new OpenAiMessage { Role = "system", Content = context.SystemPrompt });
+        }
+
+        // Convert domain messages
+        foreach (var m in context.Messages)
+        {
+            messages.Add(ToOpenAiMessage(m));
+        }
+
+        var req = new OpenAiChatRequest
+        {
+            Model = model.Id,
+            MaxTokens = options?.MaxTokens ?? model.MaxTokens,
+            Stream = true,
+            Messages = messages.ToArray(),
+        };
+
+        // Thinking mode (DeepSeek)
         if (options?.Reasoning is not null && options.ThinkingDisabled is false)
         {
-            sb.Append(',');
-            sb.Append("\"thinking\":{\"type\":\"enabled\"}");
-            var effort = options.Reasoning switch
+            req.Thinking = new OpenAiThinkingConfig { Type = "enabled" };
+            req.ReasoningEffort = options.Reasoning switch
             {
                 ThinkingLevel.Minimal or ThinkingLevel.Low => "low",
                 ThinkingLevel.Medium => "medium",
                 ThinkingLevel.High or ThinkingLevel.XHigh => "high",
                 _ => "high",
             };
-            sb.Append($",\"reasoning_effort\":\"{effort}\"");
         }
 
-        sb.Append(',');
-        sb.Append("\"messages\":[");
-        // Prepend system prompt as the first message if set
-        var msgIdx = 0;
-        if (!string.IsNullOrEmpty(context.SystemPrompt))
-        {
-            sb.Append("{\"role\":\"system\",\"content\":\"");
-            sb.Append(EscapeJson(context.SystemPrompt));
-            sb.Append("\"}");
-            msgIdx = 1;
-        }
-        for (int i = 0; i < context.Messages.Length; i++)
-        {
-            if (msgIdx > 0 || i > 0)
-                sb.Append(',');
-            AppendMessage(sb, context.Messages[i]);
-        }
-        sb.Append(']');
-
-        // Tools (OpenAI function calling)
+        // Tools
         if (context.Tools is { Length: > 0 })
         {
-            sb.Append(",\"tools\":[");
-            for (int i = 0; i < context.Tools.Length; i++)
-            {
-                if (i > 0)
-                    sb.Append(',');
-                sb.Append("{\"type\":\"function\",\"function\":{\"name\":\"");
-                sb.Append(EscapeJson(context.Tools[i].Function.Name));
-                sb.Append("\",\"description\":\"");
-                sb.Append(EscapeJson(context.Tools[i].Function.Description));
-                sb.Append("\",\"parameters\":");
-                sb.Append(context.Tools[i].Function.Parameters); // raw JSON object, no escaping needed
-                sb.Append("}}");
-            }
-            sb.Append(']');
+            req.Tools = context
+                .Tools.Select(t => new OpenAiToolDef
+                {
+                    Type = "function",
+                    Function = new OpenAiFunctionDef
+                    {
+                        Name = t.Function.Name,
+                        Description = t.Function.Description,
+                        Parameters = t.Function.Parameters,
+                    },
+                })
+                .ToArray();
+            req.ToolChoice = "auto";
         }
 
-        // Enable tool calling
-        if (context.Tools is { Length: > 0 })
-            sb.Append(",\"tool_choice\":\"auto\"");
-
-        sb.Append('}');
-        return sb.ToString();
+        return req;
     }
 
-    private static void AppendMessage(StringBuilder sb, Message m)
+    private static OpenAiMessage ToOpenAiMessage(Message m)
     {
         if (m.Role == "toolResult")
         {
-            // OpenAI Chat Completions requires the "tool" role plus a tool_call_id
-            // pointing back at the assistant's originating tool_calls[i].id.
             var text =
                 m.ContentBlocks?.Where(cb => cb.Type == "text")
                     .Select(cb => cb.Text)
                     .FirstOrDefault()
                 ?? "";
-            sb.Append("{\"role\":\"tool\",\"tool_call_id\":\"");
-            sb.Append(EscapeJson(m.ToolCallId ?? ""));
-            sb.Append("\",\"content\":\"");
-            sb.Append(EscapeJson(text));
-            sb.Append("\"}");
-            return;
+            return new OpenAiMessage
+            {
+                Role = "tool",
+                ToolCallId = m.ToolCallId,
+                Content = text,
+            };
         }
 
-        sb.Append('{');
-        sb.Append($"\"role\":\"{m.Role}\"");
-        sb.Append(',');
+        var msg = new OpenAiMessage { Role = m.Role };
+
         if (m.Role == "user")
         {
-            sb.Append($"\"content\":\"{EscapeJson(m.Content)}\"");
+            msg.Content = m.Content;
         }
         else if (m.Role == "assistant")
         {
             var textBlocks = m.ContentBlocks?.Where(cb => cb.Type == "text").ToArray() ?? [];
             var toolCallBlocks =
                 m.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray() ?? [];
-
             var text = textBlocks.Select(cb => cb.Text).FirstOrDefault() ?? "";
 
-            // Include reasoning_content for thinking mode (DeepSeek)
             if (m.ReasoningContent is { Length: > 0 })
-                sb.Append($"\"reasoning_content\":\"{EscapeJson(m.ReasoningContent)}\",");
+                msg.ReasoningContent = m.ReasoningContent;
 
             if (toolCallBlocks.Length > 0 && string.IsNullOrEmpty(text))
-                sb.Append("\"content\":null");
+                msg.Content = null;
             else
-                sb.Append($"\"content\":\"{EscapeJson(text)}\"");
+                msg.Content = text;
 
             if (toolCallBlocks.Length > 0)
             {
-                sb.Append(",\"tool_calls\":[");
-                for (int i = 0; i < toolCallBlocks.Length; i++)
-                {
-                    if (i > 0)
-                        sb.Append(',');
-                    AppendToolCall(sb, toolCallBlocks[i]);
-                }
-                sb.Append(']');
+                msg.ToolCalls = toolCallBlocks
+                    .Select(cb => new OpenAiToolCall
+                    {
+                        Id = cb.Id,
+                        Type = "function",
+                        Function = new OpenAiToolCallFunction
+                        {
+                            Name = cb.Name,
+                            Arguments = DictToJson(cb.Arguments),
+                        },
+                    })
+                    .ToArray();
             }
         }
-        sb.Append('}');
+
+        return msg;
     }
 
-    private static void AppendToolCall(StringBuilder sb, ContentBlock cb)
+    /// <summary>
+    /// Converts Dictionary&lt;string, object?&gt; to a JSON string.
+    /// Extracted from the original hand-crafted AppendArgumentsJson/AppendJsonValue
+    /// and kept as a helper because PicoJetson SG cannot AOT-serialize object? runtime types.
+    /// </summary>
+    internal static string DictToJson(Dictionary<string, object?> args)
     {
-        sb.Append("{\"id\":\"");
-        sb.Append(EscapeJson(cb.Id ?? ""));
-        sb.Append("\",\"type\":\"function\",\"function\":{\"name\":\"");
-        sb.Append(EscapeJson(cb.Name ?? ""));
-        sb.Append("\",\"arguments\":\"");
-        // OpenAI expects `arguments` as a JSON-encoded STRING, so we build the
-        // dictionary JSON first, then escape it as a JSON string literal.
-        var argsJson = new StringBuilder(64);
-        AppendArgumentsJson(argsJson, cb.Arguments);
-        sb.Append(EscapeJson(argsJson.ToString()));
-        sb.Append("\"}}");
-    }
-
-    private static void AppendArgumentsJson(StringBuilder sb, Dictionary<string, object?> args)
-    {
+        if (args.Count == 0)
+            return "{}";
+        var sb = new StringBuilder(256);
         sb.Append('{');
         var first = true;
         foreach (var kv in args)
@@ -226,14 +210,15 @@ public sealed class OpenAILlmClient : ILLmClient
                 sb.Append(',');
             first = false;
             sb.Append('"');
-            sb.Append(EscapeJson(kv.Key));
+            JsonStringEscape(sb, kv.Key);
             sb.Append("\":");
-            AppendJsonValue(sb, kv.Value);
+            AppendValue(sb, kv.Value);
         }
         sb.Append('}');
+        return sb.ToString();
     }
 
-    private static void AppendJsonValue(StringBuilder sb, object? value)
+    private static void AppendValue(StringBuilder sb, object? value)
     {
         switch (value)
         {
@@ -245,35 +230,38 @@ public sealed class OpenAILlmClient : ILLmClient
                 break;
             case string s:
                 sb.Append('"');
-                sb.Append(EscapeJson(s));
+                JsonStringEscape(sb, s);
                 sb.Append('"');
                 break;
-            case int or long or short or byte or sbyte or uint or ulong or ushort:
-                sb.Append(
-                    Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)
-                );
+            case int i:
+                sb.Append(i);
+                break;
+            case long l:
+                sb.Append(l);
                 break;
             case double d:
-                sb.Append(d.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                sb.Append(d.ToString("R", CultureInfo.InvariantCulture));
                 break;
             case float f:
-                sb.Append(f.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
+                sb.Append(f.ToString("R", CultureInfo.InvariantCulture));
                 break;
             case decimal m:
-                sb.Append(m.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                sb.Append(m.ToString(CultureInfo.InvariantCulture));
                 break;
             default:
-                // Fallback: quote the ToString representation so the payload stays valid JSON.
                 sb.Append('"');
-                sb.Append(EscapeJson(value.ToString() ?? ""));
+                JsonStringEscape(sb, value.ToString() ?? "");
                 sb.Append('"');
                 break;
         }
     }
 
-    private static string EscapeJson(string s)
+    /// <summary>
+    /// Escapes special characters for JSON string values.
+    /// Extracted from original EscapeJson — the single canonical implementation.
+    /// </summary>
+    internal static void JsonStringEscape(StringBuilder sb, string s)
     {
-        var sb = new StringBuilder(s.Length + 2);
         foreach (var c in s)
         {
             switch (c)
@@ -301,6 +289,5 @@ public sealed class OpenAILlmClient : ILLmClient
                     break;
             }
         }
-        return sb.ToString();
     }
 }

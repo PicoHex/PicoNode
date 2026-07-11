@@ -14,6 +14,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="PicoNode.Agent.Core" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\Http\PicoNode.Http\PicoNode.Http.csproj" />
     <PackageReference Include="PicoJetson" />
     <PackageReference Include="PicoDI" />
