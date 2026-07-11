@@ -36,9 +36,7 @@ public sealed class AgentSpawnChildTests
                     },
                 ],
                 "x",
-                "y",
-                "/tmp"
-            )
+                "y")
         );
 
         var childLlms = new List<Llm>

@@ -65,7 +65,7 @@ public sealed class AgentLifecycleTests
         );
 
         var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent(llms, "deepseek", "chat", "/tmp")
+            new CreateAgent(llms, "deepseek", "chat")
         );
         system.Send(agent.Id, new StartAgent());
         await Task.Delay(100);

@@ -4,7 +4,6 @@ public sealed record CreateAgent(
     List<Llm> Llms,
     string CurrentProvider,
     string CurrentModel,
-    string HomeDir,
     Guid? ParentId = null,
     List<string>? Packages = null
 ) : ICommand;

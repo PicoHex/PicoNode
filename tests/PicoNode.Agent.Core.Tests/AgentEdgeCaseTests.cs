@@ -36,9 +36,7 @@ public sealed class AgentEdgeCaseTests
                     },
                 ],
                 "x",
-                "y",
-                "/tmp"
-            )
+                "y")
         );
 
         try
@@ -81,9 +79,7 @@ public sealed class AgentEdgeCaseTests
                     },
                 ],
                 "x",
-                "y",
-                "/tmp"
-            )
+                "y")
         );
 
         await Assert

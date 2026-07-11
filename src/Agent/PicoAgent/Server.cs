@@ -311,8 +311,7 @@ public sealed class Server : IAsyncDisposable
                     sp
                     ?? PicoNode.Agent.Domain.SystemPromptBuilder.Build(
                         a.ToolsSnapshot.ToArray(),
-                        a.Skills,
-                        a.HomeDir
+                        a.Skills
                     );
                 return V(JsonHelper.Json(new PromptResponse { Prompt = prompt }));
             }

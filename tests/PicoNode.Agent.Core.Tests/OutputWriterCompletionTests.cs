@@ -38,8 +38,7 @@ public sealed class OutputWriterCompletionTests
                     },
                 ],
                 "x",
-                "y",
-                "/tmp"
+                "y"
             )
         );
 

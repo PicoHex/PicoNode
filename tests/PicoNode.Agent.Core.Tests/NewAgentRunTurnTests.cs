@@ -82,9 +82,7 @@ public sealed class AgentRunTurnTests
                     },
                 ],
                 "x",
-                "y",
-                "/tmp"
-            )
+                "y")
         );
 
         system.Send(agent.Id, new RunTurn("Hi"));
@@ -126,9 +124,7 @@ public sealed class AgentRunTurnTests
                     },
                 ],
                 "x",
-                "y",
-                "/tmp"
-            )
+                "y")
         );
 
         agent.OutputWriter = channel.Writer;

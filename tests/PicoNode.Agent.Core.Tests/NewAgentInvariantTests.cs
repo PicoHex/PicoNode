@@ -39,7 +39,7 @@ public sealed class AgentInvariantTests
         var (system, _) = Create();
         await Assert
             .That(async () =>
-                await system.CreateAsync<DomainAgent>(new CreateAgent([], "a", "b", "/tmp"))
+                await system.CreateAsync<DomainAgent>(new CreateAgent([], "a", "b"))
             )
             .Throws<DomainInvariantException>();
     }
@@ -51,7 +51,7 @@ public sealed class AgentInvariantTests
         await Assert
             .That(async () =>
                 await system.CreateAsync<DomainAgent>(
-                    new CreateAgent([new() { ApiKey = "" }], "a", "a", "/tmp")
+                    new CreateAgent([new() { ApiKey = "" }], "a", "a")
                 )
             )
             .Throws<DomainInvariantException>();
@@ -62,7 +62,7 @@ public sealed class AgentInvariantTests
     {
         var (system, _) = Create();
         var a = await system.CreateAsync<DomainAgent>(
-            new CreateAgent(DefaultLlms(), "deepseek", "chat", "/tmp")
+            new CreateAgent(DefaultLlms(), "deepseek", "chat")
         );
         system.Send(a.Id, new StartAgent());
         await Task.Delay(100);
@@ -74,7 +74,7 @@ public sealed class AgentInvariantTests
     {
         var (system, _) = Create();
         var a = await system.CreateAsync<DomainAgent>(
-            new CreateAgent(DefaultLlms(), "deepseek", "chat", "/tmp")
+            new CreateAgent(DefaultLlms(), "deepseek", "chat")
         );
         system.Send(a.Id, new StartAgent());
         await Task.Delay(50);
@@ -88,7 +88,7 @@ public sealed class AgentInvariantTests
     {
         var (system, _) = Create();
         var a = await system.CreateAsync<DomainAgent>(
-            new CreateAgent(DefaultLlms(), "deepseek", "chat", "/tmp")
+            new CreateAgent(DefaultLlms(), "deepseek", "chat")
         );
         system.Send(a.Id, new RemoveLlmCmd("deepseek", "chat"));
         await Task.Delay(100);
@@ -100,7 +100,7 @@ public sealed class AgentInvariantTests
     {
         var (system, _) = Create();
         var a = await system.CreateAsync<DomainAgent>(
-            new CreateAgent(DefaultLlms(), "deepseek", "chat", "/tmp")
+            new CreateAgent(DefaultLlms(), "deepseek", "chat")
         );
         system.Send(a.Id, new AddToolCmd(new Tool { Name = "read" }));
         await Task.Delay(50);

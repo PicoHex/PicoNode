@@ -95,7 +95,7 @@ public sealed class ServerActorWireTests
             );
 
         var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent(llms, "deepseek", "chat", "/tmp")
+            new CreateAgent(llms, "deepseek", "chat")
         );
         return (system, agent);
     }

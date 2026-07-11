@@ -36,7 +36,7 @@ public sealed class AgentFactory
         );
     }
 
-    public async ValueTask<Agent> BuildAsync(AgentConfig config, string homeDir)
+    public async ValueTask<Agent> BuildAsync(AgentConfig config)
     {
         Register();
 
@@ -45,7 +45,7 @@ public sealed class AgentFactory
         var currentModel = config.Model!;
 
         var agent = await _system.CreateAsync<Agent>(
-            new CreateAgent(llms, currentProvider, currentModel, homeDir, Packages: config.Packages)
+            new CreateAgent(llms, currentProvider, currentModel, Packages: config.Packages)
         );
 
         if (_withBuiltInTools)

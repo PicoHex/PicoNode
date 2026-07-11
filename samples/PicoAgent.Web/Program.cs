@@ -1,11 +1,11 @@
 using PicoNode.Actor;
 using PicoNode.Agent.Domain;
 
-var homeDir = Path.Combine(AppContext.BaseDirectory, "data");
-Directory.CreateDirectory(homeDir);
-Directory.CreateDirectory(Path.Combine(homeDir, FileSystemConstants.SessionsDir));
+var home = new HomeDir(HomeDir.Resolve());
+home.EnsureCreated();
+Directory.CreateDirectory(home.SessionsDir);
 
-var settingsPath = Path.Combine(homeDir, "settings.json");
+var settingsPath = home.ConfigPath;
 if (!File.Exists(settingsPath))
 {
     await File.WriteAllTextAsync(
@@ -31,7 +31,7 @@ if (string.IsNullOrEmpty(config.Model))
 var system = new ActorSystem(new InMemoryEventStore());
 var adapter = PicoAgent.Bootstrap.BuildLlmAdapter(config);
 var factory = new AgentFactory(system, adapter).WithBuiltInTools();
-var agent = await factory.BuildAsync(config, homeDir);
+var agent = await factory.BuildAsync(config);
 system.Send(agent.Id, new StartAgent());
 
 var app = new WebApp(new SvcContainer(), new WebAppOptions { ServerHeader = "PicoAgent.Web" });

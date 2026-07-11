@@ -42,8 +42,7 @@ public sealed class ServerOutputChannelTests
                     },
                 ],
                 "x",
-                "y",
-                "/tmp"
+                "y"
             )
         );
 
@@ -96,8 +95,7 @@ public sealed class ServerOutputChannelTests
                     },
                 ],
                 "x",
-                "y",
-                "/tmp"
+                "y"
             )
         );
 

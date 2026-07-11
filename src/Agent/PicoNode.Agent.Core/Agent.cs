@@ -18,7 +18,6 @@ public sealed class Agent : EventSourcedActor
     public Guid? ParentId { get; private set; }
     public IReadOnlyList<Guid> ChildIds => _childIds;
     public List<string>? Packages { get; private set; }
-    public string HomeDir { get; private set; } = null!;
     public string? FailureReason { get; private set; }
 
     internal ILlmClient? LlmClient { get; init; }
@@ -58,7 +57,6 @@ public sealed class Agent : EventSourcedActor
                         c.Llms,
                         c.CurrentProvider,
                         c.CurrentModel,
-                        c.HomeDir,
                         c.ParentId,
                         c.Packages
                     )
@@ -144,7 +142,7 @@ public sealed class Agent : EventSourcedActor
         if (this.System is not null)
         {
             var child = await this.System.CreateAsync<Agent>(
-                new CreateAgent(s.Llms, s.CurrentProvider, s.CurrentModel, HomeDir, Id)
+                new CreateAgent(s.Llms, s.CurrentProvider, s.CurrentModel, Id)
             );
             RaiseEvent(new ChildSpawned(child.Id));
         }
@@ -188,7 +186,14 @@ public sealed class Agent : EventSourcedActor
                 var thinkingAccum = new StringBuilder();
                 var argAccum = new Dictionary<int, StringBuilder>();
 
-                await foreach (var evt in LlmClient.StreamAsync(CurrentLlm, ctx, ToolsSnapshot, ct))
+                await foreach (
+                    var evt in LlmClient.StreamAsync(
+                        CurrentLlm,
+                        ctx,
+                        ToolsSnapshot,
+                        ct
+                    )
+                )
                 {
                     WriteOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName);
 
@@ -231,7 +236,9 @@ public sealed class Agent : EventSourcedActor
                         case "done":
                             goto streamDone;
                         case "error":
-                            throw new InvalidOperationException(evt.Content ?? "LLM error");
+                            throw new InvalidOperationException(
+                                evt.Content ?? "LLM error"
+                            );
                     }
                 }
                 streamDone:
@@ -239,19 +246,26 @@ public sealed class Agent : EventSourcedActor
                 // Flush accumulated content
                 if (contentAccum.Length > 0)
                     contentBlocks.Add(
-                        new ContentBlock { Type = "text", Text = contentAccum.ToString() }
+                        new ContentBlock
+                        {
+                            Type = "text",
+                            Text = contentAccum.ToString(),
+                        }
                     );
 
                 var finalMessage = new Message
                 {
                     Role = "assistant",
                     ContentBlocks = contentBlocks.ToArray(),
-                    ReasoningContent = thinkingAccum.Length > 0 ? thinkingAccum.ToString() : null,
+                    ReasoningContent =
+                        thinkingAccum.Length > 0 ? thinkingAccum.ToString() : null,
                 };
                 await session.Append(new MessageEntry { Message = finalMessage });
 
                 // Check for tool calls
-                var toolCalls = contentBlocks.Where(cb => cb.Type == "tool_call").ToArray();
+                var toolCalls = contentBlocks
+                    .Where(cb => cb.Type == "tool_call")
+                    .ToArray();
                 hasTools = toolCalls.Length > 0;
 
                 if (hasTools)
@@ -268,11 +282,22 @@ public sealed class Agent : EventSourcedActor
                             Role = "toolResult",
                             ToolCallId = tc.Id,
                             ToolName = tc.Name,
-                            ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
-                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                            ContentBlocks =
+                            [
+                                new ContentBlock { Type = "text", Text = toolResult },
+                            ],
+                            Timestamp = DateTimeOffset
+                                .UtcNow.ToUnixTimeMilliseconds(),
                         };
-                        await session.Append(new MessageEntry { Message = toolMsg });
-                        WriteOutput("tool_result", toolResult, tc.Id, tc.Name);
+                        await session.Append(
+                            new MessageEntry { Message = toolMsg }
+                        );
+                        WriteOutput(
+                            "tool_result",
+                            toolResult,
+                            tc.Id,
+                            tc.Name
+                        );
                     }
                 }
             } while (hasTools && !ct.IsCancellationRequested);
@@ -300,14 +325,16 @@ public sealed class Agent : EventSourcedActor
             case AgentCreated c:
                 _llms.Clear();
                 _llms.AddRange(c.Llms);
-                CurrentLlm = c.Llms.First(l =>
+                CurrentLlm = _llms.First(l =>
                     l.ProviderName == c.CurrentProvider && l.ModelId == c.CurrentModel
                 );
-                HomeDir = c.HomeDir;
                 ParentId = c.ParentId;
                 Packages = c.Packages;
                 Status = AgentStatus.Pending;
-                Session = new Session(Guid.CreateVersion7(), new InMemorySessionStorage());
+                Session = new Session(
+                    Guid.CreateVersion7(),
+                    new InMemorySessionStorage()
+                );
                 break;
             case AgentStarted:
                 Status = AgentStatus.Running;
@@ -328,7 +355,9 @@ public sealed class Agent : EventSourcedActor
                 _llms.Add(a.Llm);
                 break;
             case LlmRemoved r:
-                _llms.RemoveAll(l => l.ProviderName == r.ProviderName && l.ModelId == r.ModelId);
+                _llms.RemoveAll(l =>
+                    l.ProviderName == r.ProviderName && l.ModelId == r.ModelId
+                );
                 break;
             case ToolAdded a:
                 _tools.Add(a.Tool);
@@ -353,7 +382,8 @@ public sealed class Agent : EventSourcedActor
             throw new DomainInvariantException("All Llms must have ApiKey");
         if (
             !cmd.Llms.Any(l =>
-                l.ProviderName == cmd.CurrentProvider && l.ModelId == cmd.CurrentModel
+                l.ProviderName == cmd.CurrentProvider
+                && l.ModelId == cmd.CurrentModel
             )
         )
             throw new DomainInvariantException("CurrentLlm not in Llms");

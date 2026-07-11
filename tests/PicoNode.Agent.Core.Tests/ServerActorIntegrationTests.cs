@@ -37,7 +37,7 @@ public sealed class ServerActorIntegrationTests
                 ApiKey = "sk",
             },
         };
-        var agent = await system.CreateAsync<DomainAgent>(new CreateAgent(llms, "x", "y", "/tmp"));
+        var agent = await system.CreateAsync<DomainAgent>(new CreateAgent(llms, "x", "y"));
 
         // Start via command
         system.Send(agent.Id, new StartAgent());
@@ -79,8 +79,7 @@ public sealed class ServerActorIntegrationTests
                     },
                 ],
                 "x",
-                "y",
-                "/tmp"
+                "y"
             )
         );
         await system.StopAsync(agent.Id);
