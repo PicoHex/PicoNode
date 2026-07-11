@@ -161,4 +161,24 @@ public sealed class ResponseDtoSerializationTests
         await Assert.That(json).Contains("\"error\"");
         await Assert.That(json).Contains("something went wrong");
     }
+
+    [Test]
+    public async Task SessionsResponse_SerializesAsJsonObject()
+    {
+        var dto = new SessionsResponse { Sessions = ["default"] };
+        var json = JsonSerializer.Serialize(dto);
+
+        await Assert.That(json).Contains("\"sessions\"");
+        await Assert.That(json).Contains("\"default\"");
+    }
+
+    [Test]
+    public async Task MessagesResponse_SerializesAsEmptyJsonObject()
+    {
+        var dto = new MessagesResponse();
+        var json = JsonSerializer.Serialize(dto);
+
+        await Assert.That(json).Contains("\"messages\"");
+        await Assert.That(json).Contains("[]");
+    }
 }

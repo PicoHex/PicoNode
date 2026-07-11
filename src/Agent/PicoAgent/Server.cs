@@ -125,7 +125,10 @@ public sealed class Server : IAsyncDisposable
         );
 
         // Sessions
-        app.MapGet($"{p}/sessions", (_, _) => V(JsonHelper.Json(new[] { "default" })));
+        app.MapGet(
+            $"{p}/sessions",
+            (_, _) => V(JsonHelper.Json(new SessionsResponse { Sessions = ["default"] }))
+        );
 
         // Config status
         app.MapGet(
@@ -356,7 +359,7 @@ public sealed class Server : IAsyncDisposable
         app.MapPost($"{p}/session/save/{{id}}", (_, _) => V(JsonHelper.Ok()));
         app.MapGet(
             $"{p}/session/{{id}}/messages",
-            (_, _) => V(JsonHelper.Json(Array.Empty<object>()))
+            (_, _) => V(JsonHelper.Json(new MessagesResponse()))
         );
         app.MapPost($"{p}/session/{{id}}/retry", (_, _) => V(JsonHelper.Ok()));
         app.MapPost(
