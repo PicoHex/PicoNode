@@ -129,7 +129,7 @@ public sealed class Server : IAsyncDisposable
                     { /* skip failed */
                     }
                 }
-                return JsonHelper.RawJson(ModelsToJson(all));
+                return JsonHelper.Json(all);
             }
         );
 
@@ -169,10 +169,7 @@ public sealed class Server : IAsyncDisposable
         );
 
         // Provider templates
-        app.MapGet(
-            $"{p}/config/providers",
-            (_, _) => V(JsonHelper.RawJson(ProvidersToJson(DefaultProviderTemplates)))
-        );
+        app.MapGet($"{p}/config/providers", (_, _) => V(JsonHelper.Json(DefaultProviderTemplates)));
 
         // Config validate
         app.MapPost(
@@ -211,15 +208,10 @@ public sealed class Server : IAsyncDisposable
                             400,
                             "No models found. Check your API key or base URL."
                         );
-                    return JsonHelper.RawJson(
-                        "["
-                            + string.Join(
-                                ",",
-                                models.Select(m =>
-                                    $"{{\"id\":\"{EscapeModelJson(m.Id)}\",\"ownedBy\":\"{EscapeModelJson(m.OwnedBy)}\"}}"
-                                )
-                            )
-                            + "]"
+                    return JsonHelper.Json(
+                        models
+                            .Select(m => new ModelListItem { Id = m.Id, OwnedBy = m.OwnedBy })
+                            .ToList()
                     );
                 }
                 catch (Exception ex)
@@ -518,15 +510,6 @@ public sealed class Server : IAsyncDisposable
         }
         return sb.ToString();
     }
-
-    private static string ModelsToJson(List<ModelListItem> models) =>
-        $"[{string.Join(",", models.Select(m => $"{{\"id\":\"{EscapeModelJson(m.Id)}\",\"ownedBy\":\"{EscapeModelJson(m.OwnedBy)}\"}}"))}]";
-
-    private static string ProvidersToJson(List<ProviderTemplate> providers) =>
-        $"[{string.Join(",", providers.Select(p => $"{{\"name\":\"{EscapeModelJson(p.Name)}\",\"label\":\"{EscapeModelJson(p.Label)}\",\"baseUrl\":\"{EscapeModelJson(p.BaseUrl)}\",\"apiFormat\":\"{EscapeModelJson(p.ApiFormat)}\"}}"))}]";
-
-    private static string EscapeModelJson(string s) =>
-        s.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
     private WebApp BuildWebApp()
     {

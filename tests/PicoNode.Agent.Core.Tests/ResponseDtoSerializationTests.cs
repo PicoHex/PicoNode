@@ -108,6 +108,48 @@ public sealed class ResponseDtoSerializationTests
     }
 
     [Test]
+    public async Task ListOfModelItem_SerializesAsArray()
+    {
+        var list = new List<ModelListItem>
+        {
+            new() { Id = "gpt-4o", OwnedBy = "openai" },
+            new() { Id = "claude-3", OwnedBy = "anthropic" },
+        };
+        var json = JsonSerializer.Serialize(list);
+
+        await Assert.That(json.TrimStart()).StartsWith("[");
+        await Assert.That(json).Contains("\"gpt-4o\"");
+        await Assert.That(json).Contains("\"claude-3\"");
+    }
+
+    [Test]
+    public async Task ListOfProviderTemplate_SerializesAsArray()
+    {
+        var list = new List<ProviderTemplate>
+        {
+            new()
+            {
+                Name = "openai",
+                Label = "OpenAI",
+                BaseUrl = "https://api.openai.com/v1",
+                ApiFormat = "openai",
+            },
+            new()
+            {
+                Name = "deepseek",
+                Label = "DeepSeek",
+                BaseUrl = "https://api.deepseek.com/v1",
+                ApiFormat = "openai",
+            },
+        };
+        var json = JsonSerializer.Serialize(list);
+
+        await Assert.That(json.TrimStart()).StartsWith("[");
+        await Assert.That(json).Contains("\"openai\"");
+        await Assert.That(json).Contains("\"deepseek\"");
+    }
+
+    [Test]
     public async Task PromptWithSpecialChars_HandlesCorrectly()
     {
         var dto = new PromptResponse

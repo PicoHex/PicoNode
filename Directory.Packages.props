@@ -11,7 +11,7 @@
     <PackageVersion Include="PicoCfg.Json" Version="2026.6.16" />
     <PackageVersion Include="PicoDI" Version="2026.6.16" />
     <PackageVersion Include="PicoDI.Abs" Version="2026.6.16" />
-    <PackageVersion Include="PicoJetson" Version="2026.3.19" />
+    <PackageVersion Include="PicoJetson" Version="2026.3.22" />
     <PackageVersion Include="PicoLog" Version="2026.6.16" />
     <PackageVersion Include="PicoLog.Abs" Version="2026.6.16" />
 
