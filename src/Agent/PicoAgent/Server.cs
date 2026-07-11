@@ -129,7 +129,12 @@ public sealed class Server : IAsyncDisposable
                     { /* skip failed */
                     }
                 }
-                return JsonHelper.Json(all);
+                return new HttpResponse
+                {
+                    StatusCode = 200,
+                    Body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(all)),
+                    Headers = [new("Content-Type", "application/json; charset=utf-8")],
+                };
             }
         );
 
@@ -169,7 +174,20 @@ public sealed class Server : IAsyncDisposable
         );
 
         // Provider templates
-        app.MapGet($"{p}/config/providers", (_, _) => V(JsonHelper.Json(DefaultProviderTemplates)));
+        app.MapGet(
+            $"{p}/config/providers",
+            (_, _) =>
+                V(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        Body = Encoding.UTF8.GetBytes(
+                            JsonSerializer.Serialize(DefaultProviderTemplates)
+                        ),
+                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
+                    }
+                )
+        );
 
         // Config validate
         app.MapPost(
@@ -208,11 +226,22 @@ public sealed class Server : IAsyncDisposable
                             400,
                             "No models found. Check your API key or base URL."
                         );
-                    return JsonHelper.Json(
-                        models
-                            .Select(m => new ModelListItem { Id = m.Id, OwnedBy = m.OwnedBy })
-                            .ToList()
-                    );
+                    return new HttpResponse
+                    {
+                        StatusCode = 200,
+                        Body = Encoding.UTF8.GetBytes(
+                            JsonSerializer.Serialize(
+                                models
+                                    .Select(m => new ModelListItem
+                                    {
+                                        Id = m.Id,
+                                        OwnedBy = m.OwnedBy,
+                                    })
+                                    .ToList()
+                            )
+                        ),
+                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
+                    };
                 }
                 catch (Exception ex)
                 {
