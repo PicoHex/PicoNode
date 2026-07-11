@@ -126,11 +126,7 @@ public sealed class AgentFactory
             "bash",
             "Execute shell command",
             """{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}""",
-            async (args, ct) =>
-            {
-                var cmd = GetArg(args, "command");
-                return await RunBashAsync(cmd, ct);
-            }
+            ToolHandlers.BashAsync
         );
         RegisterTool(
             agent,
@@ -189,36 +185,6 @@ public sealed class AgentFactory
 
     private static string GetArg(Dictionary<string, object?> args, string key, string def = "") =>
         args.GetValueOrDefault(key)?.ToString() ?? def;
-
-    private static async Task<string> RunBashAsync(string command, CancellationToken ct)
-    {
-        try
-        {
-            using var p = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/bash",
-                    Arguments = OperatingSystem.IsWindows()
-                        ? $"/c \"{command}\""
-                        : $"-c \"{command}\"",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                },
-            };
-            p.Start();
-            var stdout = await p.StandardOutput.ReadToEndAsync(ct);
-            var stderr = await p.StandardError.ReadToEndAsync(ct);
-            await p.WaitForExitAsync(ct);
-            return stdout + (stderr.Length > 0 ? "\n" + stderr : "");
-        }
-        catch (Exception ex)
-        {
-            return $"[bash error: {ex.Message}]";
-        }
-    }
 
     private static List<Llm> BuildLlms(AgentConfig config)
     {

@@ -83,6 +83,15 @@ public static class ToolHandlers
 
     private static string EscapeShellArg(string s) => s.Replace("\"", "\\\"");
 
+    public static async Task<string> BashAsync(
+        Dictionary<string, object?> args,
+        CancellationToken ct
+    )
+    {
+        var cmd = args.GetValueOrDefault("command")?.ToString() ?? "";
+        return await RunShellAsync(cmd, ct);
+    }
+
     public static (string Shell, string[] Args) GetShellConfig()
     {
         if (OperatingSystem.IsWindows())
