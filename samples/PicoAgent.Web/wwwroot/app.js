@@ -331,9 +331,11 @@ async function sendMessage(overrideText) {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
                         segStart = rawText.length;
                         const tid = evt.toolCallId || 'tool_' + Date.now();
+                        const tKey = evt.toolName || tid;
                         toolBlocks[tid] = { name: evt.toolName || 'tool', args: '', result: '', isError: false, isSkill: false };
+                        toolBlocks[tKey] = toolBlocks[tid];  // alias by toolName for tool_result matching
                         const tcDiv = document.createElement('details');
-                        tcDiv.className = 'tool-call'; tcDiv.dataset.toolId = tid; tcDiv.open = true;
+                        tcDiv.className = 'tool-call'; tcDiv.dataset.toolId = tid; tcDiv.dataset.toolName = evt.toolName || ''; tcDiv.open = true;
                         tcDiv.innerHTML = '<summary>🔧 <strong>' + (evt.toolName || 'tool') + '</strong> <span class="tool-args">running...</span></summary><div class="tool-result"></div>';
                         msgContent.appendChild(tcDiv);
                     }
@@ -354,6 +356,8 @@ async function sendMessage(overrideText) {
                                 tcDiv.open = true;
                                 if (evt.toolName) {
                                     toolBlocks[tid].name = evt.toolName;
+                                    toolBlocks[evt.toolName] = toolBlocks[tid];  // update alias
+                                    tcDiv.dataset.toolName = evt.toolName;
                                     const strong = tcDiv.querySelector('summary strong');
                                     if (strong) strong.textContent = evt.toolName;
                                 }
@@ -372,27 +376,30 @@ async function sendMessage(overrideText) {
                     }
                     else if (evt.type === 'tool_result') {
                         const tid = evt.toolCallId;
-                        if (tid && toolBlocks[tid]) {
-                            toolBlocks[tid].result = evt.content || '';
-                            toolBlocks[tid].isError = evt.isError;
-                            const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
+                        const tName = evt.toolName;
+                        let block = (tid && toolBlocks[tid]) ? toolBlocks[tid] : (tName && toolBlocks[tName]) ? toolBlocks[tName] : null;
+                        if (block) {
+                            block.result = evt.content || '';
+                            block.isError = evt.isError;
+                            const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]')
+                                || msgContent.querySelector('.tool-call[data-tool-name="' + CSS.escape(tName || tid) + '"]');
                             if (tcDiv) {
                                 tcDiv.classList.toggle('tool-error', evt.isError);
-                                const truncated = toolBlocks[tid].result.length > 1000
-                                    ? toolBlocks[tid].result.substring(0, 1000) + '\n... (truncated)'
-                                    : toolBlocks[tid].result;
+                                const truncated = block.result.length > 1000
+                                    ? block.result.substring(0, 1000) + '\n... (truncated)'
+                                    : block.result;
                                 tcDiv.querySelector('.tool-result').textContent = truncated;
                                 tcDiv.open = false;
                                 const summary = tcDiv.querySelector('summary');
-                                const name = toolBlocks[tid].name;
+                                const name = block.name;
                                 const prefix = evt.isError ? '❌ ' : '';
                                 // For skill reads, extract skill name from YAML frontmatter
-                                if (toolBlocks[tid].isSkill && !evt.isError) {
-                                    const m = toolBlocks[tid].result.match(/^---\s*\nname:\s*(\S+)/m);
+                                if (block.isSkill && !evt.isError) {
+                                    const m = block.result.match(/^---\s*\nname:\s*(\S+)/m);
                                     const skillName = m ? m[1] : name;
                                     summary.innerHTML = prefix + '📚 <strong>' + skillName + '</strong>';
-                                } else if (summary && toolBlocks[tid].args) {
-                                    try { const parsed = JSON.parse(toolBlocks[tid].args); summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong> <span class="tool-args">' + JSON.stringify(parsed) + '</span>'; }
+                                } else if (summary && block.args) {
+                                    try { const parsed = JSON.parse(block.args); summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong> <span class="tool-args">' + JSON.stringify(parsed) + '</span>'; }
                                     catch (e) { summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong>'; }
                                 } else if (summary) {
                                     summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong>';
