@@ -406,34 +406,16 @@ public sealed class Server : IAsyncDisposable
 
                             await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
                             {
-                                var sseEvent =
-                                    evt.Type == "done"
-                                        ? new SseEvent
-                                        {
-                                            Type = "done",
-                                            Content = string.Empty,
-                                            ToolCallId = string.Empty,
-                                            ToolName = string.Empty,
-                                        }
-                                        : new SseEvent
-                                        {
-                                            Type = evt.Type == "text" ? "delta" : evt.Type,
-                                            Content = evt.Data ?? "",
-                                            ToolCallId = evt.ToolCallId ?? "",
-                                            ToolName = evt.ToolName ?? "",
-                                        };
-                                var json = JsonSerializer.Serialize(sseEvent);
+                                var sseJson = BuildSseJson(evt);
                                 await pipe.Writer.WriteAsync(
-                                    Encoding.UTF8.GetBytes($"data: {json}\n\n"),
+                                    Encoding.UTF8.GetBytes($"data: {sseJson}\n\n"),
                                     ct
                                 );
                             }
                         }
                         catch (Exception ex)
                         {
-                            var errJson = JsonSerializer.Serialize(
-                                new SseEvent { Type = "error", Content = ex.Message }
-                            );
+                            var errJson = BuildSseJson(new ActorOutputEvent("error", ex.Message));
                             await pipe.Writer.WriteAsync(
                                 Encoding.UTF8.GetBytes($"data: {errJson}\n\n"),
                                 ct
@@ -463,6 +445,75 @@ public sealed class Server : IAsyncDisposable
     }
 
     // ── Private helpers ─────────────────────────────────────────────
+
+    internal static string BuildSseJson(ActorOutputEvent evt)
+    {
+        var tp = evt.Type == "text" ? "delta" : evt.Type;
+        if (tp == "done")
+            return "{\"type\":\"done\"}";
+
+        var sb = new StringBuilder(128);
+        sb.Append("{\"type\":\"");
+        sb.Append(tp);
+        sb.Append("\"");
+
+        if (evt.Data is { Length: > 0 })
+        {
+            sb.Append(",\"content\":\"");
+            sb.Append(EscapeJsonString(evt.Data));
+            sb.Append('"');
+        }
+
+        if (evt.ToolCallId is { Length: > 0 })
+        {
+            sb.Append(",\"toolCallId\":\"");
+            sb.Append(evt.ToolCallId);
+            sb.Append('"');
+        }
+
+        if (evt.ToolName is { Length: > 0 })
+        {
+            sb.Append(",\"toolName\":\"");
+            sb.Append(evt.ToolName);
+            sb.Append('"');
+        }
+
+        sb.Append('}');
+        return sb.ToString();
+    }
+
+    private static string EscapeJsonString(string s)
+    {
+        var sb = new StringBuilder(s.Length);
+        foreach (var c in s)
+        {
+            switch (c)
+            {
+                case '"':
+                    sb.Append("\\\"");
+                    break;
+                case '\\':
+                    sb.Append("\\\\");
+                    break;
+                case '\n':
+                    sb.Append("\\n");
+                    break;
+                case '\r':
+                    sb.Append("\\r");
+                    break;
+                case '\t':
+                    sb.Append("\\t");
+                    break;
+                default:
+                    if (c < 0x20)
+                        sb.Append($"\\u{(int)c:X4}");
+                    else
+                        sb.Append(c);
+                    break;
+            }
+        }
+        return sb.ToString();
+    }
 
     private WebApp BuildWebApp()
     {
