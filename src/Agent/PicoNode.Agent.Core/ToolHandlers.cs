@@ -52,9 +52,7 @@ public static class ToolHandlers
         if (!Directory.Exists(dir))
             return $"[Error: Directory not found: {dir}]";
 
-        var command = OperatingSystem.IsWindows()
-            ? $"findstr /s /n /i \"{pattern}\" \"{dir}\\*\""
-            : $"grep -rn -I \"{pattern}\" \"{dir}\"";
+        var command = $"grep -rn -I \"{pattern}\" \"{dir}\"";
 
         var result = await RunShellAsync(command, ct);
         return string.IsNullOrWhiteSpace(result) ? "No matches found" : result;
@@ -71,9 +69,7 @@ public static class ToolHandlers
         if (!Directory.Exists(dir))
             return $"[Error: Directory not found: {dir}]";
 
-        var command = OperatingSystem.IsWindows()
-            ? $"dir /s /b \"{Path.Combine(dir, name)}\" 2>nul"
-            : $"find \"{dir}\" -name \"{name}\"";
+        var command = $"find \"{dir}\" -name \"{name}\"";
 
         var result = await RunShellAsync(command, ct);
         return string.IsNullOrWhiteSpace(result) ? "No files found" : result;
@@ -81,22 +77,47 @@ public static class ToolHandlers
 
     private static string EscapeShellArg(string s) => s.Replace("\"", "\\\"");
 
+    public static (string Shell, string[] Args) GetShellConfig()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var bashPaths = new[]
+            {
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                    "Git",
+                    "bin",
+                    "bash.exe"
+                ),
+                @"C:\Program Files\Git\bin\bash.exe",
+            };
+            foreach (var p in bashPaths)
+                if (File.Exists(p))
+                    return (p, new[] { "-c" });
+            return ("cmd.exe", new[] { "/c" });
+        }
+        return ("/bin/bash", new[] { "-c" });
+    }
+
     private static async Task<string> RunShellAsync(string command, CancellationToken ct)
     {
         try
         {
+            var (shell, args) = GetShellConfig();
             using var p = new Process
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName = OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/bash",
-                    Arguments = OperatingSystem.IsWindows() ? $"/c {command}" : $"-c \"{command}\"",
+                    FileName = shell,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                 },
             };
+            foreach (var a in args)
+                p.StartInfo.ArgumentList.Add(a);
+            p.StartInfo.ArgumentList.Add(command);
             p.Start();
             var stdout = await p.StandardOutput.ReadToEndAsync(ct);
             var stderr = await p.StandardError.ReadToEndAsync(ct);
