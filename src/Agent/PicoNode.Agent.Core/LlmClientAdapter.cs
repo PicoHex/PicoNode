@@ -157,7 +157,7 @@ public sealed class LlmClientAdapter : ILlmClient
                     {
                         Name = t.Name,
                         Description = t.Description,
-                        Parameters = t.InputSchema ?? "{}",
+                        Parameters = t.InputSchema ?? "{\"type\":\"object\"}",
                     },
                 })
                 .ToArray();
