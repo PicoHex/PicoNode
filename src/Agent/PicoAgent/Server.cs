@@ -526,6 +526,12 @@ public sealed class Server : IAsyncDisposable
     {
         var app = new WebApp(new SvcContainer(), new WebAppOptions());
         AddEndpoints(app, _agent, _system, _llmClient, _toolRunner, "/api");
+
+        // Serve static files from wwwroot alongside the app directory
+        var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+        if (Directory.Exists(wwwroot))
+            app.Use(new StaticFileMiddleware(wwwroot).InvokeAsync);
+
         return app;
     }
 

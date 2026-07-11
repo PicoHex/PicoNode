@@ -7,6 +7,16 @@ public static class Bootstrap
         CancellationToken ct = default
     )
     {
+        var (server, system) = await CreateAsync(ct);
+        var uri = args.Length > 0 && args[0].StartsWith("http") ? args[0] : "http://localhost:8080";
+        await server.ListenAsync(uri);
+        return (server, system);
+    }
+
+    public static async Task<(Server Server, IActorSystem System)> CreateAsync(
+        CancellationToken ct = default
+    )
+    {
         var home = new HomeDir(HomeDir.Resolve());
         home.EnsureCreated();
         Directory.CreateDirectory(home.SessionsDir);
@@ -17,33 +27,16 @@ public static class Bootstrap
         {
             config.Providers = new Dictionary<string, ProviderEntry>
             {
-                ["unconfigured"] = new()
-                {
-                    ApiKey = "unconfigured",
-                    BaseUrl = "http://localhost",
-                },
+                ["unconfigured"] = new() { ApiKey = "unconfigured", BaseUrl = "http://localhost" },
             };
-            config.Model = string.IsNullOrEmpty(config.Model)
-                ? "unconfigured"
-                : config.Model;
+            config.Model = string.IsNullOrEmpty(config.Model) ? "unconfigured" : config.Model;
         }
 
         var system = new ActorSystem(new InMemoryEventStore());
         var llmAdapter = BuildLlmAdapter(config);
         var factory = new AgentFactory(system, llmAdapter).WithBuiltInTools();
         var agent = await factory.BuildAsync(config);
-        var server = new Server(
-            agent,
-            system,
-            llmAdapter,
-            factory.GetToolRunner()
-        );
-
-        var uri =
-            args.Length > 0 && args[0].StartsWith("http")
-                ? args[0]
-                : "http://localhost:8080";
-        await server.ListenAsync(uri);
+        var server = new Server(agent, system, llmAdapter, factory.GetToolRunner());
         return (server, system);
     }
 
@@ -100,9 +93,7 @@ public static class Bootstrap
                 Providers = [],
                 Model = "unconfigured",
                 ThinkingEnabled = true,
-                ThinkingLevel = AgentConfig
-                    .DefaultThinkingLevel.ToString()
-                    .ToLowerInvariant(),
+                ThinkingLevel = AgentConfig.DefaultThinkingLevel.ToString().ToLowerInvariant(),
                 MaxTokens = 4096,
             };
             var json =
@@ -111,8 +102,7 @@ public static class Bootstrap
             return def;
         }
         var raw = await File.ReadAllTextAsync(path);
-        return PicoJetson.JsonSerializer.Deserialize<AgentConfig>(
-            Encoding.UTF8.GetBytes(raw)
-        ) ?? new AgentConfig { Providers = [], Model = "" };
+        return PicoJetson.JsonSerializer.Deserialize<AgentConfig>(Encoding.UTF8.GetBytes(raw))
+            ?? new AgentConfig { Providers = [], Model = "" };
     }
 }
