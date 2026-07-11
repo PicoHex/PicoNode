@@ -1,8 +1,7 @@
 namespace PicoNode.AI;
 
 /// <summary>
-/// LLM API request DTOs. Replaces hand-crafted JSON in OpenAILlmClient.
-/// Uses [JsonPropertyName] for snake_case fields required by the OpenAI API.
+/// OpenAI Chat Completions request DTOs (tools injected manually for raw JSON parameters).
 /// </summary>
 [PicoSerializable]
 public sealed class OpenAiChatRequest
@@ -18,12 +17,6 @@ public sealed class OpenAiChatRequest
 
     [JsonPropertyName("messages")]
     public OpenAiMessage[] Messages { get; set; } = [];
-
-    [JsonPropertyName("tools")]
-    public OpenAiToolDef[]? Tools { get; set; }
-
-    [JsonPropertyName("tool_choice")]
-    public string? ToolChoice { get; set; }
 
     [JsonPropertyName("thinking")]
     public OpenAiThinkingConfig? Thinking { get; set; }
@@ -79,27 +72,4 @@ public sealed class OpenAiToolCallFunction
 
     [JsonPropertyName("arguments")]
     public string Arguments { get; set; } = "{}";
-}
-
-[PicoSerializable]
-public sealed class OpenAiToolDef
-{
-    [JsonPropertyName("type")]
-    public string Type { get; set; } = "function";
-
-    [JsonPropertyName("function")]
-    public OpenAiFunctionDef Function { get; set; } = new();
-}
-
-[PicoSerializable]
-public sealed class OpenAiFunctionDef
-{
-    [JsonPropertyName("name")]
-    public string Name { get; set; } = "";
-
-    [JsonPropertyName("description")]
-    public string Description { get; set; } = "";
-
-    [JsonPropertyName("parameters")]
-    public string Parameters { get; set; } = "{}";
 }

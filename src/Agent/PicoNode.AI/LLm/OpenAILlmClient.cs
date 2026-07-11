@@ -22,7 +22,7 @@ public sealed class OpenAILlmClient : ILLmClient
             ?? Environment.GetEnvironmentVariable($"{model.Provider.ToUpperInvariant()}_API_KEY")
             ?? "";
 
-        var json = JsonSerializer.Serialize(BuildRequest(model, context, options));
+        var json = BuildRequestJson(model, context, options);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{model.BaseUrl}{ChatPath}")
         {
@@ -72,25 +72,15 @@ public sealed class OpenAILlmClient : ILLmClient
         }
     }
 
-    private static OpenAiChatRequest BuildRequest(
-        Model model,
-        ChatContext context,
-        StreamOptions? options
-    )
+    private static string BuildRequestJson(Model model, ChatContext context, StreamOptions? options)
     {
         var messages = new List<OpenAiMessage>();
 
-        // System prompt as first message
         if (!string.IsNullOrEmpty(context.SystemPrompt))
-        {
             messages.Add(new OpenAiMessage { Role = "system", Content = context.SystemPrompt });
-        }
 
-        // Convert domain messages
         foreach (var m in context.Messages)
-        {
             messages.Add(ToOpenAiMessage(m));
-        }
 
         var req = new OpenAiChatRequest
         {
@@ -100,7 +90,6 @@ public sealed class OpenAILlmClient : ILLmClient
             Messages = messages.ToArray(),
         };
 
-        // Thinking mode (DeepSeek)
         if (options?.Reasoning is not null && options.ThinkingDisabled is false)
         {
             req.Thinking = new OpenAiThinkingConfig { Type = "enabled" };
@@ -113,25 +102,32 @@ public sealed class OpenAILlmClient : ILLmClient
             };
         }
 
-        // Tools
+        var json = JsonSerializer.Serialize(req);
+
+        // Tools: parameters must be raw JSON (not escaped string), so inject manually
         if (context.Tools is { Length: > 0 })
         {
-            req.Tools = context
-                .Tools.Select(t => new OpenAiToolDef
-                {
-                    Type = "function",
-                    Function = new OpenAiFunctionDef
-                    {
-                        Name = t.Function.Name,
-                        Description = t.Function.Description,
-                        Parameters = t.Function.Parameters,
-                    },
-                })
-                .ToArray();
-            req.ToolChoice = "auto";
+            var sb = new StringBuilder(json.Length + context.Tools.Length * 256);
+            // Drop the closing }, inject tools + tool_choice, re-close
+            sb.Append(json.AsSpan(0, json.Length - 1));
+            sb.Append(",\"tools\":[");
+            for (int i = 0; i < context.Tools.Length; i++)
+            {
+                if (i > 0)
+                    sb.Append(',');
+                sb.Append("{\"type\":\"function\",\"function\":{\"name\":\"");
+                JsonStringEscape(sb, context.Tools[i].Function.Name);
+                sb.Append("\",\"description\":\"");
+                JsonStringEscape(sb, context.Tools[i].Function.Description);
+                sb.Append("\",\"parameters\":");
+                sb.Append(context.Tools[i].Function.Parameters); // raw JSON, no escaping
+                sb.Append("}}");
+            }
+            sb.Append("],\"tool_choice\":\"auto\"}");
+            json = sb.ToString();
         }
 
-        return req;
+        return json;
     }
 
     private static OpenAiMessage ToOpenAiMessage(Message m)
@@ -181,7 +177,7 @@ public sealed class OpenAILlmClient : ILLmClient
                         Type = "function",
                         Function = new OpenAiToolCallFunction
                         {
-                            Name = cb.Name,
+                            Name = cb.Name ?? "",
                             Arguments = DictToJson(cb.Arguments),
                         },
                     })
@@ -192,11 +188,10 @@ public sealed class OpenAILlmClient : ILLmClient
         return msg;
     }
 
-    /// <summary>
-    /// Converts Dictionary&lt;string, object?&gt; to a JSON string.
-    /// Extracted from the original hand-crafted AppendArgumentsJson/AppendJsonValue
-    /// and kept as a helper because PicoJetson SG cannot AOT-serialize object? runtime types.
-    /// </summary>
+    // ═══════════════════════════════════════════════════════════════
+    //  Shared helpers (also used by AnthropicLLmClient / LlmClientAdapter)
+    // ═══════════════════════════════════════════════════════════════
+
     internal static string DictToJson(Dictionary<string, object?> args)
     {
         if (args.Count == 0)
@@ -256,10 +251,6 @@ public sealed class OpenAILlmClient : ILLmClient
         }
     }
 
-    /// <summary>
-    /// Escapes special characters for JSON string values.
-    /// Extracted from original EscapeJson — the single canonical implementation.
-    /// </summary>
     internal static void JsonStringEscape(StringBuilder sb, string s)
     {
         foreach (var c in s)

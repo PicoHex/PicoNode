@@ -1,4 +1,3 @@
-using System.Text;
 using PicoJetson;
 using PicoNode.AI.Types;
 
@@ -6,7 +5,6 @@ namespace PicoNode.Agent.Core.Tests;
 
 /// <summary>
 /// TDD: OpenAI LLM request DTO serialization via PicoJetson.
-/// Replaces hand-crafted JSON in OpenAILlmClient.BuildRequestJson.
 /// </summary>
 public sealed class LlmRequestDtoSerializationTests
 {
@@ -29,39 +27,6 @@ public sealed class LlmRequestDtoSerializationTests
         await Assert.That(json).Contains("\"stream\"");
         await Assert.That(json).Contains("true");
         await Assert.That(json).Contains("\"messages\"");
-    }
-
-    [Test]
-    public async Task OpenAiChatRequest_WithTools()
-    {
-        var req = new OpenAiChatRequest
-        {
-            Model = "deepseek-chat",
-            MaxTokens = 2000,
-            Stream = true,
-            Messages = [],
-            Tools =
-            [
-                new OpenAiToolDef
-                {
-                    Type = "function",
-                    Function = new OpenAiFunctionDef
-                    {
-                        Name = "read",
-                        Description = "Read file contents",
-                        Parameters =
-                            """{"type":"object","properties":{"path":{"type":"string"}}}""",
-                    },
-                },
-            ],
-            ToolChoice = "auto",
-        };
-        var json = JsonSerializer.Serialize(req);
-
-        await Assert.That(json).Contains("\"tools\"");
-        await Assert.That(json).Contains("\"function\"");
-        await Assert.That(json).Contains("\"read\"");
-        await Assert.That(json).Contains("\"tool_choice\"");
     }
 
     [Test]
@@ -100,5 +65,25 @@ public sealed class LlmRequestDtoSerializationTests
 
         await Assert.That(json).Contains("\"system\"");
         await Assert.That(json).Contains("\"content\"");
+    }
+
+    /// <summary>
+    /// Tools are injected manually into the JSON output (parameters need raw JSON,
+    /// not escaped string). Verify the DTO does NOT serialize escaped parameters.
+    /// </summary>
+    [Test]
+    public async Task OpenAiChatRequest_NoToolsField()
+    {
+        var req = new OpenAiChatRequest
+        {
+            Model = "gpt-4o",
+            MaxTokens = 100,
+            Stream = true,
+            Messages = [],
+        };
+        var json = JsonSerializer.Serialize(req);
+
+        await Assert.That(json).DoesNotContain("\"tools\"");
+        await Assert.That(json).DoesNotContain("\"tool_choice\"");
     }
 }
