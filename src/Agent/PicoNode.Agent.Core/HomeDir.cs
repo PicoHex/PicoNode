@@ -3,6 +3,7 @@ namespace PicoNode.Agent.Domain;
 /// <summary>
 /// PicoAgent home directory resolution.
 /// Priority: PICO_AGENT_HOME env var → ./data/ (portable) → ~/.pico-agent/ (default).
+/// Pass customPath to Resolve() for CLI --home flag support.
 /// </summary>
 public sealed class HomeDir
 {
@@ -10,16 +11,13 @@ public sealed class HomeDir
 
     public HomeDir(string root) => Root = root;
 
-    /// <summary>
-    /// Resolve home directory without side effects.
-    /// </summary>
     public static string Resolve(string? customPath = null) =>
-        Resolve(customPath ?? Environment.GetEnvironmentVariable("PICO_AGENT_HOME"));
+        ResolveCore(customPath ?? Environment.GetEnvironmentVariable("PICO_AGENT_HOME"));
 
-    internal static string Resolve(string? envVar)
+    internal static string ResolveCore(string? envOrPath)
     {
-        if (envVar is { Length: > 0 } && Directory.Exists(envVar))
-            return Path.GetFullPath(envVar);
+        if (envOrPath is { Length: > 0 } && Directory.Exists(envOrPath))
+            return Path.GetFullPath(envOrPath);
 
         var portable = Path.Combine(Directory.GetCurrentDirectory(), "data");
         if (Directory.Exists(portable))

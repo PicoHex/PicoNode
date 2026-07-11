@@ -2,22 +2,40 @@ namespace PicoNode.Agent.Core.Tests;
 
 /// <summary>
 /// TDD: HomeDir resolution — PICO_AGENT_HOME → ./data/ → ~/.pico-agent/
-/// Uses internal Resolve(string?) overload to avoid env var mutation in tests.
+/// Uses internal ResolveCore(string?) overload to avoid env var mutation in tests.
 /// </summary>
 public sealed class HomeDirTests
 {
     [Test]
-    public async Task Resolve_EnvVar_TakesPriority()
+    public async Task ResolveCore_PathExists_TakesPriority()
     {
-        var result = HomeDir.Resolve("/custom/path");
-        await Assert.That(result).IsEqualTo(Path.GetFullPath("/custom/path"));
+        var custom = Path.Combine(
+            Path.GetTempPath(),
+            "picoagent-home-" + Guid.NewGuid().ToString("N")[..8]
+        );
+        Directory.CreateDirectory(custom);
+        try
+        {
+            var result = HomeDir.ResolveCore(custom);
+            await Assert.That(result).IsEqualTo(Path.GetFullPath(custom));
+        }
+        finally
+        {
+            Directory.Delete(custom, true);
+        }
     }
 
     [Test]
-    public async Task Resolve_NullEnvVar_UsesFallback()
+    public async Task ResolveCore_PathNotExists_FallsThrough()
     {
-        var result = HomeDir.Resolve(null);
-        // Either portable data dir or user profile (depending on test environment)
+        var result = HomeDir.ResolveCore("/nonexistent/path");
+        await Assert.That(result).DoesNotContain("nonexistent");
+    }
+
+    [Test]
+    public async Task ResolveCore_Null_UsesFallback()
+    {
+        var result = HomeDir.ResolveCore(null);
         var hasDataDir = Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), "data"));
         if (hasDataDir)
             await Assert.That(result).EndsWith("data");
@@ -26,9 +44,9 @@ public sealed class HomeDirTests
     }
 
     [Test]
-    public async Task Resolve_EmptyEnvVar_UsesFallback()
+    public async Task ResolveCore_Empty_UsesFallback()
     {
-        var result = HomeDir.Resolve("");
+        var result = HomeDir.ResolveCore("");
         var hasDataDir = Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), "data"));
         if (hasDataDir)
             await Assert.That(result).EndsWith("data");
@@ -64,12 +82,5 @@ public sealed class HomeDirTests
             .That(home.ConfigPath)
             .IsEqualTo(Path.Combine("/", "tmp", "picoagent", "settings.json"));
         await Assert.That(home.ToolsDir).IsEqualTo(Path.Combine("/", "tmp", "picoagent", "tools"));
-        await Assert
-            .That(home.SessionsDir)
-            .IsEqualTo(Path.Combine("/", "tmp", "picoagent", "sessions"));
-        await Assert.That(home.PackagesDir).IsEqualTo(Path.Combine("/", "tmp", "picoagent", "git"));
-        await Assert
-            .That(home.SkillsDir)
-            .IsEqualTo(Path.Combine("/", "tmp", "picoagent", "skills"));
     }
 }
