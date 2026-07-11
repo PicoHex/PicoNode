@@ -50,7 +50,7 @@ function forgetThinking(sid) {
 async function api(method, url, body) {
     const opts = { method }; if (body !== undefined) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(body); }
     const r = await fetch(url, opts); if (!r.ok) throw new Error(`${r.status}`);
-    return r.headers.get('content-type')?.includes('json') !== false ? r.json() : r.text();
+    return r.headers.get('content-type')?.includes('json') ? r.json() : r.text();
 }
 async function loadHealth() { try { const h = await api('GET', '/api/health'); currentModel = h.model; currentProvider = h.provider; updateStatus(); } catch (e) { console.warn('loadHealth failed:', e); } }
 function updateStatus() { statusEl.textContent = currentProvider ? `${currentModel} @ ${currentProvider}` : currentModel || '--'; }
@@ -86,7 +86,7 @@ async function loadSessions() {
 }
 async function switchSession(id) { currentSession = id; document.querySelectorAll('#session-list .session').forEach(el => el.classList.toggle('active', el.dataset.id === id)); await loadMessages(id); messages.scrollTop = messages.scrollHeight; }
 async function createSession() { const n = prompt('Session name:')?.trim(); if (!n) return; try { await api('POST', `/api/session/create/${n}`); await loadSessions(); switchSession(n); } catch (e) { showToast('Failed: ' + e.message, true); } }
-async function deleteSession(id, el) { if (id === 'default') { showToast('Cannot delete default', true); return; } if (!confirm(`Delete "${id}"?`)) return; try { await fetch(`/api/session/delete/${id}`, { method: 'POST' }); forgetThinking(id); if (currentSession === id) { currentSession = 'default'; await switchSession('default'); } await loadSessions(); showToast('Deleted'); } catch (e) { showToast('Delete failed: ' + e.message, true); } }
+async function deleteSession(id, el) { if (id === 'default') { showToast('Cannot delete default', true); return; } if (!confirm(`Delete "${id}"?`)) return; try { await api('POST', `/api/session/delete/${id}`); forgetThinking(id); if (currentSession === id) { currentSession = 'default'; await switchSession('default'); } await loadSessions(); showToast('Deleted'); } catch (e) { showToast('Delete failed: ' + e.message, true); } }
 async function saveSession() { const b = document.getElementById('btn-save-session'); b.textContent = '...'; try { await api('POST', `/api/session/save/${currentSession}`); b.textContent = '✓'; } catch { b.textContent = '✗'; } setTimeout(() => { b.textContent = '💾'; }, 1500); }
 async function compactSession(id, btn) { const o = btn.textContent; btn.textContent = '...'; btn.disabled = true; try { const r = await api('POST', `/api/session/${id}/compact`, { keepRecent: 20 }); showToast(r.compressedCount > 0 ? `Compressed ${r.compressedCount} msgs, saved ${r.tokensSaved} tokens` : 'Nothing to compress'); forgetThinking(id); btn.textContent = '✓'; if (id === currentSession) await loadMessages(id); } catch (e) { showToast('Compression failed: ' + e.message, true); btn.textContent = '✗'; } setTimeout(() => { btn.textContent = o; btn.disabled = false; }, 1500); }
 
@@ -330,6 +330,10 @@ async function sendMessage(overrideText) {
                     else if (evt.type === 'tool_call_start') {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
                         segStart = rawText.length;
+                        // New LLM turn — flush thinking from previous turn
+                        thinkingPhase++; rawThinking = '';
+                        if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; asst.appendChild(thinkBlock); }
+                        else { thinkBlock = null; }
                         const tid = evt.toolCallId || 'tool_' + Date.now();
                         const tKey = evt.toolName || tid;
                         toolBlocks[tid] = { name: evt.toolName || 'tool', args: '', result: '', isError: false, isSkill: false };
@@ -406,10 +410,6 @@ async function sendMessage(overrideText) {
                                 }
                             }
                             if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; }
-                            thinkingPhase++; rawThinking = '';
-                            segStart = rawText.length;
-                            if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; asst.appendChild(thinkBlock); }
-                            else { thinkBlock = null; }
                         }
                     }
                     else if (evt.type === 'error') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); currentTextSeg = null; msgContent.innerHTML += '<div class="stream-error">⚠️ ' + (evt.content || evt.message || '') + '</div>'; }
@@ -423,7 +423,16 @@ async function sendMessage(overrideText) {
 const markedRenderer = new marked.Renderer(); const origCode = markedRenderer.code.bind(markedRenderer);
 markedRenderer.code = function({ text, lang }) { if (lang === 'mermaid') return `<pre class="mermaid-placeholder">${text}</pre>`; return origCode({ text, lang }); };
 marked.setOptions({ renderer: markedRenderer, breaks: true });
-async function deferMermaidRender(container) { for (const pre of container.querySelectorAll('pre.mermaid-placeholder')) { try { const id = 'mm-' + Math.random().toString(36).slice(2); const { svg } = await mermaid.render(id, pre.textContent); pre.outerHTML = `<div class="mermaid-rendered">${svg}</div>`; } catch { pre.classList.add('mermaid-error'); } } }
+async function deferMermaidRender(container) {
+    const pres = container.querySelectorAll('pre.mermaid-placeholder');
+    await Promise.all(Array.from(pres).map(async pre => {
+        try {
+            const id = 'mm-' + Math.random().toString(36).slice(2);
+            const { svg } = await mermaid.render(id, pre.textContent);
+            pre.outerHTML = `<div class="mermaid-rendered">${svg}</div>`;
+        } catch { pre.classList.add('mermaid-error'); }
+    }));
+}
 
 // ── Theme ──
 function applyTheme(key) {
