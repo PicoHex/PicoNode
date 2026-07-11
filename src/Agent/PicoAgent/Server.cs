@@ -169,7 +169,10 @@ public sealed class Server : IAsyncDisposable
         );
 
         // Provider templates
-        app.MapGet($"{p}/config/providers", (_, _) => V(JsonHelper.Json(DefaultProviderTemplates)));
+        app.MapGet(
+            $"{p}/config/providers",
+            (_, _) => V(JsonHelper.RawJson(ProvidersToJson(DefaultProviderTemplates)))
+        );
 
         // Config validate
         app.MapPost(
@@ -518,6 +521,9 @@ public sealed class Server : IAsyncDisposable
 
     private static string ModelsToJson(List<ModelListItem> models) =>
         $"[{string.Join(",", models.Select(m => $"{{\"id\":\"{EscapeModelJson(m.Id)}\",\"ownedBy\":\"{EscapeModelJson(m.OwnedBy)}\"}}"))}]";
+
+    private static string ProvidersToJson(List<ProviderTemplate> providers) =>
+        $"[{string.Join(",", providers.Select(p => $"{{\"name\":\"{EscapeModelJson(p.Name)}\",\"label\":\"{EscapeModelJson(p.Label)}\",\"baseUrl\":\"{EscapeModelJson(p.BaseUrl)}\",\"apiFormat\":\"{EscapeModelJson(p.ApiFormat)}\"}}"))}]";
 
     private static string EscapeModelJson(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"");
