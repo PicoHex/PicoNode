@@ -94,11 +94,3 @@ public sealed class SessionsResponse
 {
     public List<string> Sessions { get; set; } = [];
 }
-
-/// <summary>Empty messages response — avoids raw object[] serialization.</summary>
-[PicoSerializable]
-[JsonCamelCase]
-public sealed class MessagesResponse
-{
-    public List<object> Messages { get; set; } = [];
-}

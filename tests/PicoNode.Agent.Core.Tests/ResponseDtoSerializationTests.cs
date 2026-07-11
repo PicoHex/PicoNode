@@ -171,14 +171,4 @@ public sealed class ResponseDtoSerializationTests
         await Assert.That(json).Contains("\"sessions\"");
         await Assert.That(json).Contains("\"default\"");
     }
-
-    [Test]
-    public async Task MessagesResponse_SerializesAsEmptyJsonObject()
-    {
-        var dto = new MessagesResponse();
-        var json = JsonSerializer.Serialize(dto);
-
-        await Assert.That(json).Contains("\"messages\"");
-        await Assert.That(json).Contains("[]");
-    }
 }

@@ -21,6 +21,15 @@ internal static class JsonHelper
 
     public static HttpResponse Error(int code, string msg) =>
         Json(new ErrorResponse { Error = msg }, code);
+
+    /// <summary>Raw JSON string response — use only for trivial constants.</summary>
+    public static HttpResponse RawJson(string json, int statusCode = 200) =>
+        new()
+        {
+            StatusCode = statusCode,
+            Body = Encoding.UTF8.GetBytes(json),
+            Headers = [new("Content-Type", "application/json; charset=utf-8")],
+        };
 }
 
 public sealed class Server : IAsyncDisposable
@@ -357,10 +366,7 @@ public sealed class Server : IAsyncDisposable
         app.MapPost($"{p}/session/create/{{id}}", (_, _) => V(JsonHelper.Ok()));
         app.MapPost($"{p}/session/delete/{{id}}", (_, _) => V(JsonHelper.Ok()));
         app.MapPost($"{p}/session/save/{{id}}", (_, _) => V(JsonHelper.Ok()));
-        app.MapGet(
-            $"{p}/session/{{id}}/messages",
-            (_, _) => V(JsonHelper.Json(new MessagesResponse()))
-        );
+        app.MapGet($"{p}/session/{{id}}/messages", (_, _) => V(JsonHelper.RawJson("[]")));
         app.MapPost($"{p}/session/{{id}}/retry", (_, _) => V(JsonHelper.Ok()));
         app.MapPost(
             $"{p}/session/{{id}}/compact",
