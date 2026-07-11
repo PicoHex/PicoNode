@@ -137,21 +137,21 @@ public sealed class AgentFactory
             "edit",
             "Precise file edits",
             """{"type":"object","properties":{"path":{"type":"string"},"oldText":{"type":"string"},"newText":{"type":"string"}},"required":["path","oldText","newText"]}""",
-            (args, ct) => Task.FromResult($"[edit stub: {GetArg(args, "path")}]")
+            ToolHandlers.EditAsync
         );
         RegisterTool(
             agent,
             "grep",
             "Search files for patterns",
             """{"type":"object","properties":{"pattern":{"type":"string"}},"required":["pattern"]}""",
-            (args, ct) => Task.FromResult($"[grep stub: {GetArg(args, "pattern")}]")
+            ToolHandlers.GrepAsync
         );
         RegisterTool(
             agent,
             "find",
             "Find files by name",
             """{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}""",
-            (args, ct) => Task.FromResult($"[find stub: {GetArg(args, "name")}]")
+            ToolHandlers.FindAsync
         );
         RegisterTool(
             agent,
