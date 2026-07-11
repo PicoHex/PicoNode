@@ -52,7 +52,7 @@ async function api(method, url, body) {
     const r = await fetch(url, opts); if (!r.ok) throw new Error(`${r.status}`);
     return r.headers.get('content-type')?.includes('json') !== false ? r.json() : r.text();
 }
-async function loadHealth() { try { const h = await api('GET', '/api/health'); currentModel = h.model; currentProvider = h.provider; updateStatus(); } catch {} }
+async function loadHealth() { try { const h = await api('GET', '/api/health'); currentModel = h.model; currentProvider = h.provider; updateStatus(); } catch (e) { console.warn('loadHealth failed:', e); } }
 function updateStatus() { statusEl.textContent = currentProvider ? `${currentModel} @ ${currentProvider}` : currentModel || '--'; }
 
 // ── Models ──
@@ -412,7 +412,7 @@ async function sendMessage(overrideText) {
                             else { thinkBlock = null; }
                         }
                     }
-                    else if (evt.type === 'error') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); currentTextSeg = null; msgContent.innerHTML += '<div class="stream-error">⚠️ ' + (evt.message || '') + '</div>'; }
+                    else if (evt.type === 'error') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); currentTextSeg = null; msgContent.innerHTML += '<div class="stream-error">⚠️ ' + (evt.content || evt.message || '') + '</div>'; }
                 } catch {} messages.scrollTop = messages.scrollHeight; }
         }
     } catch (err) { if (err.name === 'AbortError') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); } else { msgContent.innerHTML += '<div class="stream-error">' + err.message + '</div>'; showToast(err.message, true); } }
