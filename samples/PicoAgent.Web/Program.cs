@@ -3,7 +3,6 @@ using PicoNode.Agent.Domain;
 
 var home = new HomeDir(HomeDir.Resolve());
 home.EnsureCreated();
-Directory.CreateDirectory(home.SessionsDir);
 
 var settingsPath = home.ConfigPath;
 if (!File.Exists(settingsPath))

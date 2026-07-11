@@ -7,6 +7,10 @@ public static class Bootstrap
         CancellationToken ct = default
     )
     {
+        var home = new HomeDir(HomeDir.Resolve());
+        home.EnsureCreated();
+        Directory.CreateDirectory(home.SessionsDir);
+
         var config = await LoadConfigAsync();
 
         if (config.Providers is null || config.Providers.Count == 0)
