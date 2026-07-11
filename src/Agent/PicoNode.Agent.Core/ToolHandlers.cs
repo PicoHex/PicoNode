@@ -41,8 +41,8 @@ public static class ToolHandlers
         CancellationToken ct
     )
     {
-        var pattern = args.GetValueOrDefault("pattern")?.ToString() ?? "";
-        var dir = args.GetValueOrDefault("path")?.ToString() ?? ".";
+        var pattern = EscapeShellArg(args.GetValueOrDefault("pattern")?.ToString() ?? "");
+        var dir = EscapeShellArg(args.GetValueOrDefault("path")?.ToString() ?? ".");
 
         if (!Directory.Exists(dir))
             return $"[Error: Directory not found: {dir}]";
@@ -60,8 +60,8 @@ public static class ToolHandlers
         CancellationToken ct
     )
     {
-        var name = args.GetValueOrDefault("name")?.ToString() ?? "*";
-        var dir = args.GetValueOrDefault("path")?.ToString() ?? ".";
+        var name = EscapeShellArg(args.GetValueOrDefault("name")?.ToString() ?? "*");
+        var dir = EscapeShellArg(args.GetValueOrDefault("path")?.ToString() ?? ".");
 
         if (!Directory.Exists(dir))
             return $"[Error: Directory not found: {dir}]";
@@ -73,6 +73,8 @@ public static class ToolHandlers
         var result = await RunShellAsync(command, ct);
         return string.IsNullOrWhiteSpace(result) ? "No files found" : result;
     }
+
+    private static string EscapeShellArg(string s) => s.Replace("\"", "\\\"");
 
     private static async Task<string> RunShellAsync(string command, CancellationToken ct)
     {
@@ -92,8 +94,9 @@ public static class ToolHandlers
             };
             p.Start();
             var stdout = await p.StandardOutput.ReadToEndAsync(ct);
+            var stderr = await p.StandardError.ReadToEndAsync(ct);
             await p.WaitForExitAsync(ct);
-            return stdout.Trim();
+            return stdout.Trim() + (stderr.Length > 0 ? "\n" + stderr.Trim() : "");
         }
         catch (Exception ex)
         {
