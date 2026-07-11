@@ -55,7 +55,7 @@ public sealed class AgentFactory
         var allSkills = new List<SkillInfo>();
         if (config.Packages is { Count: > 0 })
         {
-            var pkgEntries = PackageResolver.Resolve(homeDir, config.Packages);
+            var pkgEntries = PackageResolver.Resolve(config.Packages);
             await PackageInstaller.EnsureAsync(pkgEntries, null, CancellationToken.None);
             foreach (var entry in pkgEntries)
             {

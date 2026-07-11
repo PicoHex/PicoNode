@@ -2,34 +2,23 @@ namespace PicoNode.Agent.Domain;
 
 public sealed class PackageEntry
 {
-    /// <summary>Path where the package lives on disk.</summary>
     public string DisplayPath { get; set; } = string.Empty;
-
-    /// <summary>Git clone URL (https://). Null for local packages.</summary>
     public string? GitUrl { get; set; }
-
-    /// <summary>Optional ref (branch/tag) to checkout after clone.</summary>
     public string? GitRef { get; set; }
-
-    /// <summary>True if this is a git: package.</summary>
     public bool IsGit { get; set; }
 }
 
 public static class PackageResolver
 {
     private const string GitPrefix = "git:";
-    private const string GitDirName = "git";
 
-    /// <summary>
-    /// Parse package entries into resolved <see cref="PackageEntry"/> objects.
-    /// Does NOT perform git clone — that's handled by <see cref="PackageInstaller"/>.
-    /// Malformed entries are silently skipped.
-    /// </summary>
-    public static List<PackageEntry> Resolve(string homeDir, List<string>? packages)
+    public static List<PackageEntry> Resolve(List<string>? packages)
     {
         if (packages is null || packages.Count == 0)
             return [];
 
+        var homeDir = HomeDir.Resolve();
+        var packagesDir = new HomeDir(homeDir).PackagesDir;
         var results = new List<PackageEntry>();
         foreach (var entry in packages)
         {
@@ -38,7 +27,7 @@ public static class PackageResolver
 
             if (entry.StartsWith(GitPrefix, StringComparison.Ordinal))
             {
-                var parsed = ParseGitEntry(homeDir, entry);
+                var parsed = ParseGitEntry(packagesDir, entry);
                 if (parsed is not null)
                     results.Add(parsed);
             }
@@ -53,12 +42,7 @@ public static class PackageResolver
         return results;
     }
 
-    /// <summary>
-    /// Parse a git: entry like "github.com/owner/repo" or "github.com/owner/repo@v1".
-    /// Only the first three path segments (host/owner/repo) are used;
-    /// deeper paths are ignored. Returns null for malformed entries.
-    /// </summary>
-    private static PackageEntry? ParseGitEntry(string homeDir, string entry)
+    private static PackageEntry? ParseGitEntry(string packagesDir, string entry)
     {
         var path = entry[GitPrefix.Length..];
         string? gitRef = null;
@@ -77,13 +61,10 @@ public static class PackageResolver
         var owner = parts[1];
         var repo = parts[2];
 
-        var displayPath = Path.Combine(homeDir, GitDirName, host, owner, repo);
-        var gitUrl = $"https://{host}/{owner}/{repo}.git";
-
         return new PackageEntry
         {
-            DisplayPath = displayPath,
-            GitUrl = gitUrl,
+            DisplayPath = Path.Combine(packagesDir, host, owner, repo),
+            GitUrl = $"https://{host}/{owner}/{repo}.git",
             GitRef = gitRef,
             IsGit = true,
         };
