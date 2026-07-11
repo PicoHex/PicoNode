@@ -462,12 +462,9 @@ public sealed class Server : IAsyncDisposable
         sb.Append(tp);
         sb.Append("\"");
 
-        if (evt.Data is { Length: > 0 })
-        {
-            sb.Append(",\"content\":\"");
-            sb.Append(EscapeJsonString(evt.Data));
-            sb.Append('"');
-        }
+        sb.Append(",\"content\":\"");
+        sb.Append(EscapeJsonString(evt.Data ?? string.Empty));
+        sb.Append('"');
 
         if (evt.ToolCallId is { Length: > 0 })
         {
