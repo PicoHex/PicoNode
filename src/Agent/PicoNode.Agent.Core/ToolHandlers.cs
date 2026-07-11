@@ -18,7 +18,9 @@ public static class ToolHandlers
             return $"[Error: File not found: {p}]";
 
         var content = await File.ReadAllTextAsync(p, ct);
-        var normalized = content.Replace("\r\n", "\n").Replace("\r", "\n");
+        var hasBom = content.Length > 0 && content[0] == '\uFEFF';
+        var text = hasBom ? content[1..] : content;
+        var normalized = text.Replace("\r\n", "\n").Replace("\r", "\n");
 
         var matches = Regex.Matches(normalized, Regex.Escape(oldText));
         if (matches.Count == 0)
@@ -31,6 +33,9 @@ public static class ToolHandlers
             content.Contains("\r\n") ? result.Replace("\n", "\r\n")
             : content.Contains("\r") ? result.Replace("\n", "\r")
             : result;
+
+        if (hasBom)
+            restored = '\uFEFF' + restored;
 
         await File.WriteAllTextAsync(p, restored, ct);
         return $"[Replaced 1 block in {Path.GetFileName(p)}]";
