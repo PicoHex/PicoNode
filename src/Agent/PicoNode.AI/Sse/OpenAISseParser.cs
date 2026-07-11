@@ -240,7 +240,7 @@ public static class OpenAISseParser
             )
             {
                 // Emit ToolCallEnd for all accumulated tool calls
-                foreach (var (_, state) in toolCalls)
+                foreach (var (idx, state) in toolCalls)
                 {
                     var parsed = ParseToolArgs(state.Args.ToString());
                     contentBlocks.Add(
@@ -254,7 +254,7 @@ public static class OpenAISseParser
                     );
                     yield return new AssistantMessageEvent.ToolCallEnd
                     {
-                        Index = 0,
+                        Index = idx,
                         Call = new ContentBlock
                         {
                             Type = "tool_call",
