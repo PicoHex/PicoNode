@@ -107,6 +107,28 @@ public sealed class ResponseDtoSerializationTests
         await Assert.That(json).Contains("\"gpt-4o\"");
     }
 
+    /// <summary>
+    /// PicoJetson SG cannot serialize List&lt;ModelListItem&gt; (CS0305).
+    /// Workaround: wrap in a response object.
+    /// </summary>
+    [Test]
+    public async Task AgentModelListResponse_SerializesCorrectly()
+    {
+        var dto = new AgentModelListResponse
+        {
+            Models =
+            [
+                new() { Id = "gpt-4o", OwnedBy = "openai" },
+                new() { Id = "claude-3", OwnedBy = "anthropic" },
+            ],
+        };
+        var json = JsonSerializer.Serialize(dto);
+
+        await Assert.That(json).Contains("\"models\"");
+        await Assert.That(json).Contains("\"gpt-4o\"");
+        await Assert.That(json).Contains("\"claude-3\"");
+    }
+
     [Test]
     public async Task PromptWithSpecialChars_HandlesCorrectly()
     {

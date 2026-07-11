@@ -129,7 +129,7 @@ public sealed class Server : IAsyncDisposable
                     { /* skip failed */
                     }
                 }
-                return JsonHelper.Json(all);
+                return JsonHelper.RawJson(ModelsToJson(all));
             }
         );
 
@@ -208,10 +208,15 @@ public sealed class Server : IAsyncDisposable
                             400,
                             "No models found. Check your API key or base URL."
                         );
-                    return JsonHelper.Json(
-                        models
-                            .Select(m => new ModelListItem { Id = m.Id, OwnedBy = m.OwnedBy })
-                            .ToList()
+                    return JsonHelper.RawJson(
+                        "["
+                            + string.Join(
+                                ",",
+                                models.Select(m =>
+                                    $"{{\"id\":\"{EscapeModelJson(m.Id)}\",\"ownedBy\":\"{EscapeModelJson(m.OwnedBy)}\"}}"
+                                )
+                            )
+                            + "]"
                     );
                 }
                 catch (Exception ex)
@@ -514,6 +519,12 @@ public sealed class Server : IAsyncDisposable
         }
         return sb.ToString();
     }
+
+    private static string ModelsToJson(List<ModelListItem> models) =>
+        $"[{string.Join(",", models.Select(m => $"{{\"id\":\"{EscapeModelJson(m.Id)}\",\"ownedBy\":\"{EscapeModelJson(m.OwnedBy)}\"}}"))}]";
+
+    private static string EscapeModelJson(string s) =>
+        s.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
     private WebApp BuildWebApp()
     {
