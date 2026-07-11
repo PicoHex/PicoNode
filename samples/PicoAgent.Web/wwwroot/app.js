@@ -317,7 +317,7 @@ async function sendMessage(overrideText) {
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
         while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop() || '';
             for (const line of lines) { if (!line.startsWith('data: ')) continue; const p = line.slice(6);
-                if (p === '[DONE]') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => { renderAllSegments(msgContent); cleanupToolBlocks(msgContent); }, 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } break; }
+                if (p === '[DONE]') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); requestAnimationFrame(() => { renderAllSegments(msgContent); cleanupToolBlocks(msgContent); }); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } break; }
                 try { const evt = JSON.parse(p);
                     if (evt.type === 'delta') {
                         rawText += evt.content;
@@ -325,7 +325,7 @@ async function sendMessage(overrideText) {
                         currentTextSeg.textContent = rawText.substring(segStart);
                     }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked || !thinkBlock) continue; rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
-                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => renderAllSegments(msgContent), 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
+                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); requestAnimationFrame(() => renderAllSegments(msgContent)); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
                     else if (evt.type === 'tool_call_start') {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
                         segStart = rawText.length;
@@ -342,29 +342,29 @@ async function sendMessage(overrideText) {
                             toolBlocks[tid].args += evt.content || '';
                             const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
                             if (tcDiv) { try { const parsed = JSON.parse(toolBlocks[tid].args); tcDiv.querySelector('.tool-args').textContent = JSON.stringify(parsed); } catch (e) {} }
-                            // Detect skill read: read tool + path ends with SKILL.md
-                            if (toolBlocks[tid].name === 'read' && !toolBlocks[tid].isSkill) {
-                                try {
-                                    const parsed = JSON.parse(toolBlocks[tid].args);
-                                    if (parsed.path && parsed.path.endsWith('SKILL.md')) {
-                                        toolBlocks[tid].isSkill = true;
-                                        tcDiv.classList.add('skill-read');
-                                    }
-                                } catch (e) {}
-                            }
                         }
                     }
                     else if (evt.type === 'tool_call_end') {
                         const tid = evt.toolCallId;
                         if (tid && toolBlocks[tid]) {
+                            toolBlocks[tid].args = evt.content || '{}';  // complete args from end event
                             const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
                             if (tcDiv) {
                                 tcDiv.open = true;
-                                // Update tool name (available at end)
                                 if (evt.toolName) {
                                     toolBlocks[tid].name = evt.toolName;
                                     const strong = tcDiv.querySelector('summary strong');
                                     if (strong) strong.textContent = evt.toolName;
+                                }
+                                // Detect skill read: read tool + path ends with SKILL.md (complete args at end)
+                                if (toolBlocks[tid].name === 'read' && !toolBlocks[tid].isSkill) {
+                                    try {
+                                        const parsed = JSON.parse(evt.content || '{}');
+                                        if (parsed.path && parsed.path.endsWith('SKILL.md')) {
+                                            toolBlocks[tid].isSkill = true;
+                                            tcDiv.classList.add('skill-read');
+                                        }
+                                    } catch (e) {}
                                 }
                             }
                         }
