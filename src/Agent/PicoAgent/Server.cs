@@ -469,9 +469,10 @@ public sealed class Server : IAsyncDisposable
                 _ = Task.Run(
                     async () =>
                     {
-                        await turnLock.WaitAsync(ct);
                         try
                         {
+                            await turnLock.WaitAsync(ct);
+
                             var outputChannel = Channel.CreateUnbounded<ActorOutputEvent>();
                             var turnId = Guid.CreateVersion7().ToString("N")[..8];
                             a.OutputWriter = outputChannel.Writer;
@@ -503,6 +504,15 @@ public sealed class Server : IAsyncDisposable
                         }
                     },
                     ct
+                ).ContinueWith(
+                    t =>
+                    {
+                        if (t.IsFaulted)
+                            logger?.Error(
+                                $"SSE task crashed: {t.Exception?.InnerException?.Message}"
+                            );
+                    },
+                    TaskContinuationOptions.OnlyOnFaulted
                 );
                 return new HttpResponse
                 {

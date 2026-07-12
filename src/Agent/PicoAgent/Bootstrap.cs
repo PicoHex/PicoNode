@@ -40,6 +40,7 @@ public static class Bootstrap
 
         var loggerFactory = (ILoggerFactory)scope.GetService(typeof(ILoggerFactory))!;
         var logger = loggerFactory.CreateLogger("PicoAgent");
+        ExceptionHandler.Initialize(logger);
         logger.Info($"PicoAgent starting... home={home.Root}");
 
         var system = (ActorSystem)scope.GetService(typeof(ActorSystem))!;

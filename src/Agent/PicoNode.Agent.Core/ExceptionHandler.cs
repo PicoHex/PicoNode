@@ -1,11 +1,16 @@
 namespace PicoNode.Agent.Domain;
 
 /// <summary>
-/// Central exception handling. Logs every exception and optionally
-/// forwards the message to the frontend via an output action.
+/// Central exception handling. In production, call <see cref="Initialize"/>
+/// once at startup with a real logger. Until then, uses Debug.WriteLine.
 /// </summary>
 public static class ExceptionHandler
 {
+    private static ILogger? _logger;
+
+    /// <summary>Call once at startup to enable real logging.</summary>
+    public static void Initialize(ILogger logger) => _logger = logger;
+
     /// <summary>
     /// Handle an exception: always log, optionally forward to frontend.
     /// Returns false for cancellation (caller should not re-throw).
@@ -18,16 +23,19 @@ public static class ExceptionHandler
     )
     {
         if (ex is OperationCanceledException)
-            return false; // normal — no log needed
+            return false;
 
-        logger?.Error($"{context}: {ex.Message}");
+        (logger ?? _logger)?.Error($"{context}: {ex.Message}");
         forward?.Invoke(ex.Message);
-        return true; // was a real error
+        return true;
     }
 
-    /// <summary>Log-only, no ILogger available — uses fallback.</summary>
+    /// <summary>Log using the global logger if initialized, else Debug.WriteLine.</summary>
     public static void LogOnly(Exception ex, string context)
     {
-        System.Diagnostics.Debug.WriteLine($"[{context}] {ex.Message}");
+        if (_logger is not null)
+            _logger.Error($"{context}: {ex.Message}");
+        else
+            System.Diagnostics.Debug.WriteLine($"[{context}] {ex.Message}");
     }
 }
