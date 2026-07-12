@@ -486,6 +486,10 @@ public sealed class Server : IAsyncDisposable
                                 );
                             }
                         }
+                        catch (OperationCanceledException)
+                        {
+                            // Client disconnected or stopped — normal, not an error
+                        }
                         catch (Exception ex)
                         {
                             logger?.Error($"SSE turn failed: {ex.Message}");

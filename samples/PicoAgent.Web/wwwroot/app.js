@@ -279,7 +279,7 @@ function renderAllSegments(container) {
 function cleanupToolBlocks(container) {
     for (const tc of container.querySelectorAll('.tool-call')) {
         const resultDiv = tc.querySelector('.tool-result');
-        if (resultDiv && resultDiv.textContent && resultDiv.textContent.startsWith('[no result]')) continue; // already handled
+        if (resultDiv && (resultDiv.textContent || '').trim() && resultDiv.textContent.startsWith('[no result]')) continue; // already handled
         if (resultDiv && !resultDiv.textContent) {
             const nameEl = tc.querySelector('summary strong');
             const name = (nameEl && nameEl.textContent) ? nameEl.textContent : (tc.dataset.toolId || '?');
@@ -301,9 +301,9 @@ async function sendMessage(overrideText) {
     abortCtrl?.abort(); abortCtrl = new AbortController();
     renderMessage('user', text);
     const asst = renderMessage('assistant', '', '', currentSession + '-' + streamMsgIndex);
-    if (thinkChk.checked) { const th = document.createElement('details'); th.className = 'thinking'; th.open = true; th.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(th); }
     const msgContent = asst.querySelector('.msg-content');
     msgContent.innerHTML = '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span>';
+    if (thinkChk.checked) { const th = document.createElement('details'); th.className = 'thinking'; th.open = true; th.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(th); }
     const streamDot = msgContent.querySelector('.streaming-indicator');
     let thinkBlock = msgContent.querySelector('.thinking');
     let rawText = '', rawThinking = '';
