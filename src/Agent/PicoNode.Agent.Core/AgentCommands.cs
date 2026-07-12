@@ -8,7 +8,7 @@ public sealed record CreateAgent(
     List<string>? Packages = null
 ) : ICommand;
 
-public sealed record RunTurn(string Message) : ICommand;
+public sealed record RunTurn(string Message, string TurnId) : ICommand;
 
 public sealed record StartAgent : ICommand;
 

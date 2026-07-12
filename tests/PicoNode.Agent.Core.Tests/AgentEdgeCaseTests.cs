@@ -83,7 +83,7 @@ public sealed class AgentEdgeCaseTests
         );
 
         await Assert
-            .That(async () => await system.AskAsync<object?>(agent.Id, new RunTurn("Hi")))
+            .That(async () => await system.AskAsync<object?>(agent.Id, new RunTurn("Hi", "test-turn")))
             .Throws<Exception>();
     }
 }

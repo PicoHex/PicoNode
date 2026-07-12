@@ -85,7 +85,7 @@ public sealed class AgentRunTurnTests
                 "y")
         );
 
-        system.Send(agent.Id, new RunTurn("Hi"));
+        system.Send(agent.Id, new RunTurn("Hi", "test-turn"));
         await Task.Delay(200);
 
         var ctx = await agent.Session!.BuildContext();
@@ -134,7 +134,7 @@ public sealed class AgentRunTurnTests
                 events.Add(e);
         });
 
-        system.Send(agent.Id, new RunTurn("Hi"));
+        system.Send(agent.Id, new RunTurn("Hi", "test-turn"));
         await Task.Delay(500); // Wait for Agent to complete the writer
 
         await Assert.That(events.Any(e => e.Type == "text")).IsTrue();

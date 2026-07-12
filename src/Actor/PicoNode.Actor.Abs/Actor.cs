@@ -108,8 +108,8 @@ public abstract class Actor : IActor, IAsyncDisposable
     /// Write an event to the OutputChannel. No-op if no subscriber.
     /// Subclasses call this during OnMessageAsync to notify external observers.
     /// </summary>
-    protected void WriteOutput(string type, string? data = null, string? toolCallId = null, string? toolName = null) =>
-        OutputWriter?.TryWrite(new ActorOutputEvent(type, data, toolCallId, toolName));
+    protected void WriteOutput(string type, string? data = null, string? toolCallId = null, string? toolName = null, string? turnId = null) =>
+        OutputWriter?.TryWrite(new ActorOutputEvent(type, data, toolCallId, toolName, turnId));
 
     /// <summary>
     /// Task that completes when initialization finishes (OnReadyAsync succeeds or fails).

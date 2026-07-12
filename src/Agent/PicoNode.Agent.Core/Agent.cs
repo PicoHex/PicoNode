@@ -10,6 +10,12 @@ public sealed class Agent : EventSourcedActor
     private readonly List<Llm> _llms = [];
     private readonly List<Tool> _tools = [];
     private readonly List<Guid> _childIds = [];
+    private string? _turnId;
+
+    // ── Turn-aware output ──
+
+    private void WriteTurnOutput(string type, string? data = null, string? toolCallId = null, string? toolName = null) =>
+        WriteOutput(type, data, toolCallId, toolName, _turnId);
 
     public Llm CurrentLlm { get; private set; } = null!;
     public IReadOnlyList<Llm> LlmsSnapshot => _llms;
@@ -124,6 +130,7 @@ public sealed class Agent : EventSourcedActor
                 return SpawnChildAsync(s);
 
             case RunTurn r:
+                _turnId = r.TurnId;
                 return RunTurnAsync(r.Message, StopToken);
 
             case SetThinkingLevelCmd s:
@@ -188,7 +195,7 @@ public sealed class Agent : EventSourcedActor
 
                 await foreach (var evt in LlmClient.StreamAsync(CurrentLlm, ctx, ToolsSnapshot, ct))
                 {
-                    WriteOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName);
+                    WriteTurnOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName);
 
                     switch (evt.Type)
                     {
@@ -270,17 +277,17 @@ public sealed class Agent : EventSourcedActor
                             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                         };
                         await session.Append(new MessageEntry { Message = toolMsg });
-                        WriteOutput("tool_result", toolResult, tc.Id, tc.Name);
+                        WriteTurnOutput("tool_result", toolResult, tc.Id, tc.Name);
                     }
                 }
             } while (hasTools && !ct.IsCancellationRequested);
 
-            WriteOutput("done");
+            WriteTurnOutput("done");
             return default;
         }
         catch (Exception ex)
         {
-            WriteOutput("error", ex.Message);
+            WriteTurnOutput("error", ex.Message);
             throw;
         }
         finally

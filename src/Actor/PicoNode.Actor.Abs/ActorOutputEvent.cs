@@ -10,5 +10,6 @@ public sealed record ActorOutputEvent(
     string Type,
     string? Data,
     string? ToolCallId = null,
-    string? ToolName = null
+    string? ToolName = null,
+    string? TurnId = null
 );

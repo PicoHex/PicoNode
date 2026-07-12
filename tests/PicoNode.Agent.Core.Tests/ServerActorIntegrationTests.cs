@@ -45,7 +45,7 @@ public sealed class ServerActorIntegrationTests
         await Assert.That(agent.Status).IsEqualTo(AgentStatus.Running);
 
         // RunTurn via command
-        system.Send(agent.Id, new RunTurn("Hello"));
+        system.Send(agent.Id, new RunTurn("Hello", "test-turn"));
         await Task.Delay(300);
         await Assert.That(agent.Session!).IsNotNull();
     }

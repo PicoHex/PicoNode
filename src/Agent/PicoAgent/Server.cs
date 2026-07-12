@@ -473,15 +473,16 @@ public sealed class Server : IAsyncDisposable
                         try
                         {
                             var outputChannel = Channel.CreateUnbounded<ActorOutputEvent>();
+                            var turnId = Guid.CreateVersion7().ToString("N")[..8];
                             a.OutputWriter = outputChannel.Writer;
 
-                            system.Send(a.Id, new RunTurn(message));
+                            system.Send(a.Id, new RunTurn(message, turnId));
 
                             await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
                             {
-                                var sseJson = BuildSseJson(evt);
+                                var frame = ServerSse.BuildFrame(evt);
                                 await pipe.Writer.WriteAsync(
-                                    Encoding.UTF8.GetBytes($"data: {sseJson}\n\n"),
+                                    Encoding.UTF8.GetBytes(frame),
                                     ct
                                 );
                             }
@@ -493,9 +494,9 @@ public sealed class Server : IAsyncDisposable
                         catch (Exception ex)
                         {
                             logger?.Error($"SSE turn failed: {ex.Message}");
-                            var errJson = BuildSseJson(new ActorOutputEvent("error", ex.Message));
+                            var errFrame = ServerSse.BuildFrame(new ActorOutputEvent("error", ex.Message));
                             await pipe.Writer.WriteAsync(
-                                Encoding.UTF8.GetBytes($"data: {errJson}\n\n"),
+                                Encoding.UTF8.GetBytes(errFrame),
                                 ct
                             );
                         }

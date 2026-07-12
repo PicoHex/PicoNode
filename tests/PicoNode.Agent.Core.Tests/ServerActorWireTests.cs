@@ -43,7 +43,7 @@ public sealed class ServerActorWireTests
         await Assert.That(agent.Status).IsEqualTo(AgentStatus.Running);
 
         // RunTurn
-        system.Send(agent.Id, new RunTurn("Hello"));
+        system.Send(agent.Id, new RunTurn("Hello", "test-turn"));
         await Task.Delay(200);
         await Assert.That(agent.Session!).IsNotNull();
 

@@ -10,6 +10,7 @@ global using PicoDI.Abs;
 global using PicoLog;
 global using PicoLog.Abs;
 global using PicoNode.Actor;
+global using PicoNode.Actor.Abs;
 global using PicoNode.Agent;
 global using PicoNode.Agent.Domain;
 global using PicoNode.AI;
