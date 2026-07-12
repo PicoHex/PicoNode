@@ -21,7 +21,14 @@ public static class Bootstrap
         home.EnsureCreated();
         Directory.CreateDirectory(home.SessionsDir);
 
-        var config = await LoadConfigAsync();
+        var loggerFactory = new LoggerFactory(
+            [new ColoredConsoleSink(new ConsoleFormatter())],
+            new LoggerFactoryOptions { MinLevel = LogLevel.Warning }
+        );
+        var logger = loggerFactory.CreateLogger("PicoAgent");
+        logger.Info($"PicoAgent starting... home={home.Root}");
+
+        var config = await LoadConfigAsync(home);
 
         if (config.Providers is null || config.Providers.Count == 0)
         {
@@ -32,11 +39,19 @@ public static class Bootstrap
             config.Model = string.IsNullOrEmpty(config.Model) ? "unconfigured" : config.Model;
         }
 
-        var system = new ActorSystem(new InMemoryEventStore());
+        var system = new ActorSystem(new InMemoryEventStore(), logger);
         var llmAdapter = BuildLlmAdapter(config);
         var factory = new AgentFactory(system, llmAdapter).WithBuiltInTools();
         var agent = await factory.BuildAsync(config);
-        var server = new Server(agent, system, llmAdapter, factory.GetToolRunner());
+        var server = new Server(
+            agent,
+            system,
+            llmAdapter,
+            factory.GetToolRunner(),
+            logger,
+            loggerFactory,
+            home.ConfigPath
+        );
         return (server, system);
     }
 
@@ -83,9 +98,10 @@ public static class Bootstrap
         return new LlmClientAdapter(resilient);
     }
 
-    private static async Task<AgentConfig> LoadConfigAsync()
+    private static async Task<AgentConfig> LoadConfigAsync(HomeDir home)
     {
-        var path = new HomeDir(HomeDir.Resolve()).ConfigPath;
+        var path = home.ConfigPath;
+
         if (!File.Exists(path))
         {
             var def = new AgentConfig
@@ -101,8 +117,9 @@ public static class Bootstrap
             await File.WriteAllTextAsync(path, json);
             return def;
         }
-        var raw = await File.ReadAllTextAsync(path);
-        return PicoJetson.JsonSerializer.Deserialize<AgentConfig>(Encoding.UTF8.GetBytes(raw))
-            ?? new AgentConfig { Providers = [], Model = "" };
+
+        var cfg = await Cfg.CreateBuilder().AddJsonFile(path).BuildAsync();
+
+        return ConfigLoader.Load(cfg);
     }
 }

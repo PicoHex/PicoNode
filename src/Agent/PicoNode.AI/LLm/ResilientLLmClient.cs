@@ -194,9 +194,9 @@ public sealed class ResilientLLmClient : ILLmClient
         {
             Id = model.Id,
             Name = model.Name,
-            Provider = provider.Name,
-            Api = provider.ApiFormat,
-            BaseUrl = provider.BaseUrl,
+            Provider = !string.IsNullOrEmpty(model.Provider) ? model.Provider : provider.Name,
+            Api = model.Api,
+            BaseUrl = !string.IsNullOrEmpty(model.BaseUrl) ? model.BaseUrl : provider.BaseUrl,
             ThinkingEnabled = model.ThinkingEnabled,
             Cost = model.Cost,
             ContextWindow = model.ContextWindow,

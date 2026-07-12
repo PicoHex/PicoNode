@@ -105,7 +105,7 @@ public sealed class Agent : EventSourcedActor
                     throw new DomainInvariantException(
                         $"Llm not found: {r.ProviderName}/{r.ModelId}"
                     );
-                if (match.Equals(CurrentLlm))
+                if (ReferenceEquals(match, CurrentLlm))
                     throw new DomainInvariantException("Cannot remove CurrentLlm; switch first");
                 RaiseEvent(new LlmRemoved(r.ProviderName, r.ModelId));
                 return default;
@@ -186,14 +186,7 @@ public sealed class Agent : EventSourcedActor
                 var thinkingAccum = new StringBuilder();
                 var argAccum = new Dictionary<int, StringBuilder>();
 
-                await foreach (
-                    var evt in LlmClient.StreamAsync(
-                        CurrentLlm,
-                        ctx,
-                        ToolsSnapshot,
-                        ct
-                    )
-                )
+                await foreach (var evt in LlmClient.StreamAsync(CurrentLlm, ctx, ToolsSnapshot, ct))
                 {
                     WriteOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName);
 
@@ -236,9 +229,7 @@ public sealed class Agent : EventSourcedActor
                         case "done":
                             goto streamDone;
                         case "error":
-                            throw new InvalidOperationException(
-                                evt.Content ?? "LLM error"
-                            );
+                            throw new InvalidOperationException(evt.Content ?? "LLM error");
                     }
                 }
                 streamDone:
@@ -246,26 +237,19 @@ public sealed class Agent : EventSourcedActor
                 // Flush accumulated content
                 if (contentAccum.Length > 0)
                     contentBlocks.Add(
-                        new ContentBlock
-                        {
-                            Type = "text",
-                            Text = contentAccum.ToString(),
-                        }
+                        new ContentBlock { Type = "text", Text = contentAccum.ToString() }
                     );
 
                 var finalMessage = new Message
                 {
                     Role = "assistant",
                     ContentBlocks = contentBlocks.ToArray(),
-                    ReasoningContent =
-                        thinkingAccum.Length > 0 ? thinkingAccum.ToString() : null,
+                    ReasoningContent = thinkingAccum.Length > 0 ? thinkingAccum.ToString() : null,
                 };
                 await session.Append(new MessageEntry { Message = finalMessage });
 
                 // Check for tool calls
-                var toolCalls = contentBlocks
-                    .Where(cb => cb.Type == "tool_call")
-                    .ToArray();
+                var toolCalls = contentBlocks.Where(cb => cb.Type == "tool_call").ToArray();
                 hasTools = toolCalls.Length > 0;
 
                 if (hasTools)
@@ -282,22 +266,11 @@ public sealed class Agent : EventSourcedActor
                             Role = "toolResult",
                             ToolCallId = tc.Id,
                             ToolName = tc.Name,
-                            ContentBlocks =
-                            [
-                                new ContentBlock { Type = "text", Text = toolResult },
-                            ],
-                            Timestamp = DateTimeOffset
-                                .UtcNow.ToUnixTimeMilliseconds(),
+                            ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
+                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                         };
-                        await session.Append(
-                            new MessageEntry { Message = toolMsg }
-                        );
-                        WriteOutput(
-                            "tool_result",
-                            toolResult,
-                            tc.Id,
-                            tc.Name
-                        );
+                        await session.Append(new MessageEntry { Message = toolMsg });
+                        WriteOutput("tool_result", toolResult, tc.Id, tc.Name);
                     }
                 }
             } while (hasTools && !ct.IsCancellationRequested);
@@ -331,10 +304,7 @@ public sealed class Agent : EventSourcedActor
                 ParentId = c.ParentId;
                 Packages = c.Packages;
                 Status = AgentStatus.Pending;
-                Session = new Session(
-                    Guid.CreateVersion7(),
-                    new InMemorySessionStorage()
-                );
+                Session = new Session(Guid.CreateVersion7(), new InMemorySessionStorage());
                 break;
             case AgentStarted:
                 Status = AgentStatus.Running;
@@ -347,7 +317,7 @@ public sealed class Agent : EventSourcedActor
                 FailureReason = f.Reason;
                 break;
             case LlmSwitched s:
-                CurrentLlm = _llms.First(l =>
+                CurrentLlm = _llms.Last(l =>
                     l.ProviderName == s.ProviderName && l.ModelId == s.ModelId
                 );
                 break;
@@ -355,9 +325,11 @@ public sealed class Agent : EventSourcedActor
                 _llms.Add(a.Llm);
                 break;
             case LlmRemoved r:
-                _llms.RemoveAll(l =>
+                var idx = _llms.FindIndex(l =>
                     l.ProviderName == r.ProviderName && l.ModelId == r.ModelId
                 );
+                if (idx >= 0)
+                    _llms.RemoveAt(idx);
                 break;
             case ToolAdded a:
                 _tools.Add(a.Tool);
@@ -382,8 +354,7 @@ public sealed class Agent : EventSourcedActor
             throw new DomainInvariantException("All Llms must have ApiKey");
         if (
             !cmd.Llms.Any(l =>
-                l.ProviderName == cmd.CurrentProvider
-                && l.ModelId == cmd.CurrentModel
+                l.ProviderName == cmd.CurrentProvider && l.ModelId == cmd.CurrentModel
             )
         )
             throw new DomainInvariantException("CurrentLlm not in Llms");

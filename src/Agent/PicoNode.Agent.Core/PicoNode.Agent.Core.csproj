@@ -18,5 +18,7 @@
     <ProjectReference Include="..\..\Actor\PicoNode.Actor.Abs\PicoNode.Actor.Abs.csproj" />
     <PackageReference Include="PicoJetson" />
     <PackageReference Include="PicoLog.Abs" />
+    <PackageReference Include="PicoCfg" />
+    <PackageReference Include="PicoCfg.Json" />
   </ItemGroup>
 </Project>

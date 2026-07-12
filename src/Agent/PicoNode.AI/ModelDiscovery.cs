@@ -12,7 +12,8 @@ public static class ModelDiscovery
     public static async Task<DiscoveredModel[]> DiscoverAsync(
         HttpClient http,
         ProviderConfig provider,
-        CancellationToken ct
+        CancellationToken ct,
+        ILogger? logger = null
     )
     {
         try
@@ -23,18 +24,29 @@ public static class ModelDiscovery
 
             using var response = await http.SendAsync(request, ct);
             if (!response.IsSuccessStatusCode)
+            {
+                logger?.Warning(
+                    $"Model discovery failed for provider '{provider.Name}': HTTP {(int)response.StatusCode} from {url}"
+                );
                 return [];
+            }
 
             var json = await response.Content.ReadAsStringAsync(ct);
             var list = PicoJetson.JsonSerializer.Deserialize<ModelListResponse>(
                 Encoding.UTF8.GetBytes(json)
             );
-            return list?.Data.Select(m => new DiscoveredModel { Id = m.Id, OwnedBy = m.OwnedBy })
+            var models =
+                list?.Data.Select(m => new DiscoveredModel { Id = m.Id, OwnedBy = m.OwnedBy })
                     .ToArray()
                 ?? [];
+            logger?.Debug($"Model discovery for '{provider.Name}': {models.Length} models found");
+            return models;
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.Error(
+                $"Model discovery exception for provider '{provider.Name}' ({provider.BaseUrl}/models): {ex.Message}"
+            );
             return [];
         }
     }

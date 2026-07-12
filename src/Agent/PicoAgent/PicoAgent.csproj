@@ -25,6 +25,10 @@
     <ProjectReference Include="..\..\Web\PicoWeb\PicoWeb.csproj" />
     <PackageReference Include="PicoJetson" />
     <PackageReference Include="PicoDI" />
+    <PackageReference Include="PicoLog" />
+    <PackageReference Include="PicoLog.Abs" />
+    <PackageReference Include="PicoCfg" />
+    <PackageReference Include="PicoCfg.Json" />
   </ItemGroup>
 
   <ItemGroup>

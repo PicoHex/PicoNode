@@ -34,18 +34,32 @@ public sealed class Server : IAsyncDisposable
     private readonly ActorSystem _system;
     private readonly ILlmClient _llmClient;
     private readonly IToolRunner _toolRunner;
+    private readonly ILogger? _logger;
+    private readonly ILoggerFactory? _loggerFactory;
+    private readonly string? _settingsPath;
     private WebServer? _webServer;
     private bool _isListening;
     private readonly SemaphoreSlim _turnLock = new(1, 1);
 
     public int Port => _webServer?.LocalEndPoint is IPEndPoint ep ? ep.Port : 0;
 
-    public Server(Agent agent, ActorSystem system, ILlmClient llmClient, IToolRunner toolRunner)
+    public Server(
+        Agent agent,
+        ActorSystem system,
+        ILlmClient llmClient,
+        IToolRunner toolRunner,
+        ILogger? logger = null,
+        ILoggerFactory? loggerFactory = null,
+        string? settingsPath = null
+    )
     {
         _agent = agent;
         _system = system;
         _llmClient = llmClient;
         _toolRunner = toolRunner;
+        _logger = logger;
+        _loggerFactory = loggerFactory;
+        _settingsPath = settingsPath;
     }
 
     public async Task ListenAsync(string uri)
@@ -70,7 +84,8 @@ public sealed class Server : IAsyncDisposable
         ILlmClient llm,
         IToolRunner tr,
         string prefix = "",
-        string? settingsPath = null
+        string? settingsPath = null,
+        ILogger? logger = null
     )
     {
         var turnLock = new SemaphoreSlim(1, 1);
@@ -117,12 +132,20 @@ public sealed class Server : IAsyncDisposable
                             BaseUrl = l.BaseUrl,
                             ApiFormat = l.ApiFormat,
                         };
-                        var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(http, pc, ct);
+                        var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(
+                            http,
+                            pc,
+                            ct,
+                            logger
+                        );
                         foreach (var m in models)
                             all.Add(new ModelListItem { Id = m.Id, OwnedBy = m.OwnedBy });
                     }
-                    catch
-                    { /* skip failed */
+                    catch (Exception ex)
+                    {
+                        logger?.Warning(
+                            $"Failed to discover models for provider '{l.ProviderName}': {ex.Message}"
+                        );
                     }
                 }
                 return new HttpResponse
@@ -135,9 +158,7 @@ public sealed class Server : IAsyncDisposable
         );
 
         // Sessions
-        app.MapGet($"{p}/sessions", (_, _) =>
-            V(JsonHelper.RawJson("[\"default\"]"))
-        );
+        app.MapGet($"{p}/sessions", (_, _) => V(JsonHelper.RawJson("[\"default\"]")));
 
         // Config status
         app.MapGet(
@@ -215,7 +236,12 @@ public sealed class Server : IAsyncDisposable
                         ApiFormat = AiApiFormat.OpenAIChatCompletions,
                     };
                     using var http = new HttpClient();
-                    var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(http, pc, ct);
+                    var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(
+                        http,
+                        pc,
+                        ct,
+                        logger
+                    );
                     if (models.Length == 0)
                         return JsonHelper.Error(
                             400,
@@ -240,6 +266,7 @@ public sealed class Server : IAsyncDisposable
                 }
                 catch (Exception ex)
                 {
+                    logger?.Error($"Config validation failed for '{name}': {ex.Message}");
                     return JsonHelper.Error(400, ex.Message);
                 }
             }
@@ -262,14 +289,22 @@ public sealed class Server : IAsyncDisposable
                         Encoding.UTF8.GetBytes(body)
                     );
                 }
-                catch
+                catch (Exception ex)
                 {
+                    logger?.Warning($"Config save failed: invalid JSON — {ex.Message}");
                     return JsonHelper.Error(400, "invalid json");
                 }
                 if (newConfig is null)
                     return JsonHelper.Error(400, "invalid config");
 
                 var newProviderNames = newConfig.Providers.Keys.ToList();
+
+                // Track providers that already exist (will have duplicates after adding)
+                var duplicateProviders = newConfig
+                    .Providers.Keys.Where(name => a.LlmsSnapshot.Any(l => l.ProviderName == name))
+                    .ToList();
+
+                // Phase 1: Add all new LLMs first (don't remove old ones yet)
                 foreach (var (name, entry) in newConfig.Providers)
                 {
                     var llm = new Llm
@@ -289,25 +324,40 @@ public sealed class Server : IAsyncDisposable
                         MaxTokens = newConfig.MaxTokens ?? 4096,
                         ThinkingEnabled = newConfig.ThinkingEnabled,
                     };
-                    var existing = a.LlmsSnapshot.FirstOrDefault(l => l.ProviderName == name);
-                    if (existing is not null)
-                        system.Send(a.Id, new RemoveLlmCmd(name, existing.ModelId));
                     system.Send(a.Id, new AddLlmCmd(llm));
                 }
+
+                // Phase 2: Remove old providers not in new config
                 var toRemove = a
                     .LlmsSnapshot.Where(l => !newProviderNames.Contains(l.ProviderName))
                     .ToList();
                 var newCurrent =
                     newProviderNames.FirstOrDefault() ?? a.LlmsSnapshot[0].ProviderName;
                 var newModel = newConfig.Model ?? newCurrent;
-                if (toRemove.Any(r => r.ProviderName == a.CurrentLlm.ProviderName))
+
+                // Phase 3: Switch away from CurrentLlm if it's being removed
+                if (
+                    toRemove.Any(r =>
+                        r.ProviderName == a.CurrentLlm.ProviderName
+                        && r.ModelId == a.CurrentLlm.ModelId
+                    )
+                )
                     system.Send(a.Id, new SwitchLlmCmd(newCurrent, newModel));
+
+                // Phase 4: Remove old providers
                 foreach (var old in toRemove)
                 {
-                    if (a.LlmsSnapshot.Count > 1 && old.ProviderName != a.CurrentLlm.ProviderName)
-                        system.Send(a.Id, new RemoveLlmCmd(old.ProviderName, old.ModelId));
+                    system.Send(a.Id, new RemoveLlmCmd(old.ProviderName, old.ModelId));
                 }
+
+                // Phase 5: Switch to desired current provider/model
                 system.Send(a.Id, new SwitchLlmCmd(newCurrent, newModel));
+
+                // Phase 6: Remove old duplicate entries (uses pre-computed list)
+                foreach (var name in duplicateProviders)
+                {
+                    system.Send(a.Id, new RemoveLlmCmd(name, newModel));
+                }
 
                 if (settingsPath is { Length: > 0 })
                 {
@@ -438,6 +488,7 @@ public sealed class Server : IAsyncDisposable
                         }
                         catch (Exception ex)
                         {
+                            logger?.Error($"SSE turn failed: {ex.Message}");
                             var errJson = BuildSseJson(new ActorOutputEvent("error", ex.Message));
                             await pipe.Writer.WriteAsync(
                                 Encoding.UTF8.GetBytes($"data: {errJson}\n\n"),
@@ -538,7 +589,16 @@ public sealed class Server : IAsyncDisposable
     private WebApp BuildWebApp()
     {
         var app = new WebApp(new SvcContainer(), new WebAppOptions());
-        AddEndpoints(app, _agent, _system, _llmClient, _toolRunner, "/api");
+        AddEndpoints(
+            app,
+            _agent,
+            _system,
+            _llmClient,
+            _toolRunner,
+            "/api",
+            settingsPath: _settingsPath,
+            logger: _logger
+        );
 
         // Serve static files from wwwroot alongside the app directory
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
@@ -599,5 +659,7 @@ public sealed class Server : IAsyncDisposable
     {
         if (_webServer is not null)
             await _webServer.DisposeAsync();
+        if (_loggerFactory is not null)
+            await _loggerFactory.DisposeAsync();
     }
 }

@@ -18,10 +18,7 @@ public sealed class AnthropicLLmClient : ILLmClient
         [EnumeratorCancellation] CancellationToken ct
     )
     {
-        var apiKey =
-            options?.ApiKey
-            ?? Environment.GetEnvironmentVariable($"{model.Provider.ToUpperInvariant()}_API_KEY")
-            ?? "";
+        var apiKey = options?.ApiKey ?? "";
 
         var json = BuildRequestJson(model, context, options);
 

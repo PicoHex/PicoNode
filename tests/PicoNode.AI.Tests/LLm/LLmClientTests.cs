@@ -318,7 +318,7 @@ public class AnthropicLLmClientTests
     }
 
     [Test]
-    public async Task StreamAsync_UsesProviderEnvVar_WhenNoApiKeyInOptions()
+    public async Task StreamAsync_EmptyApiKey_WhenNoApiKeyInOptions()
     {
         var handler = new MockHttpHandler
         {
@@ -332,6 +332,7 @@ public class AnthropicLLmClientTests
         var httpClient = new HttpClient(handler);
         var client = new AnthropicLLmClient(httpClient);
 
+        // Set env var to verify it is NOT used — config is the only source
         try
         {
             Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "env-key-123");
@@ -364,8 +365,9 @@ public class AnthropicLLmClientTests
             ) { }
 
             await Assert.That(handler.LastRequest).IsNotNull();
+            // With no ApiKey in options and env var ignored, header should be empty
             var authHeader = handler.LastRequest!.Headers.GetValues("x-api-key").FirstOrDefault();
-            await Assert.That(authHeader).IsEqualTo("env-key-123");
+            await Assert.That(authHeader).IsEqualTo("");
         }
         finally
         {

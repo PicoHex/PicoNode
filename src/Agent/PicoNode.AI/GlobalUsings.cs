@@ -8,6 +8,7 @@ global using System.Runtime.ExceptionServices;
 global using System.Text;
 global using PicoDI;
 global using PicoJetson;
+global using PicoLog.Abs;
 global using PicoNode.AI;
 global using PicoNode.AI.Types;
 global using PicoNode.Http;

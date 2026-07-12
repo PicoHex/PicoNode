@@ -1,6 +1,9 @@
 global using System.Net;
 global using System.Runtime.CompilerServices;
 global using System.Text;
+global using PicoCfg;
+global using PicoCfg.Abs;
+global using PicoCfg.Json;
 global using PicoDI;
 global using PicoNode.Agent;
 global using PicoNode.Agent.Domain;
