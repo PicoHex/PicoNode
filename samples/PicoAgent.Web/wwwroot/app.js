@@ -280,9 +280,11 @@ function cleanupToolBlocks(container) {
     for (const tc of container.querySelectorAll('.tool-call')) {
         const resultDiv = tc.querySelector('.tool-result');
         if (resultDiv && (resultDiv.textContent || '').trim() && resultDiv.textContent.startsWith('[no result]')) continue; // already handled
-        if (resultDiv && !resultDiv.textContent) {
+        if (resultDiv && !(resultDiv.textContent || '').trim()) {
             const nameEl = tc.querySelector('summary strong');
-            const name = (nameEl && nameEl.textContent) ? nameEl.textContent : (tc.dataset.toolId || '?');
+            const name = (nameEl && nameEl.textContent && nameEl.textContent !== 'tool')
+                ? nameEl.textContent
+                : (tc.dataset.toolName || tc.dataset.toolId || '?');
             const argsSpan = tc.querySelector('.tool-args');
             const argsText = (argsSpan && argsSpan.textContent && argsSpan.textContent !== 'running...') ? ' ' + argsSpan.textContent : '';
             resultDiv.textContent = '[no result] ' + name + argsText;
@@ -389,6 +391,12 @@ async function sendMessage(overrideText) {
                             const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]')
                                 || msgContent.querySelector('.tool-call[data-tool-name="' + CSS.escape(tName || tid) + '"]');
                             if (tcDiv) {
+                                // Ensure tool name is displayed (may be missing if tool_call_end didn't fire)
+                                if (tName) {
+                                    tcDiv.dataset.toolName = tName;
+                                    const strong = tcDiv.querySelector('summary strong');
+                                    if (strong && strong.textContent === 'tool') strong.textContent = tName;
+                                }
                                 tcDiv.classList.toggle('tool-error', evt.isError);
                                 const truncated = block.result.length > 1000
                                     ? block.result.substring(0, 1000) + '\n... (truncated)'
