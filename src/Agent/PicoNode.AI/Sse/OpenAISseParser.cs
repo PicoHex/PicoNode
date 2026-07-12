@@ -80,11 +80,10 @@ public static class OpenAISseParser
                 continue;
 
             var choice = choices[0];
-            if (!choice.TryGetProperty(JsonPropDelta, out var delta))
-                continue;
+            var hasDelta = choice.TryGetProperty(JsonPropDelta, out var delta);
 
             // ── Tool calls (OpenAI function calling) ──
-            if (delta.TryGetProperty(JsonPropToolCalls, out var tcArray))
+            if (hasDelta && delta.TryGetProperty(JsonPropToolCalls, out var tcArray))
             {
                 for (int i = 0; i < tcArray.GetArrayLength(); i++)
                 {
@@ -161,7 +160,7 @@ public static class OpenAISseParser
             }
 
             // ── Reasoning content ──
-            if (delta.TryGetProperty(JsonPropReasoningContent, out var reasoning))
+            if (hasDelta && delta.TryGetProperty(JsonPropReasoningContent, out var reasoning))
             {
                 var text = reasoning.GetStringOrNull();
                 if (text is not null)
@@ -203,7 +202,7 @@ public static class OpenAISseParser
             }
 
             // ── Text content ──
-            if (delta.TryGetProperty(JsonPropContent, out var contentVal))
+            if (hasDelta && delta.TryGetProperty(JsonPropContent, out var contentVal))
             {
                 var text = contentVal.GetStringOrNull() ?? "";
                 sawContent = true;
