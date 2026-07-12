@@ -481,10 +481,7 @@ public sealed class Server : IAsyncDisposable
                             await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
                             {
                                 var frame = ServerSse.BuildFrame(evt);
-                                await pipe.Writer.WriteAsync(
-                                    Encoding.UTF8.GetBytes(frame),
-                                    ct
-                                );
+                                await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(frame), ct);
                             }
                         }
                         catch (OperationCanceledException)
@@ -494,11 +491,10 @@ public sealed class Server : IAsyncDisposable
                         catch (Exception ex)
                         {
                             logger?.Error($"SSE turn failed: {ex.Message}");
-                            var errFrame = ServerSse.BuildFrame(new ActorOutputEvent("error", ex.Message));
-                            await pipe.Writer.WriteAsync(
-                                Encoding.UTF8.GetBytes(errFrame),
-                                ct
+                            var errFrame = ServerSse.BuildFrame(
+                                new ActorOutputEvent("error", ex.Message)
                             );
+                            await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(errFrame), ct);
                         }
                         finally
                         {
@@ -524,72 +520,6 @@ public sealed class Server : IAsyncDisposable
     }
 
     // ── Private helpers ─────────────────────────────────────────────
-
-    internal static string BuildSseJson(ActorOutputEvent evt)
-    {
-        var tp = evt.Type == "text" ? "delta" : evt.Type;
-        if (tp == "done")
-            return "{\"type\":\"done\"}";
-
-        var sb = new StringBuilder(128);
-        sb.Append("{\"type\":\"");
-        sb.Append(tp);
-        sb.Append("\"");
-
-        sb.Append(",\"content\":\"");
-        sb.Append(EscapeJsonString(evt.Data ?? string.Empty));
-        sb.Append('"');
-
-        if (evt.ToolCallId is { Length: > 0 })
-        {
-            sb.Append(",\"toolCallId\":\"");
-            sb.Append(evt.ToolCallId);
-            sb.Append('"');
-        }
-
-        if (evt.ToolName is { Length: > 0 })
-        {
-            sb.Append(",\"toolName\":\"");
-            sb.Append(evt.ToolName);
-            sb.Append('"');
-        }
-
-        sb.Append('}');
-        return sb.ToString();
-    }
-
-    private static string EscapeJsonString(string s)
-    {
-        var sb = new StringBuilder(s.Length);
-        foreach (var c in s)
-        {
-            switch (c)
-            {
-                case '"':
-                    sb.Append("\\\"");
-                    break;
-                case '\\':
-                    sb.Append("\\\\");
-                    break;
-                case '\n':
-                    sb.Append("\\n");
-                    break;
-                case '\r':
-                    sb.Append("\\r");
-                    break;
-                case '\t':
-                    sb.Append("\\t");
-                    break;
-                default:
-                    if (c < 0x20)
-                        sb.Append($"\\u{(int)c:X4}");
-                    else
-                        sb.Append(c);
-                    break;
-            }
-        }
-        return sb.ToString();
-    }
 
     private WebApp BuildWebApp()
     {
