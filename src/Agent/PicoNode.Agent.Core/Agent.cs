@@ -12,10 +12,16 @@ public sealed class Agent : EventSourcedActor
     private readonly List<Guid> _childIds = [];
     private string? _turnId;
 
+    internal string? TurnId => _turnId;
+
     // ── Turn-aware output ──
 
-    private void WriteTurnOutput(string type, string? data = null, string? toolCallId = null, string? toolName = null) =>
-        WriteOutput(type, data, toolCallId, toolName, _turnId);
+    private void WriteTurnOutput(
+        string type,
+        string? data = null,
+        string? toolCallId = null,
+        string? toolName = null
+    ) => WriteOutput(type, data, toolCallId, toolName, _turnId);
 
     public Llm CurrentLlm { get; private set; } = null!;
     public IReadOnlyList<Llm> LlmsSnapshot => _llms;
@@ -293,6 +299,7 @@ public sealed class Agent : EventSourcedActor
         finally
         {
             OutputWriter?.Complete();
+            _turnId = null;
         }
     }
 
