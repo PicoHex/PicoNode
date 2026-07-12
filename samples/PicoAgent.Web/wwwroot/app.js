@@ -340,16 +340,17 @@ async function sendMessage(overrideText) {
                         // New LLM turn — flush thinking from previous turn
                         if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; }
                         thinkingPhase++; rawThinking = '';
-                        if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(thinkBlock); }
-                        else { thinkBlock = null; }
+                        // Create tool-call block first, then placeholder for next iteration's thinking
                         const tid = evt.toolCallId || 'tool_' + Date.now();
                         const tKey = evt.toolName || tid;
                         toolBlocks[tid] = { name: evt.toolName || 'tool', args: '', result: '', isError: false, isSkill: false };
-                        toolBlocks[tKey] = toolBlocks[tid];  // alias by toolName for tool_result matching
+                        toolBlocks[tKey] = toolBlocks[tid];
                         const tcDiv = document.createElement('details');
                         tcDiv.className = 'tool-call'; tcDiv.dataset.toolId = tid; tcDiv.dataset.toolName = evt.toolName || ''; tcDiv.open = true;
                         tcDiv.innerHTML = '<summary>🔧 <strong>' + (evt.toolName || 'tool') + '</strong> <span class="tool-args">running...</span></summary><div class="tool-result"></div>';
                         msgContent.appendChild(tcDiv);
+                        if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(thinkBlock); }
+                        else { thinkBlock = null; }
                     }
                     else if (evt.type === 'tool_call_delta') {
                         const tid = evt.toolCallId;
