@@ -62,6 +62,7 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
         }
         catch (Exception ex)
         {
+            ExceptionHandler.LogOnly(ex, "DynamicLLmClient.cs");
             initError = ex;
         }
 
@@ -86,6 +87,7 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
             }
             catch (Exception ex)
             {
+                ExceptionHandler.LogOnly(ex, "DynamicLLmClient.cs");
                 moveError = ex;
                 hasNext = false;
             }

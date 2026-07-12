@@ -30,6 +30,8 @@ public sealed class ToolRunner : IToolRunner
         }
         catch (Exception ex)
         {
+            ExceptionHandler.LogOnly(ex, "ToolRunner.cs");
+            ExceptionHandler.LogOnly(ex, $"ToolRunner.{toolName}");
             return $"[Tool {toolName} error: {ex.Message}]";
         }
     }

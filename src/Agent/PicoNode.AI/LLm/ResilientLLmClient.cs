@@ -57,6 +57,9 @@ public sealed class ResilientLLmClient : ILLmClient
                     }
                     catch (Exception ex)
                     {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"ResilientLLmClient stream: {ex.Message}"
+                        );
                         midStreamFailure = ex;
                         break;
                     }
@@ -139,6 +142,7 @@ public sealed class ResilientLLmClient : ILLmClient
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"ResilientLLmClient acquire: {ex.Message}");
                 if (enumerator is not null)
                     await SafeDisposeAsync(enumerator);
                 breaker?.RecordFailure();

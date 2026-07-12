@@ -57,8 +57,9 @@ public static class ToolManager
             File.Delete(archive);
             return cached;
         }
-        catch
+        catch (Exception ex)
         {
+            ExceptionHandler.LogOnly(ex, "ToolManager.cs");
             return null;
         }
     }

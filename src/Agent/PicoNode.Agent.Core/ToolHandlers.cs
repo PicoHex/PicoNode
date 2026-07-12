@@ -141,6 +141,7 @@ public static class ToolHandlers
         }
         catch (Exception ex)
         {
+            ExceptionHandler.LogOnly(ex, "ToolHandlers.cs");
             return $"[Error: {ex.Message}]";
         }
     }

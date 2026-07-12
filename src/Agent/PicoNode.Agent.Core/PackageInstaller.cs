@@ -36,6 +36,7 @@ public static class PackageInstaller
             }
             catch (Exception ex)
             {
+                ExceptionHandler.LogOnly(ex, "PackageInstaller.cs");
                 logger?.Log(
                     LogLevel.Warning,
                     new EventId(0),

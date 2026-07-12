@@ -52,6 +52,7 @@ public sealed class AnthropicLLmClient : ILLmClient
             }
             catch
             {
+                System.Diagnostics.Debug.WriteLine($"AnthropicLLmClient error parse: {errorBody}");
                 errorMessage = errorBody;
             }
 

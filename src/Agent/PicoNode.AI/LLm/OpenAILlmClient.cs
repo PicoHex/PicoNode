@@ -47,6 +47,7 @@ public sealed class OpenAILlmClient : ILLmClient
             }
             catch
             {
+                System.Diagnostics.Debug.WriteLine($"OpenAILlmClient error parse: {errorBody}");
                 errorMessage = errorBody;
             }
 
