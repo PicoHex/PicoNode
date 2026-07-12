@@ -326,7 +326,7 @@ async function sendMessage(overrideText) {
                         currentTextSeg.classList.remove('rendered');
                     }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked || !thinkBlock) continue; rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
-                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => { renderAllSegments(msgContent); cleanupToolBlocks(msgContent); }, 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
+                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => renderAllSegments(msgContent), 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
                     else if (evt.type === 'tool_call_start') {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
                         segStart = rawText.length;
@@ -394,6 +394,8 @@ async function sendMessage(overrideText) {
                                     ? block.result.substring(0, 1000) + '\n... (truncated)'
                                     : block.result;
                                 tcDiv.querySelector('.tool-result').textContent = truncated;
+                                // If cleanupToolBlocks previously marked this as [no result], clear it
+                                tcDiv.classList.remove('tool-error');
                                 tcDiv.open = false;
                                 const summary = tcDiv.querySelector('summary');
                                 const name = block.name;
@@ -417,7 +419,7 @@ async function sendMessage(overrideText) {
                 } catch {} messages.scrollTop = messages.scrollHeight; }
         }
     } catch (err) { if (err.name === 'AbortError') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); } else { msgContent.innerHTML += '<div class="stream-error">' + err.message + '</div>'; showToast(err.message, true); } }
-    finally { setStreaming(false); abortCtrl = null; input.focus(); try { await api('POST', `/api/session/save/${currentSession}`); } catch {} await loadSessions(); }
+    finally { setStreaming(false); abortCtrl = null; input.focus(); cleanupToolBlocks(msgContent); try { await api('POST', `/api/session/save/${currentSession}`); } catch {} await loadSessions(); }
 }
 
 // ── Marked + Mermaid ──
