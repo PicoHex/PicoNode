@@ -56,8 +56,7 @@ public static class OpenAISseParser
                     );
                 message.ContentBlocks = contentBlocks.ToArray();
                 message.StopReason = "stop";
-                if (reasoningAccum.Length > 0)
-                    message.ReasoningContent = reasoningAccum.ToString();
+                message.ReasoningContent = reasoningAccum.GetContent();
                 yield return new AssistantMessageEvent.Done { Message = message };
                 yield break;
             }
@@ -275,8 +274,10 @@ public static class OpenAISseParser
 
                 message.ContentBlocks = contentBlocks.ToArray();
                 message.StopReason = reason;
-                if (reasoningAccum.Length > 0)
-                    message.ReasoningContent = reasoningAccum.ToString();
+                // Prefer choice.message.reasoning_content over delta-accumulated
+                // (DeepSeek may send full reasoning in message, partial in delta)
+                message.ReasoningContent =
+                    GetMessageReasoning(choice) ?? reasoningAccum.GetContent();
                 yield return new AssistantMessageEvent.Done { Message = message };
                 yield break;
             }
@@ -317,6 +318,23 @@ public static class OpenAISseParser
             return [];
         }
     }
+
+    private static string? GetMessageReasoning(PicoElement choice)
+    {
+        if (
+            choice.TryGetProperty("message", out var msg)
+            && msg.TryGetProperty("reasoning_content", out var rc)
+        )
+        {
+            var text = rc.GetStringOrNull();
+            if (text is { Length: > 0 })
+                return text;
+        }
+        return null;
+    }
+
+    private static string? GetContent(this StringBuilder sb) =>
+        sb.Length > 0 ? sb.ToString() : null;
 
     /// <summary>Test-only entry point for SSE deserialization tests.</summary>
     internal static AssistantMessageEvent ParseForTest(string json) =>
