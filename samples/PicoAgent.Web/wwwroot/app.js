@@ -305,7 +305,7 @@ async function sendMessage(overrideText) {
     const msgContent = asst.querySelector('.msg-content');
     msgContent.innerHTML = '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span>';
     const streamDot = msgContent.querySelector('.streaming-indicator');
-    const thinkBlock = asst.querySelector('.thinking');
+    let thinkBlock = asst.querySelector('.thinking');
     let rawText = '', rawThinking = '';
     let segStart = 0; // rawText offset where current text segment starts
     let thinkingPhase = 0;

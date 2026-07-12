@@ -58,6 +58,7 @@ public sealed class LlmClientAdapter : ILlmClient
         [EnumeratorCancellation] CancellationToken ct
     )
     {
+        var sawThinking = false;
         await foreach (var evt in StreamInner(llm, context, tools, ct))
         {
             switch (evt)
@@ -69,6 +70,7 @@ public sealed class LlmClientAdapter : ILlmClient
                     yield return new StreamEvent { Type = "text", Content = td.Delta };
                     break;
                 case NetAI.AssistantMessageEvent.ThinkingDelta tdd:
+                    sawThinking = true;
                     yield return new StreamEvent { Type = "thinking", Content = tdd.Delta };
                     break;
                 case NetAI.AssistantMessageEvent.ToolCallStart ts:
@@ -107,6 +109,14 @@ public sealed class LlmClientAdapter : ILlmClient
                     };
                     break;
                 case NetAI.AssistantMessageEvent.Done d:
+                    // DeepSeek may deliver reasoning_content only in the Done message,
+                    // not as individual ThinkingDelta events. Forward it if not already seen.
+                    if (!sawThinking && d.Message.ReasoningContent is { Length: > 0 })
+                        yield return new StreamEvent
+                        {
+                            Type = "thinking",
+                            Content = d.Message.ReasoningContent,
+                        };
                     yield return new StreamEvent { Type = "done" };
                     yield break;
                 case NetAI.AssistantMessageEvent.Error e:
