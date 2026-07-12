@@ -13,6 +13,8 @@
     <ProjectReference Include="..\..\src\Agent\PicoNode.Agent.Core\PicoNode.Agent.Core.csproj" />
     <ProjectReference Include="..\..\src\Actor\PicoNode.Actor\PicoNode.Actor.csproj" />
     <PackageReference Include="TUnit" />
+    <PackageReference Include="PicoLog.Abs" />
+    <PackageReference Include="PicoDI" />
     <PackageReference Include="PicoCfg" />
     <PackageReference Include="PicoCfg.Json" />
   </ItemGroup>

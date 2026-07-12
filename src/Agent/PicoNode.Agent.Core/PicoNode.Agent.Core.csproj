@@ -4,7 +4,6 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <IsAotCompatible>true</IsAotCompatible>
     <RootNamespace>PicoNode.Agent.Domain</RootNamespace>
   </PropertyGroup>
 
@@ -18,6 +17,8 @@
     <ProjectReference Include="..\..\Actor\PicoNode.Actor.Abs\PicoNode.Actor.Abs.csproj" />
     <PackageReference Include="PicoJetson" />
     <PackageReference Include="PicoLog.Abs" />
+    <PackageReference Include="PicoDI" />
+    <PackageReference Include="PicoLog" />
     <PackageReference Include="PicoCfg" />
     <PackageReference Include="PicoCfg.Json" />
   </ItemGroup>

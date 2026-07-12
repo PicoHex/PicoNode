@@ -1,9 +1,10 @@
 namespace PicoNode.Agent.Domain;
 
+using PicoCfg.Extensions;
+
 /// <summary>
 /// Loads AgentConfig from a PicoCfg root (built with AddJsonFile).
-/// PicoCfg handles file source, reload, and DI integration.
-/// Manual key-value mapping for AgentConfig.
+/// Uses GetAll() for dynamic provider discovery (PicoCfg >= 2026.7.3).
 /// </summary>
 public static class ConfigLoader
 {
@@ -20,33 +21,35 @@ public static class ConfigLoader
         if (cfg.TryGetValue("maxTokens", out var mt) && int.TryParse(mt, out var i))
             config.MaxTokens = i;
 
-        // Probe known providers from provider templates
-        foreach (var name in KnownProviders)
+        // Dynamic provider discovery via GetAll()
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in cfg.GetAll())
         {
-            if (
-                !cfg.TryGetValue($"providers:{name}:apiKey", out var apiKey)
-                || string.IsNullOrEmpty(apiKey)
-            )
+            const string prefix = "providers:";
+            if (!kv.Key.StartsWith(prefix, StringComparison.Ordinal))
                 continue;
 
-            var entry = new ProviderEntry { ApiKey = apiKey };
-            if (cfg.TryGetValue($"providers:{name}:baseUrl", out var bu))
+            var rest = kv.Key[prefix.Length..];
+            var colon = rest.IndexOf(':');
+            if (colon <= 0)
+                continue;
+
+            var name = rest[..colon];
+            if (!seen.Add(name))
+                continue;
+
+            var entry = new ProviderEntry();
+            if (cfg.TryGetValue($"{prefix}{name}:apiKey", out var ak))
+                entry.ApiKey = ak;
+            if (cfg.TryGetValue($"{prefix}{name}:baseUrl", out var bu))
                 entry.BaseUrl = bu;
-            if (cfg.TryGetValue($"providers:{name}:apiFormat", out var af))
+            if (cfg.TryGetValue($"{prefix}{name}:apiFormat", out var af))
                 entry.ApiFormat = af;
-            config.Providers[name] = entry;
+
+            if (!string.IsNullOrEmpty(entry.ApiKey))
+                config.Providers[name] = entry;
         }
 
         return config;
     }
-
-    private static readonly string[] KnownProviders =
-    [
-        "openai",
-        "deepseek",
-        "anthropic",
-        "groq",
-        "ollama",
-        "unconfigured",
-    ];
 }

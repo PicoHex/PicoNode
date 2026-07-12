@@ -332,7 +332,7 @@ async function sendMessage(overrideText) {
                         segStart = rawText.length;
                         // New LLM turn — flush thinking from previous turn
                         thinkingPhase++; rawThinking = '';
-                        if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; asst.appendChild(thinkBlock); }
+                        if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; asst.insertBefore(thinkBlock, msgContent); }
                         else { thinkBlock = null; }
                         const tid = evt.toolCallId || 'tool_' + Date.now();
                         const tKey = evt.toolName || tid;

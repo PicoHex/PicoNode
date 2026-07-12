@@ -78,4 +78,47 @@ public sealed class ConfigLoaderTests
             Directory.Delete(dir, true);
         }
     }
+
+    [Test]
+    public async Task LoadFromCfg_CustomProvider_NotInHardcodedList()
+    {
+        // This provider name is NOT in the hardcoded ProviderNames list.
+        // With GetAll() dynamic discovery, it should still be found.
+        var dir = Path.Combine(
+            Path.GetTempPath(),
+            "picocfg-test-" + Guid.NewGuid().ToString("N")[..8]
+        );
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "settings.json");
+        await File.WriteAllTextAsync(
+            path,
+            """
+            {
+              "providers": {
+                "custom-llm-api": {
+                  "apiKey": "sk-custom-999",
+                  "baseUrl": "https://custom.api.com/v1"
+                }
+              }
+            }
+            """
+        );
+
+        try
+        {
+            var cfg = await Cfg.CreateBuilder().AddJsonFile(path).BuildAsync();
+            var config = ConfigLoader.Load(cfg);
+
+            await Assert.That(config).IsNotNull();
+            await Assert.That(config.Providers.Count).IsEqualTo(1);
+            await Assert.That(config.Providers["custom-llm-api"].ApiKey).IsEqualTo("sk-custom-999");
+            await Assert
+                .That(config.Providers["custom-llm-api"].BaseUrl)
+                .IsEqualTo("https://custom.api.com/v1");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
 }
