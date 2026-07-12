@@ -24,6 +24,7 @@ public abstract class AssistantMessageEvent
     public sealed class ToolCallStart : AssistantMessageEvent
     {
         public int Index { get; set; }
+        public string Name { get; set; } = string.Empty;
         public Message Partial { get; set; } = new();
     }
 

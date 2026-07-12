@@ -112,6 +112,7 @@ public static class OpenAISseParser
                         yield return new AssistantMessageEvent.ToolCallStart
                         {
                             Index = index,
+                            Name = name,
                             Partial = new Message
                             {
                                 Role = "assistant",

@@ -107,6 +107,7 @@ public static class SseParser
                         yield return new AssistantMessageEvent.ToolCallStart
                         {
                             Index = cbIndex,
+                            Name = cb["name"].GetString()!,
                             Partial = ClonePartial(message, contentBlocks),
                         };
                     }

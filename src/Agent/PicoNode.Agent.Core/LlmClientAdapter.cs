@@ -78,6 +78,7 @@ public sealed class LlmClientAdapter : ILlmClient
                     {
                         Type = "tool_call_start",
                         ToolCallId = ts.Index.ToString(),
+                        ToolName = ts.Name,
                     };
                     break;
                 case NetAI.AssistantMessageEvent.ToolCallDelta tcd:
