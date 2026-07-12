@@ -135,11 +135,8 @@ public sealed class Server : IAsyncDisposable
         );
 
         // Sessions
-        app.MapGet(
-            $"{p}/sessions",
         app.MapGet($"{p}/sessions", (_, _) =>
             V(JsonHelper.RawJson("[\"default\"]"))
-        );
         );
 
         // Config status
