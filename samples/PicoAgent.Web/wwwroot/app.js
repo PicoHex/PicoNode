@@ -301,11 +301,11 @@ async function sendMessage(overrideText) {
     abortCtrl?.abort(); abortCtrl = new AbortController();
     renderMessage('user', text);
     const asst = renderMessage('assistant', '', '', currentSession + '-' + streamMsgIndex);
-    if (thinkChk.checked) { const th = document.createElement('details'); th.className = 'thinking'; th.open = true; th.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; asst.insertBefore(th, asst.querySelector('.msg-content')); }
+    if (thinkChk.checked) { const th = document.createElement('details'); th.className = 'thinking'; th.open = true; th.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(th); }
     const msgContent = asst.querySelector('.msg-content');
     msgContent.innerHTML = '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span>';
     const streamDot = msgContent.querySelector('.streaming-indicator');
-    let thinkBlock = asst.querySelector('.thinking');
+    let thinkBlock = msgContent.querySelector('.thinking');
     let rawText = '', rawThinking = '';
     let segStart = 0; // rawText offset where current text segment starts
     let thinkingPhase = 0;
@@ -326,13 +326,14 @@ async function sendMessage(overrideText) {
                         currentTextSeg.classList.remove('rendered');
                     }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked || !thinkBlock) continue; rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
-                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => renderAllSegments(msgContent), 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
+                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => { renderAllSegments(msgContent); cleanupToolBlocks(msgContent); }, 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
                     else if (evt.type === 'tool_call_start') {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
                         segStart = rawText.length;
                         // New LLM turn — flush thinking from previous turn
+                        if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; }
                         thinkingPhase++; rawThinking = '';
-                        if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; asst.insertBefore(thinkBlock, msgContent); }
+                        if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(thinkBlock); }
                         else { thinkBlock = null; }
                         const tid = evt.toolCallId || 'tool_' + Date.now();
                         const tKey = evt.toolName || tid;
