@@ -1,5 +1,6 @@
 namespace PicoNode.Agent.Domain;
 
+[PicoSerializable]
 public sealed class AgentConfig
 {
     public Dictionary<string, ProviderEntry> Providers { get; set; } = [];
@@ -23,6 +24,7 @@ public sealed class AgentConfig
         };
 }
 
+[PicoSerializable]
 public sealed class ProviderEntry
 {
     public string ApiKey { get; set; } = string.Empty;
@@ -32,6 +34,7 @@ public sealed class ProviderEntry
     public Dictionary<string, ModelThinkingOverride>? Models { get; set; }
 }
 
+[PicoSerializable]
 public sealed class ModelThinkingOverride
 {
     public bool ThinkingEnabled { get; set; }
