@@ -304,6 +304,7 @@ async function sendMessage(overrideText) {
     renderMessage('user', text);
     const asst = renderMessage('assistant', '', '', currentSession + '-' + streamMsgIndex);
     const msgContent = asst.querySelector('.msg-content');
+    const turnContainers = {}; // turnId -> container element (future multi-agent)
     msgContent.innerHTML = '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span>';
     if (thinkChk.checked) { const th = document.createElement('details'); th.className = 'thinking'; th.open = true; th.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(th); }
     const streamDot = msgContent.querySelector('.streaming-indicator');
@@ -313,14 +314,18 @@ async function sendMessage(overrideText) {
     let thinkingPhase = 0;
     let toolBlocks = {};
     let currentTextSeg = null;
+    let currentTurnId = null;
 
     try {
         const response = await fetch(`/api/session/${currentSession}/message`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text, signal: abortCtrl.signal });
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
         while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop() || '';
-            for (const line of lines) { if (!line.startsWith('data: ')) continue; const p = line.slice(6);
+            for (const line of lines) {
+                if (line.startsWith('event: ')) { currentTurnId = line.slice(7).trim(); continue; }
+                if (!line.startsWith('data: ')) continue;
+                const p = line.slice(6);
                 if (p === '[DONE]') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => { renderAllSegments(msgContent); cleanupToolBlocks(msgContent); }, 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } break; }
-                try { const evt = JSON.parse(p);
+                try { const evt = JSON.parse(p); evt._turnId = currentTurnId;
                     if (evt.type === 'delta') {
                         rawText += evt.content;
                         if (!currentTextSeg) { streamDot.style.display = 'none'; currentTextSeg = createTextSeg(); msgContent.appendChild(currentTextSeg); }
