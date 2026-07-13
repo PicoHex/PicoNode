@@ -101,6 +101,24 @@ public sealed class JsonlSessionStorage : ISessionStorage
 
     public Task<string?> GetLabel(string id) => _memory.GetLabel(id);
 
+    public async Task SetName(string name)
+    {
+        await _memory.SetName(name);
+        // Rewrite file with updated name in SessionInfoEntry
+        var entries = await _memory.GetEntries();
+        var info = JsonSerializer.Serialize((SessionTreeEntryBase)
+            new SessionInfoEntry { Name = name });
+        var json = info + Environment.NewLine + string.Join(
+            Environment.NewLine,
+            entries.Where(e => e is not LeafEntry).Select(e => JsonSerializer.Serialize(e))
+        );
+        // Keep last LeafEntry
+        var lastLeaf = entries.LastOrDefault(e => e is LeafEntry);
+        if (lastLeaf is not null)
+            json += Environment.NewLine + JsonSerializer.Serialize(lastLeaf);
+        await File.WriteAllTextAsync(_jsonlPath, json + Environment.NewLine);
+    }
+
     public async Task MoveTo(string entryId)
     {
         await _memory.MoveTo(entryId);

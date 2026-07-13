@@ -5,7 +5,7 @@ public sealed class Session
     private readonly ISessionStorage _storage;
 
     public Guid Id { get; }
-    public string Name { get; }
+    public string Name { get; private set; }
 
     public Session(Guid id, string name = "default", ISessionStorage? storage = null)
     {
@@ -40,6 +40,12 @@ public sealed class Session
     public async Task<string?> GetLeafId() => await _storage.GetLeafId();
 
     public async Task<SessionTreeEntryBase[]> GetEntries() => await _storage.GetEntries();
+
+    public async Task SetName(string name)
+    {
+        Name = name;
+        await _storage.SetName(name);
+    }
 
     private static List<Message> BuildContextFromPath(SessionTreeEntryBase[] path)
     {

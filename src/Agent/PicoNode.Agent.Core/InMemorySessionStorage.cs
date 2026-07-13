@@ -5,6 +5,8 @@ public sealed class InMemorySessionStorage : ISessionStorage
     private readonly List<SessionTreeEntryBase> _entries = [];
     private string? _leafId;
 
+    public string Name { get; private set; } = "default";
+
     public Task<string> CreateEntryId() => Task.FromResult(Guid.CreateVersion7().ToString());
 
     public Task AppendEntry(SessionTreeEntryBase entry)
@@ -41,6 +43,12 @@ public sealed class InMemorySessionStorage : ISessionStorage
     public Task MoveTo(string entryId)
     {
         _leafId = entryId;
+        return Task.CompletedTask;
+    }
+
+    public Task SetName(string name)
+    {
+        Name = name;
         return Task.CompletedTask;
     }
 }

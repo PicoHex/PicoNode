@@ -517,6 +517,32 @@ public sealed class Server : IAsyncDisposable
                                     return;
                                 }
 
+                                // Auto-name the session on first message
+                                if (a.Session?.Name == "default" && a.Session is not null)
+                                {
+                                    _ = Task.Run(async () =>
+                                    {
+                                        try
+                                        {
+                                            var prompt =
+                                                $"Summarize this chat topic in 3-5 words (no quotes, no punctuation): {message}";
+                                            var result = await llm.CompleteAsync(
+                                                a.CurrentLlm,
+                                                [new Message { Role = "user", Content = prompt }],
+                                                [],
+                                                CancellationToken.None
+                                            );
+                                            var name = (result.Content ?? "chat").Trim();
+                                            if (name.Length > 50) name = name[..50];
+                                            await a.Session.SetName(name);
+                                        }
+                                        catch
+                                        {
+                                            // Naming is best-effort, don't block the turn
+                                        }
+                                    });
+                                }
+
                                 system.Send(a.Id, new RunTurn(message, turnId));
                                 logger?.Info(
                                     $"RunTurn envoyé: turnId={turnId}, agentStatus={a.Status}"
