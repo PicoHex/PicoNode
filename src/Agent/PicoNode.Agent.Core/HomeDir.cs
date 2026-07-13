@@ -26,7 +26,7 @@ public sealed class HomeDir
     public string PackagesDir => Path.Combine(Root, "git");
     public string SkillsDir => Path.Combine(Root, "skills");
 
-    public string AgentIdPath => Path.Combine(Root, "agent.id");
+    public string AgentIdPath => Path.Combine(Root, "actors", "agent.id");
 
     /// <summary>Save the agent ID for restart recovery. Overwrites if exists.</summary>
     public async Task SaveAgentIdAsync(Guid agentId)
