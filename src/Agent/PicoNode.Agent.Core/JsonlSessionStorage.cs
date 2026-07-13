@@ -70,8 +70,19 @@ public sealed class JsonlSessionStorage : ISessionStorage
     public async Task MoveTo(string entryId)
     {
         await _memory.MoveTo(entryId);
-        var leafEntry = new LeafEntry { TargetId = entryId };
-        var json = JsonSerializer.Serialize((SessionTreeEntryBase)leafEntry);
-        await File.AppendAllTextAsync(_jsonlPath, json + Environment.NewLine);
+
+        // Rewrite file without old LeafEntries, then append new one
+        var entries = await _memory.GetEntries();
+        var json = string.Join(
+            Environment.NewLine,
+            entries.Where(e => e is not LeafEntry).Select(e => JsonSerializer.Serialize(e))
+        );
+        var leaf = JsonSerializer.Serialize(
+            (SessionTreeEntryBase)new LeafEntry { TargetId = entryId }
+        );
+        await File.WriteAllTextAsync(
+            _jsonlPath,
+            json + Environment.NewLine + leaf + Environment.NewLine
+        );
     }
 }
