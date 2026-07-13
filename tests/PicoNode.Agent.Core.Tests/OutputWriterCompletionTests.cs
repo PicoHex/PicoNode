@@ -45,6 +45,8 @@ public sealed class OutputWriterCompletionTests
         var channel = Channel.CreateUnbounded<ActorOutputEvent>();
         agent.OutputWriter = channel.Writer;
 
+        system.Send(agent.Id, new StartAgent());
+        await Task.Delay(50);
         system.Send(agent.Id, new RunTurn("Hi", "test-turn"));
 
         // Must complete — Writer.Complete() is called by Agent

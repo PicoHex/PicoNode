@@ -159,6 +159,22 @@ public sealed class ActorSystem : IActorSystem
     }
 
     // ═══════════════════════════════════════════════════════════
+    // Turn cancellation
+    // ═══════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Cancel the currently running long-running operation on an actor
+    /// without stopping the actor. Only works on actors implementing ICancellable.
+    /// This bypasses the mailbox — immediate effect.
+    /// Safe to call when no operation is running (no-op).
+    /// </summary>
+    public void CancelTurn(Guid id)
+    {
+        if (_registry.TryGetValue(id, out var actor) && actor is ICancelable c)
+            c.CancelCurrentTurn();
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // Lifecycle
     // ═══════════════════════════════════════════════════════════
 

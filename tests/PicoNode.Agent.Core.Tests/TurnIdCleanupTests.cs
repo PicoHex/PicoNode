@@ -41,6 +41,8 @@ public sealed class TurnIdCleanupTests
         );
         await Task.Delay(50);
 
+        system.Send(agent.Id, new StartAgent());
+        await Task.Delay(50);
         system.Send(agent.Id, new RunTurn("hello", "turn-abc"));
         await Task.Delay(500);
 

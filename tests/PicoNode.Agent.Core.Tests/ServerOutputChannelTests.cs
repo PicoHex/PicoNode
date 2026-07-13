@@ -58,6 +58,8 @@ public sealed class ServerOutputChannelTests
         });
 
         // Send RunTurn — no callback, pure command
+        system.Send(agent.Id, new StartAgent());
+        await Task.Delay(50);
         system.Send(agent.Id, new RunTurn("Hi", "test-turn"));
         await Task.Delay(500); // Wait for Agent to complete writer
         await readerTask;
@@ -100,6 +102,8 @@ public sealed class ServerOutputChannelTests
         );
 
         // No OutputWriter set — Agent should still complete RunTurn normally
+        system.Send(agent.Id, new StartAgent());
+        await Task.Delay(50);
         system.Send(agent.Id, new RunTurn("Hi", "test-turn"));
         await Task.Delay(200);
 

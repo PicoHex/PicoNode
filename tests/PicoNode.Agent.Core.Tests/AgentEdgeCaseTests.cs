@@ -36,7 +36,8 @@ public sealed class AgentEdgeCaseTests
                     },
                 ],
                 "x",
-                "y")
+                "y"
+            )
         );
 
         try
@@ -79,11 +80,17 @@ public sealed class AgentEdgeCaseTests
                     },
                 ],
                 "x",
-                "y")
+                "y"
+            )
         );
 
+        system.Send(agent.Id, new StartAgent());
+        await Task.Delay(50);
+
         await Assert
-            .That(async () => await system.AskAsync<object?>(agent.Id, new RunTurn("Hi", "test-turn")))
+            .That(async () =>
+                await system.AskAsync<object?>(agent.Id, new RunTurn("Hi", "test-turn"))
+            )
             .Throws<Exception>();
     }
 }

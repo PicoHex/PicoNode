@@ -82,9 +82,12 @@ public sealed class AgentRunTurnTests
                     },
                 ],
                 "x",
-                "y")
+                "y"
+            )
         );
 
+        system.Send(agent.Id, new StartAgent());
+        await Task.Delay(50);
         system.Send(agent.Id, new RunTurn("Hi", "test-turn"));
         await Task.Delay(200);
 
@@ -124,7 +127,8 @@ public sealed class AgentRunTurnTests
                     },
                 ],
                 "x",
-                "y")
+                "y"
+            )
         );
 
         agent.OutputWriter = channel.Writer;
@@ -134,6 +138,8 @@ public sealed class AgentRunTurnTests
                 events.Add(e);
         });
 
+        system.Send(agent.Id, new StartAgent());
+        await Task.Delay(50);
         system.Send(agent.Id, new RunTurn("Hi", "test-turn"));
         await Task.Delay(500); // Wait for Agent to complete the writer
 

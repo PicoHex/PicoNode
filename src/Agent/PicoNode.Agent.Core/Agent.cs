@@ -5,12 +5,13 @@ namespace PicoNode.Agent.Domain;
 /// domain events (RaiseEvent), persisted by the Actor framework, and
 /// restored via ReplayEvents. Session is data (not state), managed separately.
 /// </summary>
-public sealed class Agent : EventSourcedActor
+public sealed class Agent : EventSourcedActor, ICancelable
 {
     private readonly List<Llm> _llms = [];
     private readonly List<Tool> _tools = [];
     private readonly List<Guid> _childIds = [];
     private string? _turnId;
+    private CancellationTokenSource? _turnCts;
 
     internal string? TurnId => _turnId;
 
@@ -136,8 +137,15 @@ public sealed class Agent : EventSourcedActor
                 return SpawnChildAsync(s);
 
             case RunTurn r:
+            {
+                if (Status != AgentStatus.Running)
+                    throw new DomainInvariantException($"Cannot run turn when status is {Status}");
+                if (_turnCts is not null)
+                    throw new InvalidOperationException("A turn is already running");
                 _turnId = r.TurnId;
-                return RunTurnAsync(r.Message, StopToken);
+                _turnCts = new CancellationTokenSource();
+                return RunTurnAsync(r.Message, _turnCts.Token);
+            }
 
             case SetThinkingLevelCmd s:
                 RaiseEvent(new ThinkingLevelSet(s.Level));
@@ -164,12 +172,16 @@ public sealed class Agent : EventSourcedActor
 
     // ── RunTurn ──
 
-    private async ValueTask<object?> RunTurnAsync(string message, CancellationToken ct)
+    private async ValueTask<object?> RunTurnAsync(string message, CancellationToken turnCt)
     {
         if (LlmClient is null || ToolRunner is null)
             throw new InvalidOperationException(
                 "RunTurn requires LlmClient and ToolRunner — register them via the Agent constructor."
             );
+
+        // Link turn cancellation with actor stop cancellation
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(StopToken, turnCt);
+        var ct = linked.Token;
 
         try
         {
@@ -269,11 +281,20 @@ public sealed class Agent : EventSourcedActor
                 {
                     foreach (var tc in toolCalls)
                     {
-                        var toolResult = await ToolRunner!.ExecuteAsync(
-                            tc.Name ?? "",
-                            tc.Arguments,
-                            ct
-                        );
+                        string toolResult;
+                        try
+                        {
+                            toolResult = await ToolRunner!.ExecuteAsync(
+                                tc.Name ?? "",
+                                tc.Arguments,
+                                ct
+                            );
+                        }
+                        catch (Exception ex)
+                        {
+                            toolResult = $"[ToolError: {ex.GetType().Name}] {ex.Message}";
+                        }
+
                         var toolMsg = new Message
                         {
                             Role = "toolResult",
@@ -291,6 +312,17 @@ public sealed class Agent : EventSourcedActor
             WriteTurnOutput("done");
             return default;
         }
+        catch (OperationCanceledException) when (!StopToken.IsCancellationRequested)
+        {
+            // Turn was cancelled (not the whole actor)
+            WriteTurnOutput("cancelled");
+            return default;
+        }
+        catch (OperationCanceledException)
+        {
+            // Actor is stopping — propagate silently, not an error
+            throw;
+        }
         catch (Exception ex)
         {
             WriteTurnOutput("error", ex.Message);
@@ -300,7 +332,17 @@ public sealed class Agent : EventSourcedActor
         {
             OutputWriter?.Complete();
             _turnId = null;
+            _turnCts?.Dispose();
+            _turnCts = null;
         }
+    }
+
+    // ── Turn cancellation ──
+
+    /// <inheritdoc cref="ICancelable.CancelCurrentTurn"/>
+    public void CancelCurrentTurn()
+    {
+        _turnCts?.Cancel();
     }
 
     // ── State recovery ──
