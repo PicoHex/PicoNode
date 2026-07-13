@@ -2,19 +2,19 @@
 
 namespace PicoNode.Agent.Domain;
 
-// [PicoSerializable]
-// [PicoPolymorphic(TypeDiscriminatorPropertyName = "$type")]
-// [PicoDerivedType(typeof(MessageEntry), "message")]
-// [PicoDerivedType(typeof(CompactionEntry), "compaction")]
-// [PicoDerivedType(typeof(BranchSummaryEntry), "branch_summary")]
-// [PicoDerivedType(typeof(CustomEntry), "custom")]
-// [PicoDerivedType(typeof(CustomMessageEntry), "custom_message")]
-// [PicoDerivedType(typeof(LabelEntry), "label")]
-// [PicoDerivedType(typeof(SessionInfoEntry), "session_info")]
-// [PicoDerivedType(typeof(ModelChangeEntry), "model_change")]
-// [PicoDerivedType(typeof(ThinkingLevelChangeEntry), "thinking_level_change")]
-// [PicoDerivedType(typeof(ActiveToolsChangeEntry), "active_tools_change")]
-// [PicoDerivedType(typeof(LeafEntry), "leaf")]
+[PicoSerializable]
+[PicoPolymorphic(TypeDiscriminatorPropertyName = "$type")]
+[PicoDerivedType(typeof(MessageEntry), "MessageEntry")]
+[PicoDerivedType(typeof(CompactionEntry), "CompactionEntry")]
+[PicoDerivedType(typeof(BranchSummaryEntry), "BranchSummaryEntry")]
+[PicoDerivedType(typeof(CustomEntry), "CustomEntry")]
+[PicoDerivedType(typeof(CustomMessageEntry), "CustomMessageEntry")]
+[PicoDerivedType(typeof(LabelEntry), "LabelEntry")]
+[PicoDerivedType(typeof(SessionInfoEntry), "SessionInfoEntry")]
+[PicoDerivedType(typeof(ModelChangeEntry), "ModelChangeEntry")]
+[PicoDerivedType(typeof(ThinkingLevelChangeEntry), "ThinkingLevelChangeEntry")]
+[PicoDerivedType(typeof(ActiveToolsChangeEntry), "ActiveToolsChangeEntry")]
+[PicoDerivedType(typeof(LeafEntry), "LeafEntry")]
 public abstract class SessionTreeEntryBase
 {
     public string Id { get; set; } = string.Empty;
@@ -33,7 +33,7 @@ public sealed class CompactionEntry : SessionTreeEntryBase
     public string FirstKeptEntryId { get; set; } = string.Empty;
     public long TokensBefore { get; set; }
 
-    // [JsonIgnore]
+    [JsonIgnore]
     public object? Details { get; set; }
     public bool FromHook { get; set; }
 }
@@ -43,7 +43,7 @@ public sealed class BranchSummaryEntry : SessionTreeEntryBase
     public string FromId { get; set; } = string.Empty;
     public string Summary { get; set; } = string.Empty;
 
-    // [JsonIgnore]
+    [JsonIgnore]
     public object? Details { get; set; }
     public bool FromHook { get; set; }
 }
@@ -52,7 +52,7 @@ public sealed class CustomEntry : SessionTreeEntryBase
 {
     public string CustomType { get; set; } = string.Empty;
 
-    // [JsonIgnore]
+    [JsonIgnore]
     public object? Data { get; set; }
 }
 
@@ -61,7 +61,7 @@ public sealed class CustomMessageEntry : SessionTreeEntryBase
     public string CustomType { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
 
-    // [JsonIgnore]
+    [JsonIgnore]
     public object? Details { get; set; }
     public bool Display { get; set; } = true;
 }
