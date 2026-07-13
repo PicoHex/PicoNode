@@ -81,5 +81,72 @@ public sealed class AgentPersistenceIntegrationTests : IDisposable
         await Assert.That(restored.Status).IsEqualTo(AgentStatus.Running);
         await Assert.That(restored.ToolsSnapshot.Count).IsEqualTo(1);
         await Assert.That(restored.ToolsSnapshot[0].Name).IsEqualTo("bash");
+        await Assert.That(restored.Session).IsNotNull();
+    }
+
+    [Test]
+    public async Task Rebuild_GetAgentAsync_InjectsSessionStorage()
+    {
+        var store = new JsonlEventStore(Path.Combine(_baseDir, "actors"));
+        var system = new ActorSystem(store);
+        var llmClient = new FakeLlmClient();
+        var toolRunner = new FakeToolRunner();
+        var sessionId = Guid.CreateVersion7();
+
+        system.Register<DomainAgent>(
+            cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new DomainAgent(llmClient, toolRunner)
+        );
+
+        var agent = await system.CreateAsync<DomainAgent>(
+            new CreateAgent(
+                [
+                    new Llm
+                    {
+                        ProviderName = "x",
+                        ModelId = "y",
+                        ApiKey = "k",
+                    },
+                ],
+                "x",
+                "y",
+                sessionId
+            )
+        );
+        var agentId = agent.Id;
+        await system.StopAsync(agentId);
+        await Task.Delay(100);
+
+        var system2 = new ActorSystem(store);
+        system2.Register<DomainAgent>(
+            cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new DomainAgent(llmClient, toolRunner)
+        );
+
+        var restored = await system2.GetAgentAsync<DomainAgent>(agentId);
+        await Assert.That(restored).IsNotNull();
+        // Session should be injected with persistent storage
+        await Assert.That(restored!.Session).IsNotNull();
+        await Assert.That(restored.Session.Id).IsEqualTo(sessionId);
+
+        // Verify it works — append a message
+        await restored.Session.Append(
+            new MessageEntry
+            {
+                Message = new Message { Role = "user", Content = "hi" },
+            }
+        );
+        var ctx = await restored.Session.BuildContext();
+        await Assert.That(ctx.Count).IsGreaterThan(0);
     }
 }
