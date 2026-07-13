@@ -44,7 +44,7 @@ public static class Bootstrap
         var loggerFactory = (ILoggerFactory)scope.GetService(typeof(ILoggerFactory))!;
         var logger = loggerFactory.CreateLogger("PicoAgent");
         ExceptionHandler.Initialize(logger);
-        logger.Info($"PicoAgent starting... home={home.Root}");
+        Console.WriteLine($"[PicoAgent] Starting... home={home.Root}");
 
         var system = (ActorSystem)scope.GetService(typeof(ActorSystem))!;
         var llmAdapter = (PicoNode.Agent.Domain.ILlmClient)
@@ -56,12 +56,15 @@ public static class Bootstrap
         DomainAgent? agent = null;
         if (savedId.HasValue)
         {
+            Console.WriteLine($"[PicoAgent] Found saved agent ID: {savedId}");
             agent = await system.GetAgentAsync<DomainAgent>(savedId.Value, home.SessionsDir);
-            logger?.Info(
-                agent is not null
-                    ? $"Restored agent {savedId}"
-                    : $"Previous agent {savedId} not found — creating new"
-            );
+            Console.WriteLine(agent is not null
+                ? $"[PicoAgent] Restored agent {savedId}"
+                : $"[PicoAgent] Agent {savedId} not found in store — creating new");
+        }
+        else
+        {
+            Console.WriteLine("[PicoAgent] No saved agent — creating new");
         }
 
         agent ??= (DomainAgent?)(await factory.BuildAsync(config, home.SessionsDir));
