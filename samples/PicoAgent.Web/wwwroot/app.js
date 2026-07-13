@@ -313,6 +313,7 @@ async function sendMessage(overrideText) {
     let toolBlocks = {};
     let currentTextSeg = null;
     let currentTurnId = null;
+    let llmRound = 1; // LLM round counter, used to create unique tool call keys across rounds
 
     try {
         const response = await fetch(`/api/session/${currentSession}/message`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text, signal: abortCtrl.signal });
@@ -322,7 +323,7 @@ async function sendMessage(overrideText) {
                 if (line.startsWith('event: ')) { currentTurnId = line.slice(7).trim(); continue; }
                 if (!line.startsWith('data: ')) continue;
                 const p = line.slice(6);
-                if (p === '[DONE]') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => { renderAllSegments(msgContent); cleanupToolBlocks(msgContent); }, 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } break; }
+                if (p === '[DONE]') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => { renderAllSegments(msgContent); cleanupToolBlocks(msgContent); }, 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); } if (thinkBlock) { thinkBlock.remove(); thinkBlock = null; } break; }
                 try { const evt = JSON.parse(p); try { evt._turnId = currentTurnId;
                     if (evt.type === 'delta') {
                         rawText += evt.content;
@@ -331,7 +332,7 @@ async function sendMessage(overrideText) {
                         currentTextSeg.classList.remove('rendered');
                     }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked) continue; if (!thinkBlock) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(thinkBlock); } rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
-                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => renderAllSegments(msgContent), 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
+                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => renderAllSegments(msgContent), 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); } if (thinkBlock) { thinkBlock.remove(); thinkBlock = null; } llmRound++; }
                     else if (evt.type === 'tool_call_start') {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
                         segStart = rawText.length;
@@ -339,7 +340,7 @@ async function sendMessage(overrideText) {
                         if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; }
                         thinkingPhase++; rawThinking = '';
                         // Create tool-call block first, then placeholder for next iteration's thinking
-                        const tid = evt.toolCallId || 'tool_' + Date.now();
+                        const tid = `${llmRound}-${evt.toolCallId}`;
                         const tKey = evt.toolName || tid;
                         toolBlocks[tid] = { name: evt.toolName || 'tool', args: '', result: '', isError: false, isSkill: false };
                         toolBlocks[tKey] = toolBlocks[tid];
@@ -351,7 +352,7 @@ async function sendMessage(overrideText) {
                         thinkBlock = null;
                     }
                     else if (evt.type === 'tool_call_delta') {
-                        const tid = evt.toolCallId;
+                        const tid = `${llmRound}-${evt.toolCallId}`;
                         if (tid && toolBlocks[tid]) {
                             toolBlocks[tid].args += evt.content || '';
                             const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
@@ -359,7 +360,7 @@ async function sendMessage(overrideText) {
                         }
                     }
                     else if (evt.type === 'tool_call_end') {
-                        const tid = evt.toolCallId;
+                        const tid = `${llmRound}-${evt.toolCallId}`;
                         if (!tid) continue;
                         // Ensure tool block entry exists (tool_call_start may not have fired)
                         if (!toolBlocks[tid]) {

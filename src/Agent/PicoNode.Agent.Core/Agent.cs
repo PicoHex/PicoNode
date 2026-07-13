@@ -243,7 +243,7 @@ public sealed class Agent : EventSourcedActor, ICancelable
                                 contentBlocks.Add(
                                     new ContentBlock
                                     {
-                                        Id = Guid.CreateVersion7().ToString(),
+                                        Id = $"{iterations}-{evt.ToolCallId}",
                                         Type = "tool_call",
                                         Name = evt.ToolName,
                                         Arguments = ParseSimpleJson(args),
