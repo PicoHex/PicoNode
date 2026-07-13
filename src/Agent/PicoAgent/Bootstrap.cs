@@ -1,3 +1,6 @@
+using PicoNode.Agent.Domain;
+using DomainAgent = PicoNode.Agent.Domain.Agent;
+
 namespace PicoAgent;
 
 public static class Bootstrap
@@ -47,7 +50,22 @@ public static class Bootstrap
         var llmAdapter = (PicoNode.Agent.Domain.ILlmClient)
             scope.GetService(typeof(PicoNode.Agent.Domain.ILlmClient))!;
         var factory = new AgentFactory(system, llmAdapter).WithBuiltInTools();
-        var agent = await factory.BuildAsync(config);
+
+        // Try to restore existing agent from previous run
+        var savedId = await home.LoadAgentIdAsync();
+        DomainAgent? agent = null;
+        if (savedId.HasValue)
+        {
+            agent = await system.GetAgentAsync<DomainAgent>(savedId.Value);
+            logger?.Info(
+                agent is not null
+                    ? $"Restored agent {savedId}"
+                    : $"Previous agent {savedId} not found — creating new"
+            );
+        }
+
+        agent ??= (DomainAgent?)(await factory.BuildAsync(config));
+        await home.SaveAgentIdAsync(agent.Id);
         var server = new Server(
             agent,
             system,

@@ -29,4 +29,23 @@ public sealed class HomeDir
     public string SessionsDir => Path.Combine(Root, "sessions");
     public string PackagesDir => Path.Combine(Root, "git");
     public string SkillsDir => Path.Combine(Root, "skills");
+
+    public string AgentIdPath => Path.Combine(Root, "agent.id");
+
+    /// <summary>Save the agent ID for restart recovery. Overwrites if exists.</summary>
+    public async Task SaveAgentIdAsync(Guid agentId)
+    {
+        await File.WriteAllTextAsync(AgentIdPath, agentId.ToString());
+    }
+
+    /// <summary>Load a previously saved agent ID. Returns null if no file exists.</summary>
+    public Task<Guid?> LoadAgentIdAsync()
+    {
+        if (!File.Exists(AgentIdPath))
+            return Task.FromResult<Guid?>(null);
+        var text = File.ReadAllText(AgentIdPath).Trim();
+        return Guid.TryParse(text, out var id)
+            ? Task.FromResult<Guid?>(id)
+            : Task.FromResult<Guid?>(null);
+    }
 }
