@@ -50,6 +50,7 @@ public static class Bootstrap
         var llmAdapter = (PicoNode.Agent.Domain.ILlmClient)
             scope.GetService(typeof(PicoNode.Agent.Domain.ILlmClient))!;
         var factory = new AgentFactory(system, llmAdapter).WithBuiltInTools();
+        factory.Register();
 
         // Try to restore existing agent from previous run
         var savedId = await home.LoadAgentIdAsync();

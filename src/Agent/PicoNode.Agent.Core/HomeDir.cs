@@ -12,14 +12,10 @@ public sealed class HomeDir
 
     public static string Resolve()
     {
-        var portable = Path.Combine(AppContext.BaseDirectory, "data");
-        if (Directory.Exists(portable))
-            return Path.GetFullPath(portable);
-
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-            ".pico-agent"
-        );
+        // Always prefer portable data directory next to the executable.
+        // If it doesn't exist yet, we'll create it on EnsureCreated().
+        var portable = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "data"));
+        return portable;
     }
 
     public void EnsureCreated() => Directory.CreateDirectory(Root);
