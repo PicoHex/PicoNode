@@ -39,5 +39,7 @@ public static class SystemPromptBuilder
     }
 
     private static string GetSkillsDir(string? baseDir) =>
-        baseDir is not null ? Path.Combine(baseDir, "git") : "{homeDir}/data/git";
+        baseDir is not null
+            ? Path.Combine(baseDir, "git")
+            : Path.Combine(HomeDir.Resolve(), "git");
 }
