@@ -115,7 +115,8 @@ public sealed class ConfigUpdateOrderTests
                     },
                 ],
                 "deepseek",
-                "v4"
+                "v4",
+                Guid.CreateVersion7()
             )
         );
         await Task.Delay(50);
@@ -160,7 +161,8 @@ public sealed class ConfigUpdateOrderTests
                     },
                 ],
                 "deepseek",
-                "v4"
+                "v4",
+                Guid.CreateVersion7()
             )
         );
         await Task.Delay(50);

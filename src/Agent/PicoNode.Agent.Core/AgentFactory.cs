@@ -43,9 +43,16 @@ public sealed class AgentFactory
         var llms = BuildLlms(config);
         var currentProvider = llms[0].ProviderName;
         var currentModel = config.Model!;
+        var sessionId = Guid.CreateVersion7();
 
         var agent = await _system.CreateAsync<Agent>(
-            new CreateAgent(llms, currentProvider, currentModel, Packages: config.Packages)
+            new CreateAgent(
+                llms,
+                currentProvider,
+                currentModel,
+                sessionId,
+                Packages: config.Packages
+            )
         );
 
         if (_withBuiltInTools)

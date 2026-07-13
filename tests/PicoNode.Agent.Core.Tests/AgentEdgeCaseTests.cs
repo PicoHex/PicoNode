@@ -36,7 +36,8 @@ public sealed class AgentEdgeCaseTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 
@@ -80,7 +81,8 @@ public sealed class AgentEdgeCaseTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 

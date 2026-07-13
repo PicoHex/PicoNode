@@ -4,6 +4,7 @@ public sealed record AgentCreated(
     List<Llm> Llms,
     string CurrentProvider,
     string CurrentModel,
+    Guid SessionId,
     Guid? ParentId,
     List<string>? Packages
 ) : DomainEvent;

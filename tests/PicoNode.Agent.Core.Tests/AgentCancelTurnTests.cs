@@ -96,7 +96,8 @@ public sealed class AgentCancelTurnTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 
@@ -151,7 +152,8 @@ public sealed class AgentCancelTurnTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 
@@ -219,7 +221,8 @@ public sealed class AgentCancelTurnTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 

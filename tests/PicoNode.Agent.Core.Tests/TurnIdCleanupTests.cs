@@ -36,7 +36,8 @@ public sealed class TurnIdCleanupTests
                     },
                 ],
                 "d",
-                "m"
+                "m",
+                Guid.CreateVersion7()
             )
         );
         await Task.Delay(50);

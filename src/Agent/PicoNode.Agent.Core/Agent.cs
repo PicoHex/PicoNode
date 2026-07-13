@@ -12,6 +12,7 @@ public sealed class Agent : EventSourcedActor, ICancelable
     private readonly List<Guid> _childIds = [];
     private string? _turnId;
     private CancellationTokenSource? _turnCts;
+    private Guid? _sessionId;
 
     internal string? TurnId => _turnId;
 
@@ -32,11 +33,12 @@ public sealed class Agent : EventSourcedActor, ICancelable
     public IReadOnlyList<Guid> ChildIds => _childIds;
     public List<string>? Packages { get; private set; }
     public string? FailureReason { get; private set; }
+    public Guid? SessionId { get; private set; }
 
     internal ILlmClient? LlmClient { get; init; }
     internal IToolRunner? ToolRunner { get; init; }
     public List<SkillInfo>? Skills { get; set; }
-    public Session? Session { get; private set; }
+    public Session? Session { get; set; }
 
     // ── Constructors ──
 
@@ -70,6 +72,7 @@ public sealed class Agent : EventSourcedActor, ICancelable
                         c.Llms,
                         c.CurrentProvider,
                         c.CurrentModel,
+                        c.SessionId,
                         c.ParentId,
                         c.Packages
                     )
@@ -163,7 +166,13 @@ public sealed class Agent : EventSourcedActor, ICancelable
         if (this.System is not null)
         {
             var child = await this.System.CreateAsync<Agent>(
-                new CreateAgent(s.Llms, s.CurrentProvider, s.CurrentModel, Id)
+                new CreateAgent(
+                    s.Llms,
+                    s.CurrentProvider,
+                    s.CurrentModel,
+                    Guid.CreateVersion7(),
+                    Id
+                )
             );
             RaiseEvent(new ChildSpawned(child.Id));
         }
@@ -357,10 +366,11 @@ public sealed class Agent : EventSourcedActor, ICancelable
                 CurrentLlm = _llms.First(l =>
                     l.ProviderName == c.CurrentProvider && l.ModelId == c.CurrentModel
                 );
+                SessionId = c.SessionId;
                 ParentId = c.ParentId;
                 Packages = c.Packages;
                 Status = AgentStatus.Pending;
-                Session = new Session(Guid.CreateVersion7(), new InMemorySessionStorage());
+                Session = new Session(c.SessionId, new InMemorySessionStorage());
                 break;
             case AgentStarted:
                 Status = AgentStatus.Running;

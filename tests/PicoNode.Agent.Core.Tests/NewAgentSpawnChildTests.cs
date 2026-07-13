@@ -36,7 +36,9 @@ public sealed class AgentSpawnChildTests
                     },
                 ],
                 "x",
-                "y")
+                "y",
+                Guid.CreateVersion7()
+            )
         );
 
         var childLlms = new List<Llm>

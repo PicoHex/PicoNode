@@ -89,7 +89,8 @@ public sealed class AgentToolErrorRecoveryTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 
@@ -139,7 +140,8 @@ public sealed class AgentToolErrorRecoveryTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 
@@ -183,7 +185,8 @@ public sealed class AgentToolErrorRecoveryTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 

@@ -82,7 +82,8 @@ public sealed class AgentRunTurnTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 
@@ -127,7 +128,8 @@ public sealed class AgentRunTurnTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 

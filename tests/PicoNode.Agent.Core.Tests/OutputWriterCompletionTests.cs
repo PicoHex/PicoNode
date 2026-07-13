@@ -38,7 +38,8 @@ public sealed class OutputWriterCompletionTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 

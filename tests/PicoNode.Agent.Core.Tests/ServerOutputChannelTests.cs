@@ -42,7 +42,8 @@ public sealed class ServerOutputChannelTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 
@@ -97,7 +98,8 @@ public sealed class ServerOutputChannelTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 

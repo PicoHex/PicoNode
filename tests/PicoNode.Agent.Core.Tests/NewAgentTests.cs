@@ -40,6 +40,35 @@ internal sealed class FakeToolRunner : IToolRunner
 public sealed class AgentLifecycleTests
 {
     [Test]
+    public async Task CreateAgent_StoresSessionId()
+    {
+        var store = new InMemoryEventStore();
+        var system = new ActorSystem(store);
+        var sessionId = Guid.CreateVersion7();
+        var llms = new List<Llm>
+        {
+            new() { ProviderName = "x", ModelId = "y", ApiKey = "k" },
+        };
+
+        system.Register<DomainAgent>(
+            cmd =>
+                cmd switch
+                {
+                    CreateAgent c => new DomainAgent(c),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new DomainAgent(new FakeLlmClient(), new FakeToolRunner())
+        );
+
+        var agent = await system.CreateAsync<DomainAgent>(
+            new CreateAgent(llms, "x", "y", sessionId)
+        );
+
+        await Assert.That(agent.SessionId).IsEqualTo(sessionId);
+        await Assert.That(agent.Session).IsNotNull();
+    }
+
+    [Test]
     public async Task Create_And_Start_TransitionsToRunning()
     {
         var store = new InMemoryEventStore();
@@ -65,7 +94,7 @@ public sealed class AgentLifecycleTests
         );
 
         var agent = await system.CreateAsync<DomainAgent>(
-            new CreateAgent(llms, "deepseek", "chat")
+            new CreateAgent(llms, "deepseek", "chat", Guid.CreateVersion7())
         );
         system.Send(agent.Id, new StartAgent());
         await Task.Delay(100);

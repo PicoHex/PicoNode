@@ -72,7 +72,8 @@ public sealed class AgentStopDuringTurnTests
                     },
                 ],
                 "x",
-                "y"
+                "y",
+                Guid.CreateVersion7()
             )
         );
 
