@@ -440,7 +440,24 @@ public sealed class Server : IAsyncDisposable
         app.MapPost($"{p}/session/create/{{id}}", (_, _) => V(JsonHelper.Ok()));
         app.MapPost($"{p}/session/delete/{{id}}", (_, _) => V(JsonHelper.Ok()));
         app.MapPost($"{p}/session/save/{{id}}", (_, _) => V(JsonHelper.Ok()));
-        app.MapGet($"{p}/session/{{id}}/messages", (_, _) => V(JsonHelper.RawJson("[]")));
+        app.MapGet(
+            $"{p}/session/{{id}}/messages",
+            (_, _) =>
+            {
+                var entries = a.Session?.GetEntries().GetAwaiter().GetResult();
+                if (entries is null or { Length: 0 })
+                    return V(JsonHelper.RawJson("[]"));
+                var messages = entries.OfType<MessageEntry>().Select(e => e.Message).ToArray();
+                return V(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        Body = Encoding.UTF8.GetBytes(SessionMessageSerializer.ToJson(messages)),
+                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
+                    }
+                );
+            }
+        );
         app.MapPost($"{p}/session/{{id}}/retry", (_, _) => V(JsonHelper.Ok()));
         app.MapPost(
             $"{p}/session/{{id}}/compact",
