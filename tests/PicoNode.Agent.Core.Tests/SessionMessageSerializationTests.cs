@@ -7,7 +7,7 @@ public sealed class SessionMessageSerializationTests
     [Test]
     public async Task ToJson_ReturnsMessageArray()
     {
-        var session = new Session(Guid.CreateVersion7(), new InMemorySessionStorage());
+        var session = new Session(Guid.CreateVersion7(), storage: new InMemorySessionStorage());
         await session.Append(
             new MessageEntry
             {

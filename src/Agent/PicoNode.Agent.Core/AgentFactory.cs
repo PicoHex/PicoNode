@@ -57,7 +57,10 @@ public sealed class AgentFactory
         );
 
         // Replace default in-memory session storage with persistent storage
-        agent.Session = new Session(sessionId, new JsonlSessionStorage(sessionId, dir));
+        agent.Session = new Session(
+            sessionId,
+            storage: new JsonlSessionStorage(sessionId, baseDir: dir)
+        );
 
         if (_withBuiltInTools)
             RegisterBuiltInTools(agent);

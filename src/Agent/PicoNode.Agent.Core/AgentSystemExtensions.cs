@@ -21,7 +21,7 @@ public static class AgentSystemExtensions
         {
             agent.Session = new Session(
                 sessionId,
-                new JsonlSessionStorage(sessionId, sessionsDir ?? "data/sessions")
+                storage: new JsonlSessionStorage(sessionId, baseDir: sessionsDir ?? "data/sessions")
             );
         }
         return actor;

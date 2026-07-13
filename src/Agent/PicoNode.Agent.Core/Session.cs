@@ -5,10 +5,12 @@ public sealed class Session
     private readonly ISessionStorage _storage;
 
     public Guid Id { get; }
+    public string Name { get; }
 
-    public Session(Guid id, ISessionStorage? storage = null)
+    public Session(Guid id, string name = "default", ISessionStorage? storage = null)
     {
         Id = id;
+        Name = name;
         _storage = storage ?? new InMemorySessionStorage();
     }
 

@@ -370,7 +370,7 @@ public sealed class Agent : EventSourcedActor, ICancelable
                 ParentId = c.ParentId;
                 Packages = c.Packages;
                 Status = AgentStatus.Pending;
-                Session = new Session(c.SessionId, new InMemorySessionStorage());
+                Session = new Session(c.SessionId, storage: new InMemorySessionStorage());
                 break;
             case AgentStarted:
                 Status = AgentStatus.Running;

@@ -7,10 +7,26 @@ public sealed class JsonlSessionStorage : ISessionStorage
     private readonly InMemorySessionStorage _memory = new();
     private readonly string _jsonlPath;
 
-    public JsonlSessionStorage(Guid sessionId, string baseDir = "data/sessions")
+    public string Name { get; private set; }
+
+    public JsonlSessionStorage(
+        Guid sessionId,
+        string? name = null,
+        string baseDir = "data/sessions"
+    )
     {
         _jsonlPath = Path.Combine(baseDir, $"{sessionId}.jsonl");
         Directory.CreateDirectory(Path.GetDirectoryName(_jsonlPath)!);
+        Name = name ?? "default";
+
+        if (!File.Exists(_jsonlPath))
+        {
+            // New session — write name as first entry
+            var info = new SessionInfoEntry { Name = Name };
+            var json = JsonSerializer.Serialize((SessionTreeEntryBase)info);
+            File.WriteAllText(_jsonlPath, json + Environment.NewLine);
+        }
+
         LoadFromDisk();
     }
 
@@ -20,6 +36,8 @@ public sealed class JsonlSessionStorage : ISessionStorage
             return;
 
         var lines = File.ReadAllLines(_jsonlPath);
+
+        // Restore name from first SessionInfoEntry in raw lines
         foreach (var line in lines)
         {
             if (string.IsNullOrWhiteSpace(line))
@@ -27,12 +45,28 @@ public sealed class JsonlSessionStorage : ISessionStorage
             var entry = JsonSerializer.Deserialize<SessionTreeEntryBase>(
                 Encoding.UTF8.GetBytes(line)
             );
-            if (entry is not null)
+            if (entry is SessionInfoEntry si && si.Name is not null)
+            {
+                Name = si.Name;
+                break;
+            }
+        }
+
+        // Load all non-metadata entries into memory
+        foreach (var line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+            var entry = JsonSerializer.Deserialize<SessionTreeEntryBase>(
+                Encoding.UTF8.GetBytes(line)
+            );
+            if (entry is not null && entry is not SessionInfoEntry)
                 _memory.AppendEntry(entry).GetAwaiter().GetResult();
         }
 
         // Find last LeafEntry for current leaf position
         var entries = _memory.GetEntries().GetAwaiter().GetResult();
+
         for (var i = entries.Length - 1; i >= 0; i--)
         {
             if (entries[i] is LeafEntry leaf)
