@@ -288,7 +288,6 @@ function cleanupToolBlocks(container) {
             const argsSpan = tc.querySelector('.tool-args');
             const argsText = (argsSpan && argsSpan.textContent && argsSpan.textContent !== 'running...') ? ' ' + argsSpan.textContent : '';
             resultDiv.textContent = '[no result] ' + name + argsText;
-            tc.querySelector('.tool-args').textContent = 'no result';
             tc.classList.add('tool-error');
             tc.open = true;
         }
@@ -306,9 +305,8 @@ async function sendMessage(overrideText) {
     const msgContent = asst.querySelector('.msg-content');
     const turnContainers = {}; // turnId -> container element (future multi-agent)
     msgContent.innerHTML = '<span class="streaming-indicator"><span>●</span><span>●</span><span>●</span></span>';
-    if (thinkChk.checked) { const th = document.createElement('details'); th.className = 'thinking'; th.open = true; th.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(th); }
     const streamDot = msgContent.querySelector('.streaming-indicator');
-    let thinkBlock = msgContent.querySelector('.thinking');
+    let thinkBlock = null;
     let rawText = '', rawThinking = '';
     let segStart = 0; // rawText offset where current text segment starts
     let thinkingPhase = 0;
@@ -325,14 +323,14 @@ async function sendMessage(overrideText) {
                 if (!line.startsWith('data: ')) continue;
                 const p = line.slice(6);
                 if (p === '[DONE]') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => { renderAllSegments(msgContent); cleanupToolBlocks(msgContent); }, 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } break; }
-                try { const evt = JSON.parse(p); evt._turnId = currentTurnId;
+                try { const evt = JSON.parse(p); try { evt._turnId = currentTurnId;
                     if (evt.type === 'delta') {
                         rawText += evt.content;
                         if (!currentTextSeg) { streamDot.style.display = 'none'; currentTextSeg = createTextSeg(); msgContent.appendChild(currentTextSeg); }
                         currentTextSeg.textContent = rawText.substring(segStart);
                         currentTextSeg.classList.remove('rendered');
                     }
-                    else if (evt.type === 'thinking') { if (!thinkChk.checked || !thinkBlock) continue; rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
+                    else if (evt.type === 'thinking') { if (!thinkChk.checked) continue; if (!thinkBlock) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(thinkBlock); } rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
                     else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => renderAllSegments(msgContent), 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; } }
                     else if (evt.type === 'tool_call_start') {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
@@ -349,8 +347,8 @@ async function sendMessage(overrideText) {
                         tcDiv.className = 'tool-call'; tcDiv.dataset.toolId = tid; tcDiv.dataset.toolName = evt.toolName || ''; tcDiv.open = true;
                         tcDiv.innerHTML = '<summary>🔧 <strong>' + (evt.toolName || 'tool') + '</strong> <span class="tool-args">running...</span></summary><div class="tool-result"></div>';
                         msgContent.appendChild(tcDiv);
-                        if (thinkChk.checked) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(thinkBlock); }
-                        else { thinkBlock = null; }
+                        // Don't create thinking block here — created lazily when first thinking event arrives
+                        thinkBlock = null;
                     }
                     else if (evt.type === 'tool_call_delta') {
                         const tid = evt.toolCallId;
@@ -362,30 +360,34 @@ async function sendMessage(overrideText) {
                     }
                     else if (evt.type === 'tool_call_end') {
                         const tid = evt.toolCallId;
-                        if (tid && toolBlocks[tid]) {
-                            toolBlocks[tid].args = evt.content || '{}';  // complete args from end event
-                            const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
-                            if (tcDiv) {
-                                tcDiv.open = true;
-                                if (evt.toolName) {
-                                    toolBlocks[tid].name = evt.toolName;
-                                    toolBlocks[evt.toolName] = toolBlocks[tid];  // update alias
-                                    tcDiv.dataset.toolName = evt.toolName;
-                                    const strong = tcDiv.querySelector('summary strong');
-                                    if (strong) strong.textContent = evt.toolName;
-                                }
-                                // Detect skill read: read tool + path ends with SKILL.md (complete args at end)
-                                if (toolBlocks[tid].name === 'read' && !toolBlocks[tid].isSkill) {
-                                    try {
-                                        const parsed = JSON.parse(evt.content || '{}');
-                                        if (parsed.path && parsed.path.endsWith('SKILL.md')) {
-                                            toolBlocks[tid].isSkill = true;
-                                            tcDiv.classList.add('skill-read');
-                                        }
-                                    } catch (e) {}
-                                }
-                            }
+                        if (!tid) continue;
+                        // Ensure tool block entry exists (tool_call_start may not have fired)
+                        if (!toolBlocks[tid]) {
+                            toolBlocks[tid] = { name: evt.toolName || 'tool', args: evt.content || '', result: '', isError: false, isSkill: false };
+                            if (evt.toolName) toolBlocks[evt.toolName] = toolBlocks[tid];
+                        } else if (evt.content) {
+                            toolBlocks[tid].args = evt.content;
                         }
+                        if (evt.toolName) { toolBlocks[tid].name = evt.toolName; toolBlocks[evt.toolName] = toolBlocks[tid]; }
+                        // Ensure DOM element exists
+                        let tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
+                        if (!tcDiv) {
+                            tcDiv = document.createElement('details');
+                            tcDiv.className = 'tool-call'; tcDiv.dataset.toolId = tid; tcDiv.dataset.toolName = evt.toolName || '';
+                            tcDiv.innerHTML = '<summary>🔧 <strong>' + (evt.toolName || 'tool') + '</strong> <span class="tool-args"></span></summary><div class="tool-result"></div>';
+                            msgContent.appendChild(tcDiv);
+                        }
+                        tcDiv.open = true;
+                        if (evt.toolName) { tcDiv.dataset.toolName = evt.toolName; const strong = tcDiv.querySelector('summary strong'); if (strong) strong.textContent = evt.toolName; }
+                        // Detect skill read
+                        if (toolBlocks[tid].name === 'read' && !toolBlocks[tid].isSkill) {
+                            try { const parsed = JSON.parse(toolBlocks[tid].args || '{}'); if (parsed.path && parsed.path.endsWith('SKILL.md')) { toolBlocks[tid].isSkill = true; tcDiv.classList.add('skill-read'); } } catch (e) {}
+                        }
+                        // Update args display
+                        try {
+                            const parsed = JSON.parse(toolBlocks[tid].args || '{}');
+                            tcDiv.querySelector('.tool-args').textContent = JSON.stringify(parsed);
+                        } catch (e) { tcDiv.querySelector('.tool-args').textContent = ''; }
                     }
                     else if (evt.type === 'tool_result') {
                         const tid = evt.toolCallId;
@@ -419,18 +421,19 @@ async function sendMessage(overrideText) {
                                     const m = block.result.match(/^---\s*\nname:\s*(\S+)/m);
                                     const skillName = m ? m[1] : name;
                                     summary.innerHTML = prefix + '📚 <strong>' + skillName + '</strong>';
-                                } else if (summary && block.args) {
-                                    try { const parsed = JSON.parse(block.args); summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong> <span class="tool-args">' + JSON.stringify(parsed) + '</span>'; }
-                                    catch (e) { summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong>'; }
                                 } else if (summary) {
-                                    summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong>';
+                                    let argsHtml = '';
+                                    if (block.args) {
+                                        try { const parsed = JSON.parse(block.args); argsHtml = ' <span class="tool-args">' + JSON.stringify(parsed) + '</span>'; } catch (e) {}
+                                    }
+                                    summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong>' + argsHtml;
                                 }
                             }
                             if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; }
                         }
                     }
                     else if (evt.type === 'error') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); currentTextSeg = null; msgContent.innerHTML += '<div class="stream-error">⚠️ ' + (evt.content || evt.message || '') + '</div>'; }
-                } catch {} messages.scrollTop = messages.scrollHeight; }
+                } catch (e) { console.error('SSE handler:', e, p); } } catch {} messages.scrollTop = messages.scrollHeight; }
         }
     } catch (err) { if (err.name === 'AbortError') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); } else { msgContent.innerHTML += '<div class="stream-error">' + err.message + '</div>'; showToast(err.message, true); } }
     finally { setStreaming(false); abortCtrl = null; input.focus(); cleanupToolBlocks(msgContent); try { await api('POST', `/api/session/save/${currentSession}`); } catch {} await loadSessions(); }

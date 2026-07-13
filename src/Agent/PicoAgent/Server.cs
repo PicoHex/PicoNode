@@ -467,53 +467,75 @@ public sealed class Server : IAsyncDisposable
                     return JsonHelper.Error(400, "empty message");
                 var pipe = new Pipe();
                 _ = Task.Run(
-                    async () =>
-                    {
-                        try
+                        async () =>
                         {
-                            await turnLock.WaitAsync(ct);
-
-                            var outputChannel = Channel.CreateUnbounded<ActorOutputEvent>();
-                            var turnId = Guid.CreateVersion7().ToString("N")[..8];
-                            a.OutputWriter = outputChannel.Writer;
-
-                            system.Send(a.Id, new RunTurn(message, turnId));
-
-                            await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
+                            try
                             {
-                                var frame = ServerSse.BuildFrame(evt);
-                                await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(frame), ct);
+                                await turnLock.WaitAsync(ct);
+
+                                var outputChannel = Channel.CreateUnbounded<ActorOutputEvent>();
+                                var turnId = Guid.CreateVersion7().ToString("N")[..8];
+                                a.OutputWriter = outputChannel.Writer;
+
+                                if (a.Status != AgentStatus.Running)
+                                {
+                                    logger?.Warning(
+                                        $"Rejecting RunTurn: agent status is {a.Status} (expected Running)"
+                                    );
+                                    var rejectFrame = ServerSse.BuildFrame(
+                                        new ActorOutputEvent(
+                                            "error",
+                                            $"Agent is {a.Status}, not Running"
+                                        )
+                                    );
+                                    await pipe.Writer.WriteAsync(
+                                        Encoding.UTF8.GetBytes(rejectFrame),
+                                        ct
+                                    );
+                                    return;
+                                }
+
+                                system.Send(a.Id, new RunTurn(message, turnId));
+                                logger?.Info(
+                                    $"RunTurn envoyé: turnId={turnId}, agentStatus={a.Status}"
+                                );
+
+                                await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
+                                {
+                                    var frame = ServerSse.BuildFrame(evt);
+                                    await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(frame), ct);
+                                }
                             }
-                        }
-                        catch (OperationCanceledException)
+                            catch (OperationCanceledException)
+                            {
+                                // Client disconnected or stopped — normal, not an error
+                            }
+                            catch (Exception ex)
+                            {
+                                logger?.Error($"SSE turn failed: {ex.Message}");
+                                var errFrame = ServerSse.BuildFrame(
+                                    new ActorOutputEvent("error", ex.Message)
+                                );
+                                await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(errFrame), ct);
+                            }
+                            finally
+                            {
+                                turnLock.Release();
+                                await pipe.Writer.CompleteAsync();
+                            }
+                        },
+                        ct
+                    )
+                    .ContinueWith(
+                        t =>
                         {
-                            // Client disconnected or stopped — normal, not an error
-                        }
-                        catch (Exception ex)
-                        {
-                            logger?.Error($"SSE turn failed: {ex.Message}");
-                            var errFrame = ServerSse.BuildFrame(
-                                new ActorOutputEvent("error", ex.Message)
-                            );
-                            await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(errFrame), ct);
-                        }
-                        finally
-                        {
-                            turnLock.Release();
-                            await pipe.Writer.CompleteAsync();
-                        }
-                    },
-                    ct
-                ).ContinueWith(
-                    t =>
-                    {
-                        if (t.IsFaulted)
-                            logger?.Error(
-                                $"SSE task crashed: {t.Exception?.InnerException?.Message}"
-                            );
-                    },
-                    TaskContinuationOptions.OnlyOnFaulted
-                );
+                            if (t.IsFaulted)
+                                logger?.Error(
+                                    $"SSE task crashed: {t.Exception?.InnerException?.Message}"
+                                );
+                        },
+                        TaskContinuationOptions.OnlyOnFaulted
+                    );
                 return new HttpResponse
                 {
                     StatusCode = 200,
