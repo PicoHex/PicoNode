@@ -323,7 +323,6 @@ async function sendMessage(overrideText) {
                 if (line.startsWith('event: ')) { currentTurnId = line.slice(7).trim(); continue; }
                 if (!line.startsWith('data: ')) continue;
                 const p = line.slice(6);
-                if (p === '[DONE]') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => { renderAllSegments(msgContent); cleanupToolBlocks(msgContent); }, 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); } if (thinkBlock) { thinkBlock.remove(); thinkBlock = null; } break; }
                 try { const evt = JSON.parse(p); try { evt._turnId = currentTurnId;
                     if (evt.type === 'delta') {
                         rawText += evt.content;
