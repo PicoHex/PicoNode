@@ -6,24 +6,24 @@ public sealed record AgentCreated(
     string CurrentModel,
     Guid? ParentId,
     List<string>? Packages
-) : IDomainEvent;
+) : DomainEvent;
 
-public sealed record AgentStarted : IDomainEvent;
+public sealed record AgentStarted : DomainEvent;
 
-public sealed record AgentCompleted : IDomainEvent;
+public sealed record AgentCompleted : DomainEvent;
 
-public sealed record AgentFailed(string Reason) : IDomainEvent;
+public sealed record AgentFailed(string Reason) : DomainEvent;
 
-public sealed record LlmSwitched(string ProviderName, string ModelId) : IDomainEvent;
+public sealed record LlmSwitched(string ProviderName, string ModelId) : DomainEvent;
 
-public sealed record LlmAdded(Llm Llm) : IDomainEvent;
+public sealed record LlmAdded(Llm Llm) : DomainEvent;
 
-public sealed record LlmRemoved(string ProviderName, string ModelId) : IDomainEvent;
+public sealed record LlmRemoved(string ProviderName, string ModelId) : DomainEvent;
 
-public sealed record ToolAdded(Tool Tool) : IDomainEvent;
+public sealed record ToolAdded(Tool Tool) : DomainEvent;
 
-public sealed record ToolRemoved(string Name) : IDomainEvent;
+public sealed record ToolRemoved(string Name) : DomainEvent;
 
-public sealed record ChildSpawned(Guid ChildId) : IDomainEvent;
+public sealed record ChildSpawned(Guid ChildId) : DomainEvent;
 
-public sealed record ThinkingLevelSet(string Level) : IDomainEvent;
+public sealed record ThinkingLevelSet(string Level) : DomainEvent;
