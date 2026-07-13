@@ -67,7 +67,8 @@ public sealed class Server : IAsyncDisposable
         if (_isListening)
             throw new InvalidOperationException("Already listening");
         _isListening = true;
-        _system.Send(_agent.Id, new StartAgent());
+        if (_agent.Status == AgentStatus.Pending)
+            _system.Send(_agent.Id, new StartAgent());
         _webServer = new WebServer(
             BuildWebApp(),
             new WebServerOptions { Endpoint = ParseEndpoint(uri) }
