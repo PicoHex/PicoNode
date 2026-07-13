@@ -32,11 +32,7 @@ public static class BootstrapServices
         );
 
         // ── Actor System ──
-        container.Register(
-            typeof(IEventStore),
-            _ => new InMemoryEventStore(),
-            SvcLifetime.Singleton
-        );
+        container.Register(typeof(IEventStore), _ => new JsonlEventStore(), SvcLifetime.Singleton);
 
         container.Register(
             typeof(ActorSystem),
