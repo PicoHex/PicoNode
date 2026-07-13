@@ -56,7 +56,7 @@ public static class Bootstrap
         DomainAgent? agent = null;
         if (savedId.HasValue)
         {
-            agent = await system.GetAgentAsync<DomainAgent>(savedId.Value);
+            agent = await system.GetAgentAsync<DomainAgent>(savedId.Value, home.SessionsDir);
             logger?.Info(
                 agent is not null
                     ? $"Restored agent {savedId}"
@@ -64,7 +64,7 @@ public static class Bootstrap
             );
         }
 
-        agent ??= (DomainAgent?)(await factory.BuildAsync(config));
+        agent ??= (DomainAgent?)(await factory.BuildAsync(config, home.SessionsDir));
         await home.SaveAgentIdAsync(agent.Id);
         var server = new Server(
             agent,

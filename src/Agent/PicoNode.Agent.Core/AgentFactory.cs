@@ -36,8 +36,9 @@ public sealed class AgentFactory
         );
     }
 
-    public async ValueTask<Agent> BuildAsync(AgentConfig config)
+    public async ValueTask<Agent> BuildAsync(AgentConfig config, string? sessionsDir = null)
     {
+        var dir = sessionsDir ?? "data/sessions";
         Register();
 
         var llms = BuildLlms(config);
@@ -56,7 +57,7 @@ public sealed class AgentFactory
         );
 
         // Replace default in-memory session storage with persistent storage
-        agent.Session = new Session(sessionId, new JsonlSessionStorage(sessionId));
+        agent.Session = new Session(sessionId, new JsonlSessionStorage(sessionId, dir));
 
         if (_withBuiltInTools)
             RegisterBuiltInTools(agent);

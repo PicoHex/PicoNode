@@ -32,7 +32,13 @@ public static class BootstrapServices
         );
 
         // ── Actor System ──
-        container.Register(typeof(IEventStore), _ => new JsonlEventStore(), SvcLifetime.Singleton);
+        container.Register(
+            typeof(IEventStore),
+            _ => new JsonlEventStore(
+                home?.Root is not null ? Path.Combine(home.Root, "actors") : "data/actors"
+            ),
+            SvcLifetime.Singleton
+        );
 
         container.Register(
             typeof(ActorSystem),
