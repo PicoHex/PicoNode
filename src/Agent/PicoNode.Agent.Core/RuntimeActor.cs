@@ -10,9 +10,9 @@ public sealed class RuntimeActor : ActorBase
     private Guid? _loadedAgentId;
     private AgentConfigSnapshot? _loadedConfig;
 
-    internal ILlmClient? LlmClient { get; set; }
-    internal IToolRunner? ToolRunner { get; set; }
-    internal IActorSystem? SessionSystem { get; set; }
+    public ILlmClient? LlmClient { get; set; }
+    public IToolRunner? ToolRunner { get; set; }
+    public IActorSystem? SessionSystem { get; set; }
 
     public RuntimeActor() { }
 

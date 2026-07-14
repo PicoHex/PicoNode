@@ -54,6 +54,25 @@ public static class BootstrapServices
         // ── Config (loaded at startup) ──
         container.Register(typeof(AgentConfig), _ => config, SvcLifetime.Singleton);
 
+        // ── HomeDir (filesystem layout) ──
+        container.Register(typeof(HomeDir), _ => home, SvcLifetime.Singleton);
+
+        // ── Session ActorSystem (separate event store in sessions/ dir) ──
+        container.Register(
+            typeof(SessionSystem),
+            scope =>
+            {
+                var store = new JsonlEventStore(
+                    home?.Root is not null ? Path.Combine(home.Root, "sessions") : "data/sessions");
+                var logger = (ILogger?)scope.GetService(typeof(ILogger));
+                return new SessionSystem(new ActorSystem(store, logger));
+            },
+            SvcLifetime.Singleton
+        );
+
+        // RuntimeActor is created in Bootstrap's async flow — register a null sentinel.
+        container.Register(typeof(RuntimeActor), _ => null!, SvcLifetime.Singleton);
+
         // ── LLM Adapter ──
         container.Register(
             typeof(PicoNode.Agent.Domain.ILlmClient),

@@ -1,9 +1,5 @@
 namespace PicoAgent;
 
-/// <summary>
-/// Helper for producing JSON HTTP responses via PicoJetson.
-/// Replaces all hand-crafted JSON string interpolation.
-/// </summary>
 internal static class JsonHelper
 {
     public static HttpResponse JsonResponse<T>(T value, int statusCode = 200) =>
@@ -15,10 +11,7 @@ internal static class JsonHelper
         };
 
     public static HttpResponse Ok() => JsonResponse(new StatusResponse { Status = "ok" });
-
-    public static HttpResponse Error(int code, string msg) =>
-        JsonResponse(new ErrorResponse { Error = msg }, code);
-
+    public static HttpResponse Error(int code, string msg) => JsonResponse(new ErrorResponse { Error = msg }, code);
     public static HttpResponse RawJson(string json, int statusCode = 200) =>
         new()
         {
@@ -28,10 +21,44 @@ internal static class JsonHelper
         };
 }
 
+internal sealed record SessionListItem
+{
+    public string Id { get; init; } = "";
+    public string Name { get; init; } = "";
+    public string CreatedAt { get; init; } = "";
+    public int ParticipantCount { get; init; }
+}
+
+internal static class SessionLister
+{
+    public static List<SessionListItem> List(string sessionsDir)
+    {
+        if (!Directory.Exists(sessionsDir))
+            return [];
+
+        var files = Directory.GetFiles(sessionsDir, "*.jsonl");
+        var list = new List<SessionListItem>();
+        foreach (var file in files)
+        {
+            var id = Path.GetFileNameWithoutExtension(file);
+            list.Add(new SessionListItem
+            {
+                Id = id,
+                Name = id,
+                CreatedAt = File.GetCreationTimeUtc(file).ToString("O"),
+                ParticipantCount = 0,
+            });
+        }
+        return list;
+    }
+}
+
 public sealed class Server : IAsyncDisposable
 {
     private readonly Agent _agent;
-    private readonly ActorSystem _system;
+    private readonly ActorSystem _agentSystem;
+    private readonly IActorSystem _sessionSystem;
+    private readonly RuntimeActor _runtime;
     private readonly ILlmClient _llmClient;
     private readonly IToolRunner _toolRunner;
     private readonly ILogger? _logger;
@@ -41,11 +68,26 @@ public sealed class Server : IAsyncDisposable
     private bool _isListening;
     private readonly SemaphoreSlim _turnLock = new(1, 1);
 
+    private string? _agentNameCached;
+    private string AgentName => _agentNameCached ??= ResolveAgentName();
+
+    private string ResolveAgentName()
+    {
+        try
+        {
+            var snap = _agentSystem.AskAsync<AgentConfigSnapshot>(_agent.Id, new GetConfigQuery()).GetAwaiter().GetResult();
+            return snap?.Name ?? "Unnamed";
+        }
+        catch { return "Unnamed"; }
+    }
+
     public int Port => _webServer?.LocalEndPoint is IPEndPoint ep ? ep.Port : 0;
 
     public Server(
         Agent agent,
-        ActorSystem system,
+        ActorSystem agentSystem,
+        IActorSystem sessionSystem,
+        RuntimeActor runtime,
         ILlmClient llmClient,
         IToolRunner toolRunner,
         ILogger? logger = null,
@@ -54,7 +96,9 @@ public sealed class Server : IAsyncDisposable
     )
     {
         _agent = agent;
-        _system = system;
+        _agentSystem = agentSystem;
+        _sessionSystem = sessionSystem;
+        _runtime = runtime;
         _llmClient = llmClient;
         _toolRunner = toolRunner;
         _logger = logger;
@@ -64,482 +108,283 @@ public sealed class Server : IAsyncDisposable
 
     public async Task ListenAsync(string uri)
     {
-        if (_isListening)
-            throw new InvalidOperationException("Already listening");
+        if (_isListening) throw new InvalidOperationException("Already listening");
         _isListening = true;
         if (_agent.Status == AgentStatus.Pending)
-            _system.Send(_agent.Id, new StartAgent());
-        _webServer = new WebServer(
-            BuildWebApp(),
-            new WebServerOptions { Endpoint = ParseEndpoint(uri) }
-        );
+            _agentSystem.Send(_agent.Id, new StartAgent());
+        _webServer = new WebServer(BuildWebApp(), new WebServerOptions { Endpoint = ParseEndpoint(uri) });
         await _webServer.StartAsync(CancellationToken.None);
     }
 
-    // ── HTTP Endpoints ──────────────────────────────────────────────
-
-    public static void AddEndpoints(
-        WebApp app,
-        Agent a,
-        ActorSystem system,
-        ILlmClient llm,
-        IToolRunner tr,
-        string prefix = "",
-        string? settingsPath = null,
-        ILogger? logger = null
-    )
+    public void AddEndpoints(WebApp app, string prefix = "/api")
     {
-        var turnLock = new SemaphoreSlim(1, 1);
         string? sp = null;
         var p = prefix;
 
         // Health
-        app.MapGet(
-            $"{p}/health",
-            (_, _) =>
-                V(
-                    JsonHelper.JsonResponse(
-                        new HealthResponse
-                        {
-                            Status = "ok",
-                            Model = a.CurrentLlm.ModelId,
-                            Provider = a.CurrentLlm.ProviderName,
-                        }
-                    )
-                )
-        );
+        app.MapGet($"{p}/health", (_, _) => V(JsonHelper.JsonResponse(new HealthResponse
+        {
+            Status = "ok",
+            Model = _agent.CurrentLlm.ModelId,
+            Provider = _agent.CurrentLlm.ProviderName,
+        })));
 
-        // Models
-        app.MapGet(
-            $"{p}/models",
-            async (_, ct) =>
+        // Models (unchanged logic, uses instance fields)
+        app.MapGet($"{p}/models", async (_, ct) =>
+        {
+            var all = new List<ModelListItem>();
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+            foreach (var l in _agent.LlmsSnapshot)
             {
-                var all = new List<ModelListItem>();
-                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-                foreach (var l in a.LlmsSnapshot)
+                if (l.ProviderName == "unconfigured" || string.IsNullOrEmpty(l.ApiKey) || l.ApiKey == "sk-test")
+                    continue;
+                try
                 {
-                    if (
-                        l.ProviderName == "unconfigured"
-                        || string.IsNullOrEmpty(l.ApiKey)
-                        || l.ApiKey == "sk-test"
-                    )
-                        continue;
-                    try
+                    var pc = new PicoNode.AI.ProviderConfig { Name = l.ProviderName, ApiKey = l.ApiKey, BaseUrl = l.BaseUrl, ApiFormat = l.ApiFormat };
+                    var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(http, pc, ct, _logger);
+                    foreach (var m in models) all.Add(new ModelListItem { Id = m.Id, OwnedBy = m.OwnedBy });
+                }
+                catch (Exception ex) { _logger?.Warning($"Failed to discover models for '{l.ProviderName}': {ex.Message}"); }
+            }
+            return new HttpResponse
+            {
+                StatusCode = 200,
+                Body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(all)),
+                Headers = [new("Content-Type", "application/json; charset=utf-8")],
+            };
+        });
+
+        // ── NEW: Session endpoints ──
+
+        app.MapGet($"{p}/sessions", (_, _) =>
+        {
+            var home = HomeDir.Resolve();
+            var list = SessionLister.List(Path.Combine(home, "sessions"));
+            return V(JsonHelper.JsonResponse(list));
+        });
+
+        app.MapPost($"{p}/sessions", async (ctx, ct) =>
+        {
+            using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+            var body = await r.ReadToEndAsync(ct);
+            var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
+            var name = doc.RootElement.TryGetProperty("name", out var nm) ? nm.GetStringOrNull() : null;
+            var participants = new List<Participant> { new(_agent.Id, AgentName, DateTime.UtcNow) };
+            var session = await _sessionSystem.CreateAsync<SessionActor>(new StartSession(name ?? "New chat", participants));
+            return JsonHelper.JsonResponse(new { id = session.Id, name = name ?? "New chat" }, 201);
+        });
+
+        app.MapDelete($"{p}/sessions/{{id}}", async (ctx, _) =>
+        {
+            var id = ctx.RouteValues["id"]?.ToString();
+            if (id is null || !Guid.TryParse(id, out var guid)) return JsonHelper.Error(400, "invalid id");
+            _sessionSystem.Send(guid, new DeleteSession());
+            await _sessionSystem.StopAsync(guid);
+            var home = HomeDir.Resolve();
+            var file = Path.Combine(home, "sessions", $"{guid}.jsonl");
+            if (File.Exists(file)) File.Delete(file);
+            return JsonHelper.Ok();
+        });
+
+        app.MapGet($"{p}/sessions/{{id}}/messages", async (ctx, ct) =>
+        {
+            var id = ctx.RouteValues["id"]?.ToString();
+            if (id is null || !Guid.TryParse(id, out var guid)) return JsonHelper.Error(400, "invalid id");
+            var session = await _sessionSystem.GetAsync<SessionActor>(guid);
+            if (session is null) return JsonHelper.Error(404, "session not found");
+            var sctx = await _sessionSystem.AskAsync<SessionContext>(guid, new GetContextQuery());
+            var json = SessionMessageSerializer.ToJson(sctx.Messages.ToArray());
+            return JsonHelper.RawJson(json);
+        });
+
+        app.MapPost($"{p}/sessions/{{id}}/message", async (ctx, ct) =>
+        {
+            var id = ctx.RouteValues["id"]?.ToString();
+            if (id is null || !Guid.TryParse(id, out var sessionGuid)) return JsonHelper.Error(400, "invalid id");
+            using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+            var message = await reader.ReadToEndAsync(ct);
+            if (string.IsNullOrWhiteSpace(message)) return JsonHelper.Error(400, "empty message");
+
+            var context = await _sessionSystem.AskAsync<SessionContext>(sessionGuid, new GetContextQuery());
+            var pipe = new Pipe();
+            var outputChannel = Channel.CreateUnbounded<ActorOutputEvent>();
+
+            await _turnLock.WaitAsync(ct);
+            _runtime.OutputWriter = outputChannel.Writer;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    _agentSystem.Send(_runtime.Id, new RunTurnCmd(message, sessionGuid, context));
+                    await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
                     {
-                        var pc = new PicoNode.AI.ProviderConfig
-                        {
-                            Name = l.ProviderName,
-                            ApiKey = l.ApiKey,
-                            BaseUrl = l.BaseUrl,
-                            ApiFormat = l.ApiFormat,
-                        };
-                        var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(
-                            http,
-                            pc,
-                            ct,
-                            logger
-                        );
-                        foreach (var m in models)
-                            all.Add(new ModelListItem { Id = m.Id, OwnedBy = m.OwnedBy });
-                    }
-                    catch (Exception ex)
-                    {
-                        logger?.Warning(
-                            $"Failed to discover models for provider '{l.ProviderName}': {ex.Message}"
-                        );
+                        var frame = ServerSse.BuildFrame(evt);
+                        await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(frame), ct);
+                        if (evt.Type == "done") break;
                     }
                 }
+                catch (OperationCanceledException) { }
+                finally
+                {
+                    await pipe.Writer.CompleteAsync();
+                    _turnLock.Release();
+                }
+            }, ct);
+
+            return new HttpResponse
+            {
+                StatusCode = 200,
+                Headers = [new("Content-Type", "text/event-stream"), new("Cache-Control", "no-cache"), new("Connection", "close")],
+                BodyStream = pipe.Reader.AsStream(),
+            };
+        });
+
+        app.MapPut($"{p}/sessions/{{id}}/name", async (ctx, ct) =>
+        {
+            var id = ctx.RouteValues["id"]?.ToString();
+            if (id is null || !Guid.TryParse(id, out var guid)) return JsonHelper.Error(400, "invalid id");
+            using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+            var body = await r.ReadToEndAsync(ct);
+            var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
+            var name = doc.RootElement.TryGetProperty("name", out var nm) ? nm.GetStringOrNull() : null;
+            if (name is null) return JsonHelper.Error(400, "name required");
+            _sessionSystem.Send(guid, new RenameSession(name));
+            return JsonHelper.Ok();
+        });
+
+        app.MapPost($"{p}/sessions/{{id}}/retry", async (ctx, ct) =>
+        {
+            var id = ctx.RouteValues["id"]?.ToString();
+            if (id is null || !Guid.TryParse(id, out var guid)) return JsonHelper.Error(400, "invalid id");
+            var entries = await _sessionSystem.AskAsync<SessionTreeEntryBase[]>(guid, new GetEntriesQuery());
+            var sctx = await _sessionSystem.AskAsync<SessionContext>(guid, new GetContextQuery());
+            if (sctx.LeafId is null) return JsonHelper.Error(400, "no messages to retry");
+            var leaf = entries.FirstOrDefault(e => e.Id == sctx.LeafId);
+            if (leaf?.ParentId is not null) _sessionSystem.Send(guid, new MoveLeaf(leaf.ParentId));
+            return JsonHelper.Ok();
+        });
+
+        // ── Agent CRUD ──
+
+        app.MapGet($"{p}/agents", (_, _) => V(JsonHelper.RawJson($"[{{\"id\":\"{_agent.Id}\",\"name\":\"{AgentName}\"}}]")));
+        app.MapGet($"{p}/agents/{{id}}", async (ctx, _) =>
+        {
+            var id = ctx.RouteValues["id"]?.ToString();
+            if (id is null || !Guid.TryParse(id, out var guid)) return JsonHelper.Error(400, "invalid id");
+            var config = await _agentSystem.AskAsync<AgentConfigSnapshot>(guid, new GetConfigQuery());
+            return JsonHelper.JsonResponse(config);
+        });
+        app.MapPut($"{p}/agents/{{id}}", async (ctx, ct) =>
+        {
+            var id = ctx.RouteValues["id"]?.ToString();
+            if (id is null || !Guid.TryParse(id, out var guid)) return JsonHelper.Error(400, "invalid id");
+            using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+            var body = await r.ReadToEndAsync(ct);
+            var config = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(Encoding.UTF8.GetBytes(body));
+            if (config is null) return JsonHelper.Error(400, "invalid config");
+            ConfigApplier.Apply(_agent, _agentSystem, config);
+            return JsonHelper.Ok();
+        });
+
+        // ── Config endpoints (unchanged logic) ──
+
+        app.MapGet($"{p}/config/status", (_, _) =>
+        {
+            var hasRealProvider = _agent.LlmsSnapshot.Any(l =>
+                l.ProviderName != "unconfigured" && !string.IsNullOrEmpty(l.ApiKey) && l.ApiKey != "sk-test");
+            return V(JsonHelper.JsonResponse(new ConfigStatusResponse
+            {
+                Configured = hasRealProvider,
+                Model = _agent.CurrentLlm.ModelId,
+                Provider = _agent.CurrentLlm.ProviderName,
+                Providers = _agent.LlmsSnapshot.Select(l => l.ProviderName).ToList(),
+                ThinkingEnabled = _agent.CurrentLlm.ThinkingEnabled,
+                ThinkingLevel = _agent.CurrentLlm.ThinkingLevel.ToString().ToLowerInvariant(),
+                MaxTokens = _agent.CurrentLlm.MaxTokens,
+            }));
+        });
+
+        app.MapGet($"{p}/config/providers", (_, _) => V(new HttpResponse
+        {
+            StatusCode = 200,
+            Body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(DefaultProviderTemplates)),
+            Headers = [new("Content-Type", "application/json; charset=utf-8")],
+        }));
+
+        app.MapPost($"{p}/config/validate", async (ctx, ct) =>
+        {
+            using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+            var body = await r.ReadToEndAsync(ct);
+            var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
+            var name = doc.RootElement.TryGetProperty("provider", out var pv) ? pv.GetStringOrNull()
+                : doc.RootElement.TryGetProperty("name", out var nm) ? nm.GetStringOrNull() : null;
+            var key = doc.RootElement.TryGetProperty("apiKey", out var ak) ? ak.GetStringOrNull() : null;
+            var url = doc.RootElement.TryGetProperty("baseUrl", out var bu) ? bu.GetStringOrNull() : null;
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(key))
+                return JsonHelper.Error(400, "provider and apiKey required");
+            try
+            {
+                var pc = new PicoNode.AI.ProviderConfig { Name = name, ApiKey = key, BaseUrl = url ?? "https://api.openai.com/v1", ApiFormat = AiApiFormat.OpenAIChatCompletions };
+                using var http = new HttpClient();
+                var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(http, pc, ct, _logger);
+                if (models.Length == 0) return JsonHelper.Error(400, "No models found.");
                 return new HttpResponse
                 {
                     StatusCode = 200,
-                    Body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(all)),
+                    Body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(models.Select(m => new ModelListItem { Id = m.Id, OwnedBy = m.OwnedBy }).ToList())),
                     Headers = [new("Content-Type", "application/json; charset=utf-8")],
                 };
             }
-        );
+            catch (Exception ex) { _logger?.Error($"Config validation failed: {ex.Message}"); return JsonHelper.Error(400, ex.Message); }
+        });
 
-        // Sessions
-        app.MapGet(
-            $"{p}/sessions",
-            (_, _) =>
+        app.MapPost($"{p}/config", async (ctx, ct) =>
+        {
+            using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+            var body = await r.ReadToEndAsync(ct);
+            if (string.IsNullOrWhiteSpace(body)) return JsonHelper.Error(400, "empty body");
+            AgentConfig? newConfig;
+            try { newConfig = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(Encoding.UTF8.GetBytes(body)); }
+            catch (Exception ex) { _logger?.Warning($"Config save failed: {ex.Message}"); return JsonHelper.Error(400, "invalid json"); }
+            if (newConfig is null) return JsonHelper.Error(400, "invalid config");
+            ConfigApplier.Apply(_agent, _agentSystem, newConfig);
+            if (_settingsPath is { Length: > 0 })
             {
-                var name = a.Session?.Name ?? "default";
-                return V(JsonHelper.RawJson($"[\"{name}\"]"));
+                var dir = Path.GetDirectoryName(_settingsPath);
+                if (dir is not null) Directory.CreateDirectory(dir);
+                await File.WriteAllTextAsync(_settingsPath, body, ct);
             }
-        );
+            return JsonHelper.Ok();
+        });
 
-        // Config status
-        app.MapGet(
-            $"{p}/config/status",
-            (_, _) =>
-            {
-                var hasRealProvider = a.LlmsSnapshot.Any(l =>
-                    l.ProviderName != "unconfigured"
-                    && !string.IsNullOrEmpty(l.ApiKey)
-                    && l.ApiKey != "sk-test"
-                );
-                return V(
-                    JsonHelper.JsonResponse(
-                        new ConfigStatusResponse
-                        {
-                            Configured = hasRealProvider,
-                            Model = a.CurrentLlm.ModelId,
-                            Provider = a.CurrentLlm.ProviderName,
-                            Providers = a.LlmsSnapshot.Select(l => l.ProviderName).ToList(),
-                            ThinkingEnabled = a.CurrentLlm.ThinkingEnabled,
-                            ThinkingLevel = a
-                                .CurrentLlm.ThinkingLevel.ToString()
-                                .ToLowerInvariant(),
-                            MaxTokens = a.CurrentLlm.MaxTokens,
-                        }
-                    )
-                );
-            }
-        );
+        app.MapGet($"{p}/system-prompt", (_, _) =>
+        {
+            var prompt = sp ?? PicoNode.Agent.Domain.SystemPromptBuilder.Build(_agent.ToolsSnapshot.ToArray(), _agent.Skills);
+            return V(JsonHelper.JsonResponse(new PromptResponse { Prompt = prompt }));
+        });
+        app.MapPost($"{p}/system-prompt", async (ctx, _) =>
+        {
+            using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+            var body = await r.ReadToEndAsync();
+            var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
+            sp = doc.RootElement.TryGetProperty("prompt", out var pp) ? pp.GetStringOrNull() : null;
+            return JsonHelper.Ok();
+        });
 
-        // Provider templates
-        app.MapGet(
-            $"{p}/config/providers",
-            (_, _) =>
-                V(
-                    new HttpResponse
-                    {
-                        StatusCode = 200,
-                        Body = Encoding.UTF8.GetBytes(
-                            JsonSerializer.Serialize(DefaultProviderTemplates)
-                        ),
-                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
-                    }
-                )
-        );
-
-        // Config validate
-        app.MapPost(
-            $"{p}/config/validate",
-            async (ctx, ct) =>
-            {
-                using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
-                var body = await r.ReadToEndAsync(ct);
-                var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
-                var name =
-                    doc.RootElement.TryGetProperty("provider", out var pv) ? pv.GetStringOrNull()
-                    : doc.RootElement.TryGetProperty("name", out var nm) ? nm.GetStringOrNull()
-                    : null;
-                var key = doc.RootElement.TryGetProperty("apiKey", out var ak)
-                    ? ak.GetStringOrNull()
-                    : null;
-                var url = doc.RootElement.TryGetProperty("baseUrl", out var bu)
-                    ? bu.GetStringOrNull()
-                    : null;
-
-                if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(key))
-                    return JsonHelper.Error(400, "provider and apiKey required");
-                try
-                {
-                    var pc = new PicoNode.AI.ProviderConfig
-                    {
-                        Name = name,
-                        ApiKey = key,
-                        BaseUrl = url ?? "https://api.openai.com/v1",
-                        ApiFormat = AiApiFormat.OpenAIChatCompletions,
-                    };
-                    using var http = new HttpClient();
-                    var models = await PicoNode.AI.ModelDiscovery.DiscoverAsync(
-                        http,
-                        pc,
-                        ct,
-                        logger
-                    );
-                    if (models.Length == 0)
-                        return JsonHelper.Error(
-                            400,
-                            "No models found. Check your API key or base URL."
-                        );
-                    return new HttpResponse
-                    {
-                        StatusCode = 200,
-                        Body = Encoding.UTF8.GetBytes(
-                            JsonSerializer.Serialize(
-                                models
-                                    .Select(m => new ModelListItem
-                                    {
-                                        Id = m.Id,
-                                        OwnedBy = m.OwnedBy,
-                                    })
-                                    .ToList()
-                            )
-                        ),
-                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
-                    };
-                }
-                catch (Exception ex)
-                {
-                    logger?.Error($"Config validation failed for '{name}': {ex.Message}");
-                    return JsonHelper.Error(400, ex.Message);
-                }
-            }
-        );
-
-        // Config save
-        app.MapPost(
-            $"{p}/config",
-            async (ctx, ct) =>
-            {
-                using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
-                var body = await r.ReadToEndAsync(ct);
-                if (string.IsNullOrWhiteSpace(body))
-                    return JsonHelper.Error(400, "empty body");
-
-                AgentConfig? newConfig;
-                try
-                {
-                    newConfig = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(
-                        Encoding.UTF8.GetBytes(body)
-                    );
-                }
-                catch (Exception ex)
-                {
-                    logger?.Warning($"Config save failed: invalid JSON — {ex.Message}");
-                    return JsonHelper.Error(400, "invalid json");
-                }
-                if (newConfig is null)
-                    return JsonHelper.Error(400, "invalid config");
-
-                // Delegate to the single, unit-tested source of truth for the
-                // add/switch/remove ordering. Phase 6 previously removed the wrong
-                // entry (by newModel) and tripped the CurrentLlm invariant.
-                ConfigApplier.Apply(a, system, newConfig);
-
-                if (settingsPath is { Length: > 0 })
-                {
-                    var dir = Path.GetDirectoryName(settingsPath);
-                    if (dir is not null)
-                        Directory.CreateDirectory(dir);
-                    await File.WriteAllTextAsync(settingsPath, body, ct);
-                }
-
-                return JsonHelper.Ok();
-            }
-        );
-
-        // System prompt
-        app.MapGet(
-            $"{p}/system-prompt",
-            (_, _) =>
-            {
-                var prompt =
-                    sp
-                    ?? PicoNode.Agent.Domain.SystemPromptBuilder.Build(
-                        a.ToolsSnapshot.ToArray(),
-                        a.Skills
-                    );
-                return V(JsonHelper.JsonResponse(new PromptResponse { Prompt = prompt }));
-            }
-        );
-        app.MapPost(
-            $"{p}/system-prompt",
-            async (ctx, _) =>
-            {
-                using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
-                var body = await r.ReadToEndAsync();
-                var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
-                sp = doc.RootElement.TryGetProperty("prompt", out var pp)
-                    ? pp.GetStringOrNull()
-                    : null;
-                return JsonHelper.Ok();
-            }
-        );
-
-        // Reload
         app.MapPost($"{p}/reload", (_, _) => V(JsonHelper.Ok()));
+        app.MapPost($"{p}/thinking", (ctx, _) =>
+        {
+            using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+            var body = r.ReadToEnd();
+            var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
+            var lvl = doc.RootElement.TryGetProperty("level", out var lp) ? lp.GetStringOrNull() : null;
+            if (lvl is { Length: > 0 }) _agentSystem.Send(_agent.Id, new SetThinkingLevelCmd(lvl));
+            return V(JsonHelper.Ok());
+        });
 
-        // Thinking
-        app.MapPost(
-            $"{p}/thinking",
-            (ctx, _) =>
-            {
-                using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
-                var body = r.ReadToEnd();
-                var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
-                var lvl = doc.RootElement.TryGetProperty("level", out var lp)
-                    ? lp.GetStringOrNull()
-                    : null;
-                if (lvl is { Length: > 0 })
-                    system.Send(a.Id, new SetThinkingLevelCmd(lvl));
-                return V(JsonHelper.Ok());
-            }
-        );
-
-        // Model/Provider switch (stub placeholders)
-        app.MapPost(
-            $"{p}/model/switch",
-            (ctx, _) =>
-            {
-                return V(JsonHelper.Ok());
-            }
-        );
-        app.MapPost(
-            $"{p}/provider/switch",
-            (ctx, _) =>
-            {
-                return V(JsonHelper.Ok());
-            }
-        );
-
-        // Session management
-        app.MapPost($"{p}/session/create/{{id}}", (_, _) => V(JsonHelper.Ok()));
-        app.MapPost($"{p}/session/delete/{{id}}", (_, _) => V(JsonHelper.Ok()));
-        app.MapPost($"{p}/session/save/{{id}}", (_, _) => V(JsonHelper.Ok()));
-        app.MapGet(
-            $"{p}/session/{{id}}/messages",
-            (_, _) =>
-            {
-                var entries = a.Session?.GetEntries().GetAwaiter().GetResult();
-                if (entries is null or { Length: 0 })
-                    return V(JsonHelper.RawJson("[]"));
-                var messages = entries.OfType<MessageEntry>().Select(e => e.Message).ToArray();
-                return V(
-                    new HttpResponse
-                    {
-                        StatusCode = 200,
-                        Body = Encoding.UTF8.GetBytes(SessionMessageSerializer.ToJson(messages)),
-                        Headers = [new("Content-Type", "application/json; charset=utf-8")],
-                    }
-                );
-            }
-        );
-        app.MapPost($"{p}/session/{{id}}/retry", (_, _) => V(JsonHelper.Ok()));
-
-        // Steer — inject a user message mid-run via mailbox (FIFO before next CheckContinue)
-        app.MapPost(
-            $"{p}/session/{{id}}/steer",
-            async (ctx, _) =>
-            {
-                using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
-                var message = await r.ReadToEndAsync();
-                if (string.IsNullOrWhiteSpace(message))
-                    return JsonHelper.Error(400, "empty message");
-                system.Send(a.Id, new SteerCmd(message));
-                return JsonHelper.Ok();
-            }
-        );
-        app.MapPost(
-            $"{p}/session/{{id}}/compact",
-            (_, _) =>
-                V(
-                    JsonHelper.JsonResponse(
-                        new CompactResponse
-                        {
-                            CompressedCount = 0,
-                            Summary = null,
-                            TokensSaved = 0,
-                        }
-                    )
-                )
-        );
-
-        // SSE message endpoint
-        app.MapPost(
-            $"{p}/session/{{id}}/message",
-            async (ctx, ct) =>
-            {
-                using var reader = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
-                var message = await reader.ReadToEndAsync(ct);
-                if (string.IsNullOrWhiteSpace(message))
-                    return JsonHelper.Error(400, "empty message");
-                var pipe = new Pipe();
-                _ = Task.Run(
-                        async () =>
-                        {
-                            try
-                            {
-                                await turnLock.WaitAsync(ct);
-
-                                var outputChannel = Channel.CreateUnbounded<ActorOutputEvent>();
-                                var turnId = Guid.CreateVersion7().ToString("N")[..8];
-                                a.OutputWriter = outputChannel.Writer;
-
-                                if (a.Status != AgentStatus.Running)
-                                {
-                                    logger?.Warning(
-                                        $"Rejecting RunTurn: agent status is {a.Status} (expected Running)"
-                                    );
-                                    var rejectFrame = ServerSse.BuildFrame(
-                                        new ActorOutputEvent(
-                                            "error",
-                                            $"Agent is {a.Status}, not Running"
-                                        )
-                                    );
-                                    await pipe.Writer.WriteAsync(
-                                        Encoding.UTF8.GetBytes(rejectFrame),
-                                        ct
-                                    );
-                                    return;
-                                }
-
-                                // Auto-name the session on first message
-                                if (a.Session?.Name == "default" && a.Session is not null)
-                                {
-                                    var name = message.Split(['\r', '\n'])[0].Trim();
-                                    if (name.Length > 50) name = name[..50];
-                                    if (name.Length > 0)
-                                        _ = a.Session.SetName(name);
-                                }
-
-                                system.Send(a.Id, new RunTurn(message, turnId));
-                                logger?.Info(
-                                    $"RunTurn envoyé: turnId={turnId}, agentStatus={a.Status}"
-                                );
-
-                                await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
-                                {
-                                    var frame = ServerSse.BuildFrame(evt);
-                                    await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(frame), ct);
-                                }
-                            }
-                            catch (OperationCanceledException)
-                            {
-                                // Client disconnected or stopped — normal, not an error
-                            }
-                            catch (Exception ex)
-                            {
-                                logger?.Error($"SSE turn failed: {ex.Message}");
-                                var errFrame = ServerSse.BuildFrame(
-                                    new ActorOutputEvent("error", ex.Message)
-                                );
-                                await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(errFrame), ct);
-                            }
-                            finally
-                            {
-                                turnLock.Release();
-                                await pipe.Writer.CompleteAsync();
-                            }
-                        },
-                        ct
-                    )
-                    .ContinueWith(
-                        t =>
-                        {
-                            if (t.IsFaulted)
-                                logger?.Error(
-                                    $"SSE task crashed: {t.Exception?.InnerException?.Message}"
-                                );
-                        },
-                        TaskContinuationOptions.OnlyOnFaulted
-                    );
-                return new HttpResponse
-                {
-                    StatusCode = 200,
-                    Headers =
-                    [
-                        new("Content-Type", "text/event-stream"),
-                        new("Cache-Control", "no-cache"),
-                        new("Connection", "close"),
-                    ],
-                    BodyStream = pipe.Reader.AsStream(),
-                };
-            }
-        );
+        app.MapPost($"{p}/model/switch", (_, _) => V(JsonHelper.Ok()));
+        app.MapPost($"{p}/provider/switch", (_, _) => V(JsonHelper.Ok()));
     }
 
     // ── Private helpers ─────────────────────────────────────────────
@@ -547,27 +392,14 @@ public sealed class Server : IAsyncDisposable
     private WebApp BuildWebApp()
     {
         var app = new WebApp(new SvcContainer(), new WebAppOptions());
-        AddEndpoints(
-            app,
-            _agent,
-            _system,
-            _llmClient,
-            _toolRunner,
-            "/api",
-            settingsPath: _settingsPath,
-            logger: _logger
-        );
-
-        // Serve static files from wwwroot alongside the app directory
+        AddEndpoints(app, "/api");
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         if (Directory.Exists(wwwroot))
             app.Use(new StaticFileMiddleware(wwwroot).InvokeAsync);
-
         return app;
     }
 
     private static ValueTask<HttpResponse> V(HttpResponse r) => ValueTask.FromResult(r);
-
     private static IPEndPoint ParseEndpoint(string uri)
     {
         var u = new Uri(uri);
@@ -576,48 +408,16 @@ public sealed class Server : IAsyncDisposable
 
     private static readonly List<ProviderTemplate> DefaultProviderTemplates =
     [
-        new()
-        {
-            Name = "openai",
-            Label = "OpenAI",
-            BaseUrl = "https://api.openai.com/v1",
-            ApiFormat = "openai",
-        },
-        new()
-        {
-            Name = "anthropic",
-            Label = "Anthropic",
-            BaseUrl = "https://api.anthropic.com",
-            ApiFormat = "anthropic",
-        },
-        new()
-        {
-            Name = "deepseek",
-            Label = "DeepSeek",
-            BaseUrl = "https://api.deepseek.com/v1",
-            ApiFormat = "openai",
-        },
-        new()
-        {
-            Name = "groq",
-            Label = "Groq",
-            BaseUrl = "https://api.groq.com/openai/v1",
-            ApiFormat = "openai",
-        },
-        new()
-        {
-            Name = "ollama",
-            Label = "Ollama",
-            BaseUrl = "http://localhost:11434/v1",
-            ApiFormat = "openai",
-        },
+        new() { Name = "openai", Label = "OpenAI", BaseUrl = "https://api.openai.com/v1", ApiFormat = "openai" },
+        new() { Name = "anthropic", Label = "Anthropic", BaseUrl = "https://api.anthropic.com", ApiFormat = "anthropic" },
+        new() { Name = "deepseek", Label = "DeepSeek", BaseUrl = "https://api.deepseek.com/v1", ApiFormat = "openai" },
+        new() { Name = "groq", Label = "Groq", BaseUrl = "https://api.groq.com/openai/v1", ApiFormat = "openai" },
+        new() { Name = "ollama", Label = "Ollama", BaseUrl = "http://localhost:11434/v1", ApiFormat = "openai" },
     ];
 
     async ValueTask IAsyncDisposable.DisposeAsync()
     {
-        if (_webServer is not null)
-            await _webServer.DisposeAsync();
-        if (_loggerFactory is not null)
-            await _loggerFactory.DisposeAsync();
+        if (_webServer is not null) await _webServer.DisposeAsync();
+        if (_loggerFactory is not null) await _loggerFactory.DisposeAsync();
     }
 }

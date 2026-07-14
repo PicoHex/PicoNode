@@ -47,8 +47,17 @@ public static class Bootstrap
         Console.WriteLine($"[PicoAgent] Starting... home={home.Root}");
 
         var system = (ActorSystem)scope.GetService(typeof(ActorSystem))!;
+        var sessionSystem = ((SessionSystem)scope.GetService(typeof(SessionSystem))!).System;
         var llmAdapter = (PicoNode.Agent.Domain.ILlmClient)
             scope.GetService(typeof(PicoNode.Agent.Domain.ILlmClient))!;
+
+        // Register SessionActor on session system
+        sessionSystem.Register<SessionActor>(cmd => cmd switch
+        {
+            StartSession c => new SessionActor(c),
+            _ => throw new InvalidOperationException(),
+        });
+
         var factory = new AgentFactory(system, llmAdapter).WithBuiltInTools();
         factory.Register();
 
@@ -58,7 +67,7 @@ public static class Bootstrap
         if (savedId.HasValue)
         {
             Console.WriteLine($"[PicoAgent] Found saved agent ID: {savedId}");
-            agent = await system.GetAgentAsync<DomainAgent>(savedId.Value, home.SessionsDir);
+            agent = await system.GetAgentAsync<DomainAgent>(savedId.Value);
             Console.WriteLine(agent is not null
                 ? $"[PicoAgent] Restored agent {savedId}"
                 : $"[PicoAgent] Agent {savedId} not found in store — creating new");
@@ -71,9 +80,26 @@ public static class Bootstrap
         agent ??= await factory.BuildAsync(config, home.SessionsDir);
         ArgumentNullException.ThrowIfNull(agent);
         await home.SaveAgentIdAsync(agent.Id);
+
+        // Create Runtime actor asynchronously
+        system.Register<RuntimeActor>(cmd => cmd switch
+        {
+            NoOpCmd => new RuntimeActor(),
+            _ => throw new InvalidOperationException(),
+        });
+        var runtime = await system.CreateAsync<RuntimeActor>(new NoOpCmd());
+        runtime.LlmClient = llmAdapter;
+        runtime.ToolRunner = factory.GetToolRunner();
+        runtime.SessionSystem = sessionSystem;
+
+        // Load Agent config into Runtime
+        system.Send(runtime.Id, new LoadAgentCmd(agent.Id));
+
         var server = new Server(
             agent,
             system,
+            sessionSystem,
+            runtime,
             llmAdapter,
             factory.GetToolRunner(),
             logger,
