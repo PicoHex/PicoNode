@@ -11,7 +11,7 @@
     <PackageVersion Include="PicoCfg.Json" Version="2026.7.3" />
     <PackageVersion Include="PicoDI" Version="2026.7.3" />
     <PackageVersion Include="PicoDI.Abs" Version="2026.7.3" />
-    <PackageVersion Include="PicoJetson" Version="2026.3.24" />
+    <PackageVersion Include="PicoJetson" Version="2026.3.25" />
     <PackageVersion Include="PicoLog" Version="2026.7.3" />
     <PackageVersion Include="PicoLog.Abs" Version="2026.7.3" />
 
@@ -34,6 +34,6 @@
 
     <!-- Testing -->
     <PackageVersion Include="PicoBench" Version="2026.2.4" />
-    <PackageVersion Include="TUnit" Version="1.58.0" />
+    <PackageVersion Include="TUnit" Version="1.59.0" />
   </ItemGroup>
 </Project>
