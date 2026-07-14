@@ -466,28 +466,10 @@ public sealed class Server : IAsyncDisposable
                                 // Auto-name the session on first message
                                 if (a.Session?.Name == "default" && a.Session is not null)
                                 {
-                                    _ = Task.Run(async () =>
-                                    {
-                                        try
-                                        {
-                                            var prompt =
-                                                $"Summarize this chat topic in 3-5 words (no quotes, no punctuation): {message}";
-                                            var result = await llm.CompleteAsync(
-                                                a.CurrentLlm,
-                                                [new Message { Role = "user", Content = prompt }],
-                                                [],
-                                                CancellationToken.None
-                                            );
-                                            var name = (result.Content ?? "chat").Trim();
-                                            if (name.Length > 50)
-                                                name = name[..50];
-                                            await a.Session.SetName(name);
-                                        }
-                                        catch
-                                        {
-                                            // Naming is best-effort, don't block the turn
-                                        }
-                                    });
+                                    var name = message.Split(['\r', '\n'])[0].Trim();
+                                    if (name.Length > 50) name = name[..50];
+                                    if (name.Length > 0)
+                                        _ = a.Session.SetName(name);
                                 }
 
                                 system.Send(a.Id, new RunTurn(message, turnId));
