@@ -10,7 +10,7 @@ public sealed class AgentFactory
     private readonly ToolRunner _toolRunner = new();
     private bool _withBuiltInTools;
 
-    public AgentFactory(ActorSystem system, ILlmClient? llmClient = null)
+    public AgentFactory(ActorSystem system)
     {
         _system = system;
     }

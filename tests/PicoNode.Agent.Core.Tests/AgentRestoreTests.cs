@@ -47,8 +47,6 @@ public sealed class AgentRestoreTests : IDisposable
     {
         var store = new JsonlEventStore(Path.Combine(_baseDir, "actors"));
         var system = new ActorSystem(store);
-        var llmClient = new FakeLlmClient();
-        var toolRunner = new FakeToolRunner();
         var sessionId = Guid.CreateVersion7();
 
         system.Register<DomainAgent>(
@@ -108,8 +106,6 @@ public sealed class AgentRestoreTests : IDisposable
     {
         var store = new JsonlEventStore(Path.Combine(_baseDir, "actors"));
         var system = new ActorSystem(store);
-        var llmClient = new FakeLlmClient();
-        var toolRunner = new FakeToolRunner();
         var sessionId = Guid.CreateVersion7();
 
         system.Register<DomainAgent>(

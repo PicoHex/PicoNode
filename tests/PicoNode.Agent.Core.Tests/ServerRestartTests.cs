@@ -12,8 +12,6 @@ public sealed class ServerRestartTests
         var store = new InMemoryEventStore();
         var system = new ActorSystem(store);
         var sessionId = Guid.CreateVersion7();
-        var llmClient = new FakeLlmClient();
-        var toolRunner = new FakeToolRunner();
 
         system.Register<DomainAgent>(
             cmd =>

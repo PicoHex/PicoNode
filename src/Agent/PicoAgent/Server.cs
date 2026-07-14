@@ -328,6 +328,7 @@ public sealed class Server : IAsyncDisposable
             catch (Exception ex) { _logger?.Warning($"Config save failed: {ex.Message}"); return JsonHelper.Error(400, "invalid json"); }
             if (newConfig is null) return JsonHelper.Error(400, "invalid config");
             ConfigApplier.Apply(_agent, _agentSystem, newConfig);
+            _configSnapshotCached = null; // invalidate on config save
             if (_settingsPath is { Length: > 0 })
             {
                 var dir = Path.GetDirectoryName(_settingsPath);

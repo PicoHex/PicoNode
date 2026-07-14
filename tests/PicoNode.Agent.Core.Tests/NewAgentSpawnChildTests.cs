@@ -12,8 +12,6 @@ public sealed class AgentSpawnChildTests
     {
         var store = new InMemoryEventStore();
         var system = new ActorSystem(store);
-        var llmClient = new FakeLlmClient();
-        var toolRunner = new FakeToolRunner();
 
         system.Register<DomainAgent>(
             cmd =>
@@ -68,8 +66,6 @@ public sealed class AgentSpawnChildTests
     {
         var store = new InMemoryEventStore();
         var system = new ActorSystem(store);
-        var llmClient = new FakeLlmClient();
-        var toolRunner = new FakeToolRunner();
 
         system.Register<DomainAgent>(
             cmd =>
