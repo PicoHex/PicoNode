@@ -409,6 +409,20 @@ public sealed class Server : IAsyncDisposable
             }
         );
         app.MapPost($"{p}/session/{{id}}/retry", (_, _) => V(JsonHelper.Ok()));
+
+        // Steer — inject a user message mid-run via mailbox (FIFO before next CheckContinue)
+        app.MapPost(
+            $"{p}/session/{{id}}/steer",
+            async (ctx, _) =>
+            {
+                using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+                var message = await r.ReadToEndAsync();
+                if (string.IsNullOrWhiteSpace(message))
+                    return JsonHelper.Error(400, "empty message");
+                system.Send(a.Id, new SteerCmd(message));
+                return JsonHelper.Ok();
+            }
+        );
         app.MapPost(
             $"{p}/session/{{id}}/compact",
             (_, _) =>
