@@ -39,7 +39,9 @@ function forgetThinking(sid) {
     await loadHealth();
     await loadModels();
     await loadSessions();
-    // No auto-select — UI shows empty state until user picks or creates a session
+    await loadSystemPrompt();
+    document.getElementById('sidebar-toggle').addEventListener('click', () => document.getElementById('sidebar').classList.toggle('open'));
+    document.getElementById('chat').addEventListener('click', () => document.getElementById('sidebar').classList.remove('open'));
 })();
 
 // ── API ──
@@ -47,6 +49,7 @@ async function api(method, url, body) {
     const opts = { method }; if (body !== undefined) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(body); }
     const r = await fetch(url, opts); if (!r.ok) throw new Error(`${r.status}`);
     return r.headers.get('content-type')?.includes('json') ? r.json() : r.text();
+}
 async function loadHealth() { try { const h = await api('GET', '/api/health'); currentModel = h.model; currentProvider = h.provider; updateStatus(); } catch (e) { console.warn('loadHealth failed:', e); } }
 function updateStatus() { statusEl.textContent = currentProvider ? `${currentModel} @ ${currentProvider}` : currentModel || '--'; }
 
@@ -62,14 +65,17 @@ async function loadModels() {
             modelSel.appendChild(og);
         }
     } catch { modelSel.innerHTML = '<option value="">Failed</option>'; }
+}
 
 // ── Sessions ──
 async function loadSessions() {
+    try {
         const sessions = await api('GET', '/api/sessions');
         sessionList.innerHTML = '';
         if (!sessions || sessions.length === 0) {
             sessionList.innerHTML = '<div class="session empty">No sessions yet</div>';
             return;
+        }
         for (const s of sessions) {
             const div = document.createElement('div');
             div.className = 'session' + (s.id === currentSession ? ' active' : '');
@@ -85,31 +91,38 @@ async function loadSessions() {
             div.appendChild(dBtn);
             div.addEventListener('click', () => switchSession(s.id));
             sessionList.appendChild(div);
+        }
     } catch (e) { console.warn('loadSessions failed:', e); }
+}
 async function switchSession(id) {
     currentSession = id;
     document.querySelectorAll('#session-list .session').forEach(el =>
         el.classList.toggle('active', el.dataset.id === id));
     await loadMessages(id);
     messages.scrollTop = messages.scrollHeight;
+}
 async function createSession() {
     const n = prompt('Session name:')?.trim();
     if (!n) return;
+    try {
         const result = await api('POST', '/api/sessions', { name: n });
         currentSession = result.id;
         await loadSessions();
         await loadMessages(currentSession);
         switchSession(currentSession);
     } catch (e) { showToast('Failed: ' + e.message, true); }
+}
 async function deleteSession(id, el) {
     if (!confirm(`Delete "${el.querySelector('span').textContent}"?`)) return;
+    try {
         await api('DELETE', `/api/sessions/${encodeURIComponent(id)}`);
         forgetThinking(id);
         if (currentSession === id) { currentSession = null; messages.innerHTML = ''; }
+        await loadSessions();
         showToast('Deleted');
     } catch (e) { showToast('Delete failed: ' + e.message, true); }
 }
-async function saveSession() {}  // no-op: auto-persisted
+async function saveSession() {} // no-op: Session actor auto-persists
 
 // ── System prompt ──
 async function loadSystemPrompt() { try { const r = await api('GET', '/api/system-prompt'); sysPrompt.value = r.prompt || ''; } catch {} }
@@ -119,6 +132,7 @@ document.getElementById('btn-save-prompt').addEventListener('click', async () =>
 
 // ── Messages ──
 async function loadMessages(sessionId) {
+    try {
         const msgs = await api('GET', `/api/sessions/${encodeURIComponent(sessionId)}/messages`); messages.innerHTML = '';
         if (msgs && Array.isArray(msgs)) {
             let ai = 0;
@@ -154,7 +168,9 @@ async function loadMessages(sessionId) {
                     ai++;
                 } else if (text) { renderMessage('user', text, '', null); }
             }
+        }
     } catch {}
+}
 function addHistoryToolBlock(el, tc, resultText, isError) {
     const tcDiv = document.createElement('details');
     tcDiv.className = 'tool-call';
@@ -180,6 +196,7 @@ function addHistoryToolBlock(el, tc, resultText, isError) {
     tcDiv.appendChild(resultDiv);
     const msgContent = el.querySelector('.msg-content');
     if (msgContent) msgContent.appendChild(tcDiv);
+}
 function renderMessage(role, text, extra = '', msgId = null) {
     const el = document.createElement('div'); el.className = `message ${role}`; if (msgId) el.dataset.msgId = msgId;
     if (extra) { const tu = document.createElement('div'); tu.className = 'token-usage'; tu.textContent = extra; el.appendChild(tu); }
@@ -191,14 +208,18 @@ function renderMessage(role, text, extra = '', msgId = null) {
     if (role === 'user') {
         const eb = document.createElement('button'); eb.textContent = '✏️'; eb.title = 'Edit';
         eb.addEventListener('click', () => showEditOverlay(text)); bar.appendChild(eb);
+    }
     if (role === 'assistant') {
         const rb = document.createElement('button'); rb.textContent = '🔄'; rb.title = 'Retry';
         rb.addEventListener('click', () => retryLastMessage()); bar.appendChild(rb);
+    }
     el.appendChild(bar); messages.appendChild(el); return el;
+}
 function addThinkingBlock(el, thinkingText) {
     const think = document.createElement('details'); think.className = 'thinking'; think.open = false;
     think.innerHTML = `<summary>thinking</summary><div class="think-content">${marked.parse(thinkingText)}</div>`;
     el.insertBefore(think, el.querySelector('.msg-content')); deferMermaidRender(think);
+}
 function copyMessage(contentEl) { navigator.clipboard.writeText(contentEl.innerText).then(() => showToast('Copied')).catch(() => showToast('Copy failed', true)); }
 
 // ── Edit overlay ──
@@ -210,7 +231,9 @@ function showEditOverlay(text) {
         editOverlay.querySelector('button').addEventListener('click', () => { const t = editOverlay.querySelector('textarea').value.trim(); if (t) { editOverlay.classList.remove('active'); sendMessage(t); } });
         editOverlay.querySelectorAll('button')[1].addEventListener('click', () => { editOverlay.querySelector('textarea').value = ''; editOverlay.classList.remove('active'); });
         document.getElementById('chat').appendChild(editOverlay);
+    }
     editOverlay.querySelector('textarea').value = text; editOverlay.classList.add('active'); editOverlay.querySelector('textarea').focus();
+}
 
 // ── Retry ──
 async function retryLastMessage() {
@@ -220,6 +243,7 @@ async function retryLastMessage() {
     try { await fetch(`/api/sessions/${encodeURIComponent(currentSession)}/retry`, { method: 'POST' }); } catch {}
     let next = last; while (next) { const r = next; next = next.nextElementSibling; r.remove(); }
     await sendMessage(text);
+}
 
 // ── Toast ──
 function showToast(msg, isError) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; if (isError) t.style.background = '#c0392b'; document.body.appendChild(t); requestAnimationFrame(() => t.classList.add('show')); setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3000); }
@@ -240,6 +264,7 @@ document.getElementById('btn-reload').addEventListener('click', async () => {
     try { await api('POST', '/api/reload'); b.textContent = '✅'; showToast('Skills & config reloaded'); }
     catch (e) { b.textContent = '❌'; showToast('Reload failed', true); }
     setTimeout(() => { b.textContent = '🔄'; }, 1500);
+});
 
 // ── Export ──
 document.getElementById('btn-export').addEventListener('click', async () => {
@@ -250,8 +275,10 @@ document.getElementById('btn-export').addEventListener('click', async () => {
         const text = m.querySelector('.msg-content')?.innerText || '';
         const usage = m.querySelector('.token-usage')?.textContent || '';
         md += `${role}\n\n${text}\n\n${usage ? '_' + usage + '_\n\n' : ''}`;
+    }
     const blob = new Blob([md], { type: 'text/markdown' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${currentSession}.md`; a.click(); showToast('Exported');
+});
 
 // ── Send / Stop ──
 sendBtn.addEventListener('click', () => sendMessage());
@@ -262,9 +289,12 @@ input.addEventListener('keydown', e => {
     if (e.key === 'ArrowUp' && !input.value && inputHistory.length) {
         e.preventDefault(); historyIdx = historyIdx < 0 ? inputHistory.length - 1 : Math.max(0, historyIdx - 1);
         input.value = inputHistory[historyIdx]; showHistoryHint();
+    }
     if (e.key === 'ArrowDown' && historyIdx >= 0) {
         e.preventDefault(); historyIdx++; if (historyIdx >= inputHistory.length) { historyIdx = -1; input.value = ''; } else { input.value = inputHistory[historyIdx]; }
         showHistoryHint();
+    }
+});
 function showHistoryHint() { if (historyIdx >= 0) { historyHint.textContent = `History ${historyIdx + 1}/${inputHistory.length}`; historyHint.classList.add('show'); setTimeout(() => historyHint.classList.remove('show'), 1500); } }
 function stopGeneration() { if (abortCtrl) { abortCtrl.abort(); abortCtrl = null; } setStreaming(false); }
 function setStreaming(on) { isStreaming = on; sendBtn.style.display = on ? 'none' : ''; stopBtn.style.display = on ? '' : 'none'; sendBtn.disabled = on; }
@@ -278,6 +308,8 @@ function renderAllSegments(container) {
         seg.classList.add('rendered');
         seg.innerHTML = marked.parse(seg.textContent);
         deferMermaidRender(seg);
+    }
+}
 function cleanupToolBlocks(container) {
     for (const tc of container.querySelectorAll('.tool-call')) {
         const resultDiv = tc.querySelector('.tool-result');
@@ -292,6 +324,9 @@ function cleanupToolBlocks(container) {
             resultDiv.textContent = '[no result] ' + name + argsText;
             tc.classList.add('tool-error');
             tc.open = true;
+        }
+    }
+}
 
 async function sendMessage(overrideText) {
     const text = (overrideText || input.value).trim(); if (!text || isStreaming) return;
@@ -306,6 +341,7 @@ async function sendMessage(overrideText) {
         const name = text.split('\n')[0].substring(0, 50) || 'New chat';
         try { const result = await api('POST', '/api/sessions', { name }); currentSession = result.id; await loadSessions(); }
         catch (e) { showToast('Failed to create session', true); setStreaming(false); return; }
+    }
 
     const asst = renderMessage('assistant', '', '', currentSession + '-' + streamMsgIndex);
     const msgContent = asst.querySelector('.msg-content');
@@ -321,6 +357,7 @@ async function sendMessage(overrideText) {
     let currentTurnId = null;
     let llmRound = 1; // LLM round counter, used to create unique tool call keys across rounds
 
+    try {
         const response = await fetch(`/api/sessions/${encodeURIComponent(currentSession)}/message`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text, signal: abortCtrl.signal });
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
         while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop() || '';
@@ -334,6 +371,7 @@ async function sendMessage(overrideText) {
                         if (!currentTextSeg) { streamDot.style.display = 'none'; currentTextSeg = createTextSeg(); msgContent.appendChild(currentTextSeg); }
                         currentTextSeg.textContent = rawText.substring(segStart);
                         currentTextSeg.classList.remove('rendered');
+                    }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked) continue; if (!thinkBlock) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(thinkBlock); } rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
                     else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => renderAllSegments(msgContent), 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); } if (thinkBlock) { thinkBlock.remove(); thinkBlock = null; } llmRound++; }
                     else if (evt.type === 'tool_call_start') {
@@ -353,12 +391,17 @@ async function sendMessage(overrideText) {
                         msgContent.appendChild(tcDiv);
                         // Don't create thinking block here — created lazily when first thinking event arrives
                         thinkBlock = null;
+                    }
                     else if (evt.type === 'tool_call_delta') {
+                        const tid = `${llmRound}-${evt.toolCallId}`;
                         if (tid && toolBlocks[tid]) {
                             toolBlocks[tid].args += evt.content || '';
                             const tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
                             if (tcDiv) { try { const parsed = JSON.parse(toolBlocks[tid].args); tcDiv.querySelector('.tool-args').textContent = JSON.stringify(parsed); } catch (e) {} }
+                        }
+                    }
                     else if (evt.type === 'tool_call_end') {
+                        const tid = `${llmRound}-${evt.toolCallId}`;
                         if (!tid) continue;
                         // Ensure tool block entry exists (tool_call_start may not have fired)
                         if (!toolBlocks[tid]) {
@@ -366,6 +409,7 @@ async function sendMessage(overrideText) {
                             if (evt.toolName) toolBlocks[evt.toolName] = toolBlocks[tid];
                         } else if (evt.content) {
                             toolBlocks[tid].args = evt.content;
+                        }
                         if (evt.toolName) { toolBlocks[tid].name = evt.toolName; toolBlocks[evt.toolName] = toolBlocks[tid]; }
                         // Ensure DOM element exists
                         let tcDiv = msgContent.querySelector('.tool-call[data-tool-id="' + CSS.escape(tid) + '"]');
@@ -374,16 +418,19 @@ async function sendMessage(overrideText) {
                             tcDiv.className = 'tool-call'; tcDiv.dataset.toolId = tid; tcDiv.dataset.toolName = evt.toolName || '';
                             tcDiv.innerHTML = '<summary>🔧 <strong>' + (evt.toolName || 'tool') + '</strong> <span class="tool-args"></span></summary><div class="tool-result"></div>';
                             msgContent.appendChild(tcDiv);
+                        }
                         tcDiv.open = true;
                         if (evt.toolName) { tcDiv.dataset.toolName = evt.toolName; const strong = tcDiv.querySelector('summary strong'); if (strong) strong.textContent = evt.toolName; }
                         // Detect skill read
                         if (toolBlocks[tid].name === 'read' && !toolBlocks[tid].isSkill) {
                             try { const parsed = JSON.parse(toolBlocks[tid].args || '{}'); if (parsed.path && parsed.path.endsWith('SKILL.md')) { toolBlocks[tid].isSkill = true; tcDiv.classList.add('skill-read'); } } catch (e) {}
+                        }
                         // Update args display
                         try {
                             const parsed = JSON.parse(toolBlocks[tid].args || '{}');
                             tcDiv.querySelector('.tool-args').textContent = JSON.stringify(parsed);
                         } catch (e) { tcDiv.querySelector('.tool-args').textContent = ''; }
+                    }
                     else if (evt.type === 'tool_result') {
                         const tid = evt.toolCallId;
                         const tName = evt.toolName;
@@ -422,11 +469,17 @@ async function sendMessage(overrideText) {
                                         try { const parsed = JSON.parse(block.args); argsHtml = ' <span class="tool-args">' + JSON.stringify(parsed) + '</span>'; } catch (e) {}
                                     }
                                     summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong>' + argsHtml;
+                                }
+                            }
                             if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; }
+                        }
+                    }
                     else if (evt.type === 'error') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); currentTextSeg = null; msgContent.innerHTML += '<div class="stream-error">⚠️ ' + (evt.content || evt.message || '') + '</div>'; }
                 } catch (e) { console.error('SSE handler:', e, p); } } catch {} messages.scrollTop = messages.scrollHeight; }
+        }
     } catch (err) { if (err.name === 'AbortError') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); } else { msgContent.innerHTML += '<div class="stream-error">' + err.message + '</div>'; showToast(err.message, true); } }
     finally { setStreaming(false); abortCtrl = null; input.focus(); cleanupToolBlocks(msgContent); await loadSessions(); }
+}
 
 // ── Marked + Mermaid ──
 const markedRenderer = new marked.Renderer(); const origCode = markedRenderer.code.bind(markedRenderer);
@@ -441,6 +494,7 @@ async function deferMermaidRender(container) {
             pre.outerHTML = `<div class="mermaid-rendered">${svg}</div>`;
         } catch { pre.classList.add('mermaid-error'); }
     }));
+}
 
 // ── Theme ──
 function applyTheme(key) {
@@ -448,6 +502,7 @@ function applyTheme(key) {
     document.documentElement.setAttribute('data-theme', key); localStorage.setItem('picoagent-theme', key);
     document.querySelectorAll('#theme-switcher button').forEach(b => b.classList.toggle('active', b.dataset.themeKey === (localStorage.getItem('picoagent-theme') || 'warm-charcoal').startsWith('auto') ? 'auto' : key));
     mermaid.initialize({ startOnLoad: false, theme: key === 'ivory-paper' ? 'neutral' : 'dark' });
+}
 const savedTheme = localStorage.getItem('picoagent-theme') || 'warm-charcoal';
 applyTheme(savedTheme);
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (localStorage.getItem('picoagent-theme') === 'auto') applyTheme('auto'); });

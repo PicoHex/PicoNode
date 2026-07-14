@@ -32,7 +32,6 @@ public sealed class Agent : EventSourcedActor
 
     internal ILlmClient? LlmClient { get; init; }
     internal IToolRunner? ToolRunner { get; init; }
-    public List<SkillInfo>? Skills { get; set; }
 
     // ── Constructors ──
 
@@ -160,10 +159,8 @@ public sealed class Agent : EventSourcedActor
                 return default;
 
             case GetConfigQuery:
-                var allSkills = _skills.ToList();
-                if (Skills is not null) allSkills.AddRange(Skills);
                 return new ValueTask<object?>(new AgentConfigSnapshot(
-                    _name, _llms.ToList(), _tools.ToList(), allSkills,
+                    _name, _llms.ToList(), _tools.ToList(), _skills.ToList(),
                     _knowledge.ToList(), _systemPrompt));
 
             case GetAgentNameQuery:

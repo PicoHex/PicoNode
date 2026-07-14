@@ -36,7 +36,7 @@ public sealed class AgentFactory
         );
     }
 
-    public async ValueTask<Agent> BuildAsync(AgentConfig config, string? sessionsDir = null)
+    public async ValueTask<Agent> BuildAsync(AgentConfig config)
     {
         Register();
 
@@ -58,7 +58,6 @@ public sealed class AgentFactory
             RegisterBuiltInTools(agent);
 
         // Register package capabilities
-        var allSkills = new List<SkillInfo>();
         if (config.Packages is { Count: > 0 })
         {
             var pkgEntries = PackageResolver.Resolve(config.Packages);
@@ -70,9 +69,9 @@ public sealed class AgentFactory
                 {
                     var scanner = new KnowledgeScanner();
                     var skills = scanner.ScanFromDir(pkgSkillsDir);
-                    allSkills.AddRange(skills);
                     foreach (var skill in skills)
                     {
+                        _system.Send(agent.Id, new LearnSkill(skill));
                         var tool = new Tool
                         {
                             Name = skill.Name,
@@ -90,7 +89,6 @@ public sealed class AgentFactory
             }
         }
 
-        agent.Skills = allSkills;
         return agent;
     }
 

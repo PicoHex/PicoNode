@@ -326,10 +326,11 @@ public sealed class Server : IAsyncDisposable
             return JsonHelper.Ok();
         });
 
-        app.MapGet($"{p}/system-prompt", (_, _) =>
+        app.MapGet($"{p}/system-prompt", async (_, _) =>
         {
-            var prompt = sp ?? PicoNode.Agent.Domain.SystemPromptBuilder.Build(_agent.ToolsSnapshot.ToArray(), _agent.Skills);
-            return V(JsonHelper.JsonResponse(new PromptResponse { Prompt = prompt }));
+            var snap = await _agentSystem.AskAsync<AgentConfigSnapshot>(_agent.Id, new GetConfigQuery());
+            var prompt = sp ?? PicoNode.Agent.Domain.SystemPromptBuilder.Build(_agent.ToolsSnapshot.ToArray(), snap.Skills);
+            return JsonHelper.JsonResponse(new PromptResponse { Prompt = prompt });
         });
         app.MapPost($"{p}/system-prompt", async (ctx, _) =>
         {
