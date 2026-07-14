@@ -39,3 +39,5 @@ public sealed record SetThinkingLevelCmd(string Level) : ICommand;
 public sealed record ContinueTurn(string TurnId) : ICommand;
 
 public sealed record CheckContinue(string TurnId) : ICommand;
+
+public sealed record SteerCmd(string Message) : ICommand;

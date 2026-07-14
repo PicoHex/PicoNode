@@ -155,6 +155,9 @@ public sealed class Agent : EventSourcedActor, ICancelable
             case CheckContinue c:
                 return CheckContinueHandlerAsync(c);
 
+            case SteerCmd s:
+                return SteerHandlerAsync(s);
+
             case SetThinkingLevelCmd s:
                 RaiseEvent(new ThinkingLevelSet(s.Level));
                 return default;
@@ -298,6 +301,19 @@ public sealed class Agent : EventSourcedActor, ICancelable
         if (_turnCts is null)
             return default; // run already ended, ignore
         await CheckContinueAsync(c.TurnId);
+        return default;
+    }
+
+    private async ValueTask<object?> SteerHandlerAsync(SteerCmd s)
+    {
+        var session = Session!;
+        var userMsg = new Message
+        {
+            Role = "user",
+            Content = s.Message,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+        await session.Append(new MessageEntry { Message = userMsg });
         return default;
     }
 
