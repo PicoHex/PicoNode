@@ -1,5 +1,5 @@
 // ── State ──
-let currentSession = 'default';
+let currentSession = null; // Guid | null — honest state
 let currentModel = '';
 let currentProvider = '';
 let modelProviderMap = {};
@@ -72,22 +72,59 @@ async function loadModels() {
 // ── Sessions ──
 async function loadSessions() {
     try {
-        const sessions = await api('GET', '/api/sessions'); sessionList.innerHTML = '';
-        for (const s of (sessions || [currentSession])) {
-            const div = document.createElement('div'); div.className = 'session' + (s === currentSession ? ' active' : ''); div.dataset.id = s;
-            const span = document.createElement('span'); span.textContent = s; div.appendChild(span);
-            const cBtn = document.createElement('button'); cBtn.className = 'compact-btn'; cBtn.textContent = '🗜️'; cBtn.title = 'Compress';
-            cBtn.addEventListener('click', e => { e.stopPropagation(); compactSession(s, cBtn); }); div.appendChild(cBtn);
-            const dBtn = document.createElement('button'); dBtn.className = 'session-delete'; dBtn.textContent = '×'; dBtn.title = 'Delete';
-            dBtn.addEventListener('click', e => { e.stopPropagation(); deleteSession(s, div); }); div.appendChild(dBtn);
-            div.addEventListener('click', () => switchSession(s)); sessionList.appendChild(div);
+        const sessions = await api('GET', '/api/sessions');
+        sessionList.innerHTML = '';
+        if (!sessions || sessions.length === 0) {
+            sessionList.innerHTML = '<div class="session empty">No sessions yet</div>';
+            return;
         }
-    } catch {}
+        for (const s of sessions) {
+            const div = document.createElement('div');
+            div.className = 'session' + (s.id === currentSession ? ' active' : '');
+            div.dataset.id = s.id;
+            const span = document.createElement('span');
+            span.textContent = s.name;
+            div.appendChild(span);
+            const dBtn = document.createElement('button');
+            dBtn.className = 'session-delete';
+            dBtn.textContent = '×';
+            dBtn.title = 'Delete';
+            dBtn.addEventListener('click', e => { e.stopPropagation(); deleteSession(s.id, div); });
+            div.appendChild(dBtn);
+            div.addEventListener('click', () => switchSession(s.id));
+            sessionList.appendChild(div);
+        }
+    } catch (e) { console.warn('loadSessions failed:', e); }
 }
-async function switchSession(id) { currentSession = id; document.querySelectorAll('#session-list .session').forEach(el => el.classList.toggle('active', el.dataset.id === id)); await loadMessages(id); messages.scrollTop = messages.scrollHeight; }
-async function createSession() { const n = prompt('Session name:')?.trim(); if (!n) return; try { await api('POST', `/api/session/create/${encodeURIComponent(n)}`); await loadSessions(); switchSession(n); } catch (e) { showToast('Failed: ' + e.message, true); } }
-async function deleteSession(id, el) { if (id === 'default') { showToast('Cannot delete default', true); return; } if (!confirm(`Delete "${id}"?`)) return; try { await api('POST', `/api/session/delete/${encodeURIComponent(id)}`); forgetThinking(id); if (currentSession === id) { currentSession = 'default'; await switchSession('default'); } await loadSessions(); showToast('Deleted'); } catch (e) { showToast('Delete failed: ' + e.message, true); } }
-async function saveSession() { const b = document.getElementById('btn-save-session'); b.textContent = '...'; try { await api('POST', `/api/session/save/${encodeURIComponent(currentSession)}`); b.textContent = '✓'; } catch { b.textContent = '✗'; } setTimeout(() => { b.textContent = '💾'; }, 1500); }
+async function switchSession(id) {
+    currentSession = id;
+    document.querySelectorAll('#session-list .session').forEach(el =>
+        el.classList.toggle('active', el.dataset.id === id));
+    await loadMessages(id);
+    messages.scrollTop = messages.scrollHeight;
+}
+async function createSession() {
+    const n = prompt('Session name:')?.trim();
+    if (!n) return;
+    try {
+        const result = await api('POST', '/api/sessions', { name: n });
+        currentSession = result.id;
+        await loadSessions();
+        await loadMessages(currentSession);
+        switchSession(currentSession);
+    } catch (e) { showToast('Failed: ' + e.message, true); }
+}
+async function deleteSession(id, el) {
+    if (!confirm(`Delete "${el.querySelector('span').textContent}"?`)) return;
+    try {
+        await api('DELETE', `/api/sessions/${encodeURIComponent(id)}`);
+        forgetThinking(id);
+        if (currentSession === id) { currentSession = null; messages.innerHTML = ''; }
+        await loadSessions();
+        showToast('Deleted');
+    } catch (e) { showToast('Delete failed: ' + e.message, true); }
+}
+async function saveSession() {} // no-op: Session actor auto-persists
 async function compactSession(id, btn) { const o = btn.textContent; btn.textContent = '...'; btn.disabled = true; try { const r = await api('POST', `/api/session/${encodeURIComponent(id)}/compact`, { keepRecent: 20 }); showToast(r.compressedCount > 0 ? `Compressed ${r.compressedCount} msgs, saved ${r.tokensSaved} tokens` : 'Nothing to compress'); forgetThinking(id); btn.textContent = '✓'; if (id === currentSession) await loadMessages(id); } catch (e) { showToast('Compression failed: ' + e.message, true); btn.textContent = '✗'; } setTimeout(() => { btn.textContent = o; btn.disabled = false; }, 1500); }
 
 // ── System prompt ──
@@ -206,7 +243,7 @@ async function retryLastMessage() {
     const userMsgs = messages.querySelectorAll('.message.user'); if (!userMsgs.length) return;
     const last = userMsgs[userMsgs.length - 1]; const text = last.querySelector('.msg-content').textContent.trim();
     forgetThinking(currentSession);
-    try { await fetch(`/api/session/${encodeURIComponent(currentSession)}/retry`, { method: 'POST' }); } catch {}
+    try { await fetch(`/api/sessions/${encodeURIComponent(currentSession)}/retry`, { method: 'POST' }); } catch {}
     let next = last; while (next) { const r = next; next = next.nextElementSibling; r.remove(); }
     await sendMessage(text);
 }
@@ -301,6 +338,14 @@ async function sendMessage(overrideText) {
     const existing = messages.querySelectorAll('.message.assistant'); streamMsgIndex = existing.length;
     abortCtrl?.abort(); abortCtrl = new AbortController();
     renderMessage('user', text);
+
+    // Auto-create session if none active
+    if (!currentSession) {
+        const name = text.split('\n')[0].substring(0, 50) || 'New chat';
+        try { const result = await api('POST', '/api/sessions', { name }); currentSession = result.id; await loadSessions(); }
+        catch (e) { showToast('Failed to create session', true); setStreaming(false); return; }
+    }
+
     const asst = renderMessage('assistant', '', '', currentSession + '-' + streamMsgIndex);
     const msgContent = asst.querySelector('.msg-content');
     const turnContainers = {}; // turnId -> container element (future multi-agent)
@@ -316,7 +361,7 @@ async function sendMessage(overrideText) {
     let llmRound = 1; // LLM round counter, used to create unique tool call keys across rounds
 
     try {
-        const response = await fetch(`/api/session/${encodeURIComponent(currentSession)}/message`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text, signal: abortCtrl.signal });
+        const response = await fetch(`/api/sessions/${encodeURIComponent(currentSession)}/message`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text, signal: abortCtrl.signal });
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
         while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop() || '';
             for (const line of lines) {
@@ -436,7 +481,7 @@ async function sendMessage(overrideText) {
                 } catch (e) { console.error('SSE handler:', e, p); } } catch {} messages.scrollTop = messages.scrollHeight; }
         }
     } catch (err) { if (err.name === 'AbortError') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); } else { msgContent.innerHTML += '<div class="stream-error">' + err.message + '</div>'; showToast(err.message, true); } }
-    finally { setStreaming(false); abortCtrl = null; input.focus(); cleanupToolBlocks(msgContent); try { await api('POST', `/api/session/save/${encodeURIComponent(currentSession)}`); } catch {} await loadSessions(); }
+    finally { setStreaming(false); abortCtrl = null; input.focus(); cleanupToolBlocks(msgContent); await loadSessions(); }
 }
 
 // ── Marked + Mermaid ──
