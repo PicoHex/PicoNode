@@ -77,7 +77,8 @@ public sealed class RuntimeActor : ActorBase
                 if (toolCalls.Length == 0)
                     break;
 
-                await ExecuteToolsAsync(toolCalls, c.SessionId, cts.Token);
+                var toolResults = await ExecuteToolsAsync(toolCalls, c.SessionId, cts.Token);
+                ctx.AddRange(toolResults);
             }
 
             WriteOutput("done", null, null, null, turnId);
@@ -132,7 +133,7 @@ public sealed class RuntimeActor : ActorBase
             ContentBlocks = [],
         };
 
-    private async Task ExecuteToolsAsync(
+    private async Task<Message[]> ExecuteToolsAsync(
         ContentBlock[] toolCalls, Guid sessionId, CancellationToken ct)
     {
         if (ToolRunner is null)
@@ -144,6 +145,7 @@ public sealed class RuntimeActor : ActorBase
         {
             SessionSystem!.Send(sessionId, new AppendMessage(new MessageEntry { Message = msg }));
         }
+        return results;
     }
 
     private async Task<Message> ExecuteOneToolAsync(ContentBlock tc, CancellationToken ct)
