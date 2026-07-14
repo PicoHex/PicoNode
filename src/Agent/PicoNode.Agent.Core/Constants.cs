@@ -51,3 +51,8 @@ public static class YmlConstants
     public const string KeyName = "name";
     public const string KeyDescription = "description";
 }
+
+// Shared types used across Session and Agent actors
+public sealed record Participant(Guid AgentId, string Name, DateTime JoinedAt);
+
+public sealed record SessionContext(List<Message> Messages, string? LeafId);
