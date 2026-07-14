@@ -4,6 +4,13 @@ namespace PicoNode.Agent.Domain;
 /// Agent aggregate root. Inherits EventSourcedActor — state is managed via
 /// domain events (RaiseEvent), persisted by the Actor framework, and
 /// restored via ReplayEvents. Session is data (not state), managed separately.
+/// <para>
+/// Turn loop is mailbox-driven: RunTurn runs one turn then self-sends
+/// CheckContinue, which inspects the session leaf to decide ContinueTurn
+/// (leaf is toolResult/user) or FinishRun (leaf is terminal assistant).
+/// SteerCmd/SwitchLlmCmd are ordinary commands processed between turns
+/// by FIFO — no side-channel queue. See docs/superpowers/plans/2026-07-14-agent-mailbox-driven-loop.md.
+/// </para>
 /// </summary>
 public sealed class Agent : EventSourcedActor, ICancelable
 {
@@ -12,6 +19,8 @@ public sealed class Agent : EventSourcedActor, ICancelable
     private readonly List<Guid> _childIds = [];
     private string? _turnId;
     private CancellationTokenSource? _turnCts;
+    private int _runIterations;
+    private const int MaxRunIterations = 100;
 
     internal string? TurnId => _turnId;
 
@@ -144,10 +153,17 @@ public sealed class Agent : EventSourcedActor, ICancelable
                     throw new DomainInvariantException($"Cannot run turn when status is {Status}");
                 if (_turnCts is not null)
                     throw new InvalidOperationException("A turn is already running");
-                _turnId = r.TurnId;
-                _turnCts = new CancellationTokenSource();
-                return RunTurnAsync(r.Message, _turnCts.Token);
+                return RunTurnHandlerAsync(r);
             }
+
+            case ContinueTurn c:
+                return ContinueTurnHandlerAsync(c);
+
+            case CheckContinue c:
+                return CheckContinueHandlerAsync(c);
+
+            case SteerCmd s:
+                return SteerHandlerAsync(s);
 
             case SetThinkingLevelCmd s:
                 RaiseEvent(new ThinkingLevelSet(s.Level));
@@ -181,179 +197,206 @@ public sealed class Agent : EventSourcedActor, ICancelable
         return default;
     }
 
-    // ── RunTurn ──
+    // ── Single turn streaming (innermost layer) ──
 
-    private async ValueTask<object?> RunTurnAsync(string message, CancellationToken turnCt)
+    private async Task<Message> StreamSingleTurnAsync(string turnLabel, CancellationToken ct)
     {
-        if (LlmClient is null || ToolRunner is null)
-            throw new InvalidOperationException(
-                "RunTurn requires LlmClient and ToolRunner — register them via the Agent constructor."
-            );
+        var session = Session!;
+        var ctx = await session.BuildContext();
+        var prompt = SystemPromptBuilder.Build(ToolsSnapshot, Skills);
+        ctx.Insert(0, new Message { Role = "system", Content = prompt });
 
-        // Link turn cancellation with actor stop cancellation
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(StopToken, turnCt);
-        var ct = linked.Token;
+        var assembler = new TurnResponseAssembler(turnLabel);
 
+        await foreach (var evt in LlmClient!.StreamAsync(CurrentLlm, ctx, ToolsSnapshot, ct))
+        {
+            WriteTurnOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName);
+            if (evt.Type == "done")
+                break;
+            if (evt.Type == "error")
+                return ErrorAssistantMessage(evt.Content ?? "LLM error");
+            assembler.Handle(evt);
+        }
+
+        return assembler.Build();
+    }
+
+    private static Message ErrorAssistantMessage(string errorMessage) =>
+        new()
+        {
+            Role = "assistant",
+            StopReason = "error",
+            ErrorMessage = errorMessage,
+            ContentBlocks = [],
+        };
+
+    // ── Tool execution (one turn's batch) ──
+
+    private async Task ExecuteToolsAsync(ContentBlock[] toolCalls, CancellationToken ct)
+    {
+        var session = Session!;
+        var tasks = toolCalls.Select(tc => ExecuteOneToolAsync(tc, ct)).ToArray();
+        var results = await Task.WhenAll(tasks);
+        foreach (var msg in results)
+            await session.Append(new MessageEntry { Message = msg });
+    }
+
+    private async Task<Message> ExecuteOneToolAsync(ContentBlock tc, CancellationToken ct)
+    {
+        string toolResult;
         try
         {
-            var session = Session!;
-
-            var userMsg = new Message
-            {
-                Role = "user",
-                Content = message,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            };
-            await session.Append(new MessageEntry { Message = userMsg });
-
-            bool hasTools;
-            var iterations = 0;
-            do
-            {
-                if (++iterations > 100)
-                {
-                    // Surface the guard as an error instead of silently breaking and
-                    // emitting "done" — otherwise a truncated turn looks like success.
-                    WriteTurnOutput(
-                        "error",
-                        "Turn stopped: iteration limit reached (100 tool rounds)."
-                    );
-                    return default;
-                }
-
-                var ctx = await session.BuildContext();
-                var prompt = SystemPromptBuilder.Build(ToolsSnapshot, Skills);
-                ctx.Insert(0, new Message { Role = "system", Content = prompt });
-
-                var contentBlocks = new List<ContentBlock>();
-                var contentAccum = new StringBuilder();
-                var thinkingAccum = new StringBuilder();
-                var argAccum = new Dictionary<int, StringBuilder>();
-
-                await foreach (var evt in LlmClient.StreamAsync(CurrentLlm, ctx, ToolsSnapshot, ct))
-                {
-                    WriteTurnOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName);
-
-                    switch (evt.Type)
-                    {
-                        case "text":
-                            contentAccum.Append(evt.Content);
-                            break;
-                        case "thinking":
-                            thinkingAccum.Append(evt.Content);
-                            break;
-                        case "tool_call_delta":
-                            if (int.TryParse(evt.ToolCallId, out var di))
-                            {
-                                if (!argAccum.TryGetValue(di, out var sb))
-                                    argAccum[di] = sb = new StringBuilder();
-                                sb.Append(evt.Content);
-                            }
-                            break;
-                        case "tool_call_end":
-                            if (
-                                int.TryParse(evt.ToolCallId, out var ei)
-                                && evt.ToolName is { Length: > 0 }
-                            )
-                            {
-                                var args = argAccum.TryGetValue(ei, out var a)
-                                    ? a.ToString()
-                                    : "{}";
-                                contentBlocks.Add(
-                                    new ContentBlock
-                                    {
-                                        Id = $"{iterations}-{evt.ToolCallId}",
-                                        Type = "tool_call",
-                                        Name = evt.ToolName,
-                                        Arguments = ParseSimpleJson(args),
-                                    }
-                                );
-                            }
-                            break;
-                        case "done":
-                            goto streamDone;
-                        case "error":
-                            throw new InvalidOperationException(evt.Content ?? "LLM error");
-                    }
-                }
-                streamDone:
-
-                // Flush accumulated content
-                if (contentAccum.Length > 0)
-                    contentBlocks.Add(
-                        new ContentBlock { Type = "text", Text = contentAccum.ToString() }
-                    );
-
-                var finalMessage = new Message
-                {
-                    Role = "assistant",
-                    ContentBlocks = contentBlocks.ToArray(),
-                    ReasoningContent = thinkingAccum.Length > 0 ? thinkingAccum.ToString() : null,
-                };
-                await session.Append(new MessageEntry { Message = finalMessage });
-
-                // Check for tool calls
-                var toolCalls = contentBlocks.Where(cb => cb.Type == "tool_call").ToArray();
-                hasTools = toolCalls.Length > 0;
-
-                if (hasTools)
-                {
-                    foreach (var tc in toolCalls)
-                    {
-                        string toolResult;
-                        try
-                        {
-                            toolResult = await ToolRunner!.ExecuteAsync(
-                                tc.Name ?? "",
-                                tc.Arguments,
-                                ct
-                            );
-                        }
-                        catch (Exception ex)
-                        {
-                            toolResult = $"[ToolError: {ex.GetType().Name}] {ex.Message}";
-                        }
-
-                        var toolMsg = new Message
-                        {
-                            Role = "toolResult",
-                            ToolCallId = tc.Id,
-                            ToolName = tc.Name,
-                            ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
-                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                        };
-                        await session.Append(new MessageEntry { Message = toolMsg });
-                        WriteTurnOutput("tool_result", toolResult, tc.Id, tc.Name);
-                    }
-                }
-            } while (hasTools && !ct.IsCancellationRequested);
-
-            WriteTurnOutput("done");
-            return default;
-        }
-        catch (OperationCanceledException) when (!StopToken.IsCancellationRequested)
-        {
-            // Turn was cancelled (not the whole actor)
-            WriteTurnOutput("cancelled");
-            return default;
-        }
-        catch (OperationCanceledException)
-        {
-            // Actor is stopping — propagate silently, not an error
-            throw;
+            toolResult = await ToolRunner!.ExecuteAsync(tc.Name ?? "", tc.Arguments, ct);
         }
         catch (Exception ex)
         {
-            WriteTurnOutput("error", ex.Message);
-            throw;
+            toolResult = $"[ToolError: {ex.GetType().Name}] {ex.Message}";
         }
-        finally
+        WriteTurnOutput("tool_result", toolResult, tc.Id, tc.Name);
+        return new Message
         {
-            OutputWriter?.Complete();
-            _turnId = null;
-            _turnCts?.Dispose();
-            _turnCts = null;
+            Role = "toolResult",
+            ToolCallId = tc.Id,
+            ToolName = tc.Name,
+            ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+    }
+
+    // ── RunTurn / ContinueTurn / CheckContinue handlers (async, return ValueTask) ──
+
+    private async ValueTask<object?> RunTurnHandlerAsync(RunTurn r)
+    {
+        _turnId = r.TurnId;
+        _turnCts = new CancellationTokenSource();
+        _runIterations = 0;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            StopToken,
+            _turnCts.Token
+        );
+
+        // Append the user message, run the first turn, then hand off to CheckContinue
+        var session = Session!;
+        var userMsg = new Message
+        {
+            Role = "user",
+            Content = r.Message,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+        await session.Append(new MessageEntry { Message = userMsg });
+
+        await SingleTurnAsync("0", linked.Token);
+        // SingleTurnAsync calls FinishRun on error/cancel (clears _turnId); on success send CheckContinue
+        if (_turnId is not null)
+            this.System?.Send(Id, new CheckContinue(r.TurnId));
+        return default;
+    }
+
+    private async ValueTask<object?> ContinueTurnHandlerAsync(ContinueTurn c)
+    {
+        if (_turnCts is null)
+            return default; // run already ended or cancelled, ignore stale message
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            StopToken,
+            _turnCts.Token
+        );
+        await SingleTurnAsync(_runIterations.ToString(), linked.Token);
+        if (_turnId is not null)
+            this.System?.Send(Id, new CheckContinue(c.TurnId));
+        return default;
+    }
+
+    private async ValueTask<object?> CheckContinueHandlerAsync(CheckContinue c)
+    {
+        if (_turnCts is null)
+            return default; // run already ended, ignore
+        await CheckContinueAsync(c.TurnId);
+        return default;
+    }
+
+    private async ValueTask<object?> SteerHandlerAsync(SteerCmd s)
+    {
+        var session = Session!;
+        var userMsg = new Message
+        {
+            Role = "user",
+            Content = s.Message,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+        await session.Append(new MessageEntry { Message = userMsg });
+        return default;
+    }
+
+    // ── Single turn (mid layer): stream + execute tools ──
+
+    private async ValueTask SingleTurnAsync(string turnLabel, CancellationToken ct)
+    {
+        try
+        {
+            var session = Session!;
+            var msg = await StreamSingleTurnAsync(turnLabel, ct);
+            await session.Append(new MessageEntry { Message = msg });
+
+            if (msg.StopReason == "error")
+            {
+                WriteTurnOutput("error", msg.ErrorMessage);
+                // Error turn terminates the run, do not continue
+                FinishRun();
+                return;
+            }
+
+            var toolCalls =
+                msg.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray() ?? [];
+            if (toolCalls.Length > 0)
+                await ExecuteToolsAsync(toolCalls, ct);
         }
+        catch (OperationCanceledException) when (!StopToken.IsCancellationRequested)
+        {
+            // Turn cancelled (not actor stop) — emit cancelled, clean up run state, do not send CheckContinue.
+            // Mirrors the old RunTurnAsync catch(OCE) when(!StopToken) semantics.
+            // Must call FinishRun to clear _turnCts, otherwise the next RunTurn throws "A turn is already running".
+            WriteTurnOutput("cancelled");
+            FinishRun();
+        }
+        // actor-stop OCE (StopToken cancelled) is NOT caught — propagates out, RunAsync swallows it silently, no error emitted.
+        // Mirrors the old RunTurnAsync catch(OCE) { throw; } + Stop_DuringRunTurn_NoErrorOutput test.
+    }
+
+    // ── Continue decision (session leaf is the single source of truth) ──
+
+    private async ValueTask CheckContinueAsync(string turnId)
+    {
+        var session = Session!;
+        var leaf = await session.GetLeafEntryAsync();
+
+        // leaf is toolResult or user (steer injected) → still has pending input to respond to, continue
+        if (leaf is MessageEntry me && me.Message.Role is "toolResult" or "user")
+        {
+            if (++_runIterations >= MaxRunIterations)
+            {
+                WriteTurnOutput(
+                    "error",
+                    "Run stopped: iteration limit reached (100 tool rounds)."
+                );
+                FinishRun();
+                return;
+            }
+            this.System?.Send(Id, new ContinueTurn(turnId));
+            return;
+        }
+
+        // leaf is assistant (no-tool terminal state) → run finished
+        FinishRun();
+    }
+
+    private void FinishRun()
+    {
+        WriteTurnOutput("done");
+        OutputWriter?.Complete();
+        _turnId = null;
+        _turnCts?.Dispose();
+        _turnCts = null;
+        _runIterations = 0;
     }
 
     // ── Turn cancellation ──
