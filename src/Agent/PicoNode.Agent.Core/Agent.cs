@@ -214,6 +214,36 @@ public sealed class Agent : EventSourcedActor, ICancelable
             ContentBlocks = [],
         };
 
+    // ── Tool execution (one turn's batch) ──
+
+    private async Task ExecuteToolsAsync(ContentBlock[] toolCalls, CancellationToken ct)
+    {
+        var session = Session!;
+        foreach (var tc in toolCalls)
+        {
+            string toolResult;
+            try
+            {
+                toolResult = await ToolRunner!.ExecuteAsync(tc.Name ?? "", tc.Arguments, ct);
+            }
+            catch (Exception ex)
+            {
+                toolResult = $"[ToolError: {ex.GetType().Name}] {ex.Message}";
+            }
+
+            var toolMsg = new Message
+            {
+                Role = "toolResult",
+                ToolCallId = tc.Id,
+                ToolName = tc.Name,
+                ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            };
+            await session.Append(new MessageEntry { Message = toolMsg });
+            WriteTurnOutput("tool_result", toolResult, tc.Id, tc.Name);
+        }
+    }
+
     // ── RunTurn ──
 
     private async ValueTask<object?> RunTurnAsync(string message, CancellationToken turnCt)
@@ -270,35 +300,7 @@ public sealed class Agent : EventSourcedActor, ICancelable
                 hasTools = toolCalls.Length > 0;
 
                 if (hasTools)
-                {
-                    foreach (var tc in toolCalls)
-                    {
-                        string toolResult;
-                        try
-                        {
-                            toolResult = await ToolRunner!.ExecuteAsync(
-                                tc.Name ?? "",
-                                tc.Arguments,
-                                ct
-                            );
-                        }
-                        catch (Exception ex)
-                        {
-                            toolResult = $"[ToolError: {ex.GetType().Name}] {ex.Message}";
-                        }
-
-                        var toolMsg = new Message
-                        {
-                            Role = "toolResult",
-                            ToolCallId = tc.Id,
-                            ToolName = tc.Name,
-                            ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
-                            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                        };
-                        await session.Append(new MessageEntry { Message = toolMsg });
-                        WriteTurnOutput("tool_result", toolResult, tc.Id, tc.Name);
-                    }
-                }
+                    await ExecuteToolsAsync(toolCalls, ct);
             } while (hasTools && !ct.IsCancellationRequested);
 
             WriteTurnOutput("done");
