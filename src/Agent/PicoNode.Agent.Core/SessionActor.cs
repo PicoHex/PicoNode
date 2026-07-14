@@ -35,8 +35,10 @@ public sealed class SessionActor : EventSourcedActor
                 _participants = e.Participants;
                 break;
             case MessageAppended e:
-                _entries.Add(e.Entry);
-                _leafId = e.Entry.Id;
+                var deserialized = JsonSerializer.Deserialize<SessionTreeEntryBase>(
+                    Encoding.UTF8.GetBytes(e.EntryJson))!;
+                _entries.Add(deserialized);
+                _leafId = deserialized.Id;
                 break;
             case LeafMoved e:
                 _leafId = e.TargetId;
@@ -71,7 +73,8 @@ public sealed class SessionActor : EventSourcedActor
             entry.ParentId = _leafId;
         if (string.IsNullOrEmpty(entry.Timestamp))
             entry.Timestamp = DateTime.UtcNow.ToString("O");
-        RaiseEvent(new MessageAppended(entry));
+        RaiseEvent(new MessageAppended(
+            JsonSerializer.Serialize(entry)));
         return default;
     }
 

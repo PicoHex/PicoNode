@@ -53,6 +53,14 @@ public static class YmlConstants
 }
 
 // Shared types used across Session and Agent actors
-public sealed record Participant(Guid AgentId, string Name, DateTime JoinedAt);
+// Participant is a class (not record) because PicoJetson source generator
+// cannot handle primary-constructor records nested inside polymorphic types
+// (SessionStarted → List<Participant>). See DomainEvent poly tree.
+public sealed class Participant
+{
+    public Guid AgentId { get; set; }
+    public string Name { get; set; } = "";
+    public DateTime JoinedAt { get; set; }
+}
 
 public sealed record SessionContext(List<Message> Messages, string? LeafId);

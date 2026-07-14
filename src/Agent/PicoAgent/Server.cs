@@ -149,7 +149,7 @@ public sealed class Server : IAsyncDisposable
                 var body = await r.ReadToEndAsync(ct);
                 var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
                 var name = doc.RootElement.TryGetProperty("name", out var nm) ? nm.GetStringOrNull() : null;
-                var participants = new List<Participant> { new(_agent.Id, AgentName, DateTime.UtcNow) };
+                var participants = new List<Participant> { new Participant { AgentId = _agent.Id, Name = AgentName, JoinedAt = DateTime.UtcNow } };
                 var session = await _sessionSystem.CreateAsync<SessionActor>(new StartSession(name ?? "New chat", participants));
                 _logger?.Info($"Session created: {session.Id} name={name}");
                 return JsonHelper.JsonResponse(new CreateSessionResponse { Id = session.Id, Name = name ?? "New chat" }, 201);

@@ -19,7 +19,7 @@ public sealed class SessionActorTests
         var system = BuildSystem();
         var participants = new List<Participant>
         {
-            new(Guid.CreateVersion7(), "MyAgent", DateTime.UtcNow)
+            new Participant { AgentId = Guid.CreateVersion7(), Name = "MyAgent", JoinedAt = DateTime.UtcNow }
         };
 
         var session = await system.CreateAsync<SessionActor>(
@@ -34,7 +34,7 @@ public sealed class SessionActorTests
     {
         var system = BuildSystem();
         var session = await system.CreateAsync<SessionActor>(
-            new StartSession("Chat", [new(Guid.CreateVersion7(), "Agent", DateTime.UtcNow)]));
+            new StartSession("Chat", [new Participant { AgentId = Guid.CreateVersion7(), Name = "Agent", JoinedAt = DateTime.UtcNow }]));
 
         system.Send(session.Id, new AppendMessage(
             new MessageEntry { Message = new Message { Role = "user", Content = "hello" } }));
@@ -52,7 +52,7 @@ public sealed class SessionActorTests
     {
         var system = BuildSystem();
         var session = await system.CreateAsync<SessionActor>(
-            new StartSession("Chat", [new(Guid.CreateVersion7(), "Agent", DateTime.UtcNow)]));
+            new StartSession("Chat", [new Participant { AgentId = Guid.CreateVersion7(), Name = "Agent", JoinedAt = DateTime.UtcNow }]));
 
         system.Send(session.Id, new AppendMessage(
             new MessageEntry { Message = new Message { Role = "user", Content = "msg1" } }));
