@@ -143,13 +143,22 @@ public sealed class Server : IAsyncDisposable
 
         app.MapPost($"{p}/sessions", async (ctx, ct) =>
         {
-            using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
-            var body = await r.ReadToEndAsync(ct);
-            var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
-            var name = doc.RootElement.TryGetProperty("name", out var nm) ? nm.GetStringOrNull() : null;
-            var participants = new List<Participant> { new(_agent.Id, AgentName, DateTime.UtcNow) };
-            var session = await _sessionSystem.CreateAsync<SessionActor>(new StartSession(name ?? "New chat", participants));
-            return JsonHelper.JsonResponse(new { id = session.Id, name = name ?? "New chat" }, 201);
+            try
+            {
+                using var r = new StreamReader(ctx.Request.BodyStream, Encoding.UTF8);
+                var body = await r.ReadToEndAsync(ct);
+                var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
+                var name = doc.RootElement.TryGetProperty("name", out var nm) ? nm.GetStringOrNull() : null;
+                var participants = new List<Participant> { new(_agent.Id, AgentName, DateTime.UtcNow) };
+                var session = await _sessionSystem.CreateAsync<SessionActor>(new StartSession(name ?? "New chat", participants));
+                _logger?.Info($"Session created: {session.Id} name={name}");
+                return JsonHelper.JsonResponse(new { id = session.Id, name = name ?? "New chat" }, 201);
+            }
+            catch (Exception ex)
+            {
+                _logger?.Error($"Create session failed: {ex}");
+                return JsonHelper.Error(500, $"Create session failed: {ex.Message}");
+            }
         });
 
         app.MapDelete($"{p}/sessions/{{id}}", async (ctx, _) =>

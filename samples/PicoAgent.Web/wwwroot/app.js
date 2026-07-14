@@ -47,7 +47,12 @@ function forgetThinking(sid) {
 // ── API ──
 async function api(method, url, body) {
     const opts = { method }; if (body !== undefined) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(body); }
-    const r = await fetch(url, opts); if (!r.ok) throw new Error(`${r.status}`);
+    const r = await fetch(url, opts);
+    if (!r.ok) {
+        const errorBody = await r.text().catch(() => '');
+        console.error(`API ${method} ${url} failed: ${r.status} ${r.statusText}`, errorBody.substring(0, 500));
+        throw new Error(`${r.status}: ${errorBody.substring(0, 100)}`);
+    }
     return r.headers.get('content-type')?.includes('json') ? r.json() : r.text();
 }
 async function loadHealth() { try { const h = await api('GET', '/api/health'); currentModel = h.model; currentProvider = h.provider; updateStatus(); } catch (e) { console.warn('loadHealth failed:', e); } }
