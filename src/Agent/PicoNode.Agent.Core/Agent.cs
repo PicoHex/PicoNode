@@ -228,29 +228,32 @@ public sealed class Agent : EventSourcedActor, ICancelable
     private async Task ExecuteToolsAsync(ContentBlock[] toolCalls, CancellationToken ct)
     {
         var session = Session!;
-        foreach (var tc in toolCalls)
-        {
-            string toolResult;
-            try
-            {
-                toolResult = await ToolRunner!.ExecuteAsync(tc.Name ?? "", tc.Arguments, ct);
-            }
-            catch (Exception ex)
-            {
-                toolResult = $"[ToolError: {ex.GetType().Name}] {ex.Message}";
-            }
+        var tasks = toolCalls.Select(tc => ExecuteOneToolAsync(tc, ct)).ToArray();
+        var results = await Task.WhenAll(tasks);
+        foreach (var msg in results)
+            await session.Append(new MessageEntry { Message = msg });
+    }
 
-            var toolMsg = new Message
-            {
-                Role = "toolResult",
-                ToolCallId = tc.Id,
-                ToolName = tc.Name,
-                ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            };
-            await session.Append(new MessageEntry { Message = toolMsg });
-            WriteTurnOutput("tool_result", toolResult, tc.Id, tc.Name);
+    private async Task<Message> ExecuteOneToolAsync(ContentBlock tc, CancellationToken ct)
+    {
+        string toolResult;
+        try
+        {
+            toolResult = await ToolRunner!.ExecuteAsync(tc.Name ?? "", tc.Arguments, ct);
         }
+        catch (Exception ex)
+        {
+            toolResult = $"[ToolError: {ex.GetType().Name}] {ex.Message}";
+        }
+        WriteTurnOutput("tool_result", toolResult, tc.Id, tc.Name);
+        return new Message
+        {
+            Role = "toolResult",
+            ToolCallId = tc.Id,
+            ToolName = tc.Name,
+            ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
     }
 
     // ── RunTurn / ContinueTurn / CheckContinue handlers (async, return ValueTask) ──
