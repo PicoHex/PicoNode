@@ -136,17 +136,9 @@ public sealed class Server : IAsyncDisposable
 
         app.MapGet($"{p}/sessions", (_, _) =>
         {
-            try
-            {
-                var home = HomeDir.Resolve();
-                var list = SessionLister.List(Path.Combine(home, "sessions"));
-                return V(JsonHelper.JsonResponse(list));
-            }
-            catch (Exception ex)
-            {
-                _logger?.Error($"GET /sessions failed: {ex}");
-                return V(JsonHelper.Error(500, $"List sessions failed: {ex.Message}"));
-            }
+            var home = HomeDir.Resolve();
+            var json = SessionLister.ListJson(Path.Combine(home, "sessions"));
+            return V(JsonHelper.RawJson(json));
         });
 
         app.MapPost($"{p}/sessions", async (ctx, ct) =>

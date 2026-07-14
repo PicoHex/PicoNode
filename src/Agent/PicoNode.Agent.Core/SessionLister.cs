@@ -32,4 +32,16 @@ public static class SessionLister
         }
         return list;
     }
+
+    /// <summary>
+    /// Same as List() but returns pre-serialized JSON.
+    /// Serialization lives in PicoNode.Agent.Core so the source generator
+    /// can handle List&lt;SessionListItem&gt; (cross-project generic collections
+    /// are not visible to PicoJetson in the consuming project).
+    /// </summary>
+    public static string ListJson(string sessionsDir)
+    {
+        var list = List(sessionsDir);
+        return JsonSerializer.Serialize(list);
+    }
 }
