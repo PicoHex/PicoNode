@@ -1,11 +1,13 @@
 namespace PicoNode.Agent.Domain;
 
-public sealed record SessionListItem
+[PicoSerializable]
+[JsonCamelCase]
+public sealed class SessionListItem
 {
-    public string Id { get; init; } = "";
-    public string Name { get; init; } = "";
-    public string CreatedAt { get; init; } = "";
-    public int ParticipantCount { get; init; }
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string CreatedAt { get; set; } = "";
+    public int ParticipantCount { get; set; }
 }
 
 public static class SessionLister

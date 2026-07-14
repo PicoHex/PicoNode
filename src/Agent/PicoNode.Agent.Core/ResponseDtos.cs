@@ -94,3 +94,12 @@ public sealed class SessionsResponse
 {
     public List<string> Sessions { get; set; } = [];
 }
+
+/// <summary>Response for POST /api/sessions — created session id + name.</summary>
+[PicoSerializable]
+[JsonCamelCase]
+public sealed class CreateSessionResponse
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+}

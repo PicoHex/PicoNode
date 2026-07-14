@@ -152,7 +152,7 @@ public sealed class Server : IAsyncDisposable
                 var participants = new List<Participant> { new(_agent.Id, AgentName, DateTime.UtcNow) };
                 var session = await _sessionSystem.CreateAsync<SessionActor>(new StartSession(name ?? "New chat", participants));
                 _logger?.Info($"Session created: {session.Id} name={name}");
-                return JsonHelper.JsonResponse(new { id = session.Id, name = name ?? "New chat" }, 201);
+                return JsonHelper.JsonResponse(new CreateSessionResponse { Id = session.Id, Name = name ?? "New chat" }, 201);
             }
             catch (Exception ex)
             {
