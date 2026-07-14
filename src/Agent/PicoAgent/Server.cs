@@ -159,11 +159,14 @@ public sealed class Server : IAsyncDisposable
         );
 
         // Sessions
-        app.MapGet($"{p}/sessions", (_, _) =>
-        {
-            var name = a.Session?.Name ?? "default";
-            return V(JsonHelper.RawJson($"[\"{name}\"]"));
-        });
+        app.MapGet(
+            $"{p}/sessions",
+            (_, _) =>
+            {
+                var name = a.Session?.Name ?? "default";
+                return V(JsonHelper.RawJson($"[\"{name}\"]"));
+            }
+        );
 
         // Config status
         app.MapGet(
@@ -302,67 +305,10 @@ public sealed class Server : IAsyncDisposable
                 if (newConfig is null)
                     return JsonHelper.Error(400, "invalid config");
 
-                var newProviderNames = newConfig.Providers.Keys.ToList();
-
-                // Track providers that already exist (will have duplicates after adding)
-                var duplicateProviders = newConfig
-                    .Providers.Keys.Where(name => a.LlmsSnapshot.Any(l => l.ProviderName == name))
-                    .ToList();
-
-                // Phase 1: Add all new LLMs first (don't remove old ones yet)
-                foreach (var (name, entry) in newConfig.Providers)
-                {
-                    var llm = new Llm
-                    {
-                        ProviderName = name,
-                        ModelId = newConfig.Model ?? name,
-                        ApiKey = entry.ApiKey,
-                        BaseUrl = entry.BaseUrl ?? "",
-                        ApiFormat = (entry.ApiFormat?.ToLowerInvariant()) switch
-                        {
-                            "anthropic" => AiApiFormat.AnthropicMessages,
-                            _ => AiApiFormat.OpenAIChatCompletions,
-                        },
-                        ThinkingLevel =
-                            AgentConfig.ParseLevel(newConfig.ThinkingLevel)
-                            ?? AgentConfig.DefaultThinkingLevel,
-                        MaxTokens = newConfig.MaxTokens ?? 4096,
-                        ThinkingEnabled = newConfig.ThinkingEnabled,
-                    };
-                    system.Send(a.Id, new AddLlmCmd(llm));
-                }
-
-                // Phase 2: Remove old providers not in new config
-                var toRemove = a
-                    .LlmsSnapshot.Where(l => !newProviderNames.Contains(l.ProviderName))
-                    .ToList();
-                var newCurrent =
-                    newProviderNames.FirstOrDefault() ?? a.LlmsSnapshot[0].ProviderName;
-                var newModel = newConfig.Model ?? newCurrent;
-
-                // Phase 3: Switch away from CurrentLlm if it's being removed
-                if (
-                    toRemove.Any(r =>
-                        r.ProviderName == a.CurrentLlm.ProviderName
-                        && r.ModelId == a.CurrentLlm.ModelId
-                    )
-                )
-                    system.Send(a.Id, new SwitchLlmCmd(newCurrent, newModel));
-
-                // Phase 4: Remove old providers
-                foreach (var old in toRemove)
-                {
-                    system.Send(a.Id, new RemoveLlmCmd(old.ProviderName, old.ModelId));
-                }
-
-                // Phase 5: Switch to desired current provider/model
-                system.Send(a.Id, new SwitchLlmCmd(newCurrent, newModel));
-
-                // Phase 6: Remove old duplicate entries (uses pre-computed list)
-                foreach (var name in duplicateProviders)
-                {
-                    system.Send(a.Id, new RemoveLlmCmd(name, newModel));
-                }
+                // Delegate to the single, unit-tested source of truth for the
+                // add/switch/remove ordering. Phase 6 previously removed the wrong
+                // entry (by newModel) and tripped the CurrentLlm invariant.
+                ConfigApplier.Apply(a, system, newConfig);
 
                 if (settingsPath is { Length: > 0 })
                 {
@@ -533,7 +479,8 @@ public sealed class Server : IAsyncDisposable
                                                 CancellationToken.None
                                             );
                                             var name = (result.Content ?? "chat").Trim();
-                                            if (name.Length > 50) name = name[..50];
+                                            if (name.Length > 50)
+                                                name = name[..50];
                                             await a.Session.SetName(name);
                                         }
                                         catch

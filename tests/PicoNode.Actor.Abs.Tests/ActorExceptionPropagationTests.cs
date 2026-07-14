@@ -33,4 +33,37 @@ public sealed class ActorExceptionPropagationTests
         // Must NOT hang — must receive the exception
         await Assert.That(async () => await tcs.Task).Throws<InvalidOperationException>();
     }
+
+    /// <summary>
+    /// BUG: Send (fire-and-forget, no TCS) silently swallowed every exception —
+    /// envelope.Tcs?.TrySetException(ex) is a no-op when Tcs is null, with no
+    /// log and no observable signal. A failed command vanished without a trace.
+    /// Desired: an unhandled-error handler is invoked so the system can log it.
+    /// </summary>
+    [Test]
+    [Timeout(5000)]
+    public async Task Send_when_OnMessageAsync_throws_invokes_UnhandledErrorHandler()
+    {
+        var actor = new ThrowingActor();
+        actor.Id = Guid.CreateVersion7();
+        actor.SignalReady();
+
+        Exception? caught = null;
+        ICommand? failedCmd = null;
+        actor.UnhandledErrorHandler = (ex, cmd) =>
+        {
+            caught = ex;
+            failedCmd = cmd;
+        };
+
+        // Send = fire-and-forget (no TCS)
+        actor.Post(new Envelope { Command = new TestCommand() });
+
+        // Allow the async consumption loop to process the message
+        await Task.Delay(300);
+
+        await Assert.That(caught).IsNotNull();
+        await Assert.That(caught).IsTypeOf<InvalidOperationException>();
+        await Assert.That(failedCmd).IsTypeOf<TestCommand>();
+    }
 }

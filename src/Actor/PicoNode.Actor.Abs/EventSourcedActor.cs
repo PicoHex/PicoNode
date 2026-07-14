@@ -86,11 +86,26 @@ public abstract class EventSourcedActor : Actor, IEventSourcedActor
         if (_events.Count == 0)
             return;
 
-        // Persist first — if this fails, state remains unchanged (RaiseEvent didn't Mutate)
+        // Persist first — if this fails, state remains unchanged (RaiseEvent didn't Mutate).
+        // On failure, discard the uncommitted events and roll Version back to the
+        // last persisted version. Otherwise Version stays inflated and the failed
+        // events leak into the next append, permanently poisoning the actor:
+        // expectedVersion = Version - _events.Count would recompute to a stale
+        // baseline forever, and a later successful append would reapply discarded
+        // commands whose callers already saw an exception.
         if (EventStore is not null)
         {
             var expectedVersion = Version - (ulong)_events.Count;
-            await EventStore.AppendAsync(Id, expectedVersion, _events).ConfigureAwait(false);
+            try
+            {
+                await EventStore.AppendAsync(Id, expectedVersion, _events).ConfigureAwait(false);
+            }
+            catch
+            {
+                Version -= (ulong)_events.Count;
+                ClearEvents();
+                throw;
+            }
         }
 
         // Persistence succeeded (or no store) — now safe to mutate state

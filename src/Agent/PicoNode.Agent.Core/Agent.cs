@@ -12,7 +12,6 @@ public sealed class Agent : EventSourcedActor, ICancelable
     private readonly List<Guid> _childIds = [];
     private string? _turnId;
     private CancellationTokenSource? _turnCts;
-    private Guid? _sessionId;
 
     internal string? TurnId => _turnId;
 
@@ -163,19 +162,22 @@ public sealed class Agent : EventSourcedActor, ICancelable
 
     private async ValueTask<object?> SpawnChildAsync(SpawnChildCmd s)
     {
-        if (this.System is not null)
-        {
-            var child = await this.System.CreateAsync<Agent>(
-                new CreateAgent(
-                    s.Llms,
-                    s.CurrentProvider,
-                    s.CurrentModel,
-                    Guid.CreateVersion7(),
-                    Id
-                )
+        // Fail loudly instead of silently dropping the request. Previously a null
+        // System made the whole method a no-op: no child, no event, no exception —
+        // the caller believed the spawn succeeded.
+        if (this.System is null)
+            throw new InvalidOperationException(
+                "SpawnChild requires an ActorSystem; this actor has none."
             );
-            RaiseEvent(new ChildSpawned(child.Id));
-        }
+
+        var child = await this.System.CreateAsync<Agent>(
+            new CreateAgent(s.Llms, s.CurrentProvider, s.CurrentModel, Guid.CreateVersion7(), Id)
+        );
+        // Propagate the requested tools to the child. Previously the Tools field
+        // was carried on the command but never applied, so children spawned empty.
+        foreach (var tool in s.Tools)
+            this.System.Send(child.Id, new AddToolCmd(tool));
+        RaiseEvent(new ChildSpawned(child.Id));
         return default;
     }
 
@@ -209,7 +211,15 @@ public sealed class Agent : EventSourcedActor, ICancelable
             do
             {
                 if (++iterations > 100)
-                    break;
+                {
+                    // Surface the guard as an error instead of silently breaking and
+                    // emitting "done" — otherwise a truncated turn looks like success.
+                    WriteTurnOutput(
+                        "error",
+                        "Turn stopped: iteration limit reached (100 tool rounds)."
+                    );
+                    return default;
+                }
 
                 var ctx = await session.BuildContext();
                 var prompt = SystemPromptBuilder.Build(ToolsSnapshot, Skills);

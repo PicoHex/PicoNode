@@ -58,6 +58,7 @@ public sealed class ActorSystem : IActorSystem
 
         // 2b. Set system reference for spawn operations
         actor.System = this;
+        WireErrorHandler(actor);
 
         // 3. Wire event store if this is an ES actor
         if (actor is EventSourcedActor es)
@@ -111,6 +112,7 @@ public sealed class ActorSystem : IActorSystem
         var actor = (ActorBase)(IActor)rebuildFactory();
         actor.Id = id;
         actor.System = this;
+        WireErrorHandler(actor);
 
         var es = (IEventSourcedActor)actor;
         ((EventSourcedActor)actor).EventStore = _eventStore;
@@ -121,8 +123,19 @@ public sealed class ActorSystem : IActorSystem
             _logger?.Warning(
                 $"Actor {typeof(T).Name} {id} already rebuilt by another thread, discarding duplicate"
             );
+            // Read the winner safely. The winner may have been stopped concurrently
+            // while we were stopping our duplicate (the await below yields). Using the
+            // throwing indexer _registry[id] would throw KeyNotFoundException in that
+            // window; TryGetValue avoids it and returns null if the actor is gone.
+            if (_registry.TryGetValue(id, out var winner))
+            {
+                await actor.StopAsync().ConfigureAwait(false);
+                return (T)(IActor)winner;
+            }
+
+            // Winner was stopped concurrently; no live actor remains.
             await actor.StopAsync().ConfigureAwait(false);
-            return (T)(IActor)_registry[id];
+            return default;
         }
 
         actor.SignalReady();
@@ -130,6 +143,20 @@ public sealed class ActorSystem : IActorSystem
         _logger?.Info($"Actor {typeof(T).Name} rebuilt from events: {id} (v{es.Version})");
 
         return (T)(IActor)actor;
+    }
+
+    /// <summary>
+    /// Route unhandled fire-and-forget message errors to the logger so they are
+    /// not silently swallowed. Ask-style failures still fault their TCS.
+    /// </summary>
+    private void WireErrorHandler(ActorBase actor)
+    {
+        if (_logger is null)
+            return;
+        actor.UnhandledErrorHandler = (ex, cmd) =>
+            _logger.Error(
+                $"Unhandled error in actor {actor.Id} on {cmd.GetType().Name}: {ex.Message}"
+            );
     }
 
     // ═══════════════════════════════════════════════════════════

@@ -105,11 +105,23 @@ public abstract class Actor : IActor, IAsyncDisposable
     public ChannelWriter<ActorOutputEvent>? OutputWriter { get; set; }
 
     /// <summary>
+    /// Hook invoked when a fire-and-forget (Send) message throws and there is no
+    /// TCS to propagate the exception to. Set by IActorSystem to route unhandled
+    /// message errors to logging. Ask-style failures still fault the TCS first.
+    /// </summary>
+    internal Action<Exception, ICommand>? UnhandledErrorHandler { get; set; }
+
+    /// <summary>
     /// Write an event to the OutputChannel. No-op if no subscriber.
     /// Subclasses call this during OnMessageAsync to notify external observers.
     /// </summary>
-    protected void WriteOutput(string type, string? data = null, string? toolCallId = null, string? toolName = null, string? turnId = null) =>
-        OutputWriter?.TryWrite(new ActorOutputEvent(type, data, toolCallId, toolName, turnId));
+    protected void WriteOutput(
+        string type,
+        string? data = null,
+        string? toolCallId = null,
+        string? toolName = null,
+        string? turnId = null
+    ) => OutputWriter?.TryWrite(new ActorOutputEvent(type, data, toolCallId, toolName, turnId));
 
     /// <summary>
     /// Task that completes when initialization finishes (OnReadyAsync succeeds or fails).
@@ -152,7 +164,10 @@ public abstract class Actor : IActor, IAsyncDisposable
                 catch (Exception ex)
                 {
                     // Propagate failure to Ask callers; single message failure does not stop the loop
-                    envelope.Tcs?.TrySetException(ex);
+                    if (envelope.Tcs is not null)
+                        envelope.Tcs.TrySetException(ex);
+                    else
+                        UnhandledErrorHandler?.Invoke(ex, envelope.Command);
                 }
             }
         }
