@@ -44,22 +44,15 @@ public sealed class AgentFactory
         var llms = BuildLlms(config);
         var currentProvider = llms[0].ProviderName;
         var currentModel = config.Model!;
-        var sessionId = Guid.CreateVersion7();
-
         var agent = await _system.CreateAsync<Agent>(
             new CreateAgent(
                 llms,
                 currentProvider,
                 currentModel,
-                sessionId,
-                Packages: config.Packages
+                ParentId: null,
+                Packages: config.Packages,
+                Name: "My Agent"
             )
-        );
-
-        // Replace default in-memory session storage with persistent storage
-        agent.Session = new Session(
-            sessionId,
-            storage: new JsonlSessionStorage(sessionId, baseDir: dir)
         );
 
         if (_withBuiltInTools)

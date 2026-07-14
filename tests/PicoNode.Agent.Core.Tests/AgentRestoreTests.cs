@@ -98,7 +98,7 @@ public sealed class AgentRestoreTests : IDisposable
         var savedId = await LoadAgentId(_baseDir);
         await Assert.That(savedId).IsNotNull();
 
-        var restored = await system2.GetAgentAsync<DomainAgent>(savedId!.Value, _baseDir);
+        var restored = await system2.GetAgentAsync<DomainAgent>(savedId!.Value);
         await Assert.That(restored).IsNotNull();
         await Assert.That(restored!.Status).IsEqualTo(AgentStatus.Running);
     }

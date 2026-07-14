@@ -24,7 +24,7 @@ public sealed class DomainEventSerializationTests
     [Test]
     public async Task AgentCreated_RoundTrip()
     {
-        var e = new AgentCreated([SampleLlm], "test-provider", "test-model", Guid.CreateVersion7(), null, ["pkg1"]);
+        var e = new AgentCreated([SampleLlm], "test-provider", "test-model", null, ["pkg1"]);
         var json = DomainEventSerializer.Serialize(e);
         var bytes = Encoding.UTF8.GetBytes(json);
         var result = DomainEventSerializer.Deserialize(bytes);

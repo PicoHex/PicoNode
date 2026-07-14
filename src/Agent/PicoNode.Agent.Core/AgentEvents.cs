@@ -4,9 +4,9 @@ public sealed record AgentCreated(
     List<Llm> Llms,
     string CurrentProvider,
     string CurrentModel,
-    Guid SessionId,
     Guid? ParentId,
-    List<string>? Packages
+    List<string>? Packages,
+    string? Name = null
 ) : DomainEvent;
 
 public sealed record AgentStarted : DomainEvent;
@@ -28,3 +28,10 @@ public sealed record ToolRemoved(string Name) : DomainEvent;
 public sealed record ChildSpawned(Guid ChildId) : DomainEvent;
 
 public sealed record ThinkingLevelSet(string Level) : DomainEvent;
+
+public sealed record AgentRenamed(string NewName) : DomainEvent;
+public sealed record SkillLearned(SkillInfo Skill) : DomainEvent;
+public sealed record SkillRefined(string Name, SkillInfo Delta) : DomainEvent;
+public sealed record KnowledgeAccumulated(string Fact) : DomainEvent;
+public sealed record SystemPromptEvolved(string NewPrompt) : DomainEvent;
+public sealed record AgentDeleted : DomainEvent;
