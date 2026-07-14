@@ -85,10 +85,10 @@ async function loadSessions() {
     } catch {}
 }
 async function switchSession(id) { currentSession = id; document.querySelectorAll('#session-list .session').forEach(el => el.classList.toggle('active', el.dataset.id === id)); await loadMessages(id); messages.scrollTop = messages.scrollHeight; }
-async function createSession() { const n = prompt('Session name:')?.trim(); if (!n) return; try { await api('POST', `/api/session/create/${n}`); await loadSessions(); switchSession(n); } catch (e) { showToast('Failed: ' + e.message, true); } }
-async function deleteSession(id, el) { if (id === 'default') { showToast('Cannot delete default', true); return; } if (!confirm(`Delete "${id}"?`)) return; try { await api('POST', `/api/session/delete/${id}`); forgetThinking(id); if (currentSession === id) { currentSession = 'default'; await switchSession('default'); } await loadSessions(); showToast('Deleted'); } catch (e) { showToast('Delete failed: ' + e.message, true); } }
-async function saveSession() { const b = document.getElementById('btn-save-session'); b.textContent = '...'; try { await api('POST', `/api/session/save/${currentSession}`); b.textContent = '✓'; } catch { b.textContent = '✗'; } setTimeout(() => { b.textContent = '💾'; }, 1500); }
-async function compactSession(id, btn) { const o = btn.textContent; btn.textContent = '...'; btn.disabled = true; try { const r = await api('POST', `/api/session/${id}/compact`, { keepRecent: 20 }); showToast(r.compressedCount > 0 ? `Compressed ${r.compressedCount} msgs, saved ${r.tokensSaved} tokens` : 'Nothing to compress'); forgetThinking(id); btn.textContent = '✓'; if (id === currentSession) await loadMessages(id); } catch (e) { showToast('Compression failed: ' + e.message, true); btn.textContent = '✗'; } setTimeout(() => { btn.textContent = o; btn.disabled = false; }, 1500); }
+async function createSession() { const n = prompt('Session name:')?.trim(); if (!n) return; try { await api('POST', `/api/session/create/${encodeURIComponent(n)}`); await loadSessions(); switchSession(n); } catch (e) { showToast('Failed: ' + e.message, true); } }
+async function deleteSession(id, el) { if (id === 'default') { showToast('Cannot delete default', true); return; } if (!confirm(`Delete "${id}"?`)) return; try { await api('POST', `/api/session/delete/${encodeURIComponent(id)}`); forgetThinking(id); if (currentSession === id) { currentSession = 'default'; await switchSession('default'); } await loadSessions(); showToast('Deleted'); } catch (e) { showToast('Delete failed: ' + e.message, true); } }
+async function saveSession() { const b = document.getElementById('btn-save-session'); b.textContent = '...'; try { await api('POST', `/api/session/save/${encodeURIComponent(currentSession)}`); b.textContent = '✓'; } catch { b.textContent = '✗'; } setTimeout(() => { b.textContent = '💾'; }, 1500); }
+async function compactSession(id, btn) { const o = btn.textContent; btn.textContent = '...'; btn.disabled = true; try { const r = await api('POST', `/api/session/${encodeURIComponent(id)}/compact`, { keepRecent: 20 }); showToast(r.compressedCount > 0 ? `Compressed ${r.compressedCount} msgs, saved ${r.tokensSaved} tokens` : 'Nothing to compress'); forgetThinking(id); btn.textContent = '✓'; if (id === currentSession) await loadMessages(id); } catch (e) { showToast('Compression failed: ' + e.message, true); btn.textContent = '✗'; } setTimeout(() => { btn.textContent = o; btn.disabled = false; }, 1500); }
 
 // ── System prompt ──
 async function loadSystemPrompt() { try { const r = await api('GET', '/api/system-prompt'); sysPrompt.value = r.prompt || ''; } catch {} }
@@ -99,7 +99,7 @@ document.getElementById('btn-save-prompt').addEventListener('click', async () =>
 // ── Messages ──
 async function loadMessages(sessionId) {
     try {
-        const msgs = await api('GET', `/api/session/${sessionId}/messages`); messages.innerHTML = '';
+        const msgs = await api('GET', `/api/session/${encodeURIComponent(sessionId)}/messages`); messages.innerHTML = '';
         if (msgs && Array.isArray(msgs)) {
             let ai = 0;
             for (const m of msgs) {
@@ -206,7 +206,7 @@ async function retryLastMessage() {
     const userMsgs = messages.querySelectorAll('.message.user'); if (!userMsgs.length) return;
     const last = userMsgs[userMsgs.length - 1]; const text = last.querySelector('.msg-content').textContent.trim();
     forgetThinking(currentSession);
-    try { await fetch(`/api/session/${currentSession}/retry`, { method: 'POST' }); } catch {}
+    try { await fetch(`/api/session/${encodeURIComponent(currentSession)}/retry`, { method: 'POST' }); } catch {}
     let next = last; while (next) { const r = next; next = next.nextElementSibling; r.remove(); }
     await sendMessage(text);
 }
@@ -316,7 +316,7 @@ async function sendMessage(overrideText) {
     let llmRound = 1; // LLM round counter, used to create unique tool call keys across rounds
 
     try {
-        const response = await fetch(`/api/session/${currentSession}/message`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text, signal: abortCtrl.signal });
+        const response = await fetch(`/api/session/${encodeURIComponent(currentSession)}/message`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: text, signal: abortCtrl.signal });
         const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
         while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const lines = buffer.split('\n'); buffer = lines.pop() || '';
             for (const line of lines) {
@@ -436,7 +436,7 @@ async function sendMessage(overrideText) {
                 } catch (e) { console.error('SSE handler:', e, p); } } catch {} messages.scrollTop = messages.scrollHeight; }
         }
     } catch (err) { if (err.name === 'AbortError') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); } else { msgContent.innerHTML += '<div class="stream-error">' + err.message + '</div>'; showToast(err.message, true); } }
-    finally { setStreaming(false); abortCtrl = null; input.focus(); cleanupToolBlocks(msgContent); try { await api('POST', `/api/session/save/${currentSession}`); } catch {} await loadSessions(); }
+    finally { setStreaming(false); abortCtrl = null; input.focus(); cleanupToolBlocks(msgContent); try { await api('POST', `/api/session/save/${encodeURIComponent(currentSession)}`); } catch {} await loadSessions(); }
 }
 
 // ── Marked + Mermaid ──
