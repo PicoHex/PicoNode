@@ -39,7 +39,7 @@ public static class ConfigLoader
                 continue;
 
             var entry = new ProviderEntry();
-            if (cfg.TryGetValue($"{prefix}{name}:apiKey", out var ak))
+            if (cfg.TryGetValue($"{prefix}{name}:apiKey", out var ak) && ak is not null)
                 entry.ApiKey = ak;
             if (cfg.TryGetValue($"{prefix}{name}:baseUrl", out var bu))
                 entry.BaseUrl = bu;

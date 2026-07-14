@@ -68,7 +68,8 @@ public static class Bootstrap
             Console.WriteLine("[PicoAgent] No saved agent — creating new");
         }
 
-        agent ??= (DomainAgent?)(await factory.BuildAsync(config, home.SessionsDir));
+        agent ??= await factory.BuildAsync(config, home.SessionsDir);
+        ArgumentNullException.ThrowIfNull(agent);
         await home.SaveAgentIdAsync(agent.Id);
         var server = new Server(
             agent,
