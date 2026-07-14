@@ -41,6 +41,15 @@ public sealed class Session
 
     public async Task<SessionTreeEntryBase[]> GetEntries() => await _storage.GetEntries();
 
+    public async Task<SessionTreeEntryBase?> GetLeafEntryAsync()
+    {
+        var leafId = await _storage.GetLeafId();
+        if (leafId is null)
+            return null;
+        var entries = await _storage.GetEntries();
+        return entries.FirstOrDefault(e => e.Id == leafId);
+    }
+
     public async Task SetName(string name)
     {
         Name = name;

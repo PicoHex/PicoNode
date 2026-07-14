@@ -149,6 +149,14 @@ public sealed class Agent : EventSourcedActor, ICancelable
                 return RunTurnAsync(r.Message, _turnCts.Token);
             }
 
+            case ContinueTurn c:
+                // 实际续跑逻辑在 Task 5 接入; 此处占位以保证命令可派发
+                return default;
+
+            case CheckContinue c:
+                // 实际决策逻辑在 Task 5 接入; 此处占位
+                return default;
+
             case SetThinkingLevelCmd s:
                 RaiseEvent(new ThinkingLevelSet(s.Level));
                 return default;
