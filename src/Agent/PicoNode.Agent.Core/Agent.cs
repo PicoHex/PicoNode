@@ -4,6 +4,13 @@ namespace PicoNode.Agent.Domain;
 /// Agent aggregate root. Inherits EventSourcedActor — state is managed via
 /// domain events (RaiseEvent), persisted by the Actor framework, and
 /// restored via ReplayEvents. Session is data (not state), managed separately.
+/// <para>
+/// Turn loop is mailbox-driven: RunTurn runs one turn then self-sends
+/// CheckContinue, which inspects the session leaf to decide ContinueTurn
+/// (leaf is toolResult/user) or FinishRun (leaf is terminal assistant).
+/// SteerCmd/SwitchLlmCmd are ordinary commands processed between turns
+/// by FIFO — no side-channel queue. See docs/superpowers/plans/2026-07-14-agent-mailbox-driven-loop.md.
+/// </para>
 /// </summary>
 public sealed class Agent : EventSourcedActor, ICancelable
 {
