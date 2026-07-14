@@ -35,9 +35,7 @@ public sealed class SpawnChildSystemNullTests
                 "x",
                 "y",
                 Guid.CreateVersion7()
-            ),
-            new FakeLlmClient(),
-            new FakeToolRunner()
+            )
         );
         agent.Id = Guid.CreateVersion7();
         agent.SignalReady();

@@ -25,7 +25,7 @@ public sealed class ConfigUpdateOrderTests
                     CreateAgent c => new DomainAgent(c),
                     _ => throw new InvalidOperationException(),
                 },
-            () => new DomainAgent(new FakeLlmClient(), new FakeToolRunner())
+            () => new DomainAgent()
         );
         return (system, null!);
     }

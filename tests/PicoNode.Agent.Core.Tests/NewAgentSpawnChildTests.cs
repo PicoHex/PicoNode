@@ -19,10 +19,10 @@ public sealed class AgentSpawnChildTests
             cmd =>
                 cmd switch
                 {
-                    CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
+                    CreateAgent c => new DomainAgent(c),
                     _ => throw new InvalidOperationException(),
                 },
-            () => new DomainAgent(llmClient, toolRunner)
+            () => new DomainAgent()
         );
 
         var parent = await system.CreateAsync<DomainAgent>(
@@ -75,10 +75,10 @@ public sealed class AgentSpawnChildTests
             cmd =>
                 cmd switch
                 {
-                    CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
+                    CreateAgent c => new DomainAgent(c),
                     _ => throw new InvalidOperationException(),
                 },
-            () => new DomainAgent(llmClient, toolRunner)
+            () => new DomainAgent()
         );
 
         var parent = await system.CreateAsync<DomainAgent>(

@@ -57,7 +57,7 @@ public static class Bootstrap
             _ => throw new InvalidOperationException(),
         });
 
-        var factory = new AgentFactory(system, llmAdapter).WithBuiltInTools();
+        var factory = new AgentFactory(system).WithBuiltInTools();
         factory.Register();
 
         // Try to restore existing agent from previous run

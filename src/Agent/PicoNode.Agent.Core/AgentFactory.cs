@@ -8,13 +8,11 @@ public sealed class AgentFactory
 {
     private readonly ActorSystem _system;
     private readonly ToolRunner _toolRunner = new();
-    private readonly ILlmClient _llmClient;
     private bool _withBuiltInTools;
 
-    public AgentFactory(ActorSystem system, ILlmClient llmClient)
+    public AgentFactory(ActorSystem system, ILlmClient? llmClient = null)
     {
         _system = system;
-        _llmClient = llmClient;
     }
 
     public AgentFactory WithBuiltInTools()
@@ -29,10 +27,10 @@ public sealed class AgentFactory
             createFactory: cmd =>
                 cmd switch
                 {
-                    CreateAgent c => new Agent(c, _llmClient, _toolRunner),
+                    CreateAgent c => new Agent(c),
                     _ => throw new InvalidOperationException(),
                 },
-            rebuildFactory: () => new Agent(_llmClient, _toolRunner)
+            rebuildFactory: () => new Agent()
         );
     }
 

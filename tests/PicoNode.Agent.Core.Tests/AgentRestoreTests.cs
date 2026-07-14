@@ -55,10 +55,10 @@ public sealed class AgentRestoreTests : IDisposable
             cmd =>
                 cmd switch
                 {
-                    CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
+                    CreateAgent c => new DomainAgent(c),
                     _ => throw new InvalidOperationException(),
                 },
-            () => new DomainAgent(llmClient, toolRunner)
+            () => new DomainAgent()
         );
 
         // First launch: create and start agent
@@ -89,10 +89,10 @@ public sealed class AgentRestoreTests : IDisposable
             cmd =>
                 cmd switch
                 {
-                    CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
+                    CreateAgent c => new DomainAgent(c),
                     _ => throw new InvalidOperationException(),
                 },
-            () => new DomainAgent(llmClient, toolRunner)
+            () => new DomainAgent()
         );
 
         var savedId = await LoadAgentId(_baseDir);
@@ -116,10 +116,10 @@ public sealed class AgentRestoreTests : IDisposable
             cmd =>
                 cmd switch
                 {
-                    CreateAgent c => new DomainAgent(c, llmClient, toolRunner),
+                    CreateAgent c => new DomainAgent(c),
                     _ => throw new InvalidOperationException(),
                 },
-            () => new DomainAgent(llmClient, toolRunner)
+            () => new DomainAgent()
         );
 
         // No saved agent ID — should create new

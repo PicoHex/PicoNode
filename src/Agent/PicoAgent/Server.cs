@@ -37,6 +37,7 @@ public sealed class Server : IAsyncDisposable
     private readonly SemaphoreSlim _turnLock = new(1, 1);
 
     private string? _agentNameCached;
+    private AgentConfigSnapshot? _configSnapshotCached;
     private string AgentName => _agentNameCached ??= ResolveAgentName();
 
     private string ResolveAgentName()
@@ -47,6 +48,15 @@ public sealed class Server : IAsyncDisposable
             return snap?.Name ?? "Unnamed";
         }
         catch { return "Unnamed"; }
+    }
+
+    private AgentConfigSnapshot GetConfigSnapshot()
+    {
+        if (_configSnapshotCached is not null)
+            return _configSnapshotCached;
+        _configSnapshotCached = _agentSystem.AskAsync<AgentConfigSnapshot>(
+            _agent.Id, new GetConfigQuery()).GetAwaiter().GetResult();
+        return _configSnapshotCached;
     }
 
     public int Port => _webServer?.LocalEndPoint is IPEndPoint ep ? ep.Port : 0;
@@ -252,6 +262,7 @@ public sealed class Server : IAsyncDisposable
             var config = PicoJetson.JsonSerializer.Deserialize<AgentConfig>(Encoding.UTF8.GetBytes(body));
             if (config is null) return JsonHelper.Error(400, "invalid config");
             ConfigApplier.Apply(_agent, _agentSystem, config);
+            _configSnapshotCached = null; // invalidate cache on config save
             return JsonHelper.Ok();
         });
 
@@ -328,8 +339,7 @@ public sealed class Server : IAsyncDisposable
 
         app.MapGet($"{p}/system-prompt", async (_, _) =>
         {
-            var snap = await _agentSystem.AskAsync<AgentConfigSnapshot>(_agent.Id, new GetConfigQuery());
-            var prompt = sp ?? PicoNode.Agent.Domain.SystemPromptBuilder.Build(_agent.ToolsSnapshot.ToArray(), snap.Skills);
+            var prompt = sp ?? PicoNode.Agent.Domain.SystemPromptBuilder.Build(_agent.ToolsSnapshot.ToArray(), GetConfigSnapshot().Skills);
             return JsonHelper.JsonResponse(new PromptResponse { Prompt = prompt });
         });
         app.MapPost($"{p}/system-prompt", async (ctx, _) =>
@@ -349,6 +359,7 @@ public sealed class Server : IAsyncDisposable
             var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(body));
             var lvl = doc.RootElement.TryGetProperty("level", out var lp) ? lp.GetStringOrNull() : null;
             if (lvl is { Length: > 0 }) _agentSystem.Send(_agent.Id, new SetThinkingLevelCmd(lvl));
+            _configSnapshotCached = null; // invalidate: thinking level is in config snapshot
             return V(JsonHelper.Ok());
         });
 

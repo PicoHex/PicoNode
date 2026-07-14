@@ -12,7 +12,7 @@ public sealed class RuntimeActorTests
         var system = new ActorSystem(store);
         system.Register<DomainAgent>(cmd => cmd switch
         {
-            CreateAgent c => new DomainAgent(c, new FakeLlmClient(), new FakeToolRunner()),
+            CreateAgent c => new DomainAgent(c),
             _ => throw new InvalidOperationException(),
         });
         system.Register<RuntimeActor>(cmd => cmd switch

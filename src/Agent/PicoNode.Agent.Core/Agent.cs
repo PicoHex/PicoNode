@@ -30,27 +30,12 @@ public sealed class Agent : EventSourcedActor
     public List<string>? Packages { get; private set; }
     public string? FailureReason { get; private set; }
 
-    internal ILlmClient? LlmClient { get; init; }
-    internal IToolRunner? ToolRunner { get; init; }
-
     // ── Constructors ──
 
     public Agent(CreateAgent cmd)
         : base(cmd) { }
 
-    public Agent(CreateAgent cmd, ILlmClient llmClient, IToolRunner toolRunner)
-        : base(cmd)
-    {
-        LlmClient = llmClient;
-        ToolRunner = toolRunner;
-    }
-
-    public Agent(ILlmClient llmClient, IToolRunner toolRunner)
-        : base()
-    {
-        LlmClient = llmClient;
-        ToolRunner = toolRunner;
-    }
+    public Agent() { }
 
     // ── Command dispatch ──
 

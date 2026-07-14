@@ -12,7 +12,7 @@ public sealed class AgentIdentityTests
         var system = new ActorSystem(store);
         system.Register<DomainAgent>(cmd => cmd switch
         {
-            CreateAgent c => new DomainAgent(c, new FakeLlmClient(), new FakeToolRunner()),
+            CreateAgent c => new DomainAgent(c),
             _ => throw new InvalidOperationException(),
         });
 
@@ -35,7 +35,7 @@ public sealed class AgentIdentityTests
         var system = new ActorSystem(store);
         system.Register<DomainAgent>(cmd => cmd switch
         {
-            CreateAgent c => new DomainAgent(c, new FakeLlmClient(), new FakeToolRunner()),
+            CreateAgent c => new DomainAgent(c),
             _ => throw new InvalidOperationException(),
         });
 
