@@ -55,6 +55,7 @@ public sealed class RuntimeActor : ActorBase
                 ContentBlocks = [new ContentBlock { Type = "text", Text = c.Message }],
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             };
+            WriteOutput("debug", $"append user msg to session", null, null, turnId);
             SessionSystem.Send(c.SessionId, new AppendMessage(new MessageEntry { Message = userMsg }));
 
             for (var iteration = 0; iteration < 100; iteration++)
@@ -77,7 +78,9 @@ public sealed class RuntimeActor : ActorBase
                 if (toolCalls.Length == 0)
                     break;
 
+                WriteOutput("tool_call", $"executing {toolCalls.Length} tool(s)", null, null, turnId);
                 var toolResults = await ExecuteToolsAsync(toolCalls, c.SessionId, cts.Token);
+                WriteOutput("tool_call", $"done {toolResults.Length} result(s)", null, null, turnId);
                 ctx.AddRange(toolResults);
             }
 
