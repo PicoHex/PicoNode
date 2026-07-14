@@ -12,6 +12,8 @@ public sealed class Agent : EventSourcedActor, ICancelable
     private readonly List<Guid> _childIds = [];
     private string? _turnId;
     private CancellationTokenSource? _turnCts;
+    private int _runIterations;
+    private const int MaxRunIterations = 100;
 
     internal string? TurnId => _turnId;
 
@@ -144,18 +146,14 @@ public sealed class Agent : EventSourcedActor, ICancelable
                     throw new DomainInvariantException($"Cannot run turn when status is {Status}");
                 if (_turnCts is not null)
                     throw new InvalidOperationException("A turn is already running");
-                _turnId = r.TurnId;
-                _turnCts = new CancellationTokenSource();
-                return RunTurnAsync(r.Message, _turnCts.Token);
+                return RunTurnHandlerAsync(r);
             }
 
             case ContinueTurn c:
-                // 实际续跑逻辑在 Task 5 接入; 此处占位以保证命令可派发
-                return default;
+                return ContinueTurnHandlerAsync(c);
 
             case CheckContinue c:
-                // 实际决策逻辑在 Task 5 接入; 此处占位
-                return default;
+                return CheckContinueHandlerAsync(c);
 
             case SetThinkingLevelCmd s:
                 RaiseEvent(new ThinkingLevelSet(s.Level));
@@ -252,91 +250,127 @@ public sealed class Agent : EventSourcedActor, ICancelable
         }
     }
 
-    // ── RunTurn ──
+    // ── RunTurn / ContinueTurn / CheckContinue handlers (async, return ValueTask) ──
 
-    private async ValueTask<object?> RunTurnAsync(string message, CancellationToken turnCt)
+    private async ValueTask<object?> RunTurnHandlerAsync(RunTurn r)
     {
-        if (LlmClient is null || ToolRunner is null)
-            throw new InvalidOperationException(
-                "RunTurn requires LlmClient and ToolRunner — register them via the Agent constructor."
-            );
+        _turnId = r.TurnId;
+        _turnCts = new CancellationTokenSource();
+        _runIterations = 0;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            StopToken,
+            _turnCts.Token
+        );
 
-        // Link turn cancellation with actor stop cancellation
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(StopToken, turnCt);
-        var ct = linked.Token;
+        // Append the user message, run the first turn, then hand off to CheckContinue
+        var session = Session!;
+        var userMsg = new Message
+        {
+            Role = "user",
+            Content = r.Message,
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+        await session.Append(new MessageEntry { Message = userMsg });
 
+        await SingleTurnAsync("0", linked.Token);
+        // SingleTurnAsync calls FinishRun on error/cancel (clears _turnId); on success send CheckContinue
+        if (_turnId is not null)
+            this.System?.Send(Id, new CheckContinue(r.TurnId));
+        return default;
+    }
+
+    private async ValueTask<object?> ContinueTurnHandlerAsync(ContinueTurn c)
+    {
+        if (_turnCts is null)
+            return default; // run already ended or cancelled, ignore stale message
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            StopToken,
+            _turnCts.Token
+        );
+        await SingleTurnAsync(_runIterations.ToString(), linked.Token);
+        if (_turnId is not null)
+            this.System?.Send(Id, new CheckContinue(c.TurnId));
+        return default;
+    }
+
+    private async ValueTask<object?> CheckContinueHandlerAsync(CheckContinue c)
+    {
+        if (_turnCts is null)
+            return default; // run already ended, ignore
+        await CheckContinueAsync(c.TurnId);
+        return default;
+    }
+
+    // ── Single turn (mid layer): stream + execute tools ──
+
+    private async ValueTask SingleTurnAsync(string turnLabel, CancellationToken ct)
+    {
         try
         {
             var session = Session!;
+            var msg = await StreamSingleTurnAsync(turnLabel, ct);
+            await session.Append(new MessageEntry { Message = msg });
 
-            var userMsg = new Message
+            if (msg.StopReason == "error")
             {
-                Role = "user",
-                Content = message,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            };
-            await session.Append(new MessageEntry { Message = userMsg });
+                WriteTurnOutput("error", msg.ErrorMessage);
+                // Error turn terminates the run, do not continue
+                FinishRun();
+                return;
+            }
 
-            bool hasTools;
-            var iterations = 0;
-            do
-            {
-                if (++iterations > 100)
-                {
-                    // Surface the guard as an error instead of silently breaking and
-                    // emitting "done" — otherwise a truncated turn looks like success.
-                    WriteTurnOutput(
-                        "error",
-                        "Turn stopped: iteration limit reached (100 tool rounds)."
-                    );
-                    return default;
-                }
-
-                var finalMessage = await StreamSingleTurnAsync($"{iterations}", ct);
-                await session.Append(new MessageEntry { Message = finalMessage });
-
-                if (finalMessage.StopReason == "error")
-                {
-                    WriteTurnOutput("error", finalMessage.ErrorMessage);
-                    // turn 以错误结束,不再继续工具循环
-                    return default;
-                }
-
-                // Check for tool calls
-                var toolCalls =
-                    finalMessage.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray() ?? [];
-                hasTools = toolCalls.Length > 0;
-
-                if (hasTools)
-                    await ExecuteToolsAsync(toolCalls, ct);
-            } while (hasTools && !ct.IsCancellationRequested);
-
-            WriteTurnOutput("done");
-            return default;
+            var toolCalls =
+                msg.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray() ?? [];
+            if (toolCalls.Length > 0)
+                await ExecuteToolsAsync(toolCalls, ct);
         }
         catch (OperationCanceledException) when (!StopToken.IsCancellationRequested)
         {
-            // Turn was cancelled (not the whole actor)
+            // Turn cancelled (not actor stop) — emit cancelled, clean up run state, do not send CheckContinue.
+            // Mirrors the old RunTurnAsync catch(OCE) when(!StopToken) semantics.
+            // Must call FinishRun to clear _turnCts, otherwise the next RunTurn throws "A turn is already running".
             WriteTurnOutput("cancelled");
-            return default;
+            FinishRun();
         }
-        catch (OperationCanceledException)
+        // actor-stop OCE (StopToken cancelled) is NOT caught — propagates out, RunAsync swallows it silently, no error emitted.
+        // Mirrors the old RunTurnAsync catch(OCE) { throw; } + Stop_DuringRunTurn_NoErrorOutput test.
+    }
+
+    // ── Continue decision (session leaf is the single source of truth) ──
+
+    private async ValueTask CheckContinueAsync(string turnId)
+    {
+        var session = Session!;
+        var leaf = await session.GetLeafEntryAsync();
+
+        // leaf is toolResult or user (steer injected) → still has pending input to respond to, continue
+        if (leaf is MessageEntry me && me.Message.Role is "toolResult" or "user")
         {
-            // Actor is stopping — propagate silently, not an error
-            throw;
+            if (++_runIterations >= MaxRunIterations)
+            {
+                WriteTurnOutput(
+                    "error",
+                    "Run stopped: iteration limit reached (100 tool rounds)."
+                );
+                FinishRun();
+                return;
+            }
+            this.System?.Send(Id, new ContinueTurn(turnId));
+            return;
         }
-        catch (Exception ex)
-        {
-            WriteTurnOutput("error", ex.Message);
-            throw;
-        }
-        finally
-        {
-            OutputWriter?.Complete();
-            _turnId = null;
-            _turnCts?.Dispose();
-            _turnCts = null;
-        }
+
+        // leaf is assistant (no-tool terminal state) → run finished
+        FinishRun();
+    }
+
+    private void FinishRun()
+    {
+        WriteTurnOutput("done");
+        OutputWriter?.Complete();
+        _turnId = null;
+        _turnCts?.Dispose();
+        _turnCts = null;
+        _runIterations = 0;
     }
 
     // ── Turn cancellation ──
