@@ -181,6 +181,39 @@ public sealed class Agent : EventSourcedActor, ICancelable
         return default;
     }
 
+    // ── Single turn streaming (innermost layer) ──
+
+    private async Task<Message> StreamSingleTurnAsync(string turnLabel, CancellationToken ct)
+    {
+        var session = Session!;
+        var ctx = await session.BuildContext();
+        var prompt = SystemPromptBuilder.Build(ToolsSnapshot, Skills);
+        ctx.Insert(0, new Message { Role = "system", Content = prompt });
+
+        var assembler = new TurnResponseAssembler(turnLabel);
+
+        await foreach (var evt in LlmClient!.StreamAsync(CurrentLlm, ctx, ToolsSnapshot, ct))
+        {
+            WriteTurnOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName);
+            if (evt.Type == "done")
+                break;
+            if (evt.Type == "error")
+                return ErrorAssistantMessage(evt.Content ?? "LLM error");
+            assembler.Handle(evt);
+        }
+
+        return assembler.Build();
+    }
+
+    private static Message ErrorAssistantMessage(string errorMessage) =>
+        new()
+        {
+            Role = "assistant",
+            StopReason = "error",
+            ErrorMessage = errorMessage,
+            ContentBlocks = [],
+        };
+
     // ── RunTurn ──
 
     private async ValueTask<object?> RunTurnAsync(string message, CancellationToken turnCt)
@@ -221,79 +254,19 @@ public sealed class Agent : EventSourcedActor, ICancelable
                     return default;
                 }
 
-                var ctx = await session.BuildContext();
-                var prompt = SystemPromptBuilder.Build(ToolsSnapshot, Skills);
-                ctx.Insert(0, new Message { Role = "system", Content = prompt });
-
-                var contentBlocks = new List<ContentBlock>();
-                var contentAccum = new StringBuilder();
-                var thinkingAccum = new StringBuilder();
-                var argAccum = new Dictionary<int, StringBuilder>();
-
-                await foreach (var evt in LlmClient.StreamAsync(CurrentLlm, ctx, ToolsSnapshot, ct))
-                {
-                    WriteTurnOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName);
-
-                    switch (evt.Type)
-                    {
-                        case "text":
-                            contentAccum.Append(evt.Content);
-                            break;
-                        case "thinking":
-                            thinkingAccum.Append(evt.Content);
-                            break;
-                        case "tool_call_delta":
-                            if (int.TryParse(evt.ToolCallId, out var di))
-                            {
-                                if (!argAccum.TryGetValue(di, out var sb))
-                                    argAccum[di] = sb = new StringBuilder();
-                                sb.Append(evt.Content);
-                            }
-                            break;
-                        case "tool_call_end":
-                            if (
-                                int.TryParse(evt.ToolCallId, out var ei)
-                                && evt.ToolName is { Length: > 0 }
-                            )
-                            {
-                                var args = argAccum.TryGetValue(ei, out var a)
-                                    ? a.ToString()
-                                    : "{}";
-                                contentBlocks.Add(
-                                    new ContentBlock
-                                    {
-                                        Id = $"{iterations}-{evt.ToolCallId}",
-                                        Type = "tool_call",
-                                        Name = evt.ToolName,
-                                        Arguments = ParseSimpleJson(args),
-                                    }
-                                );
-                            }
-                            break;
-                        case "done":
-                            goto streamDone;
-                        case "error":
-                            throw new InvalidOperationException(evt.Content ?? "LLM error");
-                    }
-                }
-                streamDone:
-
-                // Flush accumulated content
-                if (contentAccum.Length > 0)
-                    contentBlocks.Add(
-                        new ContentBlock { Type = "text", Text = contentAccum.ToString() }
-                    );
-
-                var finalMessage = new Message
-                {
-                    Role = "assistant",
-                    ContentBlocks = contentBlocks.ToArray(),
-                    ReasoningContent = thinkingAccum.Length > 0 ? thinkingAccum.ToString() : null,
-                };
+                var finalMessage = await StreamSingleTurnAsync($"{iterations}", ct);
                 await session.Append(new MessageEntry { Message = finalMessage });
 
+                if (finalMessage.StopReason == "error")
+                {
+                    WriteTurnOutput("error", finalMessage.ErrorMessage);
+                    // turn 以错误结束,不再继续工具循环
+                    return default;
+                }
+
                 // Check for tool calls
-                var toolCalls = contentBlocks.Where(cb => cb.Type == "tool_call").ToArray();
+                var toolCalls =
+                    finalMessage.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray() ?? [];
                 hasTools = toolCalls.Length > 0;
 
                 if (hasTools)
