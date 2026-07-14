@@ -22,7 +22,6 @@ public static class Bootstrap
     {
         var home = new HomeDir(HomeDir.Resolve());
         home.EnsureCreated();
-        Directory.CreateDirectory(home.SessionsDir);
 
         var config = await LoadConfigAsync(home);
 

@@ -3,13 +3,12 @@ namespace PicoNode.Agent.Domain;
 /// <summary>
 /// Agent aggregate root. Inherits EventSourcedActor — state is managed via
 /// domain events (RaiseEvent), persisted by the Actor framework, and
-/// restored via ReplayEvents. Session is data (not state), managed separately.
+/// restored via ReplayEvents.
 /// <para>
-/// Turn loop is mailbox-driven: RunTurn runs one turn then self-sends
-/// CheckContinue, which inspects the session leaf to decide ContinueTurn
-/// (leaf is toolResult/user) or FinishRun (leaf is terminal assistant).
-/// SteerCmd/SwitchLlmCmd are ordinary commands processed between turns
-/// by FIFO — no side-channel queue. See docs/superpowers/plans/2026-07-14-agent-mailbox-driven-loop.md.
+/// Agent holds identity (Name), configuration (Llms, Tools, Skills),
+/// and self-learned knowledge (Knowledge, SystemPrompt).
+/// The turn loop lives in RuntimeActor — Agent is pure identity + config.
+/// See docs/superpowers/specs/2026-07-14-agent-session-runtime-redesign.md.
 /// </para>
 /// </summary>
 public sealed class Agent : EventSourcedActor
@@ -161,8 +160,10 @@ public sealed class Agent : EventSourcedActor
                 return default;
 
             case GetConfigQuery:
+                var allSkills = _skills.ToList();
+                if (Skills is not null) allSkills.AddRange(Skills);
                 return new ValueTask<object?>(new AgentConfigSnapshot(
-                    _name, _llms.ToList(), _tools.ToList(), _skills.ToList(),
+                    _name, _llms.ToList(), _tools.ToList(), allSkills,
                     _knowledge.ToList(), _systemPrompt));
 
             case GetAgentNameQuery:

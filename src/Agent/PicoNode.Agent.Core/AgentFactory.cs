@@ -38,7 +38,6 @@ public sealed class AgentFactory
 
     public async ValueTask<Agent> BuildAsync(AgentConfig config, string? sessionsDir = null)
     {
-        var dir = sessionsDir ?? "data/sessions";
         Register();
 
         var llms = BuildLlms(config);

@@ -7,7 +7,6 @@ namespace PicoNode.Agent.Domain;
 
 public sealed class RuntimeActor : ActorBase
 {
-    private Guid? _loadedAgentId;
     private AgentConfigSnapshot? _loadedConfig;
 
     public ILlmClient? LlmClient { get; set; }
@@ -32,7 +31,6 @@ public sealed class RuntimeActor : ActorBase
         if (System is null)
             throw new InvalidOperationException("Runtime requires an ActorSystem");
 
-        _loadedAgentId = c.AgentId;
         _loadedConfig = await System.AskAsync<AgentConfigSnapshot>(
             c.AgentId, new GetConfigQuery());
         return default;
@@ -40,7 +38,7 @@ public sealed class RuntimeActor : ActorBase
 
     private async ValueTask<object?> HandleRunTurn(RunTurnCmd c)
     {
-        if (_loadedConfig is null || LlmClient is null || ToolRunner is null || System is null)
+        if (_loadedConfig is null || LlmClient is null || ToolRunner is null || System is null || SessionSystem is null)
             throw new InvalidOperationException("Runtime not fully wired");
 
         var turnId = Guid.CreateVersion7().ToString("N")[..8];
@@ -48,40 +46,55 @@ public sealed class RuntimeActor : ActorBase
         var tools = _loadedConfig.Tools;
         var ctx = new List<Message>(c.Context.Messages);
 
-        var userMsg = new Message
+        try
         {
-            Role = "user",
-            Content = c.Message,
-            ContentBlocks = [new ContentBlock { Type = "text", Text = c.Message }],
-            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        };
-        SessionSystem!.Send(c.SessionId, new AppendMessage(new MessageEntry { Message = userMsg }));
-
-        for (var iteration = 0; iteration < 100; iteration++)
-        {
-            var response = await StreamSingleTurnAsync(turnId, tools, ctx, cts.Token);
-
-            var toolCalls = (response.ContentBlocks ?? [])
-                .Where(cb => cb.Type == "tool_call")
-                .ToArray();
-
-            SessionSystem!.Send(c.SessionId, new AppendMessage(new MessageEntry { Message = response }));
-            ctx.Add(response);
-
-            if (response.StopReason == "error")
+            var userMsg = new Message
             {
-                WriteOutput("error", response.ErrorMessage, null, null, turnId);
-                break;
+                Role = "user",
+                Content = c.Message,
+                ContentBlocks = [new ContentBlock { Type = "text", Text = c.Message }],
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            };
+            SessionSystem.Send(c.SessionId, new AppendMessage(new MessageEntry { Message = userMsg }));
+
+            for (var iteration = 0; iteration < 100; iteration++)
+            {
+                var response = await StreamSingleTurnAsync(turnId, tools, ctx, cts.Token);
+
+                var toolCalls = (response.ContentBlocks ?? [])
+                    .Where(cb => cb.Type == "tool_call")
+                    .ToArray();
+
+                SessionSystem.Send(c.SessionId, new AppendMessage(new MessageEntry { Message = response }));
+                ctx.Add(response);
+
+                if (response.StopReason == "error")
+                {
+                    WriteOutput("error", response.ErrorMessage, null, null, turnId);
+                    break;
+                }
+
+                if (toolCalls.Length == 0)
+                    break;
+
+                await ExecuteToolsAsync(toolCalls, c.SessionId, cts.Token);
             }
 
-            if (toolCalls.Length == 0)
-                break;
-
-            await ExecuteToolsAsync(toolCalls, c.SessionId, cts.Token);
+            WriteOutput("done", null, null, null, turnId);
+        }
+        catch (OperationCanceledException) when (!StopToken.IsCancellationRequested)
+        {
+            WriteOutput("cancelled", null, null, null, turnId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            WriteOutput("error", $"Turn failed: {ex.Message}", null, null, turnId);
+        }
+        finally
+        {
+            cts.Dispose();
         }
 
-        WriteOutput("done", null, null, null, turnId);
-        cts.Dispose();
         return default;
     }
 
