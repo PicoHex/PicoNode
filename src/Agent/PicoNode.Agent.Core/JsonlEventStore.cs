@@ -1,3 +1,4 @@
+using System.Text;
 using PicoJetson;
 using PicoNode.Actor.Abs;
 
@@ -40,16 +41,25 @@ public sealed class JsonlEventStore : IEventStore
         if (!File.Exists(path))
             return Array.Empty<IDomainEvent>();
 
-        await using var stream = File.OpenRead(path);
         var list = new List<IDomainEvent>();
-        await foreach (
-            var item in JsonSerializer.DeserializeAsyncEnumerable<DomainEvent>(
-                stream,
-                topLevelValues: true
-            )
-        )
+        // Read line-by-line so a single unknown $type doesn't corrupt the entire stream.
+        using var reader = File.OpenText(path);
+        while (await reader.ReadLineAsync() is { } line)
         {
-            list.Add(item!);
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+            try
+            {
+                var e = DomainEventSerializer.Deserialize(Encoding.UTF8.GetBytes(line));
+                list.Add(e);
+            }
+            catch (FormatException ex) when (ex.Message.Contains("$type"))
+            {
+                // Skip events from future code versions with unknown type discriminators.
+                System.Diagnostics.Debug.WriteLine(
+                    $"Skipping unknown event in {path}: {ex.Message}"
+                );
+            }
         }
         return list;
     }

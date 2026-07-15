@@ -12,6 +12,7 @@ namespace PicoNode.Agent.Domain;
 [PicoDerivedType(typeof(LlmAdded), "LlmAdded")]
 [PicoDerivedType(typeof(LlmRemoved), "LlmRemoved")]
 [PicoDerivedType(typeof(ToolAdded), "ToolAdded")]
+[PicoDerivedType(typeof(ToolDescriptionUpdated), "ToolDescriptionUpdated")]
 [PicoDerivedType(typeof(ToolRemoved), "ToolRemoved")]
 [PicoDerivedType(typeof(ChildSpawned), "ChildSpawned")]
 [PicoDerivedType(typeof(ThinkingLevelSet), "ThinkingLevelSet")]
