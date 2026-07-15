@@ -159,8 +159,8 @@ public sealed class OpenAILlmClient : ILLmClient
                 m.ContentBlocks?.Where(cb => cb.Type == "tool_call").ToArray() ?? [];
             var text = textBlocks.Select(cb => cb.Text).FirstOrDefault() ?? "";
 
-            if (m.ReasoningContent is { Length: > 0 })
-                msg.ReasoningContent = m.ReasoningContent;
+            // DeepSeek thinking mode requires reasoning_content on every assistant message
+            msg.ReasoningContent = m.ReasoningContent ?? "";
 
             if (toolCallBlocks.Length > 0 && string.IsNullOrEmpty(text))
                 msg.Content = null;

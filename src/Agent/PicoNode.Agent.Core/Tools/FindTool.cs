@@ -29,7 +29,7 @@ public static class FindTool
             if (!Directory.Exists(searchDir))
                 return $"[Error: Directory not found: {searchDir}]";
             var files = Directory
-                .GetFiles(searchDir, pattern, SearchOption.AllDirectories)
+                .GetFiles(searchDir, NormalizeGlob(pattern), SearchOption.AllDirectories)
                 .Take(limit)
                 .ToArray();
             return files.Length == 0 ? "[No files found]" : string.Join("\n", files);
@@ -40,4 +40,17 @@ public static class FindTool
 
     private static int ArgInt(Dictionary<string, object?> args, string key, int def) =>
         int.TryParse(args.GetValueOrDefault(key)?.ToString(), out var v) ? v : def;
+
+    /// <summary>
+    /// Normalize a glob pattern for Directory.GetFiles, which doesn't support **.
+    /// Strips **/ prefix since SearchOption.AllDirectories handles recursion.
+    /// </summary>
+    private static string NormalizeGlob(string glob)
+    {
+        if (glob == "**" || glob == "**/*")
+            return "*";
+        if (glob.StartsWith("**/"))
+            return glob[3..];
+        return glob;
+    }
 }

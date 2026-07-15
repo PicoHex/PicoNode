@@ -45,7 +45,7 @@ public static class GrepTool
                 ? new[] { searchDir }
                 : Directory.GetFiles(
                     searchDir,
-                    string.IsNullOrEmpty(glob) ? "*" : glob,
+                    NormalizeGlob(string.IsNullOrEmpty(glob) ? "*" : glob),
                     SearchOption.AllDirectories
                 );
 
@@ -98,4 +98,17 @@ public static class GrepTool
 
     private static bool ArgBool(Dictionary<string, object?> args, string key) =>
         args.GetValueOrDefault(key)?.ToString()?.ToLowerInvariant() == "true";
+
+    /// <summary>
+    /// Normalize a glob pattern for Directory.GetFiles, which doesn't support **.
+    /// Strips **/ prefix since SearchOption.AllDirectories handles recursion.
+    /// </summary>
+    private static string NormalizeGlob(string glob)
+    {
+        if (glob == "**" || glob == "**/*")
+            return "*";
+        if (glob.StartsWith("**/"))
+            return glob[3..];
+        return glob;
+    }
 }
