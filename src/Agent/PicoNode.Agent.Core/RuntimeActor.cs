@@ -72,7 +72,8 @@ public sealed class RuntimeActor : ActorBase
             );
             ctx.Add(userMsg);
 
-            for (var iteration = 0; iteration < 100; iteration++)
+            var round = 0;
+            while (true)
             {
                 var response = await StreamSingleTurnAsync(turnId, tools, ctx, cts.Token);
 
@@ -95,9 +96,10 @@ public sealed class RuntimeActor : ActorBase
                 if (toolCalls.Length == 0)
                     break;
 
+                round++;
+
                 // Rewrite ContentBlock.Id to frontend-compatible format:
                 // "{turnLabel}-{llmIndex}" → "{round}-{llmIndex}"  (e.g., "1-0")
-                var round = iteration + 1;
                 foreach (var tc in toolCalls)
                 {
                     if (string.IsNullOrEmpty(tc.Id))
