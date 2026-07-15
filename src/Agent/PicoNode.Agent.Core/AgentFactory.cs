@@ -92,100 +92,125 @@ public sealed class AgentFactory
 
     public IToolRunner GetToolRunner() => _toolRunner;
 
-    private void RegisterBuiltInTools(Agent agent)
+    /// <summary>
+    /// Register built-in tool handlers in ToolRunner without sending
+    /// AddToolCmd to the agent. Used when restoring an existing agent
+    /// whose tools are already persisted.
+    /// </summary>
+    public void EnsureBuiltInToolHandlers()
     {
-        RegisterTool(
-            agent,
-            "read",
-            "Read file contents",
-            """{"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer"}},"required":["path"]}""",
-            async (args, ct) =>
-            {
-                var p = GetArg(args, "path");
-                return File.Exists(p)
-                    ? await File.ReadAllTextAsync(p, ct)
-                    : $"[Error: File not found: {p}]";
-            }
-        );
-        RegisterTool(
-            agent,
-            "write",
-            "Write file contents",
-            """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""",
-            async (args, ct) =>
-            {
-                var p = GetArg(args, "path");
-                var c = GetArg(args, "content");
-                var d = Path.GetDirectoryName(p);
-                if (d is not null)
-                    Directory.CreateDirectory(d);
-                await File.WriteAllTextAsync(p, c, ct);
-                return $"[Wrote {c.Length} bytes]";
-            }
-        );
-        RegisterTool(
-            agent,
-            "bash",
-            "Execute shell command",
-            """{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}""",
-            ToolHandlers.BashAsync
-        );
-        RegisterTool(
-            agent,
-            "edit",
-            "Precise file edits",
-            """{"type":"object","properties":{"path":{"type":"string"},"oldText":{"type":"string"},"newText":{"type":"string"}},"required":["path","oldText","newText"]}""",
-            ToolHandlers.EditAsync
-        );
-        RegisterTool(
-            agent,
-            "grep",
-            "Search files for patterns",
-            """{"type":"object","properties":{"pattern":{"type":"string"}},"required":["pattern"]}""",
-            ToolHandlers.GrepAsync
-        );
-        RegisterTool(
-            agent,
-            "find",
-            "Find files by name",
-            """{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}""",
-            ToolHandlers.FindAsync
-        );
-        RegisterTool(
-            agent,
-            "ls",
-            "List directory contents",
-            """{"type":"object","properties":{"path":{"type":"string"}}}""",
-            async (args, ct) =>
-            {
-                var d = GetArg(args, "path", ".");
-                return Directory.Exists(d)
-                    ? string.Join("\n", Directory.GetFileSystemEntries(d))
-                    : $"[Error: Directory not found: {d}]";
-            }
-        );
+        if (!_withBuiltInTools)
+            return;
+        foreach (var (tool, handler) in BuiltInToolDefs)
+            _toolRunner.Add(tool, handler);
     }
 
-    private void RegisterTool(
-        Agent agent,
-        string name,
-        string desc,
-        string? schema,
-        Func<Dictionary<string, object?>, CancellationToken, Task<string>> handler
-    )
+    private void RegisterBuiltInTools(Agent agent)
     {
-        var tool = new Tool
+        foreach (var (tool, handler) in BuiltInToolDefs)
+        {
+            _system.Send(agent.Id, new AddToolCmd(tool));
+            _toolRunner.Add(tool, handler);
+        }
+    }
+
+    private static IEnumerable<(
+        Tool tool,
+        Func<Dictionary<string, object?>, CancellationToken, Task<string>> handler
+    )> BuiltInToolDefs
+    {
+        get
+        {
+            yield return (
+                Tool(
+                    "read",
+                    "Read file contents",
+                    """{"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer"}},"required":["path"]}"""
+                ),
+                async (args, ct) =>
+                {
+                    var p = Arg(args, "path");
+                    return File.Exists(p)
+                        ? await File.ReadAllTextAsync(p, ct)
+                        : $"[Error: File not found: {p}]";
+                }
+            );
+            yield return (
+                Tool(
+                    "write",
+                    "Write file contents",
+                    """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}"""
+                ),
+                async (args, ct) =>
+                {
+                    var p = Arg(args, "path");
+                    var c = Arg(args, "content");
+                    var d = Path.GetDirectoryName(p);
+                    if (d is not null)
+                        Directory.CreateDirectory(d);
+                    await File.WriteAllTextAsync(p, c, ct);
+                    return $"[Wrote {c.Length} bytes]";
+                }
+            );
+            yield return (
+                Tool(
+                    "bash",
+                    "Execute shell command",
+                    """{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}"""
+                ),
+                ToolHandlers.BashAsync
+            );
+            yield return (
+                Tool(
+                    "edit",
+                    "Precise file edits",
+                    """{"type":"object","properties":{"path":{"type":"string"},"oldText":{"type":"string"},"newText":{"type":"string"}},"required":["path","oldText","newText"]}"""
+                ),
+                ToolHandlers.EditAsync
+            );
+            yield return (
+                Tool(
+                    "grep",
+                    "Search files for patterns",
+                    """{"type":"object","properties":{"pattern":{"type":"string"}},"required":["pattern"]}"""
+                ),
+                ToolHandlers.GrepAsync
+            );
+            yield return (
+                Tool(
+                    "find",
+                    "Find files by name",
+                    """{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}"""
+                ),
+                ToolHandlers.FindAsync
+            );
+            yield return (
+                Tool(
+                    "ls",
+                    "List directory contents",
+                    """{"type":"object","properties":{"path":{"type":"string"}}}"""
+                ),
+                async (args, ct) =>
+                {
+                    var d = Arg(args, "path", ".");
+                    return Directory.Exists(d)
+                        ? string.Join("\n", Directory.GetFileSystemEntries(d))
+                        : $"[Error: Directory not found: {d}]";
+                }
+            );
+        }
+    }
+
+    private static Tool Tool(string name, string desc, string? schema) =>
+        new()
         {
             Name = name,
             Description = desc,
             Kind = ToolKind.BuiltIn,
             InputSchema = schema,
         };
-        _system.Send(agent.Id, new AddToolCmd(tool));
-        _toolRunner.Add(tool, handler);
-    }
 
-    private static string GetArg(Dictionary<string, object?> args, string key, string def = "") =>
+    private static string Arg(Dictionary<string, object?> args, string key, string def = "") =>
         args.GetValueOrDefault(key)?.ToString() ?? def;
 
     private static List<Llm> BuildLlms(AgentConfig config)

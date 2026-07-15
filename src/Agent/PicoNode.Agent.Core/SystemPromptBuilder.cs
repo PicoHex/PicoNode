@@ -11,35 +11,26 @@ public static class SystemPromptBuilder
         var sb = new StringBuilder();
 
         if (skills is { Count: > 0 })
+        {
             sb.AppendLine(SkillFormatter.FormatSkillsPrompt(skills, baseDir));
+            sb.AppendLine();
+        }
 
-        sb.AppendLine(
-            "You are PicoAgent, an AI coding assistant running on the PicoNode framework."
-        );
+        sb.AppendLine("You are PicoAgent, an AI coding assistant.");
         sb.AppendLine();
         sb.AppendLine("## Available Tools");
         sb.AppendLine();
         foreach (var t in tools)
             sb.AppendLine($"- **{t.Name}**: {t.Description}");
         sb.AppendLine();
-        sb.AppendLine("## Installing Skills");
-        sb.AppendLine();
-        sb.AppendLine("To install a skill from GitHub:");
         sb.AppendLine(
-            $"1. Clone the repo to the skills directory: `git clone <url> {GetSkillsDir(baseDir)}`"
+            "Always reply in the same language the user used. "
+                + "Think and respond in the user's language."
         );
-        sb.AppendLine("2. Edit `settings.json` and add the repo to the `packages` array:");
-        sb.AppendLine("   `\"packages\": [\"git:github.com/owner/repo\"]`");
-        sb.AppendLine("3. Then POST `/api/reload` to discover new skills.");
         sb.AppendLine();
         sb.AppendLine(
             "Use tools when needed. Before running a tool, tell the user which tool you're using and why."
         );
         return sb.ToString();
     }
-
-    private static string GetSkillsDir(string? baseDir) =>
-        baseDir is not null
-            ? Path.Combine(baseDir, "git")
-            : Path.Combine(HomeDir.Resolve(), "git");
 }

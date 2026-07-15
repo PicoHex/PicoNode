@@ -84,6 +84,10 @@ public static class Bootstrap
 
         agent ??= await factory.BuildAsync(config);
         ArgumentNullException.ThrowIfNull(agent);
+
+        // ToolRunner handlers must be registered regardless of whether the
+        // agent is new (BuildAsync) or restored from a previous run.
+        factory.EnsureBuiltInToolHandlers();
         await home.SaveAgentIdAsync(agent.Id);
 
         // Create Runtime actor asynchronously

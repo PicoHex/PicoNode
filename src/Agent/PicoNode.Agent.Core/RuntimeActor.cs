@@ -65,6 +65,7 @@ public sealed class RuntimeActor : ActorBase
                 c.SessionId,
                 new AppendMessage(new MessageEntry { Message = userMsg })
             );
+            ctx.Add(userMsg);
 
             for (var iteration = 0; iteration < 100; iteration++)
             {
