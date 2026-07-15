@@ -52,19 +52,29 @@ public static class BashTool
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
-            var finished = timeoutSecs > 0 ? process.WaitForExit(timeoutSecs * 1000) : true;
-            if (!finished)
+            if (timeoutSecs > 0)
             {
-                try
+                if (!process.WaitForExit(timeoutSecs * 1000))
                 {
-                    process.Kill(entireProcessTree: true);
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                    catch { }
+                    process.WaitForExit(1000);
+                    return $"[Timeout after {timeoutSecs}s]";
                 }
-                catch { }
-                process.WaitForExit(1000);
-                return $"[Timeout after {timeoutSecs}s]";
+            }
+            else
+            {
+                process.WaitForExit();
             }
 
-            process.WaitForExit();
+            // Cancel async reads after the process has exited to ensure
+            // all OutputDataReceived/ErrorDataReceived callbacks have
+            // completed before we read the StringBuilder.
+            process.CancelOutputRead();
+            process.CancelErrorRead();
             var output = stdout.ToString() + (stderr.Length > 0 ? "\n" + stderr.ToString() : "");
             var lines = output.Split('\n');
             var byteCount = Encoding.UTF8.GetByteCount(output);

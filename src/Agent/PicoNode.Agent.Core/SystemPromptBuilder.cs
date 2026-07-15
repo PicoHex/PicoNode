@@ -10,7 +10,7 @@ public static class SystemPromptBuilder
     {
         var sb = new StringBuilder();
 
-        if (skills is { Count: > 0 })
+        if (skills is not null)
         {
             sb.AppendLine(SkillFormatter.FormatSkillsPrompt(skills, baseDir));
             sb.AppendLine();

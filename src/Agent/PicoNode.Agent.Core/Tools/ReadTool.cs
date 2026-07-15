@@ -47,7 +47,13 @@ public static class ReadTool
             var bytes = Encoding.UTF8.GetByteCount(output);
             if (bytes > MaxBytes)
             {
-                output = output[..Math.Min(output.Length, MaxBytes)];
+                // Truncate by bytes, not chars, to avoid splitting multi-byte
+                // UTF-8 characters or surrogate pairs.
+                var rawBytes = Encoding.UTF8.GetBytes(output);
+                // Decode the first MaxBytes bytes back to a string.
+                // GetString handles incomplete sequences by dropping the
+                // trailing incomplete multi-byte character.
+                output = Encoding.UTF8.GetString(rawBytes, 0, MaxBytes);
                 return output + $"\n\n[Truncated to {MaxBytes / 1024}KB. Use offset to continue.]";
             }
             if (endLine < allLines.Length)

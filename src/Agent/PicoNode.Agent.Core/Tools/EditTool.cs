@@ -28,9 +28,13 @@ public static class EditTool
             if (editPairs.Length == 0)
                 return "[Error: no valid edits]";
 
-            // All edits matched against original file content, not incrementally
+            // Each edit is located in the original text and applied to the result
+            // at the corresponding position (adjusted by cumulative offset from
+            // earlier edits). This ensures text introduced by edit N is never
+            // matched by edit N+1.
             var original = await File.ReadAllTextAsync(fullPath, ct);
             var result = original;
+            var cumulativeOffset = 0;
             foreach (var (oldText, newText) in editPairs)
             {
                 var count = CountOccurrences(original, oldText);
@@ -38,7 +42,10 @@ public static class EditTool
                     return $"[Error: oldText not found in file: \"{oldText[..Math.Min(oldText.Length, 80)]}\"]";
                 if (count > 1)
                     return $"[Error: oldText is not unique in file, found {count} occurrences]";
-                result = result.Replace(oldText, newText);
+                var idx = original.IndexOf(oldText, StringComparison.Ordinal);
+                var applyAt = idx + cumulativeOffset;
+                result = result[..applyAt] + newText + result[(applyAt + oldText.Length)..];
+                cumulativeOffset += newText.Length - oldText.Length;
             }
             await File.WriteAllTextAsync(fullPath, result, ct);
             return $"[Applied {editPairs.Length} edit(s)]";

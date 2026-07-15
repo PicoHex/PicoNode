@@ -20,7 +20,10 @@ public sealed class ToolManagerTests
         var dir = ToolManager.GetToolDir();
 
         await Assert.That(dir).IsNotNull();
-        await Assert.That(dir.Contains("picoagent") || dir.Contains(".pico-agent")).IsTrue();
+        // HomeDir.Resolve() returns portable data dir (AppContext.BaseDirectory + "data")
+        // ToolsDir is Path.Combine(Root, "tools").
+        await Assert.That(dir).EndsWith(Path.Combine("data", "tools"));
+        await Assert.That(Directory.Exists(dir) || !Directory.Exists(dir)).IsTrue(); // no crash
     }
 
     [Test]

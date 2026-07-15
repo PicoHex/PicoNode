@@ -26,6 +26,27 @@ public sealed class BashToolTests
     }
 
     [Test]
+    public async Task Create_CapturesAllOutputLines()
+    {
+        // Verify that all process output is captured (no truncated event callbacks)
+        var handler = BashTool.Create(Directory.GetCurrentDirectory());
+        var (shell, _) = BashTool.GetShellConfig();
+        var isBash = shell.Contains("bash");
+        var cmd = isBash
+            ? "for i in $(seq 1 500); do echo line$i; done"
+            : "for /l %i in (1,1,500) do @echo line%i";
+        var result = await handler(
+            new Dictionary<string, object?> { ["command"] = cmd },
+            CancellationToken.None
+        );
+        var lines = result.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        // Should contain at least 500 lines (some shells may add extra output)
+        await Assert.That(lines.Length).IsGreaterThanOrEqualTo(500);
+        await Assert.That(result).Contains("line500");
+        await Assert.That(result).Contains("line1");
+    }
+
+    [Test]
     public async Task Create_TruncatesOutput()
     {
         var handler = BashTool.Create(Directory.GetCurrentDirectory());

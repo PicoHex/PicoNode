@@ -54,6 +54,33 @@ public sealed class GrepToolTests
     }
 
     [Test]
+    public async Task Create_WithContext_ShowsSurroundingLines()
+    {
+        var tmp = Path.Combine(
+            Path.GetTempPath(),
+            "pico-grep-" + Guid.NewGuid().ToString("N")[..8]
+        );
+        Directory.CreateDirectory(tmp);
+        File.WriteAllText(Path.Combine(tmp, "f.txt"), "a\nb\nMATCH\nd\ne");
+        try
+        {
+            var handler = GrepTool.Create(tmp);
+            var result = await handler(
+                new Dictionary<string, object?> { ["pattern"] = "MATCH", ["context"] = 1 },
+                CancellationToken.None
+            );
+            // Should show surrounding lines with > prefix on the match line
+            await Assert.That(result).Contains("> MATCH");
+            await Assert.That(result).Contains(" b"); // line before
+            await Assert.That(result).Contains(" d"); // line after
+        }
+        finally
+        {
+            Directory.Delete(tmp, true);
+        }
+    }
+
+    [Test]
     public async Task Create_CaseInsensitive()
     {
         var tmp = Path.Combine(
