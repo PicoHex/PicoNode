@@ -22,15 +22,43 @@ public static class SessionLister
         foreach (var file in files)
         {
             var id = Path.GetFileNameWithoutExtension(file);
-            list.Add(new SessionListItem
-            {
-                Id = id,
-                Name = id,
-                CreatedAt = File.GetCreationTimeUtc(file).ToString("O"),
-                ParticipantCount = 0,
-            });
+            var name = ReadSessionName(file);
+            list.Add(
+                new SessionListItem
+                {
+                    Id = id,
+                    Name = name,
+                    CreatedAt = File.GetCreationTimeUtc(file).ToString("O"),
+                    ParticipantCount = 0,
+                }
+            );
         }
         return list;
+    }
+
+    private static string ReadSessionName(string jsonlPath)
+    {
+        try
+        {
+            using var reader = new StreamReader(jsonlPath, Encoding.UTF8);
+            var firstLine = reader.ReadLine();
+            if (firstLine is null)
+                return Path.GetFileNameWithoutExtension(jsonlPath);
+
+            var doc = PicoDocument.Parse(Encoding.UTF8.GetBytes(firstLine));
+            if (doc.RootElement.TryGetProperty("Name", out var nameProp))
+            {
+                var name = nameProp.GetStringOrNull();
+                if (!string.IsNullOrWhiteSpace(name))
+                    return name;
+            }
+
+            return Path.GetFileNameWithoutExtension(jsonlPath);
+        }
+        catch
+        {
+            return Path.GetFileNameWithoutExtension(jsonlPath);
+        }
     }
 
     /// <summary>

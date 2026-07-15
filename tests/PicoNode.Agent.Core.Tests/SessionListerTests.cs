@@ -13,7 +13,8 @@ public sealed class SessionListerTests
         }
         finally
         {
-            if (Directory.Exists(tmp)) Directory.Delete(tmp, recursive: true);
+            if (Directory.Exists(tmp))
+                Directory.Delete(tmp, recursive: true);
         }
     }
 
@@ -25,11 +26,14 @@ public sealed class SessionListerTests
         try
         {
             var sessionId = Guid.CreateVersion7();
-            await File.WriteAllTextAsync(Path.Combine(tmp, $"{sessionId}.jsonl"), "{}" + Environment.NewLine);
+            // First line is SessionStarted event with Name field
+            var content = $"{{\"Name\":\"My Session\",\"Participants\":[]}}{Environment.NewLine}";
+            await File.WriteAllTextAsync(Path.Combine(tmp, $"{sessionId}.jsonl"), content);
 
             var list = SessionLister.List(tmp);
             await Assert.That(list).HasSingleItem();
             await Assert.That(list[0].Id).IsEqualTo(sessionId.ToString());
+            await Assert.That(list[0].Name).IsEqualTo("My Session");
         }
         finally
         {

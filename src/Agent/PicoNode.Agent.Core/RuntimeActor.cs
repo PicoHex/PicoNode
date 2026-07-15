@@ -149,12 +149,19 @@ public sealed class RuntimeActor : ActorBase
             throw new InvalidOperationException("Runtime not configured");
 
         var prompt = SystemPromptBuilder.Build(tools.ToArray(), _loadedConfig.Skills);
-        ctx.Insert(0, new Message { Role = "system", Content = prompt });
+
+        // Build LLM context with system prompt at position 0.
+        // Don't mutate ctx — it accumulates across HandleRunTurn iterations.
+        var llmCtx = new List<Message>(ctx.Count + 1)
+        {
+            new() { Role = "system", Content = prompt },
+        };
+        llmCtx.AddRange(ctx);
 
         var assembler = new TurnResponseAssembler(turnLabel);
         var currentLlm = _loadedConfig.Llms[0];
 
-        await foreach (var evt in LlmClient.StreamAsync(currentLlm, ctx, tools, ct))
+        await foreach (var evt in LlmClient.StreamAsync(currentLlm, llmCtx, tools, ct))
         {
             WriteOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName, turnLabel);
             if (evt.Type == "done")

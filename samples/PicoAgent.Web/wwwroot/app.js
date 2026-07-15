@@ -107,15 +107,12 @@ async function switchSession(id) {
     messages.scrollTop = messages.scrollHeight;
 }
 async function createSession() {
-    const n = prompt('Session name:')?.trim();
-    if (!n) return;
-    try {
-        const result = await api('POST', '/api/sessions', { name: n });
-        currentSession = result.id;
-        await loadSessions();
-        await loadMessages(currentSession);
-        switchSession(currentSession);
-    } catch (e) { showToast('Failed: ' + e.message, true); }
+    // Don't create a session immediately — just clear the view.
+    // The session will be auto-created when the first message is sent,
+    // with the name derived from the first line of that message.
+    currentSession = null;
+    messages.innerHTML = '';
+    input.focus();
 }
 async function deleteSession(id, el) {
     if (!confirm(`Delete "${el.querySelector('span').textContent}"?`)) return;

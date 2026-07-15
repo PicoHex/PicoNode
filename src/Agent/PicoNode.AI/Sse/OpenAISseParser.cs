@@ -32,7 +32,6 @@ public static class OpenAISseParser
         };
 
         bool started = false;
-        bool sawContent = false;
         // Track tool calls by index: index → (id, name, args accumulator)
         var toolCalls = new Dictionary<int, (string Id, string Name, StringBuilder Args)>();
 
@@ -171,33 +170,6 @@ public static class OpenAISseParser
                         Index = 0,
                         Delta = text,
                     };
-                    if (!sawContent)
-                    {
-                        contentAccum.Append(text);
-                        if (!started)
-                        {
-                            started = true;
-                            yield return new AssistantMessageEvent.Start { Partial = message };
-                        }
-                        yield return new AssistantMessageEvent.TextDelta
-                        {
-                            Index = 0,
-                            Delta = text,
-                            Partial = new Message
-                            {
-                                Role = "assistant",
-                                Model = model,
-                                ContentBlocks =
-                                [
-                                    new ContentBlock
-                                    {
-                                        Type = "text",
-                                        Text = contentAccum.ToString(),
-                                    },
-                                ],
-                            },
-                        };
-                    }
                 }
             }
 
@@ -205,7 +177,6 @@ public static class OpenAISseParser
             if (hasDelta && delta.TryGetProperty(JsonPropContent, out var contentVal))
             {
                 var text = contentVal.GetStringOrNull() ?? "";
-                sawContent = true;
                 contentAccum.Append(text);
 
                 if (!started)
