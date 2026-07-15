@@ -110,6 +110,10 @@ public sealed class Agent : EventSourcedActor
                 RaiseEvent(new ToolAdded(a.Tool));
                 return default;
 
+            case SetToolDescriptionCmd s:
+                RaiseEvent(new ToolDescriptionUpdated(s.Name, s.Description));
+                return default;
+
             case RemoveToolCmd r:
                 RaiseEvent(new ToolRemoved(r.Name));
                 return default;
@@ -144,9 +148,16 @@ public sealed class Agent : EventSourcedActor
                 return default;
 
             case GetConfigQuery:
-                return new ValueTask<object?>(new AgentConfigSnapshot(
-                    _name, _llms.ToList(), _tools.ToList(), _skills.ToList(),
-                    _knowledge.ToList(), _systemPrompt));
+                return new ValueTask<object?>(
+                    new AgentConfigSnapshot(
+                        _name,
+                        _llms.ToList(),
+                        _tools.ToList(),
+                        _skills.ToList(),
+                        _knowledge.ToList(),
+                        _systemPrompt
+                    )
+                );
 
             case GetAgentNameQuery:
                 return new ValueTask<object?>(_name);
@@ -178,7 +189,6 @@ public sealed class Agent : EventSourcedActor
         RaiseEvent(new ChildSpawned(child.Id));
         return default;
     }
-
 
     protected override void Mutate(IDomainEvent @event)
     {
@@ -222,6 +232,11 @@ public sealed class Agent : EventSourcedActor
                 break;
             case ToolAdded a:
                 _tools.Add(a.Tool);
+                break;
+            case ToolDescriptionUpdated u:
+                var existing = _tools.FindIndex(t => t.Name == u.Name);
+                if (existing >= 0)
+                    _tools[existing].Description = u.Description;
                 break;
             case ToolRemoved r:
                 _tools.RemoveAll(t => t.Name == r.Name);

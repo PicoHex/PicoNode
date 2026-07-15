@@ -23,6 +23,8 @@ public sealed record RemoveLlmCmd(string ProviderName, string ModelId) : IComman
 
 public sealed record AddToolCmd(Tool Tool) : ICommand;
 
+public sealed record SetToolDescriptionCmd(string Name, string Description) : ICommand;
+
 public sealed record RemoveToolCmd(string Name) : ICommand;
 
 public sealed record SpawnChildCmd(
@@ -35,11 +37,17 @@ public sealed record SpawnChildCmd(
 public sealed record SetThinkingLevelCmd(string Level) : ICommand;
 
 public sealed record RenameAgent(string NewName) : ICommand;
+
 public sealed record LearnSkill(SkillInfo Skill) : ICommand;
+
 public sealed record AccumulateKnowledge(string Fact) : ICommand;
+
 public sealed record EvolveSystemPrompt(string NewPrompt) : ICommand;
+
 public sealed record DeleteAgent : ICommand;
+
 public sealed record GetConfigQuery : ICommand;
+
 public sealed record GetAgentNameQuery : ICommand;
 
 public sealed record AgentConfigSnapshot(

@@ -89,6 +89,8 @@ public static class Bootstrap
         // ToolRunner handlers must be registered regardless of whether the
         // agent is new (BuildAsync) or restored from a previous run.
         factory.EnsureBuiltInToolHandlers();
+        // Tool descriptions may be outdated in restored agents.
+        factory.EnsureBuiltInToolDescriptions(agent);
         await home.SaveAgentIdAsync(agent.Id);
 
         // Create Runtime actor asynchronously

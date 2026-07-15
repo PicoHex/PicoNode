@@ -113,6 +113,41 @@ public sealed class AgentFactory
         _toolRunner.Add("ls", LsTool.Create(cwd));
     }
 
+    /// <summary>
+    /// Update built-in tool descriptions on the agent. Needed after restore
+    /// because the agent's persisted state may have outdated descriptions.
+    /// </summary>
+    public void EnsureBuiltInToolDescriptions(Agent agent)
+    {
+        if (!_withBuiltInTools)
+            return;
+        _system.Send(
+            agent.Id,
+            new SetToolDescriptionCmd(ReadTool.Def.Name, ReadTool.Def.Description)
+        );
+        _system.Send(
+            agent.Id,
+            new SetToolDescriptionCmd(WriteTool.Def.Name, WriteTool.Def.Description)
+        );
+        _system.Send(
+            agent.Id,
+            new SetToolDescriptionCmd(BashTool.Def.Name, BashTool.Def.Description)
+        );
+        _system.Send(
+            agent.Id,
+            new SetToolDescriptionCmd(EditTool.Def.Name, EditTool.Def.Description)
+        );
+        _system.Send(
+            agent.Id,
+            new SetToolDescriptionCmd(GrepTool.Def.Name, GrepTool.Def.Description)
+        );
+        _system.Send(
+            agent.Id,
+            new SetToolDescriptionCmd(FindTool.Def.Name, FindTool.Def.Description)
+        );
+        _system.Send(agent.Id, new SetToolDescriptionCmd(LsTool.Def.Name, LsTool.Def.Description));
+    }
+
     private void RegisterBuiltInTools(Agent agent)
     {
         var cwd = _cwd;
