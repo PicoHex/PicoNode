@@ -51,6 +51,11 @@ public sealed class RuntimeActor : ActorBase
         var tools = _loadedConfig.Tools;
         var ctx = new List<Message>(c.Context.Messages);
 
+        // Use per-request output writer if provided (SSE), fall back to singleton
+        var savedWriter = OutputWriter;
+        if (c.OutputWriter is not null)
+            OutputWriter = c.OutputWriter;
+
         try
         {
             var userMsg = new Message
@@ -136,6 +141,7 @@ public sealed class RuntimeActor : ActorBase
             cts.Dispose();
         }
 
+        OutputWriter = savedWriter;
         return default;
     }
 

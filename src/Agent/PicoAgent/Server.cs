@@ -37,7 +37,7 @@ public sealed class Server : IAsyncDisposable
     private readonly string? _settingsPath;
     private WebServer? _webServer;
     private bool _isListening;
-    private readonly SemaphoreSlim _turnLock = new(1, 1);
+    private readonly PerSessionLock _turnLock = new();
 
     private string? _agentNameCached;
     private AgentConfigSnapshot? _configSnapshotCached;
@@ -278,8 +278,7 @@ public sealed class Server : IAsyncDisposable
                 var pipe = new Pipe();
                 var outputChannel = Channel.CreateUnbounded<ActorOutputEvent>();
 
-                await _turnLock.WaitAsync(ct);
-                _runtime.OutputWriter = outputChannel.Writer;
+                var turnLease = await _turnLock.AcquireAsync(sessionGuid, ct);
 
                 _ = Task.Run(async () =>
                 {
@@ -287,7 +286,7 @@ public sealed class Server : IAsyncDisposable
                     {
                         _agentSystem.Send(
                             _runtime.Id,
-                            new RunTurnCmd(message, sessionGuid, context)
+                            new RunTurnCmd(message, sessionGuid, context, outputChannel.Writer)
                         );
                         await foreach (var evt in outputChannel.Reader.ReadAllAsync(ct))
                         {
@@ -299,7 +298,7 @@ public sealed class Server : IAsyncDisposable
                     finally
                     {
                         await pipe.Writer.CompleteAsync();
-                        _turnLock.Release();
+                        turnLease.Dispose();
                     }
                 }); // no cancellation token passed — ensures finally always runs
 
@@ -609,6 +608,7 @@ public sealed class Server : IAsyncDisposable
         try
         {
             await _sessionSystem.StopAsync(sessionId);
+            _turnLock.Remove(sessionId);
         }
         catch (KeyNotFoundException)
         {
