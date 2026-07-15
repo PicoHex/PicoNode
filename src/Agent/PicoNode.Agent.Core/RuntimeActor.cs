@@ -1,6 +1,6 @@
+using System.Threading.Channels;
 using PicoNode.AI;
 using PicoNode.AI.Types;
-using System.Threading.Channels;
 using ActorBase = PicoNode.Actor.Abs.Actor;
 
 namespace PicoNode.Agent.Domain;
@@ -22,7 +22,7 @@ public sealed class RuntimeActor : ActorBase
             LoadAgentCmd c => HandleLoadAgent(c),
             GetLoadedConfigQuery => new ValueTask<object?>(_loadedConfig),
             RunTurnCmd c => HandleRunTurn(c),
-            _ => throw new DomainInvariantException($"Unknown: {command.GetType().Name}")
+            _ => throw new DomainInvariantException($"Unknown: {command.GetType().Name}"),
         };
     }
 
@@ -31,14 +31,19 @@ public sealed class RuntimeActor : ActorBase
         if (System is null)
             throw new InvalidOperationException("Runtime requires an ActorSystem");
 
-        _loadedConfig = await System.AskAsync<AgentConfigSnapshot>(
-            c.AgentId, new GetConfigQuery());
+        _loadedConfig = await System.AskAsync<AgentConfigSnapshot>(c.AgentId, new GetConfigQuery());
         return default;
     }
 
     private async ValueTask<object?> HandleRunTurn(RunTurnCmd c)
     {
-        if (_loadedConfig is null || LlmClient is null || ToolRunner is null || System is null || SessionSystem is null)
+        if (
+            _loadedConfig is null
+            || LlmClient is null
+            || ToolRunner is null
+            || System is null
+            || SessionSystem is null
+        )
             throw new InvalidOperationException("Runtime not fully wired");
 
         var turnId = Guid.CreateVersion7().ToString("N")[..8];
@@ -56,7 +61,10 @@ public sealed class RuntimeActor : ActorBase
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             };
             WriteOutput("debug", $"append user msg to session", null, null, turnId);
-            SessionSystem.Send(c.SessionId, new AppendMessage(new MessageEntry { Message = userMsg }));
+            SessionSystem.Send(
+                c.SessionId,
+                new AppendMessage(new MessageEntry { Message = userMsg })
+            );
 
             for (var iteration = 0; iteration < 100; iteration++)
             {
@@ -66,7 +74,10 @@ public sealed class RuntimeActor : ActorBase
                     .Where(cb => cb.Type == "tool_call")
                     .ToArray();
 
-                SessionSystem.Send(c.SessionId, new AppendMessage(new MessageEntry { Message = response }));
+                SessionSystem.Send(
+                    c.SessionId,
+                    new AppendMessage(new MessageEntry { Message = response })
+                );
                 ctx.Add(response);
 
                 if (response.StopReason == "error")
@@ -78,9 +89,21 @@ public sealed class RuntimeActor : ActorBase
                 if (toolCalls.Length == 0)
                     break;
 
-                WriteOutput("tool_call", $"executing {toolCalls.Length} tool(s)", null, null, turnId);
+                WriteOutput(
+                    "tool_call",
+                    $"executing {toolCalls.Length} tool(s)",
+                    null,
+                    null,
+                    turnId
+                );
                 var toolResults = await ExecuteToolsAsync(toolCalls, c.SessionId, cts.Token);
-                WriteOutput("tool_call", $"done {toolResults.Length} result(s)", null, null, turnId);
+                WriteOutput(
+                    "tool_call",
+                    $"done {toolResults.Length} result(s)",
+                    null,
+                    null,
+                    turnId
+                );
                 ctx.AddRange(toolResults);
             }
 
@@ -102,8 +125,12 @@ public sealed class RuntimeActor : ActorBase
         return default;
     }
 
-    private async Task<Message> StreamSingleTurnAsync(
-        string turnLabel, List<Tool> tools, List<Message> ctx, CancellationToken ct)
+    internal async Task<Message> StreamSingleTurnAsync(
+        string turnLabel,
+        List<Tool> tools,
+        List<Message> ctx,
+        CancellationToken ct
+    )
     {
         if (_loadedConfig is null || LlmClient is null)
             throw new InvalidOperationException("Runtime not configured");
@@ -116,7 +143,8 @@ public sealed class RuntimeActor : ActorBase
 
         await foreach (var evt in LlmClient.StreamAsync(currentLlm, ctx, tools, ct))
         {
-            WriteOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName, turnLabel);
+            if (evt.Type != "done")
+                WriteOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName, turnLabel);
             if (evt.Type == "done")
                 break;
             if (evt.Type == "error")
@@ -137,7 +165,10 @@ public sealed class RuntimeActor : ActorBase
         };
 
     private async Task<Message[]> ExecuteToolsAsync(
-        ContentBlock[] toolCalls, Guid sessionId, CancellationToken ct)
+        ContentBlock[] toolCalls,
+        Guid sessionId,
+        CancellationToken ct
+    )
     {
         if (ToolRunner is null)
             throw new InvalidOperationException("ToolRunner not wired");
