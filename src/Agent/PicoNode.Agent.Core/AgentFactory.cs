@@ -8,11 +8,13 @@ public sealed class AgentFactory
 {
     private readonly ActorSystem _system;
     private readonly ToolRunner _toolRunner = new();
+    private readonly string _cwd;
     private bool _withBuiltInTools;
 
-    public AgentFactory(ActorSystem system)
+    public AgentFactory(ActorSystem system, string cwd)
     {
         _system = system;
+        _cwd = cwd;
     }
 
     public AgentFactory WithBuiltInTools()
@@ -101,104 +103,38 @@ public sealed class AgentFactory
     {
         if (!_withBuiltInTools)
             return;
-        foreach (var (tool, handler) in BuiltInToolDefs)
+        foreach (var (tool, handler) in ToolDefs())
             _toolRunner.Add(tool, handler);
     }
 
     private void RegisterBuiltInTools(Agent agent)
     {
-        foreach (var (tool, handler) in BuiltInToolDefs)
+        foreach (var (tool, handler) in ToolDefs())
         {
             _system.Send(agent.Id, new AddToolCmd(tool));
             _toolRunner.Add(tool, handler);
         }
     }
 
-    private static IEnumerable<(
+    private IEnumerable<(
         Tool tool,
         Func<Dictionary<string, object?>, CancellationToken, Task<string>> handler
-    )> BuiltInToolDefs
+    )> ToolDefs()
     {
-        get
-        {
-            yield return (
-                Tool(
-                    "read",
-                    "Read file contents",
-                    """{"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer"}},"required":["path"]}"""
-                ),
-                async (args, ct) =>
-                {
-                    var p = Arg(args, "path");
-                    return File.Exists(p)
-                        ? await File.ReadAllTextAsync(p, ct)
-                        : $"[Error: File not found: {p}]";
-                }
-            );
-            yield return (
-                Tool(
-                    "write",
-                    "Write file contents",
-                    """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}"""
-                ),
-                async (args, ct) =>
-                {
-                    var p = Arg(args, "path");
-                    var c = Arg(args, "content");
-                    var d = Path.GetDirectoryName(p);
-                    if (d is not null)
-                        Directory.CreateDirectory(d);
-                    await File.WriteAllTextAsync(p, c, ct);
-                    return $"[Wrote {c.Length} bytes]";
-                }
-            );
-            yield return (
-                Tool(
-                    "bash",
-                    "Execute shell command",
-                    """{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}"""
-                ),
-                ToolHandlers.BashAsync
-            );
-            yield return (
-                Tool(
-                    "edit",
-                    "Precise file edits",
-                    """{"type":"object","properties":{"path":{"type":"string"},"oldText":{"type":"string"},"newText":{"type":"string"}},"required":["path","oldText","newText"]}"""
-                ),
-                ToolHandlers.EditAsync
-            );
-            yield return (
-                Tool(
-                    "grep",
-                    "Search files for patterns",
-                    """{"type":"object","properties":{"pattern":{"type":"string"}},"required":["pattern"]}"""
-                ),
-                ToolHandlers.GrepAsync
-            );
-            yield return (
-                Tool(
-                    "find",
-                    "Find files by name",
-                    """{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}"""
-                ),
-                ToolHandlers.FindAsync
-            );
-            yield return (
-                Tool(
-                    "ls",
-                    "List directory contents",
-                    """{"type":"object","properties":{"path":{"type":"string"}}}"""
-                ),
-                async (args, ct) =>
-                {
-                    var d = Arg(args, "path", ".");
-                    return Directory.Exists(d)
-                        ? string.Join("\n", Directory.GetFileSystemEntries(d))
-                        : $"[Error: Directory not found: {d}]";
-                }
-            );
-        }
+        var cwd = _cwd;
+        yield return (Tool("read", "Read file contents", ReadTool.Schema), ReadTool.Create(cwd));
+        yield return (
+            Tool("write", "Write file contents", WriteTool.Schema),
+            WriteTool.Create(cwd)
+        );
+        yield return (Tool("bash", "Execute shell command", BashTool.Schema), BashTool.Create(cwd));
+        yield return (Tool("edit", "Precise file edits", EditTool.Schema), EditTool.Create(cwd));
+        yield return (
+            Tool("grep", "Search files for patterns", GrepTool.Schema),
+            GrepTool.Create(cwd)
+        );
+        yield return (Tool("find", "Find files by name", FindTool.Schema), FindTool.Create(cwd));
+        yield return (Tool("ls", "List directory contents", LsTool.Schema), LsTool.Create(cwd));
     }
 
     private static Tool Tool(string name, string desc, string? schema) =>
@@ -209,9 +145,6 @@ public sealed class AgentFactory
             Kind = ToolKind.BuiltIn,
             InputSchema = schema,
         };
-
-    private static string Arg(Dictionary<string, object?> args, string key, string def = "") =>
-        args.GetValueOrDefault(key)?.ToString() ?? def;
 
     private static List<Llm> BuildLlms(AgentConfig config)
     {

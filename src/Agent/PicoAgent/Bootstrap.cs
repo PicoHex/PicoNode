@@ -61,7 +61,8 @@ public static class Bootstrap
             () => new SessionActor()
         ); // rebuildFactory for restart recovery
 
-        var factory = new AgentFactory(system).WithBuiltInTools();
+        var cwd = DetectWorkingDirectory(home);
+        var factory = new AgentFactory(system, cwd).WithBuiltInTools();
         factory.Register();
 
         // Try to restore existing agent from previous run
@@ -143,5 +144,24 @@ public static class Bootstrap
         var cfg = await Cfg.CreateBuilder().AddJsonFile(path).BuildAsync();
 
         return ConfigLoader.Load(cfg);
+    }
+
+    /// <summary>
+    /// Detect working directory by walking up from the base directory
+    /// to find a .git root. Falls back to HomeDir.Root.
+    /// </summary>
+    internal static string DetectWorkingDirectory(HomeDir home)
+    {
+        var dir = AppContext.BaseDirectory;
+        while (dir is not null)
+        {
+            if (Directory.Exists(Path.Combine(dir, ".git")))
+                return dir;
+            var parent = Path.GetDirectoryName(dir);
+            if (parent == dir || parent is null)
+                break;
+            dir = parent;
+        }
+        return home.Root;
     }
 }

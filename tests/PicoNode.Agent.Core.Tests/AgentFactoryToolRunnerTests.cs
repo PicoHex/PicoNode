@@ -7,12 +7,46 @@ namespace PicoNode.Agent.Core.Tests;
 public sealed class AgentFactoryToolRunnerTests
 {
     [Test]
+    public async Task ToolRunner_ResolvesRelativePathsAgainstCwd()
+    {
+        var tmp = Path.Combine(
+            Path.GetTempPath(),
+            "pico-agent-factory-" + Guid.NewGuid().ToString("N")[..8]
+        );
+        Directory.CreateDirectory(tmp);
+        try
+        {
+            var store = new InMemoryEventStore();
+            var system = new ActorSystem(store);
+            var factory = new AgentFactory(system, tmp).WithBuiltInTools();
+            factory.Register();
+            factory.EnsureBuiltInToolHandlers();
+            var runner = factory.GetToolRunner();
+
+            // write a file using relative path (resolved against cwd)
+            await runner.ExecuteAsync(
+                "write",
+                new Dictionary<string, object?> { ["path"] = "test.txt", ["content"] = "hello" },
+                CancellationToken.None
+            );
+
+            var writtenPath = Path.Combine(tmp, "test.txt");
+            await Assert.That(File.Exists(writtenPath)).IsTrue();
+            await Assert.That(await File.ReadAllTextAsync(writtenPath)).IsEqualTo("hello");
+        }
+        finally
+        {
+            Directory.Delete(tmp, true);
+        }
+    }
+
+    [Test]
     public async Task ToolRunner_HasHandlers_EvenWithoutBuildAsync()
     {
         // ── Arrange: factory with built-in tools, but skip BuildAsync ──
         var store = new InMemoryEventStore();
         var system = new ActorSystem(store);
-        var factory = new AgentFactory(system).WithBuiltInTools();
+        var factory = new AgentFactory(system, Directory.GetCurrentDirectory()).WithBuiltInTools();
         factory.Register();
 
         // Simulate restore: call EnsureBuiltInToolHandlers without BuildAsync
@@ -41,7 +75,7 @@ public sealed class AgentFactoryToolRunnerTests
     {
         var store = new InMemoryEventStore();
         var system = new ActorSystem(store);
-        var factory = new AgentFactory(system).WithBuiltInTools();
+        var factory = new AgentFactory(system, Directory.GetCurrentDirectory()).WithBuiltInTools();
         factory.Register();
         factory.EnsureBuiltInToolHandlers();
         var runner = factory.GetToolRunner();

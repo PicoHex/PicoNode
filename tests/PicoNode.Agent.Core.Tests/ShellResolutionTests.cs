@@ -8,7 +8,7 @@ public sealed class ShellResolutionTests
     [Test]
     public async Task GetShellConfig_Windows_PrefersBash()
     {
-        var (shell, args) = ToolHandlers.GetShellConfig();
+        var (shell, args) = BashTool.GetShellConfig();
 
         if (OperatingSystem.IsWindows())
         {
@@ -26,7 +26,7 @@ public sealed class ShellResolutionTests
     [Test]
     public async Task GetShellConfig_Fallback_ReturnsWorkingShell()
     {
-        var (shell, _) = ToolHandlers.GetShellConfig();
+        var (shell, _) = BashTool.GetShellConfig();
 
         // Shell must exist on disk
         await Assert

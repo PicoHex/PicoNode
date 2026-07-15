@@ -1,7 +1,7 @@
 namespace PicoNode.Agent.Core.Tests;
 
 /// <summary>
-/// TDD: grep/find tools — delegate to system shell, cross-platform.
+/// TDD: grep/find tools — native C# implementations.
 /// </summary>
 public sealed class GrepFindToolTests
 {
@@ -34,10 +34,8 @@ public sealed class GrepFindToolTests
         var path = FilePath("a.txt");
         await File.WriteAllTextAsync(path, "hello world\nfoo bar\n");
 
-        var result = await ToolHandlers.GrepAsync(
-            new() { ["pattern"] = "hello", ["path"] = _tmp },
-            CancellationToken.None
-        );
+        var handler = GrepTool.Create(_tmp);
+        var result = await handler(new() { ["pattern"] = "hello" }, CancellationToken.None);
 
         await Assert.That(result).Contains("hello world");
     }
@@ -48,18 +46,17 @@ public sealed class GrepFindToolTests
         var path = FilePath("a.txt");
         await File.WriteAllTextAsync(path, "foo\n");
 
-        var result = await ToolHandlers.GrepAsync(
-            new() { ["pattern"] = "xyz", ["path"] = _tmp },
-            CancellationToken.None
-        );
+        var handler = GrepTool.Create(_tmp);
+        var result = await handler(new() { ["pattern"] = "xyz" }, CancellationToken.None);
 
-        await Assert.That(result).Contains("No matches");
+        await Assert.That(result).Contains("[No matches]");
     }
 
     [Test]
     public async Task Grep_DirectoryNotFound_ReturnsError()
     {
-        var result = await ToolHandlers.GrepAsync(
+        var handler = GrepTool.Create(_tmp);
+        var result = await handler(
             new() { ["pattern"] = "x", ["path"] = "/nonexistent" },
             CancellationToken.None
         );
@@ -75,10 +72,8 @@ public sealed class GrepFindToolTests
         await File.WriteAllTextAsync(FilePath("hello.txt"), "");
         await File.WriteAllTextAsync(FilePath("world.md"), "");
 
-        var result = await ToolHandlers.FindAsync(
-            new() { ["name"] = "*.txt", ["path"] = _tmp },
-            CancellationToken.None
-        );
+        var handler = FindTool.Create(_tmp);
+        var result = await handler(new() { ["pattern"] = "*.txt" }, CancellationToken.None);
 
         await Assert.That(result).Contains("hello.txt");
         await Assert.That(result).DoesNotContain("world.md");
@@ -87,19 +82,18 @@ public sealed class GrepFindToolTests
     [Test]
     public async Task Find_NoMatch_ReturnsEmptyMessage()
     {
-        var result = await ToolHandlers.FindAsync(
-            new() { ["name"] = "nonexistent", ["path"] = _tmp },
-            CancellationToken.None
-        );
+        var handler = FindTool.Create(_tmp);
+        var result = await handler(new() { ["pattern"] = "nonexistent*" }, CancellationToken.None);
 
-        await Assert.That(result).Contains("No files found");
+        await Assert.That(result).Contains("[No files found]");
     }
 
     [Test]
     public async Task Find_DirectoryNotFound_ReturnsError()
     {
-        var result = await ToolHandlers.FindAsync(
-            new() { ["name"] = "*.txt", ["path"] = "/nonexistent" },
+        var handler = FindTool.Create(_tmp);
+        var result = await handler(
+            new() { ["pattern"] = "*.txt", ["path"] = "/nonexistent" },
             CancellationToken.None
         );
 
