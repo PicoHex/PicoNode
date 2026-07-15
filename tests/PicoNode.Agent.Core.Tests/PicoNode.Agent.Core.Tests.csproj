@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Agent\PicoNode.Agent.Core\PicoNode.Agent.Core.csproj" />
+    <ProjectReference Include="..\..\src\Agent\PicoAgent\PicoAgent.csproj" />
     <ProjectReference Include="..\..\src\Actor\PicoNode.Actor\PicoNode.Actor.csproj" />
     <PackageReference Include="TUnit" />
     <PackageReference Include="PicoLog.Abs" />

@@ -51,11 +51,15 @@ public static class Bootstrap
             scope.GetService(typeof(PicoNode.Agent.Domain.ILlmClient))!;
 
         // Register SessionActor on session system
-        sessionSystem.Register<SessionActor>(cmd => cmd switch
-        {
-            StartSession c => new SessionActor(c),
-            _ => throw new InvalidOperationException(),
-        });
+        sessionSystem.Register<SessionActor>(
+            cmd =>
+                cmd switch
+                {
+                    StartSession c => new SessionActor(c),
+                    _ => throw new InvalidOperationException(),
+                },
+            () => new SessionActor()
+        ); // rebuildFactory for restart recovery
 
         var factory = new AgentFactory(system).WithBuiltInTools();
         factory.Register();
@@ -67,9 +71,11 @@ public static class Bootstrap
         {
             Console.WriteLine($"[PicoAgent] Found saved agent ID: {savedId}");
             agent = await system.GetAgentAsync<DomainAgent>(savedId.Value);
-            Console.WriteLine(agent is not null
-                ? $"[PicoAgent] Restored agent {savedId}"
-                : $"[PicoAgent] Agent {savedId} not found in store — creating new");
+            Console.WriteLine(
+                agent is not null
+                    ? $"[PicoAgent] Restored agent {savedId}"
+                    : $"[PicoAgent] Agent {savedId} not found in store — creating new"
+            );
         }
         else
         {
@@ -81,11 +87,13 @@ public static class Bootstrap
         await home.SaveAgentIdAsync(agent.Id);
 
         // Create Runtime actor asynchronously
-        system.Register<RuntimeActor>(cmd => cmd switch
-        {
-            NoOpCmd => new RuntimeActor(),
-            _ => throw new InvalidOperationException(),
-        });
+        system.Register<RuntimeActor>(cmd =>
+            cmd switch
+            {
+                NoOpCmd => new RuntimeActor(),
+                _ => throw new InvalidOperationException(),
+            }
+        );
         var runtime = await system.CreateAsync<RuntimeActor>(new NoOpCmd());
         runtime.LlmClient = llmAdapter;
         runtime.ToolRunner = factory.GetToolRunner();

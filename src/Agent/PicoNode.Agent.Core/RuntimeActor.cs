@@ -89,6 +89,18 @@ public sealed class RuntimeActor : ActorBase
                 if (toolCalls.Length == 0)
                     break;
 
+                // Rewrite ContentBlock.Id to frontend-compatible format:
+                // "{turnLabel}-{llmIndex}" → "{round}-{llmIndex}"  (e.g., "1-0")
+                var round = iteration + 1;
+                foreach (var tc in toolCalls)
+                {
+                    if (string.IsNullOrEmpty(tc.Id))
+                        continue;
+                    var dashIdx = tc.Id.LastIndexOf('-');
+                    var toolIndex = dashIdx >= 0 ? tc.Id[(dashIdx + 1)..] : tc.Id;
+                    tc.Id = $"{round}-{toolIndex}";
+                }
+
                 WriteOutput(
                     "tool_call",
                     $"executing {toolCalls.Length} tool(s)",
@@ -108,6 +120,7 @@ public sealed class RuntimeActor : ActorBase
             }
 
             WriteOutput("done", null, null, null, turnId);
+            OutputWriter?.Complete();
         }
         catch (OperationCanceledException) when (!StopToken.IsCancellationRequested)
         {
@@ -143,8 +156,7 @@ public sealed class RuntimeActor : ActorBase
 
         await foreach (var evt in LlmClient.StreamAsync(currentLlm, ctx, tools, ct))
         {
-            if (evt.Type != "done")
-                WriteOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName, turnLabel);
+            WriteOutput(evt.Type, evt.Content, evt.ToolCallId, evt.ToolName, turnLabel);
             if (evt.Type == "done")
                 break;
             if (evt.Type == "error")
@@ -193,7 +205,7 @@ public sealed class RuntimeActor : ActorBase
         {
             toolResult = $"[ToolError: {ex.GetType().Name}] {ex.Message}";
         }
-        WriteOutput("tool_result", toolResult, tc.Id, tc.Name, null);
+        WriteOutput("tool_result", toolResult, tc.Id, tc.Name, turnId: null);
         return new Message
         {
             Role = "toolResult",
