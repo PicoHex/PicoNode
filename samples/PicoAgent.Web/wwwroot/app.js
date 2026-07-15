@@ -375,12 +375,12 @@ async function sendMessage(overrideText) {
                         currentTextSeg.classList.remove('rendered');
                     }
                     else if (evt.type === 'thinking') { if (!thinkChk.checked) continue; if (!thinkBlock) { thinkBlock = document.createElement('details'); thinkBlock.className = 'thinking'; thinkBlock.open = true; thinkBlock.innerHTML = '<summary>thinking...</summary><div class="think-content"></div>'; msgContent.appendChild(thinkBlock); } rawThinking += evt.content; thinkBlock.querySelector('.think-content').textContent = rawThinking; saveThinking(currentSession, streamMsgIndex, rawThinking); }
-                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => renderAllSegments(msgContent), 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); } if (thinkBlock) { thinkBlock.remove(); thinkBlock = null; } llmRound++; }
+                    else if (evt.type === 'done') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); setTimeout(() => renderAllSegments(msgContent), 0); if (rawThinking && thinkBlock) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; thinkBlock.querySelector('summary').textContent = ''; } thinkBlock = null; llmRound++; }
                     else if (evt.type === 'tool_call_start') {
                         if (currentTextSeg) { finalizeTextSeg(currentTextSeg); currentTextSeg = null; } streamDot.style.display = 'none';
                         segStart = rawText.length;
                         // New LLM turn — flush thinking from previous turn
-                        if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.remove(); }
+                        if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; thinkBlock.querySelector('summary').textContent = ''; }
                         thinkingPhase++; rawThinking = '';
                         // Create tool-call block first, then placeholder for next iteration's thinking
                         const tid = `${llmRound}-${evt.toolCallId}`;
@@ -473,7 +473,7 @@ async function sendMessage(overrideText) {
                                     summary.innerHTML = prefix + '🔧 <strong>' + name + '</strong>' + argsHtml;
                                 }
                             }
-                            if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.remove(); }
+                            if (thinkBlock && rawThinking) { thinkBlock.querySelector('.think-content').innerHTML = marked.parse(rawThinking); saveThinking(currentSession, streamMsgIndex, rawThinking); thinkBlock.open = false; thinkBlock.querySelector('summary').textContent = ''; }
                         }
                     }
                     else if (evt.type === 'error') { streamDot.style.display = 'none'; if (currentTextSeg) finalizeTextSeg(currentTextSeg); currentTextSeg = null; msgContent.innerHTML += '<div class="stream-error">⚠️ ' + (evt.content || evt.message || '') + '</div>'; }
