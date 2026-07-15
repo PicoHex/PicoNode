@@ -10,10 +10,12 @@ public sealed class ToolRunner : IToolRunner
     public void Add(
         Tool tool,
         Func<Dictionary<string, object?>, CancellationToken, Task<string>> handler
-    )
-    {
-        _handlers[tool.Name] = handler;
-    }
+    ) => _handlers[tool.Name] = handler;
+
+    public void Add(
+        string name,
+        Func<Dictionary<string, object?>, CancellationToken, Task<string>> handler
+    ) => _handlers[name] = handler;
 
     public async Task<string> ExecuteAsync(
         string toolName,

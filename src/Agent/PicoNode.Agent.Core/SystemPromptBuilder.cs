@@ -2,6 +2,14 @@ namespace PicoNode.Agent.Domain;
 
 public static class SystemPromptBuilder
 {
+    private const string Identity = "You are PicoAgent, an AI coding assistant.";
+    private const string ToolsHeader = "## Available Tools";
+    private const string LanguageRule =
+        "Always reply in the same language the user used. "
+        + "Think and respond in the user's language.";
+    private const string UsageInstruction =
+        "Use tools when needed. Before running a tool, tell the user which tool you're using and why.";
+
     public static string Build(
         IReadOnlyList<Tool> tools,
         List<SkillInfo>? skills = null,
@@ -16,21 +24,16 @@ public static class SystemPromptBuilder
             sb.AppendLine();
         }
 
-        sb.AppendLine("You are PicoAgent, an AI coding assistant.");
+        sb.AppendLine(Identity);
         sb.AppendLine();
-        sb.AppendLine("## Available Tools");
+        sb.AppendLine(ToolsHeader);
         sb.AppendLine();
         foreach (var t in tools)
             sb.AppendLine($"- **{t.Name}**: {t.Description}");
         sb.AppendLine();
-        sb.AppendLine(
-            "Always reply in the same language the user used. "
-                + "Think and respond in the user's language."
-        );
+        sb.AppendLine(LanguageRule);
         sb.AppendLine();
-        sb.AppendLine(
-            "Use tools when needed. Before running a tool, tell the user which tool you're using and why."
-        );
+        sb.AppendLine(UsageInstruction);
         return sb.ToString();
     }
 }

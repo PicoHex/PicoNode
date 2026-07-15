@@ -9,8 +9,20 @@ public static class GrepTool
     private const int MaxLineChars = 500;
     private const int MaxBytes = 50 * 1024;
 
-    public static string Schema =>
-        """{"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string"},"glob":{"type":"string"},"ignoreCase":{"type":"boolean"},"literal":{"type":"boolean"},"context":{"type":"integer"},"limit":{"type":"integer"}},"required":["pattern"]}""";
+    public static Tool Def =>
+        new()
+        {
+            Name = "grep",
+            Description =
+                "Search file contents for a pattern. "
+                + "Returns matching lines with file paths and line numbers. "
+                + "Supports glob filtering, case-insensitive search, literal mode, and context lines.",
+            Kind = ToolKind.BuiltIn,
+            InputSchema =
+                """{"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string"},"glob":{"type":"string"},"ignoreCase":{"type":"boolean"},"literal":{"type":"boolean"},"context":{"type":"integer"},"limit":{"type":"integer"}},"required":["pattern"]}""",
+        };
+
+    public static string Schema => Def.InputSchema!;
 
     public static Func<Dictionary<string, object?>, CancellationToken, Task<string>> Create(
         string cwd

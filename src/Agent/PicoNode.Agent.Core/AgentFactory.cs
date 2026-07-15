@@ -103,48 +103,37 @@ public sealed class AgentFactory
     {
         if (!_withBuiltInTools)
             return;
-        foreach (var (tool, handler) in ToolDefs())
-            _toolRunner.Add(tool, handler);
+        var cwd = _cwd;
+        _toolRunner.Add("read", ReadTool.Create(cwd));
+        _toolRunner.Add("write", WriteTool.Create(cwd));
+        _toolRunner.Add("bash", BashTool.Create(cwd));
+        _toolRunner.Add("edit", EditTool.Create(cwd));
+        _toolRunner.Add("grep", GrepTool.Create(cwd));
+        _toolRunner.Add("find", FindTool.Create(cwd));
+        _toolRunner.Add("ls", LsTool.Create(cwd));
     }
 
     private void RegisterBuiltInTools(Agent agent)
     {
-        foreach (var (tool, handler) in ToolDefs())
-        {
-            _system.Send(agent.Id, new AddToolCmd(tool));
-            _toolRunner.Add(tool, handler);
-        }
+        var cwd = _cwd;
+        AddTool(agent, ReadTool.Def, ReadTool.Create(cwd));
+        AddTool(agent, WriteTool.Def, WriteTool.Create(cwd));
+        AddTool(agent, BashTool.Def, BashTool.Create(cwd));
+        AddTool(agent, EditTool.Def, EditTool.Create(cwd));
+        AddTool(agent, GrepTool.Def, GrepTool.Create(cwd));
+        AddTool(agent, FindTool.Def, FindTool.Create(cwd));
+        AddTool(agent, LsTool.Def, LsTool.Create(cwd));
     }
 
-    private IEnumerable<(
+    private void AddTool(
+        Agent agent,
         Tool tool,
         Func<Dictionary<string, object?>, CancellationToken, Task<string>> handler
-    )> ToolDefs()
+    )
     {
-        var cwd = _cwd;
-        yield return (Tool("read", "Read file contents", ReadTool.Schema), ReadTool.Create(cwd));
-        yield return (
-            Tool("write", "Write file contents", WriteTool.Schema),
-            WriteTool.Create(cwd)
-        );
-        yield return (Tool("bash", "Execute shell command", BashTool.Schema), BashTool.Create(cwd));
-        yield return (Tool("edit", "Precise file edits", EditTool.Schema), EditTool.Create(cwd));
-        yield return (
-            Tool("grep", "Search files for patterns", GrepTool.Schema),
-            GrepTool.Create(cwd)
-        );
-        yield return (Tool("find", "Find files by name", FindTool.Schema), FindTool.Create(cwd));
-        yield return (Tool("ls", "List directory contents", LsTool.Schema), LsTool.Create(cwd));
+        _system.Send(agent.Id, new AddToolCmd(tool));
+        _toolRunner.Add(tool, handler);
     }
-
-    private static Tool Tool(string name, string desc, string? schema) =>
-        new()
-        {
-            Name = name,
-            Description = desc,
-            Kind = ToolKind.BuiltIn,
-            InputSchema = schema,
-        };
 
     private static List<Llm> BuildLlms(AgentConfig config)
     {

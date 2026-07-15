@@ -7,8 +7,20 @@ public static class BashTool
     private const int MaxLines = 2000;
     private const int MaxBytes = 50 * 1024;
 
-    public static string Schema =>
-        """{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer"}},"required":["command"]}""";
+    public static Tool Def =>
+        new()
+        {
+            Name = "bash",
+            Description =
+                "Execute a bash command in the working directory. "
+                + "Returns stdout and stderr. Output is truncated to 2000 lines or 50KB. "
+                + "If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+            Kind = ToolKind.BuiltIn,
+            InputSchema =
+                """{"type":"object","properties":{"command":{"type":"string"},"timeout":{"type":"integer"}},"required":["command"]}""",
+        };
+
+    public static string Schema => Def.InputSchema!;
 
     public static Func<Dictionary<string, object?>, CancellationToken, Task<string>> Create(
         string cwd

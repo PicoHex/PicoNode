@@ -4,8 +4,18 @@ public static class LsTool
 {
     private const int DefaultLimit = 500;
 
-    public static string Schema =>
-        """{"type":"object","properties":{"path":{"type":"string"},"limit":{"type":"integer"}}}""";
+    public static Tool Def =>
+        new()
+        {
+            Name = "ls",
+            Description =
+                "List directory contents. Supports optional limit on number of entries returned.",
+            Kind = ToolKind.BuiltIn,
+            InputSchema =
+                """{"type":"object","properties":{"path":{"type":"string"},"limit":{"type":"integer"}}}""",
+        };
+
+    public static string Schema => Def.InputSchema!;
 
     public static Func<Dictionary<string, object?>, CancellationToken, Task<string>> Create(
         string cwd

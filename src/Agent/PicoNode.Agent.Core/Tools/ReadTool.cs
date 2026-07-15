@@ -6,6 +6,22 @@ public static class ReadTool
 {
     private const int MaxLines = 2000;
     private const int MaxBytes = 50 * 1024;
+
+    public static Tool Def =>
+        new()
+        {
+            Name = "read",
+            Description =
+                "Read file contents. Supports text files and images (jpg, png, gif, webp, bmp). "
+                + "For text files, output is truncated to 2000 lines or 50KB. "
+                + "Use offset/limit for large files.",
+            Kind = ToolKind.BuiltIn,
+            InputSchema =
+                """{"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer"}},"required":["path"]}""",
+        };
+
+    public static string Schema => Def.InputSchema!;
+
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".jpg",
@@ -15,9 +31,6 @@ public static class ReadTool
         ".webp",
         ".bmp",
     };
-
-    public static string Schema =>
-        """{"type":"object","properties":{"path":{"type":"string"},"offset":{"type":"integer"},"limit":{"type":"integer"}},"required":["path"]}""";
 
     public static Func<Dictionary<string, object?>, CancellationToken, Task<string>> Create(
         string cwd

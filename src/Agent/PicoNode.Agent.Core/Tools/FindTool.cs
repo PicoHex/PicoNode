@@ -4,8 +4,18 @@ public static class FindTool
 {
     private const int DefaultLimit = 1000;
 
-    public static string Schema =>
-        """{"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string"},"limit":{"type":"integer"}},"required":["pattern"]}""";
+    public static Tool Def =>
+        new()
+        {
+            Name = "find",
+            Description =
+                "Find files matching a glob pattern. Supports recursive directory search.",
+            Kind = ToolKind.BuiltIn,
+            InputSchema =
+                """{"type":"object","properties":{"pattern":{"type":"string"},"path":{"type":"string"},"limit":{"type":"integer"}},"required":["pattern"]}""",
+        };
+
+    public static string Schema => Def.InputSchema!;
 
     public static Func<Dictionary<string, object?>, CancellationToken, Task<string>> Create(
         string cwd

@@ -2,8 +2,19 @@ namespace PicoNode.Agent.Domain;
 
 public static class EditTool
 {
-    public static string Schema =>
-        """{"type":"object","properties":{"path":{"type":"string"},"edits":{"type":"array","items":{"type":"object","properties":{"oldText":{"type":"string"},"newText":{"type":"string"}},"required":["oldText","newText"]}}},"required":["path","edits"]}""";
+    public static Tool Def =>
+        new()
+        {
+            Name = "edit",
+            Description =
+                "Make precise file edits with exact text replacement. "
+                + "Supports multiple disjoint edits in one call via the edits array.",
+            Kind = ToolKind.BuiltIn,
+            InputSchema =
+                """{"type":"object","properties":{"path":{"type":"string"},"edits":{"type":"array","items":{"type":"object","properties":{"oldText":{"type":"string"},"newText":{"type":"string"}},"required":["oldText","newText"]}}},"required":["path","edits"]}""",
+        };
+
+    public static string Schema => Def.InputSchema!;
 
     public static Func<Dictionary<string, object?>, CancellationToken, Task<string>> Create(
         string cwd

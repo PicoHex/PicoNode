@@ -2,8 +2,18 @@ namespace PicoNode.Agent.Domain;
 
 public static class WriteTool
 {
-    public static string Schema =>
-        """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""";
+    public static Tool Def =>
+        new()
+        {
+            Name = "write",
+            Description =
+                "Create or overwrite a file with the given content. Creates parent directories as needed.",
+            Kind = ToolKind.BuiltIn,
+            InputSchema =
+                """{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}""",
+        };
+
+    public static string Schema => Def.InputSchema!;
 
     public static Func<Dictionary<string, object?>, CancellationToken, Task<string>> Create(
         string cwd
