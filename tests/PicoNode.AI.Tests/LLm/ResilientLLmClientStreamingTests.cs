@@ -23,7 +23,7 @@ public class ResilientLLmClientStreamingTests
             {
                 Index = 0,
                 Delta = "first",
-                Partial = new Message { Role = "assistant" },
+                Partial = new Message { Role = MessageRole.Assistant },
             };
             await neverComplete.Task.WaitAsync(producerCt);
 #pragma warning disable CS0162
@@ -31,7 +31,7 @@ public class ResilientLLmClientStreamingTests
             {
                 Index = 1,
                 Delta = "never",
-                Partial = new Message { Role = "assistant" },
+                Partial = new Message { Role = MessageRole.Assistant },
             };
 #pragma warning restore CS0162
         }
@@ -82,7 +82,7 @@ public class ResilientLLmClientStreamingTests
             {
                 Index = 0,
                 Delta = "ok",
-                Partial = new Message { Role = "assistant" },
+                Partial = new Message { Role = MessageRole.Assistant },
             };
         }
 
@@ -124,7 +124,7 @@ public class ResilientLLmClientStreamingTests
             {
                 Index = 0,
                 Delta = "partial",
-                Partial = new Message { Role = "assistant" },
+                Partial = new Message { Role = MessageRole.Assistant },
             };
             await Task.Yield();
             throw new HttpRequestException(
@@ -197,7 +197,7 @@ public class ResilientLLmClientStreamingTests
             [
                 new Message
                 {
-                    Role = "user",
+                    Role = MessageRole.User,
                     Content = "hi",
                     Timestamp = 1,
                 },

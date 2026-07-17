@@ -36,7 +36,7 @@ public class AgentLlmAdapterBatch8Tests
         await Consume(
             adapter.StreamAsync(
                 "sys",
-                [new Message { Role = "user", Content = "hi" }],
+                [new Message { Role = MessageRole.User, Content = "hi" }],
                 "gpt-4o",
                 null,
                 CancellationToken.None
@@ -75,7 +75,7 @@ public class AgentLlmAdapterBatch8Tests
         await Consume(
             adapter.StreamAsync(
                 "sys",
-                [new Message { Role = "user", Content = "hi" }],
+                [new Message { Role = MessageRole.User, Content = "hi" }],
                 "gpt-4o",
                 null,
                 CancellationToken.None
@@ -97,7 +97,7 @@ public class AgentLlmAdapterBatch8Tests
             new AssistantMessageEvent.ToolCallStart { Index = 0, Partial = new() },
             new AssistantMessageEvent.Done
             {
-                Message = new Message { Role = "assistant", StopReason = "tool_use" },
+                Message = new Message { Role = MessageRole.Assistant, StopReason = "tool_use" },
             },
         ]);
         var router = new ProviderRouter([
@@ -132,7 +132,7 @@ public class AgentLlmAdapterBatch8Tests
             },
             new AssistantMessageEvent.Done
             {
-                Message = new Message { Role = "assistant", StopReason = "tool_use" },
+                Message = new Message { Role = MessageRole.Assistant, StopReason = "tool_use" },
             },
         ]);
         var router = new ProviderRouter([
@@ -172,7 +172,7 @@ public class AgentLlmAdapterBatch8Tests
             },
             new AssistantMessageEvent.Done
             {
-                Message = new Message { Role = "assistant", StopReason = "tool_use" },
+                Message = new Message { Role = MessageRole.Assistant, StopReason = "tool_use" },
             },
         ]);
         var router = new ProviderRouter([
@@ -201,12 +201,8 @@ public class AgentLlmAdapterBatch8Tests
         await foreach (var _ in stream) { }
     }
 
-    private sealed class CapturingClient : ILLmClient
+    private sealed class CapturingClient(Action<Model> onCall) : ILLmClient
     {
-        private readonly Action<Model> _onCall;
-
-        public CapturingClient(Action<Model> onCall) => _onCall = onCall;
-
         public async IAsyncEnumerable<AssistantMessageEvent> StreamAsync(
             Model model,
             ChatContext context,
@@ -214,21 +210,17 @@ public class AgentLlmAdapterBatch8Tests
             [EnumeratorCancellation] CancellationToken ct
         )
         {
-            _onCall(model);
+            onCall(model);
             yield return new AssistantMessageEvent.Done
             {
-                Message = new Message { Role = "assistant", StopReason = "end_turn" },
+                Message = new Message { Role = MessageRole.Assistant, StopReason = "end_turn" },
             };
             await Task.CompletedTask;
         }
     }
 
-    private sealed class ScriptedClient : ILLmClient
+    private sealed class ScriptedClient(AssistantMessageEvent[] script) : ILLmClient
     {
-        private readonly AssistantMessageEvent[] _script;
-
-        public ScriptedClient(AssistantMessageEvent[] script) => _script = script;
-
         public async IAsyncEnumerable<AssistantMessageEvent> StreamAsync(
             Model model,
             ChatContext context,
@@ -236,7 +228,7 @@ public class AgentLlmAdapterBatch8Tests
             [EnumeratorCancellation] CancellationToken ct
         )
         {
-            foreach (var e in _script)
+            foreach (var e in script)
             {
                 await Task.Yield();
                 yield return e;

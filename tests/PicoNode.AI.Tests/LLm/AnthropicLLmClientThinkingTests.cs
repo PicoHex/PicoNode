@@ -36,15 +36,15 @@ public sealed class AnthropicLLmClientThinkingTests
 
         var context = new ChatContext
         {
-            Messages = new[]
-            {
+            Messages =
+            [
                 new Message
                 {
-                    Role = "user",
+                    Role = MessageRole.User,
                     Content = "Hi",
                     Timestamp = 1,
                 },
-            },
+            ],
         };
 
         var options = new StreamOptions { ApiKey = "test-key", Reasoning = ThinkingLevel.Medium };
@@ -103,15 +103,15 @@ public sealed class AnthropicLLmClientThinkingTests
 
         var context = new ChatContext
         {
-            Messages = new[]
-            {
+            Messages =
+            [
                 new Message
                 {
-                    Role = "user",
+                    Role = MessageRole.User,
                     Content = "Hi",
                     Timestamp = 1,
                 },
-            },
+            ],
         };
 
         await foreach (var _ in client.StreamAsync(model, context, null, CancellationToken.None))
@@ -157,15 +157,15 @@ public sealed class AnthropicLLmClientThinkingTests
 
         var context = new ChatContext
         {
-            Messages = new[]
-            {
+            Messages =
+            [
                 new Message
                 {
-                    Role = "user",
+                    Role = MessageRole.User,
                     Content = "Deep thinking",
                     Timestamp = 1,
                 },
-            },
+            ],
         };
 
         var options = new StreamOptions { ApiKey = "test-key", Reasoning = ThinkingLevel.XHigh };
@@ -222,7 +222,7 @@ public sealed class AnthropicLLmClientThinkingTests
                     [
                         new Message
                         {
-                            Role = "user",
+                            Role = MessageRole.User,
                             Content = "Hi",
                             Timestamp = 1,
                         },

@@ -7,7 +7,7 @@ public class MessageSerializationTests
     {
         var msg = new Message
         {
-            Role = "user",
+            Role = MessageRole.User,
             Content = "Hello, world!",
             Timestamp = 1719000000000,
         };
@@ -16,7 +16,7 @@ public class MessageSerializationTests
         var restored = PicoJetson.JsonSerializer.Deserialize<Message>(json);
 
         await Assert.That(restored).IsNotNull();
-        await Assert.That(restored!.Role).IsEqualTo("user");
+        await Assert.That(restored!.Role).IsEqualTo(MessageRole.User);
         await Assert.That(restored.Content).IsEqualTo("Hello, world!");
     }
 
@@ -25,7 +25,7 @@ public class MessageSerializationTests
     {
         var msg = new Message
         {
-            Role = "assistant",
+            Role = MessageRole.Assistant,
             ContentBlocks = new ContentBlock[]
             {
                 new() { Type = "text", Text = "I'll help you with that." },
@@ -49,7 +49,7 @@ public class MessageSerializationTests
         var restored = PicoJetson.JsonSerializer.Deserialize<Message>(json);
 
         await Assert.That(restored).IsNotNull();
-        await Assert.That(restored!.Role).IsEqualTo("assistant");
+        await Assert.That(restored!.Role).IsEqualTo(MessageRole.Assistant);
         await Assert.That(restored.ContentBlocks!.Length).IsEqualTo(2);
         await Assert.That(restored.ContentBlocks[0].Type).IsEqualTo("text");
         await Assert.That(restored.ContentBlocks[0].Text).IsEqualTo("I'll help you with that.");
@@ -62,7 +62,7 @@ public class MessageSerializationTests
     {
         var msg = new Message
         {
-            Role = "toolResult",
+            Role = MessageRole.ToolResult,
             ToolCallId = "tc_001",
             ToolName = "read",
             ContentBlocks = new[]
@@ -77,7 +77,7 @@ public class MessageSerializationTests
         var restored = PicoJetson.JsonSerializer.Deserialize<Message>(json);
 
         await Assert.That(restored).IsNotNull();
-        await Assert.That(restored!.Role).IsEqualTo("toolResult");
+        await Assert.That(restored!.Role).IsEqualTo(MessageRole.ToolResult);
         await Assert.That(restored.ToolCallId).IsEqualTo("tc_001");
         await Assert.That(restored.IsError).IsFalse();
     }
@@ -92,7 +92,7 @@ public class MessageSerializationTests
             {
                 new Message
                 {
-                    Role = "user",
+                    Role = MessageRole.User,
                     Content = "Hi",
                     Timestamp = 1,
                 },

@@ -39,11 +39,11 @@ public class FormatConverterTests
             {
                 Index = 0,
                 Delta = "Hello",
-                Partial = new Message { Role = "assistant" },
+                Partial = new Message { Role = MessageRole.Assistant },
             },
             new AssistantMessageEvent.Done
             {
-                Message = new Message { Role = "assistant", StopReason = "end_turn" },
+                Message = new Message { Role = MessageRole.Assistant, StopReason = "end_turn" },
             },
         };
 

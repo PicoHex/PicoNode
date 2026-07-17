@@ -21,7 +21,7 @@ public class ResilientLLmClientTests
                     {
                         Index = 0,
                         Delta = "openai-response",
-                        Partial = new Message { Role = "assistant" },
+                        Partial = new Message { Role = MessageRole.Assistant },
                     }
                 )
         );
@@ -46,7 +46,7 @@ public class ResilientLLmClientTests
                     [
                         new Message
                         {
-                            Role = "user",
+                            Role = MessageRole.User,
                             Content = "Hi",
                             Timestamp = 1,
                         },

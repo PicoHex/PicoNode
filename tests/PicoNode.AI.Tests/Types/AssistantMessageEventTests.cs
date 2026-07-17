@@ -7,7 +7,7 @@ public class AssistantMessageEventTests
     {
         var partial = new Message
         {
-            Role = "assistant",
+            Role = MessageRole.Assistant,
             Model = "claude-sonnet-4",
             ContentBlocks = new[]
             {
@@ -32,7 +32,7 @@ public class AssistantMessageEventTests
     {
         var msg = new Message
         {
-            Role = "assistant",
+            Role = MessageRole.Assistant,
             ContentBlocks = new[]
             {
                 new ContentBlock { Type = "text", Text = "Done!" },
@@ -49,7 +49,7 @@ public class AssistantMessageEventTests
     {
         var msg = new Message
         {
-            Role = "assistant",
+            Role = MessageRole.Assistant,
             ErrorMessage = "Rate limited",
             StopReason = "error",
         };

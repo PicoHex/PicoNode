@@ -39,7 +39,7 @@ public sealed class OpenAILlmClientThinkingTests
                     [
                         new Message
                         {
-                            Role = "user",
+                            Role = MessageRole.User,
                             Content = "Hi",
                             Timestamp = 1,
                         },
@@ -85,7 +85,7 @@ public sealed class OpenAILlmClientThinkingTests
                     [
                         new Message
                         {
-                            Role = "user",
+                            Role = MessageRole.User,
                             Content = "Hi",
                             Timestamp = 1,
                         },

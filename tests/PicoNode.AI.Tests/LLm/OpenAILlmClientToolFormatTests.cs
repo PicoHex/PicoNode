@@ -46,13 +46,13 @@ public sealed class OpenAILlmClientToolFormatTests
             [
                 new Message
                 {
-                    Role = "user",
+                    Role = MessageRole.User,
                     Content = "hi",
                     Timestamp = 1,
                 },
                 new Message
                 {
-                    Role = "assistant",
+                    Role = MessageRole.Assistant,
                     ContentBlocks =
                     [
                         new ContentBlock
@@ -67,7 +67,7 @@ public sealed class OpenAILlmClientToolFormatTests
                 },
                 new Message
                 {
-                    Role = "toolResult",
+                    Role = MessageRole.ToolResult,
                     ToolCallId = "call_abc",
                     ToolName = "get_weather",
                     ContentBlocks = [new ContentBlock { Type = "text", Text = "sunny, 22C" }],
@@ -111,13 +111,13 @@ public sealed class OpenAILlmClientToolFormatTests
             [
                 new Message
                 {
-                    Role = "user",
+                    Role = MessageRole.User,
                     Content = "weather?",
                     Timestamp = 1,
                 },
                 new Message
                 {
-                    Role = "assistant",
+                    Role = MessageRole.Assistant,
                     ContentBlocks =
                     [
                         new ContentBlock { Type = "text", Text = "" },
@@ -170,13 +170,13 @@ public sealed class OpenAILlmClientToolFormatTests
             [
                 new Message
                 {
-                    Role = "user",
+                    Role = MessageRole.User,
                     Content = "hi",
                     Timestamp = 1,
                 },
                 new Message
                 {
-                    Role = "assistant",
+                    Role = MessageRole.Assistant,
                     ContentBlocks =
                     [
                         new ContentBlock
@@ -191,7 +191,7 @@ public sealed class OpenAILlmClientToolFormatTests
                 },
                 new Message
                 {
-                    Role = "toolResult",
+                    Role = MessageRole.ToolResult,
                     ToolCallId = "call_1",
                     ContentBlocks = [new ContentBlock { Type = "text", Text = "pong" }],
                     Timestamp = 3,

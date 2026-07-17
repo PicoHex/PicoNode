@@ -140,7 +140,7 @@ public class ResilientLLmClientResilienceTests
                     {
                         Message = new Message
                         {
-                            Role = "assistant",
+                            Role = MessageRole.Assistant,
                             ErrorMessage = "boom",
                             StopReason = "error",
                         },
@@ -335,7 +335,7 @@ public class ResilientLLmClientResilienceTests
             [
                 new Message
                 {
-                    Role = "user",
+                    Role = MessageRole.User,
                     Content = "hi",
                     Timestamp = 1,
                 },
@@ -347,7 +347,7 @@ public class ResilientLLmClientResilienceTests
         {
             Index = 0,
             Delta = string.Empty,
-            Partial = new Message { Role = "assistant" },
+            Partial = new Message { Role = MessageRole.Assistant },
         };
 
     private static async IAsyncEnumerable<T> AsyncEnum<T>(T item)
