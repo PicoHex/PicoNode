@@ -146,7 +146,7 @@ public sealed class OpenAILlmClient : ILLmClient
             };
         }
 
-        var msg = new OpenAiMessage { Role = RoleToString(m.Role) };
+        var msg = new OpenAiMessage { Role = m.Role.ToRoleString() };
 
         if (m.Role == MessageRole.User)
         {
@@ -211,15 +211,6 @@ public sealed class OpenAILlmClient : ILLmClient
         sb.Append('}');
         return sb.ToString();
     }
-
-    private static string RoleToString(MessageRole role) => role switch
-    {
-        MessageRole.User => "user",
-        MessageRole.Assistant => "assistant",
-        MessageRole.ToolResult => "toolResult",
-        MessageRole.System => "system",
-        _ => "user"
-    };
 
     private static void AppendValue(StringBuilder sb, object? value)
     {
