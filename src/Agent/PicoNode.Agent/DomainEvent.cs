@@ -20,4 +20,9 @@ namespace PicoNode.Agent.Domain;
 [PicoDerivedType(typeof(KnowledgeAccumulated), "KnowledgeAccumulated")]
 [PicoDerivedType(typeof(SystemPromptEvolved), "SystemPromptEvolved")]
 [PicoDerivedType(typeof(AgentDeleted), "AgentDeleted")]
+[PicoDerivedType(typeof(SessionStarted), "SessionStarted")]
+[PicoDerivedType(typeof(MessageAppended), "MessageAppended")]
+[PicoDerivedType(typeof(CompactionExecuted), "CompactionExecuted")]
+[PicoDerivedType(typeof(SessionRenamed), "SessionRenamed")]
+[PicoDerivedType(typeof(SessionDeleted), "SessionDeleted")]
 public abstract record DomainEvent : IDomainEvent;
