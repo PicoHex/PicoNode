@@ -1,6 +1,7 @@
 namespace PicoNode.Agent.Domain;
 
 // ── AgentProcessManager events ──
+// [PicoDerivedType] registrations in DomainEvent.cs
 public sealed record PmAgentCreationValidated(string Name, Guid LlmId) : DomainEvent;
 public sealed record PmAgentCreationCompleted(Guid AgentId) : DomainEvent;
 public sealed record PmAgentDeletionStarted(Guid AgentId) : DomainEvent;

@@ -106,6 +106,58 @@ public sealed class ProcessManagerTests
     }
 
     [Test]
+    public async Task RuntimeActor_RunTurn_AppendsMessagesToSession()
+    {
+        var store = new InMemoryEventStore();
+        var system = new ActorSystem(store);
+
+        system.Register<LlmActor>(cmd => cmd switch
+        {
+            CreateLlm c => new LlmActor(c),
+            _ => throw new InvalidOperationException(),
+        });
+        system.Register<Domain.Agent>(cmd => cmd switch
+        {
+            CreateAgent c => new Domain.Agent(c),
+            _ => throw new InvalidOperationException(),
+        });
+        system.Register<SessionActor>(cmd => cmd switch
+        {
+            StartSession c => new SessionActor(c),
+            _ => throw new InvalidOperationException(),
+        });
+        system.Register<RuntimeActor>(_ => new RuntimeActor());
+
+        var llm = await system.CreateAsync<LlmActor>(new CreateLlm(
+            "openai", "gpt-4o", "sk-test", "https://api.openai.com/v1",
+            AiApiFormat.OpenAIChatCompletions, false));
+
+        var agent = await system.CreateAsync<Domain.Agent>(
+            new CreateAgent("TestAgent", llm.Id));
+
+        var session = await system.CreateAsync<SessionActor>(
+            new StartSession("Test Session"));
+
+        // Create and init runtime
+        var runtime = await system.CreateAsync<RuntimeActor>(
+            new InitRuntimeCmd(agent.Id, session.Id));
+        system.Send(runtime.Id, new InitRuntimeCmd(agent.Id, session.Id));
+
+        // Send RunTurn and wait for completion via AskAsync
+        await system.AskAsync<object?>(runtime.Id, new RunTurnCmd("Hello"));
+
+        // Verify session has both user message and assistant response
+        var ctx = await system.AskAsync<SessionContext>(session.Id, new GetContextQuery());
+        await Assert.That(ctx.Messages).IsNotNull();
+        await Assert.That(ctx.Messages.Count).IsEqualTo(2);
+        await Assert.That(ctx.Messages[0].Role).IsEqualTo(MessageRole.User);
+        await Assert.That(ctx.Messages[0].Content).IsEqualTo("Hello");
+        await Assert.That(ctx.Messages[1].Role).IsEqualTo(MessageRole.Assistant);
+        await Assert.That(ctx.Messages[1].Content).IsEqualTo("Echo: Hello");
+        await Assert.That(ctx.Messages[1].Sender).IsNotNull();
+    }
+
+    [Test]
     public async Task RuntimeActor_Init_StoresIds()
     {
         var store = new InMemoryEventStore();

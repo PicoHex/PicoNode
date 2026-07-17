@@ -1,6 +1,7 @@
 namespace PicoNode.Agent.Domain;
 
 // ── LlmProcessManager events ──
+// [PicoDerivedType] registrations in DomainEvent.cs
 public sealed record PmLlmDeletionStarted(Guid LlmId) : DomainEvent;
 public sealed record PmLlmDeletionCompleted : DomainEvent;
 public sealed record PmSystemLlmChangeStarted(Guid LlmId) : DomainEvent;

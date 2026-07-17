@@ -1,6 +1,7 @@
 namespace PicoNode.Agent.Domain;
 
 // ── SessionProcessManager events ──
+// [PicoDerivedType] registrations in DomainEvent.cs
 public sealed record PmSessionCreationStarted(string Name, Guid AgentId) : DomainEvent;
 public sealed record PmSessionActorCreated(Guid SessionId) : DomainEvent;
 public sealed record PmRuntimeActorCreated(Guid SessionId) : DomainEvent;
