@@ -25,7 +25,7 @@ public sealed class LlmClientAdapterToolTests
             ReceivedTools = context.Tools;
             yield return new AssistantMessageEvent.Done
             {
-                Message = new Message { Role = "assistant", StopReason = "end_turn" },
+                Message = new Message { Role = MessageRole.Assistant, StopReason = "end_turn" },
             };
         }
     }
@@ -65,7 +65,7 @@ public sealed class LlmClientAdapterToolTests
 
         var context = new List<Message>
         {
-            new() { Role = "user", Content = "hi" },
+            new() { Role = MessageRole.User, Content = "hi" },
         };
 
         await foreach (var _ in adapter.StreamAsync(llm, context, tools, CancellationToken.None))

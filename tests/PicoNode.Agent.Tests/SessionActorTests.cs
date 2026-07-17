@@ -18,7 +18,7 @@ public sealed class SessionActorTests
     {
         return new Message
         {
-            Role = "user",
+            Role = MessageRole.User,
             Content = content,
             ContentBlocks = [new ContentBlock { Type = "text", Text = content }],
             Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
@@ -29,7 +29,7 @@ public sealed class SessionActorTests
     {
         return new Message
         {
-            Role = "assistant",
+            Role = MessageRole.Assistant,
             Content = content,
             ContentBlocks = [new ContentBlock { Type = "text", Text = content }],
             Sender = new Sender(Guid.CreateVersion7(), senderName),
@@ -78,7 +78,7 @@ public sealed class SessionActorTests
         var session = await system.CreateAsync<SessionActor>(new StartSession("Chat"));
 
         var msg = MakeUserMsg("test");
-        msg.Role = "assistant";
+        msg.Role = MessageRole.Assistant;
         msg.Sender = null;
 
         // This should throw DomainInvariantException when processed

@@ -55,7 +55,7 @@ public sealed class OpenAILlmClient : ILLmClient
             {
                 Message = new Message
                 {
-                    Role = "assistant",
+                    Role = MessageRole.Assistant,
                     ErrorMessage = errorMessage,
                     StopReason = "error",
                 },
@@ -131,7 +131,7 @@ public sealed class OpenAILlmClient : ILLmClient
 
     private static OpenAiMessage ToOpenAiMessage(Message m)
     {
-        if (m.Role == "toolResult")
+        if (m.Role == MessageRole.ToolResult)
         {
             var text =
                 m.ContentBlocks?.Where(cb => cb.Type == "text")
@@ -146,13 +146,13 @@ public sealed class OpenAILlmClient : ILLmClient
             };
         }
 
-        var msg = new OpenAiMessage { Role = m.Role };
+        var msg = new OpenAiMessage { Role = RoleToString(m.Role) };
 
-        if (m.Role == "user")
+        if (m.Role == MessageRole.User)
         {
             msg.Content = m.Content;
         }
-        else if (m.Role == "assistant")
+        else if (m.Role == MessageRole.Assistant)
         {
             var textBlocks = m.ContentBlocks?.Where(cb => cb.Type == "text").ToArray() ?? [];
             var toolCallBlocks =
@@ -211,6 +211,15 @@ public sealed class OpenAILlmClient : ILLmClient
         sb.Append('}');
         return sb.ToString();
     }
+
+    private static string RoleToString(MessageRole role) => role switch
+    {
+        MessageRole.User => "user",
+        MessageRole.Assistant => "assistant",
+        MessageRole.ToolResult => "toolResult",
+        MessageRole.System => "system",
+        _ => "user"
+    };
 
     private static void AppendValue(StringBuilder sb, object? value)
     {

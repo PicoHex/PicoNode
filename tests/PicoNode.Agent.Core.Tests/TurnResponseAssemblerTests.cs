@@ -13,7 +13,7 @@ public sealed class TurnResponseAssemblerTests
         asm.Handle(new StreamEvent { Type = "text", Content = "world" });
         var msg = asm.Build();
 
-        await Assert.That(msg.Role).IsEqualTo("assistant");
+        await Assert.That(msg.Role).IsEqualTo(MessageRole.Assistant);
         var textBlock = msg.ContentBlocks?.FirstOrDefault(b => b.Type == "text");
         await Assert.That(textBlock?.Text).IsEqualTo("Hello world");
         await Assert.That(asm.HasToolCalls).IsFalse();
@@ -73,7 +73,7 @@ public sealed class TurnResponseAssemblerTests
         var asm = new TurnResponseAssembler("t1");
         var msg = asm.Build();
 
-        await Assert.That(msg.Role).IsEqualTo("assistant");
+        await Assert.That(msg.Role).IsEqualTo(MessageRole.Assistant);
         await Assert.That(asm.HasToolCalls).IsFalse();
     }
 }

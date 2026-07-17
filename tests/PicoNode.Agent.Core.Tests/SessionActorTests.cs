@@ -37,13 +37,13 @@ public sealed class SessionActorTests
             new StartSession("Chat", [new Participant { AgentId = Guid.CreateVersion7(), Name = "Agent", JoinedAt = DateTime.UtcNow }]));
 
         system.Send(session.Id, new AppendMessage(
-            new MessageEntry { Message = new Message { Role = "user", Content = "hello" } }));
+            new MessageEntry { Message = new Message { Role = MessageRole.User, Content = "hello" } }));
         // Force ordering through mailbox
         await system.AskAsync<string>(session.Id, new GetSessionNameQuery());
 
         var ctx = await system.AskAsync<SessionContext>(session.Id, new GetContextQuery());
         await Assert.That(ctx.Messages).IsNotEmpty();
-        await Assert.That(ctx.Messages[0].Role).IsEqualTo("user");
+        await Assert.That(ctx.Messages[0].Role).IsEqualTo(MessageRole.User);
         await Assert.That(ctx.Messages[0].Content).IsEqualTo("hello");
     }
 
@@ -55,9 +55,9 @@ public sealed class SessionActorTests
             new StartSession("Chat", [new Participant { AgentId = Guid.CreateVersion7(), Name = "Agent", JoinedAt = DateTime.UtcNow }]));
 
         system.Send(session.Id, new AppendMessage(
-            new MessageEntry { Message = new Message { Role = "user", Content = "msg1" } }));
+            new MessageEntry { Message = new Message { Role = MessageRole.User, Content = "msg1" } }));
         system.Send(session.Id, new AppendMessage(
-            new MessageEntry { Message = new Message { Role = "user", Content = "msg2" } }));
+            new MessageEntry { Message = new Message { Role = MessageRole.User, Content = "msg2" } }));
         await system.AskAsync<string>(session.Id, new GetSessionNameQuery());
 
         var entries = await system.AskAsync<SessionTreeEntryBase[]>(

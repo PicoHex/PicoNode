@@ -44,7 +44,7 @@ public sealed class LlmClientAdapter : ILlmClient
 
         return new Message
         {
-            Role = "assistant",
+            Role = MessageRole.Assistant,
             ContentBlocks = blocks ?? [],
             StopReason = stopReason,
             ReasoningContent = reasoningContent,
@@ -151,11 +151,11 @@ public sealed class LlmClientAdapter : ILlmClient
 
         var chatContext = new NetAITypes.ChatContext
         {
-            Messages = context.Where(m => m.Role != "system").ToArray(),
+            Messages = context.Where(m => m.Role != MessageRole.System).ToArray(),
         };
 
         // Extract system prompt from context messages
-        var systemMsg = context.FirstOrDefault(m => m.Role == "system")?.Content;
+        var systemMsg = context.FirstOrDefault(m => m.Role == MessageRole.System)?.Content;
         if (systemMsg is { Length: > 0 })
             chatContext.SystemPrompt = systemMsg;
 

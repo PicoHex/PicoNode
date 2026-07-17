@@ -25,7 +25,7 @@ public static class OpenAISseParser
         var reasoningAccum = new StringBuilder();
         var message = new Message
         {
-            Role = "assistant",
+            Role = MessageRole.Assistant,
             Model = model,
             Provider = "openai",
             Api = AiApiFormat.OpenAIChatCompletions,
@@ -112,7 +112,7 @@ public static class OpenAISseParser
                             Name = name,
                             Partial = new Message
                             {
-                                Role = "assistant",
+                                Role = MessageRole.Assistant,
                                 ContentBlocks =
                                 [
                                     new ContentBlock
@@ -142,7 +142,7 @@ public static class OpenAISseParser
                             Delta = argsFrag,
                             Partial = new Message
                             {
-                                Role = "assistant",
+                                Role = MessageRole.Assistant,
                                 ContentBlocks =
                                 [
                                     new ContentBlock
@@ -191,7 +191,7 @@ public static class OpenAISseParser
                     Delta = text,
                     Partial = new Message
                     {
-                        Role = "assistant",
+                        Role = MessageRole.Assistant,
                         Model = model,
                         ContentBlocks =
                         [
@@ -232,7 +232,7 @@ public static class OpenAISseParser
                             Name = state.Name,
                             Arguments = parsed,
                         },
-                        Partial = new Message { Role = "assistant" },
+                        Partial = new Message { Role = MessageRole.Assistant },
                     };
                 }
                 toolCalls.Clear();

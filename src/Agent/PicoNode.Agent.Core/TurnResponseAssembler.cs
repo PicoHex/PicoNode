@@ -65,7 +65,7 @@ public sealed class TurnResponseAssembler
 
         return new Message
         {
-            Role = "assistant",
+            Role = MessageRole.Assistant,
             ContentBlocks = _blocks.ToArray(),
             ReasoningContent = _thinking.Length > 0 ? _thinking.ToString() : null,
             StopReason = "stop",

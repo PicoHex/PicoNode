@@ -52,7 +52,7 @@ public sealed class RuntimeActor : PicoNode.Actor.Abs.Actor
             // Append user message to session
             var userMsg = new Message
             {
-                Role = "user",
+                Role = MessageRole.User,
                 Content = c.Message,
                 ContentBlocks = [new ContentBlock { Type = "text", Text = c.Message }],
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
@@ -62,7 +62,7 @@ public sealed class RuntimeActor : PicoNode.Actor.Abs.Actor
             // Simple single-turn response
             var assistantMsg = new Message
             {
-                Role = "assistant",
+                Role = MessageRole.Assistant,
                 Content = $"Echo: {c.Message}",
                 ContentBlocks = [new ContentBlock { Type = "text", Text = $"Echo: {c.Message}" }],
                 Sender = new Sender(_agentId, config.Name),

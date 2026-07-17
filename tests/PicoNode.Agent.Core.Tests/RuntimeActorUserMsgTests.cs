@@ -95,7 +95,7 @@ public sealed class RuntimeActorUserMsgTests
 
         // ── Assert: LLM received the user message ──
         await Assert.That(receivedContext).IsNotNull();
-        var userMsgs = receivedContext!.Where(m => m.Role == "user").ToArray();
+        var userMsgs = receivedContext!.Where(m => m.Role == MessageRole.User).ToArray();
         await Assert.That(userMsgs).IsNotEmpty();
         await Assert
             .That(userMsgs.Any(m => (m.Content ?? "").Contains("你有哪些 skill?")))

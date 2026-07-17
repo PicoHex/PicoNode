@@ -69,7 +69,7 @@ public sealed class SessionActor : EventSourcedActor
         {
             ctx.Add(new Message
             {
-                Role = "system",
+                Role = MessageRole.System,
                 Content = c.Summary,
                 ContentBlocks = [new ContentBlock { Type = "text", Text = c.Summary }],
                 Timestamp = 0
@@ -83,12 +83,12 @@ public sealed class SessionActor : EventSourcedActor
     {
         switch (msg.Role)
         {
-            case "user":
+            case MessageRole.User:
                 if (msg.Sender is not null)
                     throw new DomainInvariantException("User messages must have null Sender");
                 break;
-            case "assistant":
-            case "toolResult":
+            case MessageRole.Assistant:
+            case MessageRole.ToolResult:
                 if (msg.Sender is null)
                     throw new DomainInvariantException($"'{msg.Role}' messages must have non-null Sender");
                 break;

@@ -110,7 +110,7 @@ public sealed class DynamicLLmClient : PicoNode.AI.ILLmClient
         {
             Message = new PicoNode.AI.Message
             {
-                Role = "assistant",
+                Role = MessageRole.Assistant,
                 StopReason = "end_turn",
                 ContentBlocks = [new PicoNode.AI.ContentBlock { Type = "text", Text = text }],
             },

@@ -60,7 +60,7 @@ public sealed class AnthropicLLmClient : ILLmClient
             {
                 Message = new Message
                 {
-                    Role = "assistant",
+                    Role = MessageRole.Assistant,
                     ErrorMessage = errorMessage,
                     StopReason = "error",
                 },
@@ -156,13 +156,13 @@ public sealed class AnthropicLLmClient : ILLmClient
 
     private static void AppendMessage(StringBuilder sb, Message m)
     {
-        if (m.Role == "user")
+        if (m.Role == MessageRole.User)
         {
             sb.Append("{\"role\":\"user\",\"content\":");
             AppendJsonString(sb, m.Content);
             sb.Append('}');
         }
-        else if (m.Role == "assistant")
+        else if (m.Role == MessageRole.Assistant)
         {
             sb.Append("{\"role\":\"assistant\",\"content\":[");
             if (m.ContentBlocks != null)
@@ -176,7 +176,7 @@ public sealed class AnthropicLLmClient : ILLmClient
             }
             sb.Append("]}");
         }
-        else if (m.Role == "toolResult")
+        else if (m.Role == MessageRole.ToolResult)
         {
             var text =
                 m.ContentBlocks?.Where(cb => cb.Type == "text")

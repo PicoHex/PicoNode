@@ -60,7 +60,7 @@ public sealed class RuntimeActor : ActorBase
         {
             var userMsg = new Message
             {
-                Role = "user",
+                Role = MessageRole.User,
                 Content = c.Message,
                 ContentBlocks = [new ContentBlock { Type = "text", Text = c.Message }],
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
@@ -163,7 +163,7 @@ public sealed class RuntimeActor : ActorBase
         // Don't mutate ctx — it accumulates across HandleRunTurn iterations.
         var llmCtx = new List<Message>(ctx.Count + 1)
         {
-            new() { Role = "system", Content = prompt },
+            new() { Role = MessageRole.System, Content = prompt },
         };
         llmCtx.AddRange(ctx);
 
@@ -186,7 +186,7 @@ public sealed class RuntimeActor : ActorBase
     private static Message ErrorAssistantMessage(string errorMessage) =>
         new()
         {
-            Role = "assistant",
+            Role = MessageRole.Assistant,
             StopReason = "error",
             ErrorMessage = errorMessage,
             ContentBlocks = [],
@@ -224,7 +224,7 @@ public sealed class RuntimeActor : ActorBase
         WriteOutput("tool_result", toolResult, tc.Id, tc.Name, turnId: null);
         return new Message
         {
-            Role = "toolResult",
+            Role = MessageRole.ToolResult,
             ToolCallId = tc.Id,
             ToolName = tc.Name,
             ContentBlocks = [new ContentBlock { Type = "text", Text = toolResult }],

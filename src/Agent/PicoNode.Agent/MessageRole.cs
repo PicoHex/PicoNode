@@ -1,12 +1,5 @@
 namespace PicoNode.Agent.Domain;
 
-public enum MessageRole : byte
-{
-    User = 0,
-    Assistant = 1,
-    ToolResult = 2
-}
-
 [PicoSerializable]
 public sealed class Sender
 {

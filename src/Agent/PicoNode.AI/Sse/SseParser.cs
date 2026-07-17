@@ -29,7 +29,7 @@ public static class SseParser
         var currentToolArgs = new StringBuilder();
         var message = new Message
         {
-            Role = "assistant",
+            Role = MessageRole.Assistant,
             Model = model,
             Provider = "anthropic",
             Api = AiApiFormat.AnthropicMessages,
@@ -189,7 +189,7 @@ public static class SseParser
                 case TypeError:
                     var errorMsg = new Message
                     {
-                        Role = "assistant",
+                        Role = MessageRole.Assistant,
                         ErrorMessage = root.TryGetProperty("error", out var err)
                             ? err["message"].GetString()
                             : "Unknown error",
