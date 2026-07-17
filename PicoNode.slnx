@@ -11,18 +11,28 @@
   </Folder>
   <Folder Name="/src/">
     <File Path="src\README.md" />
+  </Folder>
+  <Folder Name="/src/Network/">
     <Project Path="src/Network/PicoNode.Abs/PicoNode.Abs.csproj" />
     <Project Path="src/Network/PicoNode/PicoNode.csproj" />
+  </Folder>
+  <Folder Name="/src/Http/">
     <Project Path="src/Http/PicoNode.Http/PicoNode.Http.csproj" />
+  </Folder>
+  <Folder Name="/src/Web/">
     <Project Path="src/Web/PicoNode.Web.Session.Abs/PicoNode.Web.Session.Abs.csproj" />
     <Project Path="src/Web/PicoNode.Web/PicoNode.Web.csproj" />
     <Project Path="src/Web/PicoWeb/PicoWeb.csproj" />
     <Project Path="src/Web/Controllers.Gen/Controllers.Gen.csproj" />
     <Project Path="src/Web/PicoWeb.Gen/PicoWeb.Gen.csproj" />
+  </Folder>
+  <Folder Name="/src/Agent/">
     <Project Path="src/Agent/PicoNode.AI/PicoNode.AI.csproj" />
     <Project Path="src/Agent/PicoNode.Agent.Core/PicoNode.Agent.Core.csproj" />
     <Project Path="src/Agent/PicoAgent/PicoAgent.csproj" />
     <Project Path="src/Agent/PicoNode.Agent/PicoNode.Agent.csproj" />
+  </Folder>
+  <Folder Name="/src/Actor/">
     <Project Path="src/Actor/PicoNode.Actor.Abs/PicoNode.Actor.Abs.csproj" />
     <Project Path="src/Actor/PicoNode.Actor/PicoNode.Actor.csproj" />
   </Folder>
