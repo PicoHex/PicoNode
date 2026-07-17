@@ -72,7 +72,7 @@ public sealed class SessionActorTests
     }
 
     [Test]
-    public async Task AppendAssistantMsg_WithoutSender_Throws()
+    public async Task AppendAssistantMsg_WithoutSender_MessageNotAppended()
     {
         var system = BuildSystem();
         var session = await system.CreateAsync<SessionActor>(new StartSession("Chat"));

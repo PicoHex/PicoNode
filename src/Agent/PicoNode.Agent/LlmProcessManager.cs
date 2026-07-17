@@ -17,6 +17,8 @@ public sealed class LlmProcessManager : EventSourcedActor
 
     protected override async ValueTask OnReadyAsync()
     {
+        await base.OnReadyAsync();
+
         if (!_completed && _step > 0 && _targetId != Guid.Empty)
         {
             if (_step <= 3)

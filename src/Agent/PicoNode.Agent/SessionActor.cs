@@ -62,7 +62,7 @@ public sealed class SessionActor : EventSourcedActor
     private SessionContext BuildContext()
     {
         if (_compactions.Count == 0)
-            return new SessionContext(new List<Message>(_messages), null);
+            return new SessionContext(new List<Message>(_messages));
 
         var ctx = new List<Message>();
         foreach (var c in _compactions)
@@ -76,7 +76,7 @@ public sealed class SessionActor : EventSourcedActor
             });
         }
         ctx.AddRange(_messages.Skip(_compactions.Last().Tag));
-        return new SessionContext(ctx, null);
+        return new SessionContext(ctx);
     }
 
     private static void ValidateMessage(Message msg)
@@ -97,6 +97,13 @@ public sealed class SessionActor : EventSourcedActor
         }
     }
 
+    /// <summary>
+    /// Validate a compaction request.
+    /// <paramref name="tag"/> is the message count boundary (exclusive) up to which messages
+    /// are compressed into a summary. The first compaction compresses [0, tag).
+    /// Subsequent compressions compress from the previous tag to the new tag.
+    /// Constraints: 0 &lt; tag ≤ _messages.Count, and tag &gt; last compaction tag.
+    /// </summary>
     private void ValidateCompaction(int tag)
     {
         if (tag <= 0 || tag > _messages.Count)

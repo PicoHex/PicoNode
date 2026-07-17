@@ -146,6 +146,6 @@ public sealed class Agent : EventSourcedActor
             "medium" => ThinkingLevel.Medium,
             "high" => ThinkingLevel.High,
             "xhigh" => ThinkingLevel.XHigh,
-            _ => ThinkingLevel.XHigh,
+            _ => throw new DomainInvariantException($"Unknown ThinkingLevel: '{level}'"),
         };
 }

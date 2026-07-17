@@ -12,5 +12,5 @@ public sealed class Tool : IEquatable<Tool>
 
     public override bool Equals(object? obj) => Equals(obj as Tool);
 
-    public override int GetHashCode() => Name.GetHashCode();
+    public override int GetHashCode() => Name?.GetHashCode() ?? 0;
 }

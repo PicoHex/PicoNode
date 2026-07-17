@@ -7,7 +7,7 @@ public sealed class SessionContext
 
     public SessionContext() { }
 
-    public SessionContext(List<Message> messages, object? _ = null)
+    public SessionContext(List<Message> messages)
     {
         Messages = messages;
     }
