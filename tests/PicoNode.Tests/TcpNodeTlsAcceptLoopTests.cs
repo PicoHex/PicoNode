@@ -173,18 +173,45 @@ public sealed class TcpNodeTlsAcceptLoopTests
 
     private static X509Certificate2 CreateSelfSignedCertificate()
     {
-        using var rsa = RSA.Create(2048);
+        var rsa = RSA.Create(2048);
         var request = new CertificateRequest(
             "CN=localhost",
             rsa,
             HashAlgorithmName.SHA256,
             RSASignaturePadding.Pkcs1
         );
-        var cert = request.CreateSelfSigned(
+
+        // Add SAN extension for modern TLS (required by .NET 10 SslStream on some platforms)
+        var sanBuilder = new SubjectAlternativeNameBuilder();
+        sanBuilder.AddDnsName("localhost");
+        sanBuilder.AddIpAddress(IPAddress.Loopback);
+        sanBuilder.AddIpAddress(IPAddress.IPv6Loopback);
+        request.CertificateExtensions.Add(sanBuilder.Build());
+
+        // Add Server Authentication EKU (required by SslStream.AuthenticateAsServer)
+        request.CertificateExtensions.Add(
+            new X509EnhancedKeyUsageExtension(
+                new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") },
+                critical: true
+            )
+        );
+
+        using var cert = request.CreateSelfSigned(
             DateTimeOffset.UtcNow.AddMinutes(-1),
             DateTimeOffset.UtcNow.AddHours(1)
         );
-        return X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Pfx));
+
+        // .NET 10: CreateSelfSigned produces an ephemeral key that the platform
+        // may reject ("platform does not support ephemeral keys").
+        // Export to PFX with a password, then reload via X509CertificateLoader.LoadPkcs12
+        // (the recommended replacement for the obsolete X509Certificate2(bytes, pwd) ctor).
+        var pfx = cert.Export(X509ContentType.Pfx, "temp");
+        return X509CertificateLoader.LoadPkcs12(
+            pfx,
+            "temp",
+            X509KeyStorageFlags.Exportable,
+            loaderLimits: null!
+        );
     }
 
     private sealed class NoOpTcpHandler : ITcpConnectionHandler

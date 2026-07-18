@@ -15,7 +15,7 @@ public sealed class CodingConventionTests
     public async Task OnReceivedAsync_doc_comment_has_correct_grammar()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "ITcpConnectionHandler.cs")
+            Path.Combine(SrcPath, "Network", "PicoNode.Abs", "ITcpConnectionHandler.cs")
         );
         await Assert.That(content).DoesNotContain("a earlier");
     }
@@ -24,7 +24,7 @@ public sealed class CodingConventionTests
     public async Task NodeFaultCode_enum_values_have_XML_doc()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "NodeFaultCode.cs")
+            Path.Combine(SrcPath, "Network", "PicoNode.Abs", "NodeFaultCode.cs")
         );
         await Assert
             .That(content)
@@ -69,7 +69,7 @@ public sealed class CodingConventionTests
     public async Task TcpCloseReason_enum_values_have_XML_doc()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "TcpCloseReason.cs")
+            Path.Combine(SrcPath, "Network", "PicoNode.Abs", "TcpCloseReason.cs")
         );
         await Assert
             .That(content)
@@ -113,7 +113,7 @@ public sealed class CodingConventionTests
     public async Task NodeState_enum_values_have_XML_doc()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "NodeState.cs")
+            Path.Combine(SrcPath, "Network", "PicoNode.Abs", "NodeState.cs")
         );
         await Assert
             .That(content)
@@ -143,7 +143,7 @@ public sealed class CodingConventionTests
     public async Task UdpOverflowMode_enum_values_have_XML_doc()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "UdpOverflowMode.cs")
+            Path.Combine(SrcPath, "Network", "PicoNode.Abs", "UdpOverflowMode.cs")
         );
         await Assert
             .That(content)
@@ -161,7 +161,7 @@ public sealed class CodingConventionTests
     public async Task ITcpConnectionContext_all_members_have_XML_doc()
     {
         var content = await File.ReadAllTextAsync(
-            Path.Combine(SrcPath, "Core", "PicoNode.Abs", "ITcpConnectionContext.cs")
+            Path.Combine(SrcPath, "Network", "PicoNode.Abs", "ITcpConnectionContext.cs")
         );
         await Assert
             .That(content)
