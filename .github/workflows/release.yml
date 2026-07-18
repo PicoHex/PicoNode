@@ -39,14 +39,14 @@ jobs:
 
       - name: Pack PicoNode.Abs
         run: >
-          dotnet pack src/Core/PicoNode.Abs/PicoNode.Abs.csproj
+          dotnet pack src/Network/PicoNode.Abs/PicoNode.Abs.csproj
           -c Release -p:Version=${{ env.PACKAGE_VERSION }}
           -p:UseProjectReferences=false
           -o packages
 
       - name: Pack PicoNode
         run: >
-          dotnet pack src/Core/PicoNode/PicoNode.csproj
+          dotnet pack src/Network/PicoNode/PicoNode.csproj
           -c Release -p:Version=${{ env.PACKAGE_VERSION }}
           -p:UseProjectReferences=false
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
