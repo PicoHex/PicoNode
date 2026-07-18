@@ -60,6 +60,13 @@ jobs:
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
           -o packages
 
+      - name: Pack PicoNode.Web.Session.Abs
+        run: >
+          dotnet pack src/Web/PicoNode.Web.Session.Abs/PicoNode.Web.Session.Abs.csproj
+          -c Release -p:Version=${{ env.PACKAGE_VERSION }}
+          -p:UseProjectReferences=false
+          -o packages
+
       - name: Pack PicoNode.Web
         run: >
           dotnet pack src/Web/PicoNode.Web/PicoNode.Web.csproj
