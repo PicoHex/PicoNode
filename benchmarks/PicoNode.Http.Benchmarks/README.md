@@ -1,8 +1,8 @@
 # PicoNode.Http.Benchmarks
 
-PicoNode.Http 性能基准测试。覆盖 HTTP 路由、连接处理器和端到端管线的微基准。
+PicoNode.Http performance benchmarks. Covers HTTP routing, connection handler, and end-to-end pipeline micro-benchmarks.
 
-## 运行
+## Run
 
 ```powershell
 dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -c Release -- quick

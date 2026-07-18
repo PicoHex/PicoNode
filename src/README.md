@@ -1,14 +1,14 @@
 # src
 
-PicoNode 源代码,按模块组织:
+PicoNode source code, organized by module:
 
-| 目录 | NuGet 包 | 说明 |
+| Directory | NuGet Package | Description |
 |---|---|---|
-| `Network/PicoNode.Abs` | `PicoNode.Abs` | 核心抽象: INode, ITcpConnectionHandler, ITcpConnectionContext, IUdpDatagramHandler |
-| `Network/PicoNode` | `PicoNode` | TCP/UDP 节点实现: TcpNode, UdpNode, TLS, metrics, 连接池 |
+| `Network/PicoNode.Abs` | `PicoNode.Abs` | Core abstractions: INode, ITcpConnectionHandler, ITcpConnectionContext, IUdpDatagramHandler |
+| `Network/PicoNode` | `PicoNode` | TCP/UDP node implementation: TcpNode, UdpNode, TLS, metrics, connection pooling |
 | `Http/PicoNode.Http` | `PicoNode.Http` | HTTP/1.1, HTTP/2 (h2c), WebSocket (RFC 6455), HPACK (RFC 7541) |
-| `Web/PicoNode.Web.Session.Abs` | `PicoNode.Web.Session.Abs` | Session 抽象: ISession, ISessionStore |
-| `Web/PicoNode.Web` | `PicoNode.Web` | Web 中间件框架: 路由, CORS, 压缩, 缓存, SSE, multipart |
-| `Web/PicoWeb` | `PicoWeb` | Web 托管: WebServer = WebApp + TcpNode + DI |
-| `Web/Controllers.Gen` | (嵌入 PicoWeb) | 源生成器: 控制器方法绑定 |
-| `Web/PicoWeb.Gen` | (嵌入 PicoWeb) | 源生成器: MapMethod API 绑定 |
+| `Web/PicoNode.Web.Session.Abs` | `PicoNode.Web.Session.Abs` | Session abstractions: ISession, ISessionStore |
+| `Web/PicoNode.Web` | `PicoNode.Web` | Web middleware framework: routing, CORS, compression, caching, SSE, multipart |
+| `Web/PicoWeb` | `PicoWeb` | Web hosting: WebServer = WebApp + TcpNode + DI |
+| `Web/Controllers.Gen` | (embedded in PicoWeb) | Source generator: controller method binding |
+| `Web/PicoWeb.Gen` | (embedded in PicoWeb) | Source generator: MapMethod API binding |

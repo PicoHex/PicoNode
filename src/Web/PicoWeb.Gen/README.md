@@ -1,15 +1,15 @@
 # PicoWeb.Gen
 
-PicoWeb MapMethod 源生成器。为 `builder.MapMethods<T>()` 调用生成编译时路由绑定。
+PicoWeb MapMethod source generator. Generates compile-time route bindings for `builder.MapMethods<T>()` calls.
 
-## 包信息
+## Package Info
 
-- **嵌入于**: `PicoWeb`
+- **Embedded in**: `PicoWeb`
 - **TFM**: `netstandard2.0`
-- **类型**: Roslyn Incremental Source Generator
+- **Type**: Roslyn Incremental Source Generator
 
-## 生成规则
+## Rules
 
-| 输入 | 输出 |
+| Input | Output |
 |---|---|
-| `builder.MapMethods<MyHandler>()` | 自动发现 `MyHandler` 中以 `Map` 开头的方法,生成路由注册代码 |
+| `builder.MapMethods<MyHandler>()` | Auto-discovers methods prefixed with `Map` on `MyHandler`, generates route registration code |

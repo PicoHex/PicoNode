@@ -1,16 +1,16 @@
 # samples
 
-PicoNode 示例项目:
+PicoNode sample projects:
 
-| 项目 | 说明 |
+| Project | Description |
 |---|---|
-| `PicoNode.Samples.Echo` | TCP echo + UDP echo 服务器 |
-| `PicoNode.Samples.Http` | HTTP 服务器 (纯 HTTP) |
-| `PicoNode.Samples.Https` | HTTPS 服务器 (TLS) |
-| `PicoWeb.Samples` | Web API 服务器 (PicoWeb + DI) |
-| `PicoWeb.Samples.Abs` | Web API 抽象示例 |
+| `PicoNode.Samples.Echo` | TCP echo + UDP echo server |
+| `PicoNode.Samples.Http` | HTTP server (plain HTTP) |
+| `PicoNode.Samples.Https` | HTTPS server (TLS) |
+| `PicoWeb.Samples` | Web API server (PicoWeb + DI) |
+| `PicoWeb.Samples.Abs` | Web API abstraction sample |
 
-### 运行
+### Run
 
 ```powershell
 dotnet run --project samples/PicoNode.Samples.Echo/PicoNode.Samples.Echo.csproj

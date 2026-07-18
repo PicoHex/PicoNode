@@ -1,25 +1,25 @@
 # PicoNode
 
-PicoNode 传输层实现。提供 TcpNode 和 UdpNode,支持 TLS、metrics、连接管理。
+PicoNode transport layer implementation. Provides TcpNode and UdpNode with TLS, metrics, and connection management.
 
-## 包信息
+## Package Info
 
 - **NuGet**: `PicoNode`
 - **TFM**: `net10.0`
 - **AOT**: ✅
-- **依赖**: `PicoNode.Abs`, `PicoDI`, `PicoDI.Abs`, `PicoLog.Abs`
+- **Dependencies**: `PicoNode.Abs`, `PicoDI`, `PicoDI.Abs`, `PicoLog.Abs`
 
-## 核心类型
+## Key Types
 
-| 类型 | 说明 |
+| Type | Description |
 |---|---|
-| `TcpNode` | TCP 传输节点: accept loop, 连接数限制, keep-alive, TLS |
-| `TcpNodeOptions` | TCP 节点配置: Endpoint, SslOptions, maxConnections, drainTimeout |
-| `UdpNode` | UDP 传输节点: receive loop, datagram dispatch |
-| `TcpNodeMetrics` | TCP 传输指标: accept/reject/close 计数, 字节速率 |
-| `TcpConnection` | 单个 TCP 连接生命周期管理 |
+| `TcpNode` | TCP transport node: accept loop, connection limits, keep-alive, TLS |
+| `TcpNodeOptions` | TCP node config: Endpoint, SslOptions, maxConnections, drainTimeout |
+| `UdpNode` | UDP transport node: receive loop, datagram dispatch |
+| `TcpNodeMetrics` | TCP transport metrics: accept/reject/close counts, byte rates |
+| `TcpConnection` | Single TCP connection lifecycle management |
 
-## TLS 支持
+## TLS
 
 ```csharp
 var node = new TcpNode(new TcpNodeOptions

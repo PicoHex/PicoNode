@@ -1,3 +1,3 @@
 # PicoNode.PerfHarness
 
-PicoNode 性能回归测试。确保关键路径性能不退化。
+PicoNode performance regression tests. Ensures key paths do not degrade over time.

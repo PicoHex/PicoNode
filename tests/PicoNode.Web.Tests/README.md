@@ -1,16 +1,16 @@
 # PicoNode.Web.Tests
 
-PicoNode.Web 中间件框架测试。
+PicoNode.Web middleware framework tests.
 
-## 测试覆盖
+## Coverage
 
-- WebRouter: 精确路由 + RadixTree 参数化路由
-- CorsMiddleware: 跨域策略
-- CompressionMiddleware: gzip/deflate/brotli
-- CacheMiddleware: 缓存控制
+- WebRouter: exact routing + RadixTree parameterized routing
+- CorsMiddleware: cross-origin policies
+- CompressionMiddleware: gzip / deflate / brotli
+- CacheMiddleware: cache control
 - SecurityHeadersMiddleware: HSTS, CSP, X-Frame-Options
 - SseConnection: Server-Sent Events
-- MultipartFormDataParser: multipart/form-data 解析
-- SessionMiddleware: 会话生命周期
-- AuthMiddleware: 认证流程
-- StaticFileMiddleware: 静态文件服务
+- MultipartFormDataParser: multipart/form-data parsing
+- SessionMiddleware: session lifecycle
+- AuthMiddleware: authentication flow
+- StaticFileMiddleware: static file serving

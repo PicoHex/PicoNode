@@ -1,31 +1,31 @@
 # PicoNode.Web
 
-PicoNode Web 中间件框架。在 HTTP 层之上提供完整的 Web 应用功能。
+PicoNode Web middleware framework. Provides full web application capabilities on top of the HTTP layer.
 
-## 包信息
+## Package Info
 
 - **NuGet**: `PicoNode.Web`
 - **TFM**: `net10.0`
 - **AOT**: ✅
-- **依赖**: `PicoNode.Abs`, `PicoNode.Http`, `PicoNode.Web.Session.Abs`, `PicoDI.Abs`, `PicoLog.Abs`, `PicoCfg.Abs`
+- **Dependencies**: `PicoNode.Abs`, `PicoNode.Http`, `PicoNode.Web.Session.Abs`, `PicoDI.Abs`, `PicoLog.Abs`, `PicoCfg.Abs`
 
-## 核心类型
+## Key Types
 
-| 类型 | 说明 |
+| Type | Description |
 |---|---|
-| `WebApp` | Web 应用构建器: 中间件管道, 路由注册 |
-| `WebRouter` | Web 路由: 结合 RouteTable (精确) + RadixTree (参数化) |
-| `CorsMiddleware` | CORS 中间件 |
-| `CompressionMiddleware` | 响应压缩 (gzip, deflate, brotli) |
-| `CacheMiddleware` | 缓存控制 |
-| `SecurityHeadersMiddleware` | 安全头部 (HSTS, CSP, X-Frame-Options 等) |
-| `SseConnection` | Server-Sent Events 连接 |
-| `MultipartFormDataParser` | multipart/form-data 解析 |
-| `SessionMiddleware` | 会话中间件 |
-| `AuthMiddleware` | 认证中间件 |
-| `StaticFileMiddleware` | 静态文件服务 |
+| `WebApp` | Web application builder: middleware pipeline, route registration |
+| `WebRouter` | Web routing: combines RouteTable (exact) + RadixTree (parameterized) |
+| `CorsMiddleware` | CORS middleware |
+| `CompressionMiddleware` | Response compression (gzip, deflate, brotli) |
+| `CacheMiddleware` | Cache control |
+| `SecurityHeadersMiddleware` | Security headers (HSTS, CSP, X-Frame-Options, etc.) |
+| `SseConnection` | Server-Sent Events connection |
+| `MultipartFormDataParser` | multipart/form-data parser |
+| `SessionMiddleware` | Session middleware |
+| `AuthMiddleware` | Authentication middleware |
+| `StaticFileMiddleware` | Static file serving |
 
-## 使用
+## Usage
 
 ```csharp
 var app = new WebApp();

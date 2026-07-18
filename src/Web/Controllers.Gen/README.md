@@ -1,15 +1,15 @@
 # Controllers.Gen
 
-PicoWeb 控制器源生成器。扫描实现 `IController` 的类,自动生成路由注册代码。
+PicoWeb controller source generator. Scans classes implementing `IController` and auto-generates route registration code.
 
-## 包信息
+## Package Info
 
-- **嵌入于**: `PicoWeb`
+- **Embedded in**: `PicoWeb`
 - **TFM**: `netstandard2.0`
-- **类型**: Roslyn Incremental Source Generator
+- **Type**: Roslyn Incremental Source Generator
 
-## 生成规则
+## Rules
 
-| 输入 | 输出 |
+| Input | Output |
 |---|---|
-| `class MyController : IController` | `WebApiBuilder` 扩展方法自动注册所有 `[Route]` 方法 |
+| `class MyController : IController` | `WebApiBuilder` extension method auto-registers all `[Route]` methods |

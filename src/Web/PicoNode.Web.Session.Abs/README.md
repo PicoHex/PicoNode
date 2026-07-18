@@ -1,17 +1,17 @@
 # PicoNode.Web.Session.Abs
 
-PicoNode.Web Session 抽象层。定义会话管理的公共接口。
+Session abstraction layer for PicoNode.Web. Defines the public interfaces for session management.
 
-## 包信息
+## Package Info
 
 - **NuGet**: `PicoNode.Web.Session.Abs`
 - **TFM**: `netstandard2.0`
-- **依赖**: `Microsoft.Bcl.AsyncInterfaces`, `System.Buffers`
+- **Dependencies**: `Microsoft.Bcl.AsyncInterfaces`, `System.Buffers`
 
-## 核心类型
+## Key Types
 
-| 类型 | 说明 |
+| Type | Description |
 |---|---|
-| `ISession` | 单个会话: Id, CreatedAt, LastAccessed, 键值存储 |
-| `ISessionStore` | 会话存储: CreateAsync, GetAsync, TouchAsync, DestroyAsync |
-| `SessionOptions` | 会话配置: IdleTimeout, Cookie 选项 |
+| `ISession` | Individual session: Id, CreatedAt, LastAccessed, key-value store |
+| `ISessionStore` | Session storage: CreateAsync, GetAsync, TouchAsync, DestroyAsync |
+| `SessionOptions` | Session config: IdleTimeout, cookie options |

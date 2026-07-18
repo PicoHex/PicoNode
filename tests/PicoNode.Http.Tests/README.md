@@ -1,11 +1,11 @@
 # PicoNode.Http.Tests
 
-PicoNode.Http 协议层测试。
+PicoNode.Http protocol layer tests.
 
-## 测试覆盖
+## Coverage
 
-- HTTP/1.1 请求解析与响应序列化
-- HTTP/2 (h2c) 帧编解码、流复用
-- WebSocket 握手与帧处理 (RFC 6455)
-- HPACK 头部压缩/解压 (RFC 7541)
-- 路由匹配 (精确路径、通配符、405)
+- HTTP/1.1 request parsing and response serialization
+- HTTP/2 (h2c) frame encoding/decoding, stream multiplexing
+- WebSocket handshake and frame handling (RFC 6455)
+- HPACK header compression/decompression (RFC 7541)
+- Route matching (exact path, wildcards, 405)

@@ -1,6 +1,6 @@
 # PicoNode.E2E
 
-PicoNode 端到端测试。
+PicoNode end-to-end tests.
 
-- `SseTestServer` — SSE streaming 测试服务器
-- `test_sse_streaming.py` — Python SSE 客户端测试脚本
+- `SseTestServer` — SSE streaming test server
+- `test_sse_streaming.py` — Python SSE client test script

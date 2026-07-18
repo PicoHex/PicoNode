@@ -1,13 +1,13 @@
 # PicoNode.Smoke
 
-PicoNode 冒烟测试。验证核心功能在真实网络环境下的可用性。
+PicoNode smoke tests. Validates core functionality under real network conditions.
 
-## 测试覆盖
+## Coverage
 
-- TCP echo (IPv4/IPv6)
+- TCP echo (IPv4 / IPv6)
 - UDP echo
 - TLS TCP echo
 - TLS HTTP GET
-- TLS handshake failure 报告
-- 并发连接
-- 大负载传输
+- TLS handshake failure reporting
+- Concurrent connections
+- Large payload transfer

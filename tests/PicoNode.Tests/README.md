@@ -1,12 +1,12 @@
 # PicoNode.Tests
 
-PicoNode 核心单元测试和编码规范检查。
+PicoNode core unit tests and coding convention checks.
 
-## 测试覆盖
+## Coverage
 
-- `TcpNodeMetricsTests` — 连接/字节/速率指标
+- `TcpNodeMetricsTests` — connection/byte/rate metrics
 - `TcpNodeTlsAcceptLoopTests` — TLS accept loop
-- `TcpNodeTest` / `UdpNodeTest` — 节点生命周期
-- `CodingConventionTests` — 源代码 XML doc 规范检查
-- `TlsHandshakeReproTests` — TLS 握手回归测试 (.NET 10)
-- `PackageReferenceTests` — NuGet 依赖审计
+- `TcpNodeTest` / `UdpNodeTest` — node lifecycle
+- `CodingConventionTests` — source code XML doc convention checks
+- `TlsHandshakeReproTests` — TLS handshake regression tests (.NET 10)
+- `PackageReferenceTests` — NuGet dependency audit

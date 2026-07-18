@@ -1,25 +1,25 @@
 # PicoWeb
 
-PicoNode Web 托管层。将 WebApp 与 TcpNode 结合为完整的 WebServer,集成 DI 容器。
+PicoNode Web hosting layer. Combines WebApp and TcpNode into a full WebServer with DI container integration.
 
-## 包信息
+## Package Info
 
 - **NuGet**: `PicoWeb`
 - **TFM**: `net10.0`
 - **AOT**: ✅
-- **依赖**: `PicoNode`, `PicoNode.Web`, `PicoDI`, `PicoCfg.Abs`, `PicoJetson`
-- **嵌入**: `Controllers.Gen` (源生成器), `PicoWeb.Gen` (源生成器)
+- **Dependencies**: `PicoNode`, `PicoNode.Web`, `PicoDI`, `PicoCfg.Abs`, `PicoJetson`
+- **Embeds**: `Controllers.Gen` (source generator), `PicoWeb.Gen` (source generator)
 
-## 核心类型
+## Key Types
 
-| 类型 | 说明 |
+| Type | Description |
 |---|---|
-| `WebServer` | Web 服务器: 管理 HTTP server 生命周期, DI 集成 |
-| `WebApiBuilder` | Web API 构建器: 配置路由、中间件、服务 |
-| `WebApiApp` | Web API 应用入口 |
-| `Results` | HTTP 响应工厂: Text, Json, File, StatusCode 等 |
+| `WebServer` | Web server: manages HTTP server lifecycle, DI integration |
+| `WebApiBuilder` | Web API builder: configures routes, middleware, services |
+| `WebApiApp` | Web API application entry point |
+| `Results` | HTTP response factory: Text, Json, File, StatusCode, etc. |
 
-## 使用
+## Usage
 
 ```csharp
 var builder = WebApiBuilder.CreateEmpty();
@@ -28,11 +28,11 @@ var app = builder.Build();
 await app.StartAsync();
 ```
 
-## 源生成器
+## Source Generators
 
-PicoWeb 嵌入两个源生成器:
+PicoWeb embeds two source generators:
 
-| 生成器 | 触发条件 | 输出 |
+| Generator | Trigger | Output |
 |---|---|---|
-| `Controllers.Gen` | 实现 `IController` 的类 | 自动路由注册 |
-| `PicoWeb.Gen` | `builder.MapMethods<T>()` | 编译时路由绑定 |
+| `Controllers.Gen` | Classes implementing `IController` | Auto-generated route registration |
+| `PicoWeb.Gen` | `builder.MapMethods<T>()` calls | Compile-time route binding |
