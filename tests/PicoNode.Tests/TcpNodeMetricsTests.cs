@@ -84,7 +84,16 @@ public sealed class TcpNodeMetricsTests
 
         await handler.WaitDataReceivedAsync();
 
-        var metrics = node.GetMetrics();
+        // On ARM64, RecordBytesReceived may not be immediately visible.
+        // Retry with a short delay to allow Interlocked.Add to propagate.
+        TcpNodeMetrics metrics = default;
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            metrics = node.GetMetrics();
+            if (metrics.TotalBytesReceived >= data.Length)
+                break;
+            await Task.Delay(10);
+        }
 
         await Assert.That(metrics.TotalBytesReceived).IsGreaterThanOrEqualTo(data.Length);
     }
@@ -112,7 +121,17 @@ public sealed class TcpNodeMetricsTests
 
         await Assert.That(received).IsEqualTo(data.Length);
 
-        var metrics = node.GetMetrics();
+        // On ARM64, RecordBytesSent may not be visible to GetMetrics
+        // immediately after the remote client receives the echo.
+        // Retry with a short delay to allow Interlocked.Add to propagate.
+        TcpNodeMetrics metrics = default;
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            metrics = node.GetMetrics();
+            if (metrics.TotalBytesSent >= data.Length)
+                break;
+            await Task.Delay(10);
+        }
 
         await Assert.That(metrics.TotalBytesSent).IsGreaterThanOrEqualTo(data.Length);
     }
