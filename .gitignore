@@ -124,6 +124,7 @@ ipch/
 
 # Visual Studio Trace Files
 *.e2e
+!tests/PicoNode.E2E/
 
 # TFS 2012 Local Workspace
 $tf/
