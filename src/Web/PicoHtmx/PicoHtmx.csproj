@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+    <IsPackable>true</IsPackable>
+    <PackageId>PicoHtmx</PackageId>
+    <Description>HTML + HTMX toolkit for PicoWeb — AOT-safe HTML builder, HTMX response helpers, and server-rendered UI components.</Description>
+    <PackageTags>PicoHex;PicoNode;HTMX;HTML;AOT;Web</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PicoWeb\PicoWeb.csproj" />
+  </ItemGroup>
+</Project>
