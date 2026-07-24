@@ -4,6 +4,7 @@ global using System.IO.Pipelines;
 global using System.Net;
 global using System.Text;
 global using PicoDI.Abs;
+global using PicoLog.Abs;
 global using PicoNode.Abs;
 global using PicoNode.Http;
 global using PicoNode.Web.Internal;
