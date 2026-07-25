@@ -361,6 +361,26 @@ public sealed class ControllersGeneratorTests
     }
 
     [Test]
+    public async Task HttpGet_EmptyAttribute_UsesControllerPrefix()
+    {
+        var source = """
+            using PicoNode.Web;
+            namespace TestApp.Controllers;
+            public class TestController
+            {
+                [HttpGet]
+                public HtmlResult GetList() => new HtmlResult("ok");
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/TestController.cs");
+
+        // Should be "/api/test" not "/api/test/list"
+        await Assert.That(result).Contains("MapGet(\"/api/test\"");
+        await Assert.That(result).DoesNotContain("MapGet(\"/api/test/list\"");
+    }
+
+    [Test]
     public async Task RoutePrefix_is_api_controllers_kebab()
     {
         var source = """

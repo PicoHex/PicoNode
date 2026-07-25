@@ -149,6 +149,8 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                         var arg = attr.ArgumentList.Arguments[0].ToString();
                         return arg.Trim('"');
                     }
+                    // Attribute without path argument (e.g. [HttpGet]) → use prefix
+                    return "";
                 }
             }
         }
