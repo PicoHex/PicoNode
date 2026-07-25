@@ -84,12 +84,17 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         var routePrefix = GetRoutePrefix(classDecl, classSymbol);
 
         var isStatic = classSymbol.IsStatic;
-        var hasParameterlessCtor = classSymbol
-            .Constructors.Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+        // Prefer constructor with [SvcConstructor], otherwise first public ctor.
+        var ctor = classSymbol.Constructors
+            .Where(c => c.DeclaredAccessibility == Accessibility.Public)
+            .OrderByDescending(c => c.GetAttributes().Any(
+                a => a.AttributeClass?.Name == "SvcConstructorAttribute"))
+            .FirstOrDefault();
+        var ctorParams = ctor?.Parameters ?? default;
 
         return new ControllerModel(
             controllerName, controllerFullName, routePrefix, methods,
-            isStatic, hasParameterlessCtor);
+            isStatic, ctor, ctorParams);
     }
 
     private static string? GetHttpMethod(MethodDeclarationSyntax method, IMethodSymbol methodSymbol)
@@ -480,19 +485,35 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
         foreach (var controller in controllers)
         {
-            var fqn = controller.FullName; // e.g. "global::MyApp.Controllers.UsersController"
-            if (controller.IsStatic || !controller.HasParameterlessCtor)
-            {
-                // Skip DI registration for static classes and
-                // controllers without parameterless constructors.
-                // They must be registered manually or via [SvcConstructor].
+            var fqn = controller.FullName;
+            if (controller.IsStatic)
                 continue;
-            }
-            diCode.AppendLine(
-                "        container.Register(global::PicoDI.Abs.SvcDescriptor.Create("
-            );
+
+            diCode.AppendLine("        container.Register(global::PicoDI.Abs.SvcDescriptor.Create(");
             diCode.AppendLine($"            typeof({fqn}),");
-            diCode.AppendLine($"            static _ => new {fqn}(),");
+
+            if (controller.ConstructorParams.IsDefaultOrEmpty)
+            {
+                diCode.AppendLine($"            static _ => new {fqn}(),");
+            }
+            else
+            {
+                diCode.AppendLine("            scope =>");
+                diCode.AppendLine("            {");
+
+                var ctorArgs = new List<string>();
+                foreach (var param in controller.ConstructorParams)
+                {
+                    var paramType = param.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    var paramName = param.Name;
+                    diCode.AppendLine(
+                        $"                var __{paramName} = ({paramType})scope.GetService(typeof({paramType}))!;");
+                    ctorArgs.Add($"__{paramName}");
+                }
+                diCode.AppendLine($"                return new {fqn}({string.Join(", ", ctorArgs)});");
+                diCode.AppendLine("            },");
+            }
+
             diCode.AppendLine("            global::PicoDI.Abs.SvcLifetime.Scoped));");
             diCode.AppendLine();
         }
@@ -609,7 +630,8 @@ internal sealed class ControllerModel
     public string RoutePrefix { get; }
     public List<MethodModel> Methods { get; }
     public bool IsStatic { get; }
-    public bool HasParameterlessCtor { get; }
+    public IMethodSymbol? Constructor { get; }
+    public ImmutableArray<IParameterSymbol> ConstructorParams { get; }
 
     public ControllerModel(
         string name,
@@ -617,7 +639,8 @@ internal sealed class ControllerModel
         string routePrefix,
         List<MethodModel> methods,
         bool isStatic,
-        bool hasParameterlessCtor
+        IMethodSymbol? constructor,
+        ImmutableArray<IParameterSymbol> ctorParams
     )
     {
         Name = name;
@@ -625,7 +648,8 @@ internal sealed class ControllerModel
         RoutePrefix = routePrefix;
         Methods = methods;
         IsStatic = isStatic;
-        HasParameterlessCtor = hasParameterlessCtor;
+        Constructor = constructor;
+        ConstructorParams = ctorParams;
     }
 }
 

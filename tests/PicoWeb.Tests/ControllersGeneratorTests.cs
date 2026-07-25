@@ -437,6 +437,71 @@ public sealed class ControllersGeneratorTests
     }
 
     [Test]
+    public async Task ControllerWithParameterizedCtor_GeneratesScopedFactory()
+    {
+        var source = """
+            using PicoNode.Web;
+            namespace TestApp.Controllers;
+            public class TestController
+            {
+                private readonly HtmlResult _page;
+                public TestController(HtmlResult page) => _page = page;
+                public HtmlResult GetPage() => _page;
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/TestController.cs");
+
+        // Should generate SvcDescriptor.Create with factory delegate
+        await Assert.That(result).Contains("SvcDescriptor.Create");
+        await Assert.That(result).Contains("scope =>");
+        await Assert.That(result).Contains("scope.GetService(typeof(global::PicoNode.Web.HtmlResult))");
+        await Assert.That(result).Contains("new global::TestApp.Controllers.TestController(");
+        await Assert.That(result).Contains("SvcLifetime.Scoped");
+    }
+
+    [Test]
+    public async Task StaticController_NotRegisteredInDI()
+    {
+        var source = """
+            using PicoNode.Web;
+            namespace TestApp.Controllers;
+            public static class StaticController
+            {
+                public static HtmlResult GetPage() => new HtmlResult("ok");
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/StaticController.cs");
+
+        // Should NOT contain DI registration for StaticController
+        await Assert.That(result).DoesNotContain(
+            "SvcDescriptor.Create(typeof(global::TestApp.Controllers.StaticController)");
+        // But should still generate endpoint
+        await Assert.That(result).Contains("MapGet");
+    }
+
+    [Test]
+    public async Task ControllerWithParameterlessCtor_UsesStaticFactory()
+    {
+        var source = """
+            using PicoNode.Web;
+            namespace TestApp.Controllers;
+            public class TestController
+            {
+                public TestController() { }
+                public HtmlResult GetPage() => new HtmlResult("ok");
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/TestController.cs");
+
+        // Should use static _ => new() pattern (backward compat)
+        await Assert.That(result).Contains("static _ => new");
+        await Assert.That(result).Contains("SvcDescriptor.Create");
+    }
+
+    [Test]
     public async Task Async_Task_T_method_generates_async_lambda_with_await()
     {
         var source = """
