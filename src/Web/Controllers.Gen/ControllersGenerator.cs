@@ -293,6 +293,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 // Analyze return type before emitting the lambda so we know
                 // whether to add 'async'.
                 var retType = method.Symbol.ReturnType;
+                var returnsIWebResult = ReturnsIWebResult(retType);
                 var isVoid = retType.SpecialType == SpecialType.System_Void;
                 var isAsync = false;
                 var isAsyncVoid = false;
@@ -370,6 +371,20 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                     else
                         endpointsCode.AppendLine(
                             "                return ValueTask.FromResult(PicoWeb.Results.Empty(204));"
+                        );
+                }
+                else if (returnsIWebResult)
+                {
+                    endpointsCode.AppendLine(
+                        $"                var __result = ({resultTypeName}){awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});"
+                    );
+                    if (isAsync)
+                        endpointsCode.AppendLine(
+                            "                return __result.Execute(ctx);"
+                        );
+                    else
+                        endpointsCode.AppendLine(
+                            "                return ValueTask.FromResult(__result.Execute(ctx));"
                         );
                 }
                 else
@@ -487,6 +502,31 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             "string" or "global::System.String" => key,
             _ => $"({typeName})System.Enum.Parse(typeof({typeName}), {key})",
         };
+    }
+
+    private static bool ReturnsIWebResult(ITypeSymbol returnType)
+    {
+        if (returnType is not INamedTypeSymbol named)
+            return false;
+
+        bool ImplementsIWebResult(INamedTypeSymbol t) =>
+            t.AllInterfaces.Any(i =>
+                i.Name == "IWebResult" &&
+                i.ContainingNamespace.ToDisplayString() == "PicoNode.Web")
+            || (t.Name == "IWebResult" &&
+                t.ContainingNamespace.ToDisplayString() == "PicoNode.Web");
+
+        if (ImplementsIWebResult(named))
+            return true;
+
+        if ((named.Name is "ValueTask" or "Task") &&
+            named.TypeArguments.Length == 1 &&
+            named.TypeArguments[0] is INamedTypeSymbol inner)
+        {
+            return ImplementsIWebResult(inner);
+        }
+
+        return false;
     }
 
     private static bool IsComplexType(ITypeSymbol type)

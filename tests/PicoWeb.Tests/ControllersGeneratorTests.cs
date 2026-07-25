@@ -394,6 +394,43 @@ public sealed class ControllersGeneratorTests
         await Assert.That(result).DoesNotContain("Convert.ChangeType");
     }
 
+    [Test]
+    public async Task ControllerReturningIWebResult_GeneratesExecuteCall()
+    {
+        var source = """
+            using PicoNode.Web;
+            namespace TestApp.Controllers;
+            public class TestController
+            {
+                public HtmlResult GetPage() => new HtmlResult("<h1>Hello</h1>");
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/TestController.cs");
+
+        await Assert.That(result).Contains(".Execute(ctx)");
+        await Assert.That(result).DoesNotContain("JsonSerializer.SerializeToUtf8Bytes");
+    }
+
+    [Test]
+    public async Task ControllerReturningIWebResult_AsyncTask_GeneratesExecuteCall()
+    {
+        var source = """
+            using PicoNode.Web;
+            using System.Threading.Tasks;
+            namespace TestApp.Controllers;
+            public class TestController
+            {
+                public Task<HtmlResult> GetPage() => Task.FromResult(new HtmlResult("<h1>Hello</h1>"));
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/TestController.cs");
+
+        await Assert.That(result).Contains(".Execute(ctx)");
+        await Assert.That(result).DoesNotContain("JsonSerializer.SerializeToUtf8Bytes");
+    }
+
     private static string RunGenerator(string source, string fileName)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(
