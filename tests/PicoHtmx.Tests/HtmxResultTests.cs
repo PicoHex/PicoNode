@@ -5,15 +5,17 @@ namespace PicoHtmx.Tests;
 
 public sealed class HtmxResultTests
 {
+    private static HttpRequest CreateRequest() => new()
+    {
+        Method = "GET",
+        Target = "/",
+        Path = "/",
+    };
+
     [Test]
     public async Task HtmxResult_ReturnsHtmlWithHtmxContentType()
     {
-        var ctx = WebContext.Create(new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-            Path = "/",
-        });
+        var ctx = WebContext.Create(CreateRequest());
         var result = new HtmxResult("<div>content</div>");
 
         var response = result.Execute(ctx);
@@ -28,12 +30,7 @@ public sealed class HtmxResultTests
     [Test]
     public async Task HtmxResult_WithRedirect_AddsHxRedirectHeader()
     {
-        var ctx = WebContext.Create(new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-            Path = "/",
-        });
+        var ctx = WebContext.Create(CreateRequest());
         var result = new HtmxResult("").WithRedirect("/dashboard");
 
         var response = result.Execute(ctx);
@@ -45,12 +42,7 @@ public sealed class HtmxResultTests
     [Test]
     public async Task HtmxResult_WithTrigger_AddsHxTriggerHeader()
     {
-        var ctx = WebContext.Create(new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-            Path = "/",
-        });
+        var ctx = WebContext.Create(CreateRequest());
         var triggerJson = """{"toast":{"message":"saved"}}""";
         var result = new HtmxResult("").WithTrigger(triggerJson);
 
@@ -63,12 +55,7 @@ public sealed class HtmxResultTests
     [Test]
     public async Task HtmxResult_WithPushUrl_AddsHxPushUrlHeader()
     {
-        var ctx = WebContext.Create(new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-            Path = "/",
-        });
+        var ctx = WebContext.Create(CreateRequest());
         var result = new HtmxResult("").WithPushUrl("/new-url");
 
         var response = result.Execute(ctx);
@@ -80,12 +67,7 @@ public sealed class HtmxResultTests
     [Test]
     public async Task HtmxResult_WithRefresh_AddsHxRefreshHeader()
     {
-        var ctx = WebContext.Create(new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-            Path = "/",
-        });
+        var ctx = WebContext.Create(CreateRequest());
         var result = new HtmxResult("").WithRefresh();
 
         var response = result.Execute(ctx);
@@ -97,12 +79,7 @@ public sealed class HtmxResultTests
     [Test]
     public async Task HtmxResult_WithRetry_AddsHxRetryHeader()
     {
-        var ctx = WebContext.Create(new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-            Path = "/",
-        });
+        var ctx = WebContext.Create(CreateRequest());
         var result = new HtmxResult("").WithRetry(false);
 
         var response = result.Execute(ctx);
@@ -114,12 +91,7 @@ public sealed class HtmxResultTests
     [Test]
     public async Task HtmxResult_WithHeader_AddsCustomHeader()
     {
-        var ctx = WebContext.Create(new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-            Path = "/",
-        });
+        var ctx = WebContext.Create(CreateRequest());
         var result = new HtmxResult("").WithHeader("X-Custom", "value");
 
         var response = result.Execute(ctx);
@@ -131,12 +103,7 @@ public sealed class HtmxResultTests
     [Test]
     public async Task HtmxResult_ChainedHeaders_AllApplied()
     {
-        var ctx = WebContext.Create(new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-            Path = "/",
-        });
+        var ctx = WebContext.Create(CreateRequest());
         var result = new HtmxResult("<p>ok</p>")
             .WithRedirect("/next")
             .WithTrigger("");

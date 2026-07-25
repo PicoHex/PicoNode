@@ -52,8 +52,9 @@ public sealed class IWebResultTests
     [Test]
     public async Task RedirectResult_Permanent_Returns301()
     {
+        var ctx = WebContext.Create(CreateRequest());
         var result = new RedirectResult("/new-home", permanent: true);
-        var response = result.Execute(WebContext.Create(CreateRequest()));
+        var response = result.Execute(ctx);
 
         await Assert.That(response.StatusCode).IsEqualTo(301);
     }

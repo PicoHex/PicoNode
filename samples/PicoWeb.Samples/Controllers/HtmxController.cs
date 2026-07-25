@@ -3,6 +3,7 @@ using PicoNode.Web;
 
 namespace PicoWeb.Samples.Controllers;
 
+[ApiController]  // Works outside Controllers/ folder too
 public class HtmxController
 {
     public HtmxResult GetPage() =>

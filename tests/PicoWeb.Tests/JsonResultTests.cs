@@ -12,15 +12,17 @@ public sealed class TestDto
 
 public sealed class JsonResultTests
 {
+    private static HttpRequest CreateRequest() => new()
+    {
+        Method = "GET",
+        Target = "/",
+        Path = "/",
+    };
+
     [Test]
     public async Task JsonResult_SerializesAndReturnsJson()
     {
-        var ctx = WebContext.Create(new HttpRequest
-        {
-            Method = "GET",
-            Target = "/",
-            Path = "/",
-        });
+        var ctx = WebContext.Create(CreateRequest());
         var dto = new TestDto { Name = "Alice", Age = 30 };
         var result = new JsonResult<TestDto>(dto);
 
@@ -34,5 +36,17 @@ public sealed class JsonResultTests
         var json = Encoding.UTF8.GetString(response.Body.Span);
         await Assert.That(json).Contains("Alice");
         await Assert.That(json).Contains("30");
+    }
+
+    [Test]
+    public async Task JsonResult_Created_Returns201()
+    {
+        var ctx = WebContext.Create(CreateRequest());
+        var dto = new TestDto { Name = "Bob", Age = 25 };
+        var result = new JsonResult<TestDto>(dto, 201);
+
+        var response = result.Execute(ctx);
+
+        await Assert.That(response.StatusCode).IsEqualTo(201);
     }
 }
