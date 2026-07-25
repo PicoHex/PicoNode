@@ -34,5 +34,22 @@ PicoWeb embeds two source generators:
 
 | Generator | Trigger | Output |
 |---|---|---|
-| `Controllers.Gen` | Classes implementing `IController` | Auto-generated route registration |
+| `Controllers.Gen` | Classes in `Controllers/` folder or `[ApiController]` | Auto-generated endpoint registration + DI |
 | `PicoWeb.Gen` | `builder.MapMethods<T>()` calls | Compile-time route binding |
+
+Controllers return DTOs (auto-JSON-serialized) or `IWebResult` types (`HtmlResult`, `RedirectResult`, `JsonResult<T>`, `HtmxResult` etc.).
+`WebContext` and `CancellationToken` parameters are passed by the framework.
+
+```csharp
+public class UsersController
+{
+    public UserDto[] GetAll() => db.Users.ToArray();           // → JSON
+    public HtmlResult GetPage() => new HtmlResult("<h1>Hi</h1>"); // → HTML
+}
+```
+
+Register endpoints in startup:
+
+```csharp
+EndpointRegistrar.RegisterAll(app);  // registers all discovered controllers
+```
