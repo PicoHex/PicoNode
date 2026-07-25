@@ -83,7 +83,13 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         );
         var routePrefix = GetRoutePrefix(classDecl, classSymbol);
 
-        return new ControllerModel(controllerName, controllerFullName, routePrefix, methods);
+        var isStatic = classSymbol.IsStatic;
+        var hasParameterlessCtor = classSymbol
+            .Constructors.Any(c => c.Parameters.Length == 0 && c.DeclaredAccessibility == Accessibility.Public);
+
+        return new ControllerModel(
+            controllerName, controllerFullName, routePrefix, methods,
+            isStatic, hasParameterlessCtor);
     }
 
     private static string? GetHttpMethod(MethodDeclarationSyntax method, IMethodSymbol methodSymbol)
@@ -472,6 +478,13 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         foreach (var controller in controllers)
         {
             var fqn = controller.FullName; // e.g. "global::MyApp.Controllers.UsersController"
+            if (controller.IsStatic || !controller.HasParameterlessCtor)
+            {
+                // Skip DI registration for static classes and
+                // controllers without parameterless constructors.
+                // They must be registered manually or via [SvcConstructor].
+                continue;
+            }
             diCode.AppendLine(
                 "        container.Register(global::PicoDI.Abs.SvcDescriptor.Create("
             );
@@ -592,18 +605,24 @@ internal sealed class ControllerModel
     public string FullName { get; }
     public string RoutePrefix { get; }
     public List<MethodModel> Methods { get; }
+    public bool IsStatic { get; }
+    public bool HasParameterlessCtor { get; }
 
     public ControllerModel(
         string name,
         string fullName,
         string routePrefix,
-        List<MethodModel> methods
+        List<MethodModel> methods,
+        bool isStatic,
+        bool hasParameterlessCtor
     )
     {
         Name = name;
         FullName = fullName;
         RoutePrefix = routePrefix;
         Methods = methods;
+        IsStatic = isStatic;
+        HasParameterlessCtor = hasParameterlessCtor;
     }
 }
 
