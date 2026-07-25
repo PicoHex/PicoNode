@@ -3,6 +3,47 @@ namespace PicoWeb.Tests;
 public sealed class ControllersGeneratorTests
 {
     [Test]
+    public async Task ControllerWithWebContextParam_GeneratesCtxArg()
+    {
+        var source = """
+            using PicoNode.Web;
+            using System.Threading;
+            namespace TestApp.Controllers;
+            public class TestController
+            {
+                public HtmlResult GetPage(WebContext ctx, CancellationToken ct)
+                    => new HtmlResult("<h1>Hello</h1>");
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/TestController.cs");
+
+        await Assert.That(result).Contains("GetPage(ctx, ct)");
+        await Assert.That(result).DoesNotContain("GetService(typeof(global::PicoNode.Web.WebContext))");
+        await Assert.That(result).DoesNotContain("GetService(typeof(global::System.Threading.CancellationToken))");
+    }
+
+    [Test]
+    public async Task ControllerWithAbsoluteRoute_DoesNotDuplicatePrefix()
+    {
+        var source = """
+            using PicoNode.Web;
+            namespace TestApp.Controllers;
+            [Route("/")]
+            public class TestController
+            {
+                [HttpGet("/")]
+                public HtmlResult GetIndex() => new HtmlResult("<h1>Hello</h1>");
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/TestController.cs");
+
+        // Should produce route "/" not "//"
+        await Assert.That(result).Contains("MapGet(\"/\"");
+        await Assert.That(result).DoesNotContain("MapGet(\"//\"");
+    }
+    [Test]
     public async Task Controller_in_Controllers_folder_generates_EndpointRegistrar()
     {
         var source = """
@@ -329,7 +370,7 @@ public sealed class ControllersGeneratorTests
 
         // The handler lambda uses WebRequestHandler signature (ctx + CancellationToken),
         // not route params as lambda parameters
-        await Assert.That(result).Contains("(WebContext ctx, CancellationToken _) =>");
+        await Assert.That(result).Contains("(WebContext ctx, CancellationToken ct) =>");
         await Assert.That(result).DoesNotContain("int id");
     }
 
@@ -370,7 +411,7 @@ public sealed class ControllersGeneratorTests
         var result = RunGenerator(source, "Controllers/UsersController.cs");
 
         // Must emit 'async' on the lambda so 'await' compiles (CS4001 fix).
-        await Assert.That(result).Contains("async (WebContext ctx, CancellationToken _) =>");
+        await Assert.That(result).Contains("async (WebContext ctx, CancellationToken ct) =>");
         await Assert.That(result).Contains("await");
         // Async path should not wrap in ValueTask.FromResult — return directly.
         await Assert.That(result).DoesNotContain("ValueTask.FromResult");

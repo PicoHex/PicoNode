@@ -173,7 +173,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         }
 
         // If method name is empty after stripping prefix, omit the method path segment
-        var route = string.IsNullOrEmpty(methodName) ? "" : "/" + ToKebabCase(methodName);
+        var route = string.IsNullOrEmpty(methodName) ? "" : ToKebabCase(methodName);
         if (routeParams.Count > 0)
             route += "/" + string.Join("/", routeParams);
         return route;
@@ -286,8 +286,10 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
                 // Ensure proper separator between prefix and method route
                 var methodRoute = method.Route;
+                // Absolute route (starts with /) replaces the prefix entirely;
+                // relative routes are appended to the prefix with a slash separator.
                 var fullRoute = methodRoute.StartsWith("/")
-                    ? controller.RoutePrefix + methodRoute
+                    ? methodRoute
                     : controller.RoutePrefix + "/" + methodRoute;
 
                 // Analyze return type before emitting the lambda so we know
@@ -322,7 +324,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
                 var asyncPrefix = isAsync ? "async " : "";
                 endpointsCode.AppendLine(
-                    $"            app.{mapMethod}(\"{fullRoute}\", {asyncPrefix}(WebContext ctx, CancellationToken _) =>"
+                    $"            app.{mapMethod}(\"{fullRoute}\", {asyncPrefix}(WebContext ctx, CancellationToken ct) =>"
                 );
                 endpointsCode.AppendLine("            {");
 
@@ -334,6 +336,18 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                         SymbolDisplayFormat.FullyQualifiedFormat
                     );
                     var paramName = param.Name;
+
+                    // Special parameter types passed directly, not resolved from DI
+                    if (typeName == "global::PicoNode.Web.WebContext")
+                    {
+                        callArgs.Add("ctx");
+                        continue;
+                    }
+                    if (typeName == "global::System.Threading.CancellationToken")
+                    {
+                        callArgs.Add("ct");
+                        continue;
+                    }
 
                     if (!IsComplexType(param.Type))
                     {
