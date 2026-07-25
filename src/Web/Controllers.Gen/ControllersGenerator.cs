@@ -292,11 +292,14 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
                 // Ensure proper separator between prefix and method route
                 var methodRoute = method.Route;
-                // Absolute route (starts with /) replaces the prefix entirely;
-                // relative routes are appended to the prefix with a slash separator.
-                var fullRoute = methodRoute.StartsWith("/")
-                    ? methodRoute
-                    : controller.RoutePrefix + "/" + methodRoute;
+                // Empty method route (e.g. [HttpPost] without path arg) → use prefix as-is
+                // Absolute route (starts with /) → replaces the prefix entirely
+                // Relative route → appended with a slash separator
+                var fullRoute = string.IsNullOrEmpty(methodRoute)
+                    ? controller.RoutePrefix
+                    : methodRoute.StartsWith("/")
+                        ? methodRoute
+                        : controller.RoutePrefix + "/" + methodRoute;
 
                 // Analyze return type before emitting the lambda so we know
                 // whether to add 'async'.

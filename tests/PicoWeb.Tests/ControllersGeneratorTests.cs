@@ -322,6 +322,45 @@ public sealed class ControllersGeneratorTests
     }
 
     [Test]
+    public async Task HttpPatch_Attribute_GeneratesMapPatch()
+    {
+        var source = """
+            using PicoNode.Web;
+            namespace TestApp.Controllers;
+            public class TestController
+            {
+                [HttpPatch("{id}")]
+                public HtmlResult PatchResource(int id) => new HtmlResult("ok");
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/TestController.cs");
+
+        await Assert.That(result).Contains("app.MapPatch(");
+        await Assert.That(result).Contains("MapPatch(\"/api/test/{id}\"");
+    }
+
+    [Test]
+    public async Task HttpPost_EmptyAttribute_NoTrailingSlash()
+    {
+        var source = """
+            using PicoNode.Web;
+            namespace TestApp.Controllers;
+            public class TestController
+            {
+                [HttpPost]
+                public HtmlResult Post() => new HtmlResult("ok");
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/TestController.cs");
+
+        // Should be "/api/test" not "/api/test/"
+        await Assert.That(result).Contains("MapPost(\"/api/test\"");
+        await Assert.That(result).DoesNotContain("MapPost(\"/api/test/\"");
+    }
+
+    [Test]
     public async Task RoutePrefix_is_api_controllers_kebab()
     {
         var source = """
