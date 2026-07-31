@@ -33,6 +33,11 @@ public sealed class CompressionMiddleware
             return response;
         }
 
+        if (IsEventStream(response.Headers))
+        {
+            return response;
+        }
+
         if (response.BodyStream is not null)
         {
             if (
@@ -137,6 +142,23 @@ public sealed class CompressionMiddleware
         }
 
         return bestEncoding;
+    }
+
+    private static bool IsEventStream(HttpHeaderCollection headers)
+    {
+        if (!headers.TryGetValue(HttpHeaderNames.ContentType, out var contentType))
+        {
+            return false;
+        }
+
+        var mediaType = contentType.AsSpan();
+        var semicolon = mediaType.IndexOf(';');
+        if (semicolon >= 0)
+        {
+            mediaType = mediaType[..semicolon];
+        }
+
+        return mediaType.Trim().Equals("text/event-stream", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool HasHeader(HttpHeaderCollection headers, string name) =>

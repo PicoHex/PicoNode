@@ -416,6 +416,100 @@ public sealed class CompressionMiddlewareTests
         await Assert.That(source.DisposeCount).IsEqualTo(1);
     }
 
+    [Test]
+    public async Task Sse_response_without_content_length_skips_compression()
+    {
+        var pipe = new Pipe();
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
+        var context = CreateContext("GET", "/", "gzip");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Headers =
+                        [
+                            new KeyValuePair<string, string>("Content-Type", "text/event-stream"),
+                        ],
+                        BodyStream = pipe.Reader.AsStream(),
+                    }
+                ),
+            CancellationToken.None
+        );
+
+        await Assert.That(GetHeader(response, "Content-Encoding")).IsNull();
+        await Assert.That(response.BodyStream is CompressedReadStream).IsFalse();
+
+        // The stream must pass bytes through raw and unmodified (not gzip-wrapped).
+        await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes("data: hello\n\n"));
+        await pipe.Writer.CompleteAsync();
+        var bytes = await ReadAllBytesAsync(response.BodyStream!);
+        await Assert.That(Encoding.UTF8.GetString(bytes.Span)).IsEqualTo("data: hello\n\n");
+    }
+
+    [Test]
+    public async Task Sse_response_with_charset_parameter_skips_compression()
+    {
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
+        var context = CreateContext("GET", "/", "gzip");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Headers =
+                        [
+                            new KeyValuePair<string, string>(
+                                "Content-Type",
+                                "text/event-stream; charset=utf-8"
+                            ),
+                        ],
+                        BodyStream = Stream.Null,
+                    }
+                ),
+            CancellationToken.None
+        );
+
+        await Assert.That(GetHeader(response, "Content-Encoding")).IsNull();
+        await Assert.That(response.BodyStream is CompressedReadStream).IsFalse();
+    }
+
+    [Test]
+    public async Task Sse_response_content_type_matches_case_insensitively()
+    {
+        var middleware = new CompressionMiddleware(minimumBodySize: 0);
+        var context = CreateContext("GET", "/", "gzip");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Headers =
+                        [
+                            new KeyValuePair<string, string>("Content-Type", "Text/Event-Stream"),
+                        ],
+                        BodyStream = Stream.Null,
+                    }
+                ),
+            CancellationToken.None
+        );
+
+        await Assert.That(GetHeader(response, "Content-Encoding")).IsNull();
+        await Assert.That(response.BodyStream is CompressedReadStream).IsFalse();
+    }
+
     private static WebContext CreateContext(string method, string target, string? acceptEncoding)
     {
         var headers = new List<KeyValuePair<string, string>>();
