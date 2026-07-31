@@ -517,6 +517,22 @@ internal static class Http2StreamHandler
             | (frame.Payload.Span[2] << 8)
             | frame.Payload.Span[3];
 
+        // RFC 7540 §6.9: a WINDOW_UPDATE with increment 0 is a protocol error
+        // (stream-level → stream error; connection-level → connection error).
+        if (increment == 0)
+        {
+            if (frame.StreamId == 0)
+            {
+                await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct)
+                    .ConfigureAwait(false);
+                return true;
+            }
+
+            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct)
+                .ConfigureAwait(false);
+            return false;
+        }
+
         var state = connection.UserState as ConnectionRuntimeState;
         if (state is null)
             return false;
@@ -741,6 +757,31 @@ internal static class Http2StreamHandler
         // Buffer the data
         if (frame.Payload.Length > 0)
         {
+            // RFC 7540 §6.9: an endpoint MUST treat a DATA frame exceeding a receive
+            // window as a flow-control error.
+            if (frame.Payload.Length > state.ReceiveWindow)
+            {
+                await SendRstStreamAsync(
+                        connection,
+                        frame.StreamId,
+                        Http2ErrorCode.FlowControlError,
+                        ct
+                    )
+                    .ConfigureAwait(false);
+                return false;
+            }
+
+            if (
+                runtimeState is not null
+                && frame.Payload.Length > runtimeState.ConnectionReceiveWindow
+            )
+            {
+                // Connection-level window exceeded — connection error per RFC 7540 §6.9.1.
+                await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.FlowControlError, ct)
+                    .ConfigureAwait(false);
+                return true;
+            }
+
             // Check request body size limit (protects against OOM from large or multi-stream bodies)
             var maxBody = runtimeState?.MaxRequestBodyBytes ?? 64 * 1024 * 1024;
             if (state.DataBuffer.WrittenCount > maxBody - frame.Payload.Length)

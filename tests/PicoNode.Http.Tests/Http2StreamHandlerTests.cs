@@ -1233,4 +1233,63 @@ public sealed class Http2StreamHandlerTests
             .IsFalse()
             .Because("completed streams are still collected");
     }
+
+    [Test]
+    public async Task Data_frame_exceeding_stream_window_is_rejected()
+    {
+        var state = new ConnectionRuntimeState();
+        var stream = state.GetOrCreateStream(1)!;
+        // DATA is only legal after HEADERS — move the stream Idle → Open first,
+        // otherwise the state machine rejects the frame before the flow-control check.
+        stream.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.Headers, out _);
+        stream.ReceiveWindow = 10;
+
+        var frame = BuildFrame(Http2FrameType.Data, Http2FrameFlags.EndStream, 1, new byte[100]);
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = state;
+
+        var result = await Http2StreamHandler.ProcessDataFrame(
+            connection,
+            frame,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        // A RST_STREAM with FLOW_CONTROL_ERROR must have been sent (frame type 3).
+        var sentRst = connection.SentFrames.Any(f =>
+            f.Length >= 13 && f[3] == (byte)Http2FrameType.RstStream
+        );
+        await Assert
+            .That(sentRst)
+            .IsTrue()
+            .Because("DATA exceeding the stream receive window must be rejected with RST_STREAM");
+    }
+
+    [Test]
+    public async Task Zero_increment_stream_window_update_is_rejected()
+    {
+        var state = new ConnectionRuntimeState();
+        state.GetOrCreateStream(5);
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = state;
+
+        var frame = BuildFrame(Http2FrameType.WindowUpdate, Http2FrameFlags.None, 5, new byte[4]);
+
+        await Http2StreamHandler.ProcessWindowUpdateFrame(
+            connection,
+            frame,
+            CancellationToken.None
+        );
+
+        var sentRst = connection.SentFrames.Any(f =>
+            f.Length >= 13 && f[3] == (byte)Http2FrameType.RstStream
+        );
+        await Assert
+            .That(sentRst)
+            .IsTrue()
+            .Because(
+                "stream-level WINDOW_UPDATE with increment 0 is a stream error (RFC 7540 §6.9)"
+            );
+    }
 }
