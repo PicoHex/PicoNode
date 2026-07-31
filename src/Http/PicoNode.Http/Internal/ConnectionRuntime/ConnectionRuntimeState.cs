@@ -23,6 +23,13 @@ internal sealed class ConnectionRuntimeState
 
     // Remote (peer) SETTINGS values
     public int RemoteMaxConcurrentStreams { get; set; } = 100;
+
+    /// <summary>
+    /// The concurrency limit WE advertised in SETTINGS (MaxConcurrentStreams = 100).
+    /// Governs how many streams the PEER may open. Keep in sync with the SETTINGS
+    /// frame written by Http2ConnectionProcessor/HttpConnectionHandler.
+    /// </summary>
+    public int LocalMaxConcurrentStreams { get; set; } = 100;
     public int RemoteInitialWindowSize { get; set; } = 65535;
     public int RemoteMaxFrameSize { get; set; } = 16384;
     public int RemoteHeaderTableSize { get; set; } = 4096;

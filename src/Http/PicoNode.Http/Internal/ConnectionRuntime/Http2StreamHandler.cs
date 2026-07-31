@@ -15,7 +15,9 @@ internal static class Http2StreamHandler
         if (runtimeStateForLimit is not null && frame.StreamId != 0)
         {
             var streamCount = runtimeStateForLimit.Http2Streams?.Count ?? 0;
-            if (streamCount >= runtimeStateForLimit.RemoteMaxConcurrentStreams)
+            // Our own advertised limit governs how many streams the PEER may open
+            // (the peer's SETTINGS value only limits what WE open).
+            if (streamCount >= runtimeStateForLimit.LocalMaxConcurrentStreams)
             {
                 // Per RFC 7540, refuse the specific stream with RST_STREAM,
                 // not GoAway (which would close the entire connection).

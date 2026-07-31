@@ -1292,4 +1292,39 @@ public sealed class Http2StreamHandlerTests
                 "stream-level WINDOW_UPDATE with increment 0 is a stream error (RFC 7540 §6.9)"
             );
     }
+
+    [Test]
+    public async Task Incoming_streams_are_limited_by_our_advertised_concurrency()
+    {
+        var state = new ConnectionRuntimeState();
+        state.RemoteMaxConcurrentStreams = 1000; // peer's value must NOT govern our limit
+        for (var i = 1; i <= 199; i += 2) // odd stream IDs only (even IDs are invalid)
+            state.GetOrCreateStream(i); // → exactly 100 tracked streams
+
+        var frame = BuildFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+            201,
+            [0x82, 0x86, 0x44, 0x01, (byte)'/'] // minimal GET / HPACK
+        );
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = state;
+
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            frame,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        // A RST_STREAM with REFUSED_STREAM must have been sent (frame type 3).
+        var sentRst = connection.SentFrames.Any(f =>
+            f.Length >= 13 && f[3] == (byte)Http2FrameType.RstStream
+        );
+        await Assert
+            .That(sentRst)
+            .IsTrue()
+            .Because("streams beyond our advertised limit (100) must be refused");
+    }
 }
