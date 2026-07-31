@@ -171,7 +171,9 @@ internal static class HttpBodyParser
             bodyWriter.Advance(chunkSize);
 
             reader.Advance(chunkSize + 2);
-            reader.ConsumedBytes += chunkSize + 2;
+            // Chunk DATA does NOT count against MaxRequestBytes — that budget is for
+            // header/line data. The body is bounded by MaxRequestBodySize above.
+            // (Chunk-size lines and trailer lines still count via TryReadLine.)
         }
 
         // Chunked body is still fully buffered in ArrayBufferWriter; can be streamed

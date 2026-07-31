@@ -906,4 +906,53 @@ public sealed class HttpRequestParserTests
             return segment;
         }
     }
+
+    [Test]
+    public async Task Chunked_body_larger_than_max_request_bytes_is_accepted()
+    {
+        // Default MaxRequestBytes = 8192; body of 16 KB must pass (bounded by MaxRequestBodySize).
+        var chunkData = new string('x', 16 * 1024);
+        var raw = Encoding.ASCII.GetBytes(
+            "POST /upload HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n"
+                + chunkData.Length.ToString("x")
+                + "\r\n"
+                + chunkData
+                + "\r\n0\r\n\r\n"
+        );
+        var options = new HttpConnectionHandlerOptions
+        {
+            RequestHandler = (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+        };
+
+        var result = HttpRequestParser.Parse(new ReadOnlySequence<byte>(raw), options);
+
+        await Assert
+            .That(result.Status)
+            .IsEqualTo(HttpRequestParseStatus.Success)
+            .Because(
+                "chunked body size must be governed by MaxRequestBodySize, not MaxRequestBytes"
+            );
+    }
+
+    [Test]
+    public async Task Chunked_body_over_max_request_body_size_is_rejected()
+    {
+        var options = new HttpConnectionHandlerOptions
+        {
+            RequestHandler = (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            MaxRequestBodySize = 1024,
+        };
+        var chunkData = new string('y', 2048);
+        var raw = Encoding.ASCII.GetBytes(
+            "POST /upload HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n"
+                + chunkData.Length.ToString("x")
+                + "\r\n"
+                + chunkData
+                + "\r\n0\r\n\r\n"
+        );
+
+        var result = HttpRequestParser.Parse(new ReadOnlySequence<byte>(raw), options);
+
+        await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
+    }
 }
