@@ -109,7 +109,10 @@ public sealed class SseConnection
             {
                 await task.ConfigureAwait(false);
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+                // Keep-alive loop task cancelled — expected on shutdown.
+            }
         }
     }
 

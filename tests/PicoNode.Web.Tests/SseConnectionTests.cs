@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace PicoNode.Web.Tests;
 
 public sealed class SseConnectionTests
@@ -215,7 +213,10 @@ public sealed class SseConnectionTests
         var stopwatch = Stopwatch.StartNew();
         while (stopwatch.ElapsedMilliseconds < 600)
         {
-            await sse.WriteAsync($"data: {stopwatch.ElapsedMilliseconds}\n\n", CancellationToken.None);
+            await sse.WriteAsync(
+                $"data: {stopwatch.ElapsedMilliseconds}\n\n",
+                CancellationToken.None
+            );
             await Task.Delay(5);
         }
         await sse.CompleteAsync(CancellationToken.None);
@@ -282,7 +283,10 @@ public sealed class SseConnectionTests
         }
     }
 
-    private static async Task<string> ReadUntilKeepAliveAsync(PipeReader reader, CancellationToken ct)
+    private static async Task<string> ReadUntilKeepAliveAsync(
+        PipeReader reader,
+        CancellationToken ct
+    )
     {
         var sb = new StringBuilder();
         while (true)
