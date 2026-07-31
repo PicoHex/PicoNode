@@ -96,6 +96,26 @@ public sealed class SseConnection
         return WriteEventAsync("error", $$"""{"message":"{{escaped}}"}""", ct);
     }
 
+    internal async Task StopKeepAliveAsync()
+    {
+        if (_keepAliveCts is null)
+        {
+            return;
+        }
+
+        await _keepAliveCts.CancelAsync().ConfigureAwait(false);
+        if (_keepAliveTask is { } task)
+        {
+            try
+            {
+                await task.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+    }
+
     private async Task KeepAliveLoopAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -160,12 +180,15 @@ public sealed class SseConnection
 public static class SseEndpoint
 {
     /// <summary>Creates a <see cref="WebRequestHandler"/> that produces an SSE stream.</summary>
-    public static WebRequestHandler Create(Func<SseConnection, CancellationToken, Task> handler)
+    public static WebRequestHandler Create(
+        Func<SseConnection, CancellationToken, Task> handler,
+        TimeSpan? keepAliveInterval = null
+    )
     {
         return async (context, ct) =>
         {
             var pipe = new Pipe();
-            var sse = new SseConnection(pipe.Writer);
+            var sse = new SseConnection(pipe.Writer, keepAliveInterval);
 
             // Start background writer task
             _ = RunSseWriterAsync(handler, sse, pipe.Writer, ct);
@@ -206,6 +229,14 @@ public static class SseEndpoint
         catch (Exception ex)
         {
             await writer.CompleteAsync(ex);
+        }
+        finally
+        {
+            // Deterministic keep-alive shutdown: cancels the loop's CTS and awaits
+            // the loop task (best-effort). Safe here: the handler has finished, so
+            // no write can hold the lock; a loop blocked in WaitAsync or a pipe
+            // write observes the loop's own cancellation token and exits.
+            await sse.StopKeepAliveAsync();
         }
     }
 }

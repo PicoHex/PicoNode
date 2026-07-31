@@ -245,6 +245,63 @@ public sealed class SseEndpointPipeTests
             .Because("connection should be closed after send failure");
     }
 
+    [Test]
+    public async Task SseEndpoint_keep_alive_pings_while_handler_silent()
+    {
+        var endpoint = SseEndpoint.Create(
+            async (sse, ct) =>
+            {
+                await sse.WriteAsync("data: start\n\n", ct);
+                await Task.Delay(300, ct);
+            },
+            TimeSpan.FromMilliseconds(50)
+        );
+
+        var app = new WebApp(new TestContainer());
+        app.MapGet("/events", endpoint);
+        var handler = app.Build();
+
+        var context = new RecordingSseConnectionContext();
+        var request = new ReadOnlySequence<byte>(
+            Encoding.ASCII.GetBytes("GET /events HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        );
+
+        await handler.OnReceivedAsync(context, request, CancellationToken.None);
+
+        var allText = string.Concat(context.AllSent.Select(b => Encoding.ASCII.GetString(b)));
+        await Assert
+            .That(allText)
+            .Contains(": keepalive")
+            .Because("idle SSE connection must emit keep-alive pings through the full pipeline");
+    }
+
+    [Test]
+    public async Task SseEndpoint_zero_keep_alive_interval_disables_pings()
+    {
+        var endpoint = SseEndpoint.Create(
+            async (sse, ct) =>
+            {
+                await sse.WriteAsync("data: start\n\n", ct);
+                await Task.Delay(150, ct);
+            },
+            TimeSpan.Zero
+        );
+
+        var app = new WebApp(new TestContainer());
+        app.MapGet("/events", endpoint);
+        var handler = app.Build();
+
+        var context = new RecordingSseConnectionContext();
+        var request = new ReadOnlySequence<byte>(
+            Encoding.ASCII.GetBytes("GET /events HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        );
+
+        await handler.OnReceivedAsync(context, request, CancellationToken.None);
+
+        var allText = string.Concat(context.AllSent.Select(b => Encoding.ASCII.GetString(b)));
+        await Assert.That(allText.Contains(": keepalive")).IsFalse();
+    }
+
     #region Test Helpers
 
     private sealed class RecordingSseConnectionContext : ITcpConnectionContext

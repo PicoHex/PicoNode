@@ -296,4 +296,41 @@ public sealed class SseConnectionTests
             }
         }
     }
+
+    [Test]
+    public async Task StopKeepAliveAsync_stops_further_pings()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer, TimeSpan.FromMilliseconds(200));
+
+        await sse.WriteAsync("data: first\n\n", CancellationToken.None);
+
+        // Wait for the first automatic ping.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        await ReadUntilKeepAliveAsync(pipe.Reader, cts.Token);
+
+        await sse.StopKeepAliveAsync();
+
+        // With the loop stopped, no further pings may appear.
+        await Task.Delay(350);
+        await sse.CompleteAsync(CancellationToken.None);
+        var output = await ReadAllTextAsync(pipe.Reader);
+
+        await Assert
+            .That(CountOccurrences(output, ": keepalive"))
+            .IsEqualTo(0)
+            .Because("no further pings may appear after StopKeepAliveAsync");
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+        return count;
+    }
 }
