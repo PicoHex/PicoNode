@@ -164,4 +164,22 @@ public sealed class SseConnectionTests
             .That(async () => await sse.WriteEventAsync("a\nb", "data", CancellationToken.None))
             .Throws<ArgumentException>();
     }
+
+    [Test]
+    public async Task Constructor_applies_keep_alive_interval()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer, TimeSpan.FromSeconds(3));
+
+        await Assert.That(sse.KeepAliveInterval).IsEqualTo(TimeSpan.FromSeconds(3));
+    }
+
+    [Test]
+    public async Task Default_keep_alive_interval_is_15_seconds()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer);
+
+        await Assert.That(sse.KeepAliveInterval).IsEqualTo(TimeSpan.FromSeconds(15));
+    }
 }

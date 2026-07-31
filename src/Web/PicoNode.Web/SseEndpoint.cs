@@ -7,10 +7,22 @@ namespace PicoNode.Web;
 public sealed class SseConnection
 {
     private readonly PipeWriter _writer;
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private long _lastWriteTicks;
 
-    public SseConnection(PipeWriter writer)
+    /// <summary>
+    /// Interval between automatic keep-alive pings.
+    /// Default: 15 seconds. Zero or negative disables keep-alive.
+    /// </summary>
+    public TimeSpan KeepAliveInterval { get; init; } = TimeSpan.FromSeconds(15);
+
+    public SseConnection(PipeWriter writer, TimeSpan? keepAliveInterval = null)
     {
         _writer = writer ?? throw new ArgumentNullException(nameof(writer));
+        if (keepAliveInterval is { } interval)
+        {
+            KeepAliveInterval = interval;
+        }
     }
 
     /// <summary>Writes a pre-serialized JSON string as an SSE event.</summary>
@@ -18,23 +30,20 @@ public sealed class SseConnection
         WriteAsync($"data: {json}\n\n", ct);
 
     /// <summary>Writes raw text as an SSE event.</summary>
-    public async Task WriteAsync(string text, CancellationToken ct)
+    public Task WriteAsync(string text, CancellationToken ct)
     {
         var bytes = Encoding.UTF8.GetBytes(text);
-        await _writer.WriteAsync(bytes, ct);
-        await _writer.FlushAsync(ct);
+        return WriteCoreAsync(bytes, ct);
     }
 
     /// <summary>Sends a keep-alive comment line.</summary>
-    public async Task PingAsync(CancellationToken ct)
-    {
-        await WriteAsync(": keepalive\n\n", ct);
-    }
+    public Task PingAsync(CancellationToken ct) =>
+        WriteAsync(": keepalive\n\n", ct);
 
     /// <summary>Marks the event stream as complete.</summary>
     public async Task CompleteAsync(CancellationToken ct)
     {
-        await WriteAsync("data: [DONE]\n\n", ct);
+        await WriteCoreAsync(Encoding.UTF8.GetBytes("data: [DONE]\n\n"), ct);
         await _writer.CompleteAsync();
     }
 
@@ -42,7 +51,7 @@ public sealed class SseConnection
     /// Writes a typed SSE event. Event type must not be null/empty or contain newlines.
     /// Data is split on newlines and each line prefixed with "data: ".
     /// </summary>
-    public async Task WriteEventAsync(string eventType, string data, CancellationToken ct)
+    public Task WriteEventAsync(string eventType, string data, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(eventType))
             throw new ArgumentException("Event type required", nameof(eventType));
@@ -67,8 +76,7 @@ public sealed class SseConnection
         sb.Append('\n');
 
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-        await _writer.WriteAsync(bytes, ct);
-        await _writer.FlushAsync(ct);
+        return WriteCoreAsync(bytes, ct);
     }
 
     /// <summary>
@@ -84,6 +92,32 @@ public sealed class SseConnection
             .Replace("\r", " ")
             .Replace("\n", " ");
         return WriteEventAsync("error", $$"""{"message":"{{escaped}}"}""", ct);
+    }
+
+    /// <summary>
+    /// Single locking point: ALL writes (handler writes, pings, [DONE]) serialize
+    /// through this method. SemaphoreSlim is not reentrant, so outer methods must
+    /// not acquire the lock themselves.
+    /// </summary>
+    private async Task WriteCoreAsync(ReadOnlyMemory<byte> bytes, CancellationToken ct)
+    {
+        var acquired = false;
+        try
+        {
+            await _writeLock.WaitAsync(ct).ConfigureAwait(false);
+            acquired = true;
+
+            Interlocked.Exchange(ref _lastWriteTicks, DateTimeOffset.UtcNow.UtcTicks);
+            await _writer.WriteAsync(bytes, ct).ConfigureAwait(false);
+            await _writer.FlushAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (acquired)
+            {
+                _writeLock.Release();
+            }
+        }
     }
 }
 
