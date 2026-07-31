@@ -275,6 +275,53 @@ public sealed class SseEndpointPipeTests
             .Because("idle SSE connection must emit keep-alive pings through the full pipeline");
     }
 
+    /// <summary>
+    /// Verifies the keep-alive loop STOPS after the handler completes normally.
+    /// Pings must appear while the handler is silent, but once the handler returns
+    /// and RunSseWriterAsync's finally calls StopKeepAliveAsync, no further pings
+    /// may be written after the final sentinel frame.
+    /// </summary>
+    [Test]
+    public async Task SseEndpoint_keep_alive_stops_after_handler_completes()
+    {
+        var endpoint = SseEndpoint.Create(
+            async (sse, ct) =>
+            {
+                await sse.WriteAsync("data: start\n\n", ct);
+                await Task.Delay(150, ct);
+                await sse.WriteAsync("data: end\n\n", ct);
+            },
+            TimeSpan.FromMilliseconds(50)
+        );
+
+        var app = new WebApp(new TestContainer());
+        app.MapGet("/events", endpoint);
+        var handler = app.Build();
+
+        var context = new RecordingSseConnectionContext();
+        var request = new ReadOnlySequence<byte>(
+            Encoding.ASCII.GetBytes("GET /events HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        );
+
+        await handler.OnReceivedAsync(context, request, CancellationToken.None);
+
+        var allText = string.Concat(context.AllSent.Select(b => Encoding.ASCII.GetString(b)));
+        await Assert
+            .That(allText)
+            .Contains(": keepalive")
+            .Because("idle SSE connection must emit keep-alive pings while handler is silent");
+
+        var sentinelIndex = allText.LastIndexOf("data: end", StringComparison.Ordinal);
+        await Assert
+            .That(sentinelIndex)
+            .IsGreaterThanOrEqualTo(0)
+            .Because("the final sentinel frame must be present");
+        await Assert
+            .That(allText[(sentinelIndex + "data: end".Length)..].Contains(": keepalive"))
+            .IsFalse()
+            .Because("keep-alive loop must stop after the handler completes normally");
+    }
+
     [Test]
     public async Task SseEndpoint_zero_keep_alive_interval_disables_pings()
     {

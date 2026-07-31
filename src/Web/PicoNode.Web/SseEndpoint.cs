@@ -8,7 +8,7 @@ public sealed class SseConnection
 {
     private readonly PipeWriter _writer;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
-    private long _lastWriteTicks;
+    private long _lastWriteTickCount64;
     private Task? _keepAliveTask;
     private CancellationTokenSource? _keepAliveCts;
 
@@ -39,8 +39,7 @@ public sealed class SseConnection
     }
 
     /// <summary>Sends a keep-alive comment line.</summary>
-    public Task PingAsync(CancellationToken ct) =>
-        WriteAsync(": keepalive\n\n", ct);
+    public Task PingAsync(CancellationToken ct) => WriteAsync(": keepalive\n\n", ct);
 
     /// <summary>Marks the event stream as complete.</summary>
     public async Task CompleteAsync(CancellationToken ct)
@@ -110,9 +109,7 @@ public sealed class SseConnection
             {
                 await task.ConfigureAwait(false);
             }
-            catch (OperationCanceledException)
-            {
-            }
+            catch (OperationCanceledException) { }
         }
     }
 
@@ -121,8 +118,8 @@ public sealed class SseConnection
         while (!ct.IsCancellationRequested)
         {
             await Task.Delay(KeepAliveInterval, ct).ConfigureAwait(false);
-            var idle = DateTimeOffset.UtcNow.Ticks - Interlocked.Read(ref _lastWriteTicks);
-            if (idle >= KeepAliveInterval.Ticks)
+            var idle = Environment.TickCount64 - Interlocked.Read(ref _lastWriteTickCount64);
+            if (idle >= (long)KeepAliveInterval.TotalMilliseconds)
             {
                 try
                 {
@@ -160,7 +157,7 @@ public sealed class SseConnection
                 _keepAliveTask ??= KeepAliveLoopAsync(_keepAliveCts.Token);
             }
 
-            Interlocked.Exchange(ref _lastWriteTicks, DateTimeOffset.UtcNow.UtcTicks);
+            Interlocked.Exchange(ref _lastWriteTickCount64, Environment.TickCount64);
             await _writer.WriteAsync(bytes, ct).ConfigureAwait(false);
             await _writer.FlushAsync(ct).ConfigureAwait(false);
         }
