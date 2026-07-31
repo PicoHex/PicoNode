@@ -50,10 +50,24 @@ public sealed class CacheMiddleware
             return await next(context, cancellationToken);
         }
 
+        // Skip caching entirely for authenticated requests — cache keys are path-based
+        // and must never leak one user's data to another, and we must NOT advertise
+        // "Cache-Control: public" on authenticated responses (shared caches would store
+        // them). Return the raw response without any cache headers.
+        if (
+            context.Request.Headers.TryGetValue("Authorization", out _)
+            || context.Request.Headers.TryGetValue("Cookie", out _)
+        )
+        {
+            return await next(context, cancellationToken);
+        }
+
         var path = context.Path;
+        var query = context.Request.QueryString;
+        var cacheKey = string.IsNullOrEmpty(query) ? path : path + "?" + query;
 
         // Check If-None-Match against cached entry
-        if (_cache.TryGetValue(path, out var cached))
+        if (_cache.TryGetValue(cacheKey, out var cached))
         {
             if (
                 context.Request.Headers.TryGetValue("If-None-Match", out var etag)
@@ -107,8 +121,17 @@ public sealed class CacheMiddleware
                     break;
             }
 
-            _cache[path] = new CachedEntry(etagValue, bodyData);
-            _insertionOrder.Enqueue(path);
+            // Bound queue growth when re-caching an existing key: only enqueue
+            // when the key was NOT already present.
+            var isNew = _cache.TryAdd(cacheKey, new CachedEntry(etagValue, bodyData));
+            if (isNew)
+            {
+                _insertionOrder.Enqueue(cacheKey);
+            }
+            else
+            {
+                _cache[cacheKey] = new CachedEntry(etagValue, bodyData);
+            }
 
             AddHeaderIfMissing(response.Headers, "ETag", etagValue);
             AddHeaderIfMissing(

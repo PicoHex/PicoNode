@@ -218,4 +218,106 @@ public sealed class CacheMiddlewareTests
         }
         return null;
     }
+
+    private static WebContext CreateQueryContext(
+        string path,
+        string? queryString,
+        string? authHeader,
+        string? ifNoneMatch = null
+    )
+    {
+        var headers = new List<KeyValuePair<string, string>>();
+        if (authHeader is not null)
+        {
+            headers.Add(new KeyValuePair<string, string>("Authorization", authHeader));
+        }
+        if (ifNoneMatch is not null)
+        {
+            headers.Add(new KeyValuePair<string, string>("If-None-Match", ifNoneMatch));
+        }
+
+        return WebContext.Create(
+            new HttpRequest
+            {
+                Method = "GET",
+                Target = path + (queryString ?? string.Empty),
+                Path = path,
+                QueryString = queryString ?? string.Empty,
+                HeaderFields = headers,
+                Headers = headers.ToDictionary(
+                    h => h.Key,
+                    h => h.Value,
+                    StringComparer.OrdinalIgnoreCase
+                ),
+            }
+        );
+    }
+
+    private static async Task<HttpResponse> InvokeGet(
+        CacheMiddleware middleware,
+        string path,
+        string? queryString,
+        string body,
+        string? authHeader = null,
+        string? ifNoneMatch = null
+    )
+    {
+        var context = CreateQueryContext(path, queryString, authHeader, ifNoneMatch);
+        return await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Body = Encoding.UTF8.GetBytes(body),
+                    }
+                ),
+            CancellationToken.None
+        );
+    }
+
+    [Test]
+    public async Task Cache_key_includes_query_string()
+    {
+        var middleware = new CacheMiddleware();
+        var first = await InvokeGet(middleware, "/api", "?a=1", body: "AAA");
+        var etag1 = GetHeader(first, "ETag")!;
+        // Same path, different query, revalidating with the first entry's ETag:
+        // pre-fix the shared "/api" entry matches → 304; post-fix the query is
+        // part of the key → no match → the origin is invoked → 200.
+        var second = await InvokeGet(middleware, "/api", "?a=2", body: "BBB", ifNoneMatch: etag1);
+
+        await Assert
+            .That(second.StatusCode)
+            .IsEqualTo(200)
+            .Because("different query strings must not share a cache entry");
+        await Assert
+            .That(GetHeader(first, "ETag"))
+            .IsNotEqualTo(GetHeader(second, "ETag"))
+            .Because("different query strings must not share a cache entry");
+    }
+
+    [Test]
+    public async Task Authenticated_requests_are_not_cached()
+    {
+        var middleware = new CacheMiddleware();
+        var response = await InvokeGet(
+            middleware,
+            "/private",
+            null,
+            body: "secret",
+            authHeader: "Bearer x"
+        );
+
+        await Assert
+            .That(GetHeader(response, "ETag"))
+            .IsNull()
+            .Because("responses to authenticated requests must not enter the shared cache");
+        await Assert
+            .That(GetHeader(response, "Cache-Control"))
+            .IsNull()
+            .Because("authenticated responses must not advertise public cacheability");
+    }
 }
