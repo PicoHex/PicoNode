@@ -51,4 +51,50 @@ public sealed class StreamingMultipartParserTests
         await Assert.That(result.Files.Count).IsEqualTo(1);
         await Assert.That(result.Files[0].FileName).IsEqualTo("data.bin");
     }
+
+    [Test]
+    public async Task Streaming_parser_rejects_oversized_part()
+    {
+        var body = BuildMultipartBody("field1", new string('x', 2000));
+        using var stream = new MemoryStream(body);
+
+        await Assert
+            .That(async () =>
+                await StreamingMultipartParser.ParseAsync(
+                    stream,
+                    "boundary",
+                    maxPartSizeBytes: 1024,
+                    maxTotalSizeBytes: 1024 * 1024
+                )
+            )
+            .Throws<InvalidDataException>()
+            .Because("parts larger than MaxPartSizeBytes must be rejected");
+    }
+
+    [Test]
+    public async Task Streaming_parser_rejects_total_over_max_total_size()
+    {
+        var body = BuildMultipartBody("field1", new string('a', 800));
+        using var stream = new MemoryStream(body);
+
+        await Assert
+            .That(async () =>
+                await StreamingMultipartParser.ParseAsync(
+                    stream,
+                    "boundary",
+                    maxPartSizeBytes: 1024,
+                    maxTotalSizeBytes: 700
+                )
+            )
+            .Throws<InvalidDataException>()
+            .Because("the accumulated body size must respect MaxTotalSizeBytes");
+    }
+
+    /// <summary>Builds --boundary\r\nContent-Disposition: form-data; name="&lt;name&gt;"\r\n\r\n&lt;data&gt;\r\n--boundary--\r\n.</summary>
+    private static byte[] BuildMultipartBody(string name, string data)
+    {
+        return Encoding.UTF8.GetBytes(
+            $"--boundary\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{data}\r\n--boundary--\r\n"
+        );
+    }
 }

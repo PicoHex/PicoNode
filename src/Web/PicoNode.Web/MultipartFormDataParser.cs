@@ -40,7 +40,13 @@ public static class MultipartFormDataParser
         if (bodyStream != Stream.Null)
         {
             return await StreamingMultipartParser
-                .ParseAsync(bodyStream, boundary, ct: ct)
+                .ParseAsync(
+                    bodyStream,
+                    boundary,
+                    maxPartSizeBytes: options.MaxPartSizeBytes,
+                    maxTotalSizeBytes: options.MaxTotalSizeBytes,
+                    ct: ct
+                )
                 .ConfigureAwait(false);
         }
 

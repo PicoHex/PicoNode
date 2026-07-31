@@ -7,6 +7,7 @@ internal static class MultipartPartReader
     public static async ValueTask<MultipartPart?> ReadPartAsync(
         MultipartBufferedReader reader,
         byte[] boundary,
+        int maxPartSizeBytes = MultipartFormDataParserOptions.DefaultMaxPartSizeBytes,
         CancellationToken ct = default
     )
     {
@@ -33,7 +34,7 @@ internal static class MultipartPartReader
         }
 
         // Read content until next boundary
-        var content = await reader.ReadUntilBoundaryAsync(boundary, ct);
+        var content = await reader.ReadUntilBoundaryAsync(boundary, maxPartSizeBytes, ct);
         return new MultipartPart(headers, content);
     }
 }

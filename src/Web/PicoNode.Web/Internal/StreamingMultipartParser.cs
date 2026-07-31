@@ -6,6 +6,8 @@ internal static class StreamingMultipartParser
         Stream bodyStream,
         string boundaryName,
         int bufferSize = 65536,
+        int maxPartSizeBytes = MultipartFormDataParserOptions.DefaultMaxPartSizeBytes,
+        int maxTotalSizeBytes = MultipartFormDataParserOptions.DefaultMaxTotalSizeBytes,
         CancellationToken ct = default
     )
     {
@@ -13,19 +15,34 @@ internal static class StreamingMultipartParser
         using var reader = new MultipartBufferedReader(bodyStream, bufferSize);
 
         // Skip the first boundary (--boundary)
-        var first = await reader.ReadUntilBoundaryAsync(boundaryBytes, ct);
+        var first = await reader.ReadUntilBoundaryAsync(boundaryBytes, maxBytes: 0, ct);
         if (first is null)
             return null;
 
         var fields = new List<MultipartFormField>();
         var files = new List<MultipartFormFile>();
+        long totalBytes = 0;
 
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var part = await MultipartPartReader.ReadPartAsync(reader, boundaryBytes, ct);
+            var part = await MultipartPartReader.ReadPartAsync(
+                reader,
+                boundaryBytes,
+                maxPartSizeBytes,
+                ct
+            );
             if (part is null)
                 break;
+
+            if (part.Content is not null)
+            {
+                totalBytes += part.Content.Length;
+                if (totalBytes > maxTotalSizeBytes)
+                {
+                    throw new InvalidDataException("Multipart body exceeds maximum total size");
+                }
+            }
 
             if (!part.Headers.TryGetValue("Content-Disposition", out var disposition))
                 continue;

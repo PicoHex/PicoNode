@@ -49,6 +49,7 @@ internal sealed class MultipartBufferedReader : IDisposable
     /// Returns the content bytes, or null if the stream ends unexpectedly.</summary>
     public async ValueTask<byte[]?> ReadUntilBoundaryAsync(
         byte[] boundary,
+        int maxBytes = 0,
         CancellationToken ct = default
     )
     {
@@ -68,7 +69,10 @@ internal sealed class MultipartBufferedReader : IDisposable
                     // If content starts with \r\n, those belong to the boundary, not content
                     var skipCrlf = _buffer[_position] == (byte)'\r' ? 2 : 0;
                     if (contentLen > skipCrlf)
+                    {
+                        GuardAccumulator(accumulator, contentLen - skipCrlf, maxBytes);
                         accumulator.Write(_buffer, _position + skipCrlf, contentLen - skipCrlf);
+                    }
                 }
 
                 _position = matchIdx + 2 + 2 + boundary.Length;
@@ -88,7 +92,10 @@ internal sealed class MultipartBufferedReader : IDisposable
             var keep = Math.Min(_buffered - safe, boundary.Length + 4);
             var flush = (_buffered - safe) - keep;
             if (flush > 0)
+            {
+                GuardAccumulator(accumulator, flush, maxBytes);
                 accumulator.Write(_buffer, safe, flush);
+            }
 
             // Keep only the trailing bytes that might be a partial boundary match
             var srcPos = safe + flush; // = _buffered - keep
@@ -101,6 +108,14 @@ internal sealed class MultipartBufferedReader : IDisposable
                 return accumulator.Length > 0 ? accumulator.ToArray() : null;
 
             await FillBufferAsync(ct);
+        }
+    }
+
+    private static void GuardAccumulator(MemoryStream accumulator, int toWrite, long maxBytes)
+    {
+        if (maxBytes > 0 && accumulator.Length + toWrite > maxBytes)
+        {
+            throw new InvalidDataException("Multipart part exceeds maximum size");
         }
     }
 
