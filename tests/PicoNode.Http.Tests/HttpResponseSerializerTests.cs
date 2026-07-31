@@ -279,4 +279,30 @@ public sealed class HttpResponseSerializerTests
 
     private static string GetAsciiString(byte[] buffer) =>
         System.Text.Encoding.ASCII.GetString(buffer);
+
+    [Test]
+    public async Task Non_ascii_header_values_are_not_mangled()
+    {
+        var response = new HttpResponse
+        {
+            StatusCode = 200,
+            ReasonPhrase = "OK",
+            Headers =
+            [
+                new KeyValuePair<string, string>(
+                    "Content-Disposition",
+                    "attachment; filename=\"报告.pdf\""
+                ),
+            ],
+            Body = ReadOnlyMemory<byte>.Empty,
+        };
+
+        var wire = HttpResponseSerializer.Serialize(response).ToArray();
+        var text = Encoding.UTF8.GetString(wire);
+
+        await Assert
+            .That(text)
+            .Contains("报告.pdf")
+            .Because("UTF-8 header values must reach the wire unchanged");
+    }
 }

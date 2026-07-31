@@ -285,7 +285,7 @@ internal static class HttpResponseSerializer
     {
         WriteAscii(buffer, name);
         WriteAscii(buffer, ": ");
-        WriteAscii(buffer, value);
+        WriteUtf8(buffer, value);
         WriteCrlf(buffer);
     }
 
@@ -307,6 +307,21 @@ internal static class HttpResponseSerializer
         var bytesNeeded = HeaderEncoding.GetByteCount(value);
         var destination = buffer.GetSpan(bytesNeeded);
         var written = HeaderEncoding.GetBytes(value, destination);
+        buffer.Advance(written);
+    }
+
+    private static readonly Encoding HeaderValueEncoding = new UTF8Encoding(false); // no BOM
+
+    private static void WriteUtf8(IBufferWriter<byte> buffer, string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return;
+        }
+
+        var bytesNeeded = HeaderValueEncoding.GetByteCount(value);
+        var destination = buffer.GetSpan(bytesNeeded);
+        var written = HeaderValueEncoding.GetBytes(value, destination);
         buffer.Advance(written);
     }
 
