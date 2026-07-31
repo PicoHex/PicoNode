@@ -2,6 +2,7 @@ namespace PicoNode.Web;
 
 internal sealed class InMemorySession : ISession
 {
+    private readonly object _lock = new();
     private readonly Dictionary<string, byte[]> _data = new();
 
     public InMemorySession(string id, bool isNew)
@@ -16,25 +17,40 @@ internal sealed class InMemorySession : ISession
 
     public bool IsDirty { get; private set; }
 
-    public IEnumerable<string> Keys => _data.Keys;
+    // Keys returns a snapshot array so callers may enumerate safely.
+    public IEnumerable<string> Keys
+    {
+        get
+        {
+            lock (_lock)
+                return _data.Keys.ToArray();
+        }
+    }
 
-    public bool TryGetValue(string key, out byte[]? value) => _data.TryGetValue(key, out value);
+    public bool TryGetValue(string key, out byte[]? value)
+    {
+        lock (_lock)
+            return _data.TryGetValue(key, out value);
+    }
 
     public void SetValue(string key, byte[] value)
     {
-        _data[key] = value;
+        lock (_lock)
+            _data[key] = value;
         IsDirty = true;
     }
 
     public void Remove(string key)
     {
-        _data.Remove(key);
+        lock (_lock)
+            _data.Remove(key);
         IsDirty = true;
     }
 
     public void Clear()
     {
-        _data.Clear();
+        lock (_lock)
+            _data.Clear();
         IsDirty = true;
     }
 }

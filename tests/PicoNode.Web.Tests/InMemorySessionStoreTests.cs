@@ -135,4 +135,33 @@ public sealed class InMemorySessionStoreTests
             )
             .Throws<ArgumentOutOfRangeException>();
     }
+
+    [Test]
+    public async Task Concurrent_mutations_do_not_corrupt_session()
+    {
+        var session = new InMemorySession("s1", isNew: true);
+
+        var writers = Enumerable
+            .Range(0, 8)
+            .Select(i =>
+                Task.Run(() =>
+                {
+                    for (var j = 0; j < 200; j++)
+                        session.SetValue($"k{i}_{j}", [(byte)j]);
+                })
+            )
+            .ToArray();
+        // Enumerate Keys while writers run — pre-fix this races Dictionary read vs write.
+        var reader = Task.Run(() =>
+        {
+            for (var i = 0; i < 500; i++)
+                _ = session.Keys.ToArray();
+        });
+        await Task.WhenAll([.. writers, reader]);
+
+        await Assert
+            .That(session.Keys.Count())
+            .IsEqualTo(8 * 200)
+            .Because("no writes may be lost to dictionary corruption");
+    }
 }
