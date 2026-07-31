@@ -74,12 +74,36 @@ public sealed class WebApp
         HttpRequestHandler httpHandler = async (request, ct) =>
         {
             var scope = _container.CreateScope();
-            await using (scope.ConfigureAwait(false))
+            HttpResponse response;
+            try
             {
                 var context = WebContext.Create(request);
                 context.Services = scope;
-                return await pipeline(context, ct);
+                response = await pipeline(context, ct);
             }
+            catch
+            {
+                await scope.DisposeAsync();
+                throw;
+            }
+
+            if (response.BodyStream is not null)
+            {
+                // Scope ownership transfers to ScopeBoundStream: it is released when the
+                // HTTP processor consumes/disposes the body stream (EOF or disposal).
+                return new HttpResponse
+                {
+                    StatusCode = response.StatusCode,
+                    ReasonPhrase = response.ReasonPhrase,
+                    Version = response.Version,
+                    Headers = response.Headers,
+                    Body = response.Body,
+                    BodyStream = new ScopeBoundStream(response.BodyStream, scope),
+                };
+            }
+
+            await scope.DisposeAsync();
+            return response;
         };
 
         return new HttpConnectionHandler(

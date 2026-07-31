@@ -911,10 +911,11 @@ internal static class Http2StreamHandler
             var maxFrame = connState?.RemoteMaxFrameSize ?? 16384;
             var bufferSize = 4096;
             var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+            var stream = response.BodyStream;
+            var streamCompleted = false;
 
             try
             {
-                var stream = response.BodyStream;
                 int bytesRead;
                 while ((bytesRead = await stream.ReadAsync(buffer.AsMemory(0, bufferSize), ct)) > 0)
                 {
@@ -927,6 +928,8 @@ internal static class Http2StreamHandler
 
                         if (available <= 0)
                         {
+                            // Backpressure: hand the stream to FlushPendingDataAsync for
+                            // later resume — do NOT dispose it here.
                             if (state is not null)
                             {
                                 state.PendingDataFrame = buffer[offset..bytesRead];
@@ -954,7 +957,7 @@ internal static class Http2StreamHandler
                     }
                 }
 
-                // Stream complete �?send final DATA with EndStream
+                // Stream complete — send final DATA with EndStream, then dispose.
                 await WriteDataFrameAsync(
                     connection,
                     streamId,
@@ -965,6 +968,7 @@ internal static class Http2StreamHandler
 
                 if (state is not null)
                     state.ResponseSent = true;
+                streamCompleted = true;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -977,6 +981,10 @@ internal static class Http2StreamHandler
             finally
             {
                 ArrayPool<byte>.Shared.Return(buffer);
+                if (streamCompleted)
+                {
+                    await stream.DisposeAsync();
+                }
             }
             return;
         }
