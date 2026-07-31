@@ -1171,4 +1171,41 @@ public sealed class Http2StreamHandlerTests
         result.AddRange(valueBytes);
         return result.ToArray();
     }
+
+    [Test]
+    public async Task Peer_settings_are_applied_immediately_on_receipt()
+    {
+        // A SETTINGS frame carrying INITIAL_WINDOW_SIZE=131072 arrives.
+        var settings = Http2FrameCodec.EncodeSettings(
+            new Http2Setting(Http2SettingId.InitialWindowSize, 131072)
+        );
+        var connection = new TestTcpConnectionContext();
+        var state = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = state;
+
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(settings),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        // Settings must be applied immediately — not deferred until an ACK.
+        await Assert.That(state.RemoteInitialWindowSize).IsEqualTo(131072);
+    }
+
+    [Test]
+    public async Task Initial_window_size_change_adjusts_existing_stream_send_windows()
+    {
+        var state = new ConnectionRuntimeState();
+        var stream = state.GetOrCreateStream(1)!;
+        stream.SendWindow = 65535;
+
+        state.ApplySettings([new Http2Setting(Http2SettingId.InitialWindowSize, 131072)]);
+
+        // RFC 7540 §6.9.2: delta applies to ALL existing streams.
+        await Assert.That(stream.SendWindow).IsEqualTo(131072);
+    }
 }

@@ -62,10 +62,28 @@ internal sealed class ConnectionRuntimeState
                     RemoteMaxConcurrentStreams = (int)setting.Value;
                     break;
                 case Http2SettingId.InitialWindowSize:
+                {
+                    var delta = (int)setting.Value - RemoteInitialWindowSize;
                     RemoteInitialWindowSize = (int)setting.Value;
+                    // RFC 7540 §6.9.2: the delta applies to all existing streams.
+                    // Use long math + clamp: a malicious peer may send a delta near
+                    // int range, and checked arithmetic would turn that into a crash.
+                    if (Http2Streams is not null)
+                    {
+                        foreach (var stream in Http2Streams.Values)
+                        {
+                            stream.SendWindow = (int)
+                                Math.Clamp(
+                                    (long)stream.SendWindow + delta,
+                                    int.MinValue,
+                                    int.MaxValue
+                                );
+                        }
+                    }
                     // Do NOT set ConnectionSendWindow — connection-level flow control
                     // is separate from stream-level and managed by WINDOW_UPDATE frames only.
                     break;
+                }
                 case Http2SettingId.MaxFrameSize:
                     RemoteMaxFrameSize = (int)setting.Value;
                     break;
@@ -95,9 +113,6 @@ internal sealed class ConnectionRuntimeState
 
     /// <summary>Maximum idle time for a stream before it's eligible for cleanup.</summary>
     public TimeSpan StreamIdleTimeout { get; set; } = TimeSpan.FromMinutes(2);
-
-    /// <summary>Settings received but not yet applied (waiting for ACK).</summary>
-    public IReadOnlyList<Http2Setting>? PendingSettings { get; set; }
 
     /// <summary>GoAway frame has been received — stop accepting new streams.</summary>
     public bool GoAwayReceived { get; set; }
