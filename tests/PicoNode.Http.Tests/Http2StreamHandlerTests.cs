@@ -1208,4 +1208,29 @@ public sealed class Http2StreamHandlerTests
         // RFC 7540 §6.9.2: delta applies to ALL existing streams.
         await Assert.That(stream.SendWindow).IsEqualTo(131072);
     }
+
+    [Test]
+    public async Task Idle_reaper_keeps_streams_with_pending_response_work()
+    {
+        var state = new ConnectionRuntimeState();
+        var active = state.GetOrCreateStream(1)!;
+        active.ResponseBodyStream = new MemoryStream([1, 2, 3]); // stalled on flow control
+        active.LastActivityUtc = DateTime.UtcNow.AddMinutes(-10);
+
+        var done = state.GetOrCreateStream(3)!;
+        done.ResponseSent = true;
+        done.EndStreamReceived = true;
+        done.LastActivityUtc = DateTime.UtcNow.AddMinutes(-10); // idle AND complete
+
+        state.RemoveIdleStreams();
+
+        await Assert
+            .That(state.Http2Streams!.ContainsKey(1))
+            .IsTrue()
+            .Because("a stream with pending response work must not be reaped");
+        await Assert
+            .That(state.Http2Streams.ContainsKey(3))
+            .IsFalse()
+            .Because("completed streams are still collected");
+    }
 }

@@ -137,7 +137,14 @@ internal sealed class ConnectionRuntimeState
         List<int>? toRemove = null;
         foreach (var kvp in Http2Streams)
         {
-            if (now - kvp.Value.LastActivityUtc >= StreamIdleTimeout)
+            var stream = kvp.Value;
+            // Never reap a stream that still has response work in flight: it may be
+            // mid-streaming (ResponseBodyStream) or stalled on flow control
+            // (PendingDataFrame) and would deadlock on the next WINDOW_UPDATE.
+            if (stream.ResponseBodyStream is not null || stream.PendingDataFrame is not null)
+                continue;
+
+            if (now - stream.LastActivityUtc >= StreamIdleTimeout)
             {
                 toRemove ??= new List<int>();
                 toRemove.Add(kvp.Key);
