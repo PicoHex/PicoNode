@@ -53,4 +53,37 @@ public sealed class WebSocketFrameCodecTests
         // TDD RED: this SHOULD fail — bug returns destination.Length (expectedSize + 10)
         await Assert.That(written).IsEqualTo(expectedSize);
     }
+
+    [Test]
+    public async Task TryReadFrame_rejects_payload_exceeding_max_length()
+    {
+        // Frame header declaring length 4096 (126-form) — payload not required:
+        // the cap must reject on header alone.
+        byte[] header = [0x81, 0x7E, 0x10, 0x00]; // FIN+Text, 126-form length 4096
+        var buffer = new ReadOnlySequence<byte>(header);
+
+        var ok = WebSocketFrameCodec.TryReadFrame(
+            buffer,
+            out _,
+            out var consumed,
+            maxPayloadLength: 1024
+        );
+
+        await Assert.That(ok).IsFalse();
+        await Assert.That(consumed).IsEqualTo(-1);
+    }
+
+    [Test]
+    public async Task TryReadFrame_negative_length_encoding_is_rejected()
+    {
+        // 127-form length with the high bit set — must be rejected before
+        // any payload allocation (a naive new byte[length] would crash).
+        byte[] header = [0x81, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x7F];
+        var buffer = new ReadOnlySequence<byte>(header);
+
+        var ok = WebSocketFrameCodec.TryReadFrame(buffer, out _, out var consumed);
+
+        await Assert.That(ok).IsFalse();
+        await Assert.That(consumed).IsEqualTo(-1);
+    }
 }

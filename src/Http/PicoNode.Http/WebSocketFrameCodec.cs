@@ -5,7 +5,8 @@ public static class WebSocketFrameCodec
     public static bool TryReadFrame(
         ReadOnlySequence<byte> buffer,
         out WebSocketFrame? frame,
-        out long consumed
+        out long consumed,
+        int maxPayloadLength = int.MaxValue
     )
     {
         frame = null;
@@ -57,6 +58,15 @@ public static class WebSocketFrameCodec
             reader.TryRead(out maskKey[1]);
             reader.TryRead(out maskKey[2]);
             reader.TryRead(out maskKey[3]);
+        }
+
+        // Sentinel: -1 means "too large / invalid length" (not merely incomplete).
+        // Reject BEFORE any payload allocation — a malicious 127-form length with
+        // the sign bit set would otherwise overflow into new byte[length].
+        if (payloadLength > maxPayloadLength || payloadLength < 0)
+        {
+            consumed = -1;
+            return false;
         }
 
         if (reader.Remaining < payloadLength)

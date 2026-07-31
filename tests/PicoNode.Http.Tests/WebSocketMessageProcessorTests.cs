@@ -593,4 +593,53 @@ public sealed class WebSocketMessageProcessorTests
             CloseCount++;
         }
     }
+
+    [Test]
+    public async Task Oversized_frame_closes_with_1009()
+    {
+        // Build a state with a small MaxMessageSize and feed a frame larger than it.
+        var state = new WebSocketMessageProcessorState { MaxMessageSize = 64 };
+        // Frame: FIN+Text, length 100 (126-form), masked (mask key 00000000)
+        byte[] frame = [0x81, 0xFE, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00];
+        frame = frame.Concat(new byte[100]).ToArray();
+        var connection = new RecordingConnectionContext();
+
+        await WebSocketMessageProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(frame),
+            null,
+            CancellationToken.None,
+            state
+        );
+
+        await Assert.That(connection.CloseCount).IsGreaterThanOrEqualTo(1);
+        // RFC 6455 §7.4.1: 1009 = Message Too Big (0x3F1) — the close payload must carry it.
+        await Assert
+            .That(connection.LastSent.AsSpan().IndexOf(new byte[] { 0x03, 0xF1 }))
+            .IsGreaterThanOrEqualTo(0)
+            .Because("oversized frames must be closed with code 1009 (Message Too Big)");
+    }
+
+    [Test]
+    public async Task Invalid_utf8_text_message_closes_connection()
+    {
+        var state = new WebSocketMessageProcessorState();
+        // FIN+Text, masked, length 2, mask key 00000000 (XOR no-op), payload = invalid UTF-8 (0xC3 0x28).
+        byte[] invalidUtf8 = [0x81, 0x82, 0x00, 0x00, 0x00, 0x00, 0xC3, 0x28];
+        var connection = new RecordingConnectionContext();
+
+        // Handler must be non-null: UTF-8 validation runs on the message-delivery path.
+        await WebSocketMessageProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(invalidUtf8),
+            static (_, _, _) => ValueTask.CompletedTask,
+            CancellationToken.None,
+            state
+        );
+
+        await Assert
+            .That(connection.CloseCount)
+            .IsGreaterThanOrEqualTo(1)
+            .Because("invalid UTF-8 in a text message must be a protocol error (RFC 6455 §8.1)");
+    }
 }

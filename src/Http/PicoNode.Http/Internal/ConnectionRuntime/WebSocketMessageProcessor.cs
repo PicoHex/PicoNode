@@ -16,8 +16,22 @@ internal static class WebSocketMessageProcessor
 
         while (remaining.Length > 0)
         {
-            if (!WebSocketFrameCodec.TryReadFrame(remaining, out var frame, out var frameConsumed))
+            if (
+                !WebSocketFrameCodec.TryReadFrame(
+                    remaining,
+                    out var frame,
+                    out var frameConsumed,
+                    currentState.MaxMessageSize
+                )
+            )
             {
+                if (frameConsumed < 0)
+                {
+                    // Frame declares a payload larger than the configured maximum — close 1009.
+                    await CloseWithCodeAsync(connection, 1009, cancellationToken)
+                        .ConfigureAwait(false);
+                    return consumed;
+                }
                 return consumed;
             }
 
@@ -216,19 +230,46 @@ internal static class WebSocketMessageProcessor
         return consumed;
     }
 
+    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+
     private static bool IsValidUtf8(byte[] data)
     {
         if (data.Length == 0)
             return true;
         try
         {
-            Encoding.UTF8.GetCharCount(data);
+            // Encoding.UTF8 default uses a replacement fallback (never throws);
+            // the strict decoder throws on any invalid sequence (RFC 6455 §8.1).
+            StrictUtf8.GetCharCount(data);
             return true;
         }
         catch (DecoderFallbackException)
         {
             return false;
         }
+    }
+
+    private static async ValueTask CloseWithCodeAsync(
+        ITcpConnectionContext connection,
+        ushort code,
+        CancellationToken ct
+    )
+    {
+        byte[] payload = [(byte)(code >> 8), (byte)code];
+        var size = WebSocketFrameCodec.MeasureFrameSize(payload.Length);
+        var rented = ArrayPool<byte>.Shared.Rent(size);
+        try
+        {
+            WebSocketFrameCodec.WriteFrame(rented, WebSocketOpCode.Close, payload);
+            await connection
+                .SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+        connection.Close();
     }
 
     private static async ValueTask CloseWithProtocolError(
