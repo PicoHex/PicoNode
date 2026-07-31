@@ -306,13 +306,20 @@ internal static class Http1ConnectionProcessor
         // Send initial HTTP/2 SETTINGS (same handler as connection preface path)
         // and pass the original request as stream 1 for processing.
         // Build a minimal HPACK block for the original request.
-        var hpackData = EncodeMinimalHpack(request.Method, request.Target);
+        var hpackData = EncodeMinimalHpack(request.Method, request.Target, request.HeaderFields);
         var frameBytes = Http2FrameCodec.EncodeFrame(
             Http2FrameType.Headers,
             Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
             1,
             hpackData
         );
+
+        // RFC 7540 §3.2: the upgraded HTTP/1.1 request IS stream 1 and there is no
+        // connection preface, so the "first frame must be SETTINGS" check does not apply.
+        state.ReceivedPostPrefaceFrame = true;
+        // We are about to send SETTINGS via sendInitialSettings: true below — mark them
+        // as sent so the next OnReceivedAsync does not send a duplicate SETTINGS frame.
+        state.InitialSettingsSent = true;
 
         var remaining = new ReadOnlySequence<byte>(frameBytes);
         await Http2ConnectionProcessor.ProcessAsync(
@@ -327,11 +334,14 @@ internal static class Http1ConnectionProcessor
         return consumed;
     }
 
-    internal static byte[] EncodeMinimalHpack(string method, string path)
+    internal static byte[] EncodeMinimalHpack(
+        string method,
+        string path,
+        IReadOnlyList<KeyValuePair<string, string>>? headers = null
+    )
     {
-        // Build minimal HPACK: :method + :path
-        // Uses proper HPACK integer encoding (RFC 7541 §5.1) and
-        // correct string literal format with length prefix.
+        // Optional headers parameter keeps the existing 2-arg call sites/tests compiling.
+        headers ??= [];
         var result = new List<byte>();
 
         // :method via static table (index 2 = GET, index 3 = POST)
@@ -350,6 +360,48 @@ internal static class Http1ConnectionProcessor
         // :path via static table index 4 = literal with indexing (prefix 0100)
         result.Add(0x44);
         EncodeHpackStringLiteral(result, path);
+
+        // :scheme — static table index 6 IS the complete indexed field ":scheme: http".
+        // 0x86 is a full indexed representation: NO value literal follows it.
+        result.Add(0x86);
+
+        // :authority — static table index 1 = ":authority"
+        var host = headers
+            .FirstOrDefault(h => h.Key.Equals("Host", StringComparison.OrdinalIgnoreCase))
+            .Value;
+        if (!string.IsNullOrEmpty(host))
+        {
+            result.Add(0x41); // literal with indexing, name = static index 1 (:authority)
+            EncodeHpackStringLiteral(result, host);
+        }
+
+        // Regular headers — literal without indexing (prefix 0000)
+        foreach (var (name, value) in headers)
+        {
+            if (name.Equals("Host", StringComparison.OrdinalIgnoreCase))
+                continue;
+            // RFC 7540 §3.2 + §8.1.2.2: connection-specific header fields MUST NOT
+            // appear in an HTTP/2 message — strip them when converting the
+            // HTTP/1.1 upgrade request into stream 1 (otherwise the H2 header
+            // validation rejects the stream with PROTOCOL_ERROR).
+            var lowerName = name.ToLowerInvariant();
+            if (
+                lowerName
+                is "connection"
+                    or "keep-alive"
+                    or "proxy-connection"
+                    or "transfer-encoding"
+                    or "upgrade"
+                    or "http2-settings"
+            )
+                continue;
+            if (lowerName == "te" && !value.Equals("trailers", StringComparison.OrdinalIgnoreCase))
+                continue;
+            result.Add(0x00);
+            // RFC 7541 §6.2: header names MUST be lowercase on the wire.
+            EncodeHpackStringLiteral(result, lowerName);
+            EncodeHpackStringLiteral(result, value);
+        }
 
         return result.ToArray();
     }

@@ -1,3 +1,5 @@
+using System.Net.Sockets;
+
 namespace PicoWeb.Integration.Tests;
 
 public sealed class Http2Tests
@@ -148,6 +150,63 @@ public sealed class Http2Tests
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         return port;
+    }
+
+    [Test]
+    public async Task Http2_upgrade_header_path_works()
+    {
+        var port = GetRandomPort();
+        var app = new WebApp(new DummyContainer());
+        app.MapGet(
+            "/api/health",
+            static (WebContext ctx, CancellationToken _) =>
+                ValueTask.FromResult(WebResults.Json(200, """{"ok":true}""", "OK"))
+        );
+
+        await using var server = new WebServer(
+            app,
+            new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+        );
+        await server.StartAsync();
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, port);
+        var stream = client.GetStream();
+
+        var upgrade = Encoding.ASCII.GetBytes(
+            "GET /api/health HTTP/1.1\r\n"
+                + $"Host: 127.0.0.1:{port}\r\n"
+                + "Connection: Upgrade, HTTP2-Settings\r\n"
+                + "Upgrade: h2c\r\n"
+                + "HTTP2-Settings: \r\n"
+                + "\r\n"
+        );
+        await stream.WriteAsync(upgrade);
+
+        // Read until the stream-1 response HEADERS arrive or timeout.
+        var buffer = new byte[8192];
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var received = new MemoryStream();
+        while (received.Length < 128 && !cts.IsCancellationRequested)
+        {
+            var n = await stream.ReadAsync(buffer, cts.Token);
+            if (n == 0)
+                break;
+            received.Write(buffer, 0, n);
+            // Keep reading until we see a HEADERS frame with :status 200 (HPACK: 0x88 = :status 200 indexed).
+            if (received.ToArray().AsSpan().IndexOf((byte)0x88) >= 0)
+                break;
+        }
+
+        var bytes = received.ToArray();
+        await Assert
+            .That(bytes.AsSpan().IndexOf("101"u8))
+            .IsGreaterThanOrEqualTo(0)
+            .Because("101 Switching Protocols must be sent");
+        await Assert
+            .That(bytes.AsSpan().IndexOf((byte)0x88))
+            .IsGreaterThanOrEqualTo(0)
+            .Because("stream 1 must receive a response (HPACK :status 200)");
     }
 
     private sealed class DummyContainer : PicoDI.Abs.ISvcContainer
