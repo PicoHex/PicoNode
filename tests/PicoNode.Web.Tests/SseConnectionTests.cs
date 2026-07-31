@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace PicoNode.Web.Tests;
 
 public sealed class SseConnectionTests
@@ -181,5 +183,117 @@ public sealed class SseConnectionTests
         var sse = new SseConnection(pipe.Writer);
 
         await Assert.That(sse.KeepAliveInterval).IsEqualTo(TimeSpan.FromSeconds(15));
+    }
+
+    [Test]
+    public async Task Idle_connection_emits_keepalive_frames()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer, TimeSpan.FromMilliseconds(50));
+
+        // One frame starts the lazy loop; then the connection goes silent.
+        await sse.WriteAsync("data: hello\n\n", CancellationToken.None);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var output = await ReadUntilKeepAliveAsync(pipe.Reader, cts.Token);
+
+        await Assert
+            .That(output)
+            .Contains(": keepalive")
+            .Because("idle SSE connection must emit keep-alive comment frames");
+
+        await sse.CompleteAsync(CancellationToken.None);
+        // Loop self-terminates on its next wake (failed write on completed pipe).
+    }
+
+    [Test]
+    public async Task Busy_stream_does_not_get_interleaved_pings()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer, TimeSpan.FromMilliseconds(200));
+
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.ElapsedMilliseconds < 600)
+        {
+            await sse.WriteAsync($"data: {stopwatch.ElapsedMilliseconds}\n\n", CancellationToken.None);
+            await Task.Delay(5);
+        }
+        await sse.CompleteAsync(CancellationToken.None);
+
+        var output = await ReadAllTextAsync(pipe.Reader);
+        await Assert
+            .That(output.Contains(": keepalive"))
+            .IsFalse()
+            .Because("writes every 5ms keep the stream busy; idle-only pinging must stay silent");
+    }
+
+    [Test]
+    public async Task Zero_keep_alive_interval_disables_pings()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer, TimeSpan.Zero);
+
+        await sse.WriteAsync("data: hi\n\n", CancellationToken.None);
+        await Task.Delay(150);
+        await sse.CompleteAsync(CancellationToken.None);
+
+        var output = await ReadAllTextAsync(pipe.Reader);
+        await Assert.That(output.Contains(": keepalive")).IsFalse();
+    }
+
+    [Test]
+    public async Task Concurrent_handler_writes_and_pings_do_not_corrupt_stream()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer, TimeSpan.FromMilliseconds(50));
+
+        // Jittered 30-80ms gaps mean roughly half the gaps exceed the 50ms interval,
+        // so pings really interleave with handler writes.
+        var rng = new Random(42);
+        for (var i = 0; i < 15; i++)
+        {
+            await sse.WriteAsync($"data: frame {i}\n\n", CancellationToken.None);
+            await Task.Delay(rng.Next(30, 80));
+        }
+        await sse.CompleteAsync(CancellationToken.None);
+
+        var output = await ReadAllTextAsync(pipe.Reader);
+        for (var i = 0; i < 15; i++)
+        {
+            await Assert
+                .That(output)
+                .Contains($"data: frame {i}\n\n")
+                .Because("interleaved write+flush pairs would corrupt frame bytes");
+        }
+    }
+
+    private static async Task<string> ReadAllTextAsync(PipeReader reader)
+    {
+        var sb = new StringBuilder();
+        while (true)
+        {
+            var result = await reader.ReadAsync(CancellationToken.None);
+            sb.Append(Encoding.UTF8.GetString(result.Buffer));
+            reader.AdvanceTo(result.Buffer.End);
+            if (result.IsCompleted)
+            {
+                return sb.ToString();
+            }
+        }
+    }
+
+    private static async Task<string> ReadUntilKeepAliveAsync(PipeReader reader, CancellationToken ct)
+    {
+        var sb = new StringBuilder();
+        while (true)
+        {
+            var result = await reader.ReadAsync(ct);
+            sb.Append(Encoding.UTF8.GetString(result.Buffer));
+            reader.AdvanceTo(result.Buffer.End);
+            if (result.IsCompleted || sb.ToString().Contains(": keepalive"))
+            {
+                return sb.ToString();
+            }
+        }
     }
 }

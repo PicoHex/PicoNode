@@ -9,6 +9,8 @@ public sealed class SseConnection
     private readonly PipeWriter _writer;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private long _lastWriteTicks;
+    private Task? _keepAliveTask;
+    private CancellationTokenSource? _keepAliveCts;
 
     /// <summary>
     /// Interval between automatic keep-alive pings.
@@ -94,6 +96,30 @@ public sealed class SseConnection
         return WriteEventAsync("error", $$"""{"message":"{{escaped}}"}""", ct);
     }
 
+    private async Task KeepAliveLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            await Task.Delay(KeepAliveInterval, ct).ConfigureAwait(false);
+            var idle = DateTimeOffset.UtcNow.Ticks - Interlocked.Read(ref _lastWriteTicks);
+            if (idle >= KeepAliveInterval.Ticks)
+            {
+                try
+                {
+                    await PingAsync(ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch
+                {
+                    break; // pipe completed / connection gone
+                }
+            }
+        }
+    }
+
     /// <summary>
     /// Single locking point: ALL writes (handler writes, pings, [DONE]) serialize
     /// through this method. SemaphoreSlim is not reentrant, so outer methods must
@@ -106,6 +132,13 @@ public sealed class SseConnection
         {
             await _writeLock.WaitAsync(ct).ConfigureAwait(false);
             acquired = true;
+
+            // Atomic lazy start: all writes serialize through this lock.
+            if (KeepAliveInterval > TimeSpan.Zero)
+            {
+                _keepAliveCts ??= new CancellationTokenSource();
+                _keepAliveTask ??= KeepAliveLoopAsync(_keepAliveCts.Token);
+            }
 
             Interlocked.Exchange(ref _lastWriteTicks, DateTimeOffset.UtcNow.UtcTicks);
             await _writer.WriteAsync(bytes, ct).ConfigureAwait(false);
