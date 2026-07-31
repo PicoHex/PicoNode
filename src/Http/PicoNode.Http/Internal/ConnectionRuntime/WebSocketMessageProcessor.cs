@@ -136,10 +136,11 @@ internal static class WebSocketMessageProcessor
                     currentState.MessageOpCode = frame.OpCode;
                     currentState.PayloadBuffer.Clear();
 
-                    var payload1 = frame.Rsv1
-                        ? currentState.Decompress(frame.Payload.Span)
-                        : frame.Payload.ToArray();
-                    currentState.PayloadBuffer.Write(payload1);
+                    // RSV1 is only valid on the FIRST frame of a message (RFC 7692 §6);
+                    // record it and buffer the RAW payload — decompression must happen
+                    // once over the whole reassembled message, not per fragment.
+                    currentState.MessageCompressed = frame.Rsv1;
+                    currentState.PayloadBuffer.Write(frame.Payload.Span);
 
                     if (currentState.PayloadBuffer.WrittenCount > currentState.MaxMessageSize)
                     {
@@ -150,28 +151,13 @@ internal static class WebSocketMessageProcessor
 
                     if (frame.Fin && handler is not null)
                     {
-                        var messageBytes = currentState.PayloadBuffer.WrittenMemory.ToArray();
-                        // RFC 6455 §8.1: Text messages must be valid UTF-8
-                        if (
-                            currentState.MessageOpCode == WebSocketOpCode.Text
-                            && !IsValidUtf8(messageBytes)
-                        )
-                        {
-                            await CloseWithProtocolError(connection, cancellationToken)
-                                .ConfigureAwait(false);
-                            return consumed;
-                        }
-                        await handler(
-                            new WebSocketMessage(
-                                currentState.MessageOpCode.Value,
-                                messageBytes,
-                                true
-                            ),
-                            connection,
-                            cancellationToken
-                        );
-                        currentState.MessageOpCode = null;
-                        currentState.PayloadBuffer.Clear();
+                        await DeliverMessageAsync(
+                                connection,
+                                currentState,
+                                handler,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
                     }
                     break;
 
@@ -184,10 +170,7 @@ internal static class WebSocketMessageProcessor
                         return consumed;
                     }
 
-                    var payload2 = frame.Rsv1
-                        ? currentState.Decompress(frame.Payload.Span)
-                        : frame.Payload.ToArray();
-                    currentState.PayloadBuffer.Write(payload2);
+                    currentState.PayloadBuffer.Write(frame.Payload.Span);
 
                     if (currentState.PayloadBuffer.WrittenCount > currentState.MaxMessageSize)
                     {
@@ -198,27 +181,13 @@ internal static class WebSocketMessageProcessor
 
                     if (frame.Fin && handler is not null)
                     {
-                        var messageBytes = currentState.PayloadBuffer.WrittenMemory.ToArray();
-                        if (
-                            currentState.MessageOpCode == WebSocketOpCode.Text
-                            && !IsValidUtf8(messageBytes)
-                        )
-                        {
-                            await CloseWithProtocolError(connection, cancellationToken)
-                                .ConfigureAwait(false);
-                            return consumed;
-                        }
-                        await handler(
-                            new WebSocketMessage(
-                                currentState.MessageOpCode.Value,
-                                messageBytes,
-                                true
-                            ),
-                            connection,
-                            cancellationToken
-                        );
-                        currentState.MessageOpCode = null;
-                        currentState.PayloadBuffer.Clear();
+                        await DeliverMessageAsync(
+                                connection,
+                                currentState,
+                                handler,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
                     }
                     break;
 
@@ -231,6 +200,40 @@ internal static class WebSocketMessageProcessor
     }
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+
+    /// <summary>
+    /// Decompresses (when the message is permessage-deflate compressed) the fully
+    /// reassembled payload, validates UTF-8 for text messages, and delivers it.
+    /// </summary>
+    private static async ValueTask DeliverMessageAsync(
+        ITcpConnectionContext connection,
+        WebSocketMessageProcessorState currentState,
+        WebSocketMessageHandler handler,
+        CancellationToken ct
+    )
+    {
+        var messageBytes = currentState.MessageCompressed
+            ? currentState.Decompress(currentState.PayloadBuffer.WrittenMemory.Span)
+            : currentState.PayloadBuffer.WrittenMemory.ToArray();
+
+        // RFC 6455 §8.1: Text messages must be valid UTF-8
+        if (currentState.MessageOpCode == WebSocketOpCode.Text && !IsValidUtf8(messageBytes))
+        {
+            await CloseWithProtocolError(connection, ct).ConfigureAwait(false);
+            currentState.MessageOpCode = null;
+            currentState.PayloadBuffer.Clear();
+            return;
+        }
+
+        await handler(
+                new WebSocketMessage(currentState.MessageOpCode!.Value, messageBytes, true),
+                connection,
+                ct
+            )
+            .ConfigureAwait(false);
+        currentState.MessageOpCode = null;
+        currentState.PayloadBuffer.Clear();
+    }
 
     private static bool IsValidUtf8(byte[] data)
     {

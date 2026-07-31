@@ -13,6 +13,10 @@ internal sealed class WebSocketMessageProcessorState
     /// <summary>Whether permessage-deflate compression was negotiated.</summary>
     public bool CompressionNegotiated { get; set; }
 
+    /// <summary>Whether the in-progress fragmented message has RSV1 set (permessage-deflate).
+    /// Recorded from the first frame; decompression happens once on the whole message.</summary>
+    public bool MessageCompressed { get; set; }
+
     /// <summary>UTC timestamp of the last received frame (for idle timeout).</summary>
     public DateTime LastFrameReceivedAt { get; set; } = DateTime.UtcNow;
 
