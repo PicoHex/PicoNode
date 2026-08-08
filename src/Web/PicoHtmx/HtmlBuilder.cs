@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text;
 
 namespace PicoHtmx;
 
@@ -12,7 +13,17 @@ public static class H
                 .Replace(">", "&gt;")
                 .Replace("\"", "&quot;");
 
-    public static string Tag(string name, string? content = null, object? attrs = null)
+    // ── Core (generic attrs) ──────────────────────────────────────────────
+    // Generic attrs carry [DynamicallyAccessedMembers(PublicProperties)]: the
+    // trimmer preserves the attrs type's public properties at every call site
+    // (anonymous types included), so the reflective AppendAttributes below is
+    // AOT-safe — a bare `object` param would let trimming strip those
+    // properties and every attribute would silently vanish from the HTML.
+
+    public static string Tag<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
+    >(string name, string? content = null, T? attrs = null)
+        where T : class
     {
         var sb = new StringBuilder();
         sb.Append('<').Append(name);
@@ -24,15 +35,50 @@ public static class H
         return sb.ToString();
     }
 
+    // Non-generic fallback for null / runtime-dynamic attrs (callers passing a
+    // dynamically-typed attrs object must use a type preserved by trimming).
+    public static string Tag(string name, string? content = null, object? attrs = null) =>
+        Tag<object>(name, content, attrs);
+
+    public static string Div<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
+    >(string? content = null, T? attrs = null)
+        where T : class => Tag("div", content, attrs);
+
     public static string Div(string? content = null, object? attrs = null) =>
-        Tag("div", content, attrs);
+        Tag<object>("div", content, attrs);
+
+    public static string Span<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
+    >(string? content = null, T? attrs = null)
+        where T : class => Tag("span", content, attrs);
 
     public static string Span(string? content = null, object? attrs = null) =>
-        Tag("span", content, attrs);
+        Tag<object>("span", content, attrs);
 
-    public static string P(string text, object? attrs = null) => Tag("p", E(text), attrs);
+    public static string P<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
+    >(string text, T? attrs = null)
+        where T : class => Tag("p", E(text), attrs);
 
-    public static string Button(string text, object? attrs = null) => Tag("button", E(text), attrs);
+    public static string P(string text, object? attrs = null) => Tag<object>("p", E(text), attrs);
+
+    public static string Button<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
+    >(string text, T? attrs = null)
+        where T : class => Tag("button", E(text), attrs);
+
+    public static string Button(string text, object? attrs = null) =>
+        Tag<object>("button", E(text), attrs);
+
+    public static string A<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
+    >(string text, string href, T? attrs = null)
+        where T : class
+    {
+        var attrStr = BuildAttrString(attrs);
+        return $"<a href=\"{E(href)}\"{attrStr}>{E(text)}</a>";
+    }
 
     public static string A(string text, string href, object? attrs = null)
     {
@@ -40,10 +86,20 @@ public static class H
         return $"<a href=\"{E(href)}\"{attrStr}>{E(text)}</a>";
     }
 
-    public static string Input(object? attrs = null) => Tag("input", null, attrs);
+    public static string Input<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
+    >(T? attrs = null)
+        where T : class => Tag("input", null, attrs);
+
+    public static string Input(object? attrs = null) => Tag<object>("input", null, attrs);
+
+    public static string TextArea<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
+    >(string? value = null, T? attrs = null)
+        where T : class => Tag("textarea", E(value), attrs);
 
     public static string TextArea(string? value = null, object? attrs = null) =>
-        Tag("textarea", E(value), attrs);
+        Tag<object>("textarea", E(value), attrs);
 
     public static string Script(string src) => Tag("script", null, new { src });
 
@@ -53,19 +109,23 @@ public static class H
     [UnconditionalSuppressMessage(
         "Trimming",
         "IL2075:GetProperties",
-        Justification = "Reflecting attribute properties is intentional and required by the HTML builder API; framework call sites pass anonymous types (preserved by the trimmer), and external callers must pass types whose properties are preserved"
+        Justification = "Property preservation is guaranteed by the generic attrs parameter's "
+            + "[DynamicallyAccessedMembers(PublicProperties)] constraint at every call site; "
+            + "the non-generic fallback accepts only null or caller-preserved types."
     )]
     [UnconditionalSuppressMessage(
         "Trimming",
         "IL2075:GetValue",
-        Justification = "Reflecting attribute properties is intentional and required by the HTML builder API; framework call sites pass anonymous types (preserved by the trimmer), and external callers must pass types whose properties are preserved"
+        Justification = "Property preservation is guaranteed by the generic attrs parameter's "
+            + "[DynamicallyAccessedMembers(PublicProperties)] constraint at every call site; "
+            + "the non-generic fallback accepts only null or caller-preserved types."
     )]
     private static void AppendAttributes(StringBuilder sb, object? attrs)
     {
         if (attrs is null)
             return;
         var attrType = attrs.GetType();
-#pragma warning disable IL2075 // Reflection on attribute properties is intentional; callers pass types whose properties are preserved
+#pragma warning disable IL2075 // Attribute properties preserved via the generic attrs DAM constraint
         foreach (var prop in attrType.GetProperties())
 #pragma warning restore IL2075
         {
