@@ -95,3 +95,14 @@ jobs:
           --no-restore -c Release -r ${{ matrix.rid }}
           -p:PublishAot=true --self-contained
           -o publish-echo/${{ matrix.rid }}
+
+      # PicoHtmx AOT validation: PicoWeb.Samples references PicoHtmx and sets
+      # PublishAot in its csproj. No global -p:PublishAot=true here — a global
+      # flag would propagate to the netstandard2.0 source-generator projects
+      # (PicoWeb.Gen / Controllers.Gen) in the graph and fail with NETSDK1207.
+      - name: AOT publish (PicoHtmx web sample)
+        run: >
+          dotnet publish samples/PicoWeb.Samples/PicoWeb.Samples.csproj
+          --no-restore -c Release -r ${{ matrix.rid }}
+          --self-contained
+          -o publish-htmx/${{ matrix.rid }}
