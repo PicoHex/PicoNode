@@ -85,16 +85,23 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
         var isStatic = classSymbol.IsStatic;
         // Prefer constructor with [SvcConstructor], otherwise first public ctor.
-        var ctor = classSymbol.Constructors
-            .Where(c => c.DeclaredAccessibility == Accessibility.Public)
-            .OrderByDescending(c => c.GetAttributes().Any(
-                a => a.AttributeClass?.Name == "SvcConstructorAttribute"))
+        var ctor = classSymbol
+            .Constructors.Where(c => c.DeclaredAccessibility == Accessibility.Public)
+            .OrderByDescending(c =>
+                c.GetAttributes().Any(a => a.AttributeClass?.Name == "SvcConstructorAttribute")
+            )
             .FirstOrDefault();
         var ctorParams = ctor?.Parameters ?? default;
 
         return new ControllerModel(
-            controllerName, controllerFullName, routePrefix, methods,
-            isStatic, ctor, ctorParams);
+            controllerName,
+            controllerFullName,
+            routePrefix,
+            methods,
+            isStatic,
+            ctor,
+            ctorParams
+        );
     }
 
     private static string? GetHttpMethod(MethodDeclarationSyntax method, IMethodSymbol methodSymbol)
@@ -302,11 +309,10 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 // Empty method route (e.g. [HttpPost] without path arg) → use prefix as-is
                 // Absolute route (starts with /) → replaces the prefix entirely
                 // Relative route → appended with a slash separator
-                var fullRoute = string.IsNullOrEmpty(methodRoute)
-                    ? controller.RoutePrefix
-                    : methodRoute.StartsWith("/")
-                        ? methodRoute
-                        : controller.RoutePrefix + "/" + methodRoute;
+                var fullRoute =
+                    string.IsNullOrEmpty(methodRoute) ? controller.RoutePrefix
+                    : methodRoute.StartsWith("/") ? methodRoute
+                    : controller.RoutePrefix + "/" + methodRoute;
 
                 // Analyze return type before emitting the lambda so we know
                 // whether to add 'async'.
@@ -367,9 +373,8 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
                     if (!IsComplexType(param.Type))
                     {
-                        var parseExpr = GetRouteValueParseExpression(typeName, paramName);
                         endpointsCode.AppendLine(
-                            $"                var __{paramName} = {parseExpr};"
+                            $"                {GetRouteValueBinding(typeName, paramName, isAsync)}"
                         );
                     }
                     else
@@ -409,9 +414,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                         $"                var __result = ({resultTypeName}){awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});"
                     );
                     if (isAsync)
-                        endpointsCode.AppendLine(
-                            "                return __result.Execute(ctx);"
-                        );
+                        endpointsCode.AppendLine("                return __result.Execute(ctx);");
                     else
                         endpointsCode.AppendLine(
                             "                return ValueTask.FromResult(__result.Execute(ctx));"
@@ -491,7 +494,9 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             if (controller.IsStatic)
                 continue;
 
-            diCode.AppendLine("        container.Register(global::PicoDI.Abs.SvcDescriptor.Create(");
+            diCode.AppendLine(
+                "        container.Register(global::PicoDI.Abs.SvcDescriptor.Create("
+            );
             diCode.AppendLine($"            typeof({fqn}),");
 
             if (controller.ConstructorParams.IsDefaultOrEmpty)
@@ -506,13 +511,18 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 var ctorArgs = new List<string>();
                 foreach (var param in controller.ConstructorParams)
                 {
-                    var paramType = param.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                    var paramType = param.Type.ToDisplayString(
+                        SymbolDisplayFormat.FullyQualifiedFormat
+                    );
                     var paramName = param.Name;
                     diCode.AppendLine(
-                        $"                var __{paramName} = ({paramType})scope.GetService(typeof({paramType}))!;");
+                        $"                var __{paramName} = ({paramType})scope.GetService(typeof({paramType}))!;"
+                    );
                     ctorArgs.Add($"__{paramName}");
                 }
-                diCode.AppendLine($"                return new {fqn}({string.Join(", ", ctorArgs)});");
+                diCode.AppendLine(
+                    $"                return new {fqn}({string.Join(", ", ctorArgs)});"
+                );
                 diCode.AppendLine("            },");
             }
 
@@ -526,35 +536,68 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         context.AddSource("ControllerServiceRegistrations.g.cs", diCode.ToString());
     }
 
-    private static string GetRouteValueParseExpression(string typeName, string paramName)
+    /// <summary>
+    /// Emits the route-value binding for a simple-typed parameter. Strings bind
+    /// raw; every other simple type binds via a TryParse guard that short-
+    /// circuits with 404 when the URL segment cannot be converted (PicoWeb has
+    /// no route constraints, so {id} matches ANY segment — an unguarded
+    /// Guid.Parse(img.png) threw FormatException → 500; regression: browser
+    /// requesting /fragments/sessions/img.png for a relative markdown image).
+    /// </summary>
+    private static string GetRouteValueBinding(string typeName, string paramName, bool isAsync)
     {
         var key = $"ctx.RouteValues[\"{paramName}\"]";
         var inv = "System.Globalization.CultureInfo.InvariantCulture";
+        // Async lambda: HttpResponse converts implicitly to ValueTask<HttpResponse>;
+        // sync lambda must wrap explicitly (its body returns ValueTask<T> directly).
+        var notFound = isAsync
+            ? "PicoWeb.Results.Empty(404)"
+            : "ValueTask.FromResult(PicoWeb.Results.Empty(404))";
 
-        return typeName switch
+        if (typeName is "string" or "global::System.String")
+            return $"var __{paramName} = {key};";
+
+        var tryParse = typeName switch
         {
-            "int" or "global::System.Int32" => $"int.Parse({key}, {inv})",
-            "long" or "global::System.Int64" => $"long.Parse({key}, {inv})",
-            "short" or "global::System.Int16" => $"short.Parse({key}, {inv})",
-            "ushort" or "global::System.UInt16" => $"ushort.Parse({key}, {inv})",
-            "uint" or "global::System.UInt32" => $"uint.Parse({key}, {inv})",
-            "ulong" or "global::System.UInt64" => $"ulong.Parse({key}, {inv})",
-            "byte" or "global::System.Byte" => $"byte.Parse({key}, {inv})",
-            "sbyte" or "global::System.SByte" => $"sbyte.Parse({key}, {inv})",
-            "float" or "global::System.Single" => $"float.Parse({key}, {inv})",
-            "double" or "global::System.Double" => $"double.Parse({key}, {inv})",
-            "decimal" or "global::System.Decimal" => $"decimal.Parse({key}, {inv})",
-            "bool" or "global::System.Boolean" => $"bool.Parse({key})",
-            "char" or "global::System.Char" => $"char.Parse({key})",
-            "global::System.Guid" => $"global::System.Guid.Parse({key})",
-            "global::System.DateTime" => $"global::System.DateTime.Parse({key}, {inv})",
-            "global::System.DateTimeOffset" => $"global::System.DateTimeOffset.Parse({key}, {inv})",
-            "global::System.TimeSpan" => $"global::System.TimeSpan.Parse({key}, {inv})",
-            "global::System.DateOnly" => $"global::System.DateOnly.Parse({key}, {inv})",
-            "global::System.TimeOnly" => $"global::System.TimeOnly.Parse({key}, {inv})",
-            "string" or "global::System.String" => key,
-            _ => $"({typeName})System.Enum.Parse(typeof({typeName}), {key})",
+            "int" or "global::System.Int32" =>
+                $"int.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+            "long" or "global::System.Int64" =>
+                $"long.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+            "short" or "global::System.Int16" =>
+                $"short.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+            "ushort" or "global::System.UInt16" =>
+                $"ushort.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+            "uint" or "global::System.UInt32" =>
+                $"uint.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+            "ulong" or "global::System.UInt64" =>
+                $"ulong.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+            "byte" or "global::System.Byte" =>
+                $"byte.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+            "sbyte" or "global::System.SByte" =>
+                $"sbyte.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+            "float" or "global::System.Single" =>
+                $"float.TryParse({key}, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, {inv}, out var __{paramName})",
+            "double" or "global::System.Double" =>
+                $"double.TryParse({key}, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, {inv}, out var __{paramName})",
+            "decimal" or "global::System.Decimal" =>
+                $"decimal.TryParse({key}, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, {inv}, out var __{paramName})",
+            "bool" or "global::System.Boolean" => $"bool.TryParse({key}, out var __{paramName})",
+            "char" or "global::System.Char" => $"char.TryParse({key}, out var __{paramName})",
+            "global::System.Guid" => $"global::System.Guid.TryParse({key}, out var __{paramName})",
+            "global::System.DateTime" =>
+                $"global::System.DateTime.TryParse({key}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
+            "global::System.DateTimeOffset" =>
+                $"global::System.DateTimeOffset.TryParse({key}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
+            "global::System.TimeSpan" =>
+                $"global::System.TimeSpan.TryParse({key}, {inv}, out var __{paramName})",
+            "global::System.DateOnly" =>
+                $"global::System.DateOnly.TryParse({key}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
+            "global::System.TimeOnly" =>
+                $"global::System.TimeOnly.TryParse({key}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
+            _ => $"System.Enum.TryParse<{typeName}>({key}, out var __{paramName})",
         };
+
+        return $"if (!{tryParse})\n                    return {notFound};";
     }
 
     private static bool ReturnsIWebResult(ITypeSymbol returnType)
@@ -564,17 +607,20 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
         bool ImplementsIWebResult(INamedTypeSymbol t) =>
             t.AllInterfaces.Any(i =>
-                i.Name == "IWebResult" &&
-                i.ContainingNamespace.ToDisplayString() == "PicoNode.Web")
-            || (t.Name == "IWebResult" &&
-                t.ContainingNamespace.ToDisplayString() == "PicoNode.Web");
+                i.Name == "IWebResult" && i.ContainingNamespace.ToDisplayString() == "PicoNode.Web"
+            )
+            || (
+                t.Name == "IWebResult" && t.ContainingNamespace.ToDisplayString() == "PicoNode.Web"
+            );
 
         if (ImplementsIWebResult(named))
             return true;
 
-        if ((named.Name is "ValueTask" or "Task") &&
-            named.TypeArguments.Length == 1 &&
-            named.TypeArguments[0] is INamedTypeSymbol inner)
+        if (
+            (named.Name is "ValueTask" or "Task")
+            && named.TypeArguments.Length == 1
+            && named.TypeArguments[0] is INamedTypeSymbol inner
+        )
         {
             return ImplementsIWebResult(inner);
         }

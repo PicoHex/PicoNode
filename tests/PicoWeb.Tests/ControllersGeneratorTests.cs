@@ -19,8 +19,12 @@ public sealed class ControllersGeneratorTests
         var result = RunGenerator(source, "Controllers/TestController.cs");
 
         await Assert.That(result).Contains("GetPage(ctx, ct)");
-        await Assert.That(result).DoesNotContain("GetService(typeof(global::PicoNode.Web.WebContext))");
-        await Assert.That(result).DoesNotContain("GetService(typeof(global::System.Threading.CancellationToken))");
+        await Assert
+            .That(result)
+            .DoesNotContain("GetService(typeof(global::PicoNode.Web.WebContext))");
+        await Assert
+            .That(result)
+            .DoesNotContain("GetService(typeof(global::System.Threading.CancellationToken))");
     }
 
     [Test]
@@ -43,6 +47,7 @@ public sealed class ControllersGeneratorTests
         await Assert.That(result).Contains("MapGet(\"/\"");
         await Assert.That(result).DoesNotContain("MapGet(\"//\"");
     }
+
     [Test]
     public async Task Controller_in_Controllers_folder_generates_EndpointRegistrar()
     {
@@ -166,7 +171,7 @@ public sealed class ControllersGeneratorTests
     }
 
     [Test]
-    public async Task Int_route_param_uses_intParse_not_ConvertChangeType()
+    public async Task Int_route_param_uses_int_TryParse_guard()
     {
         var source = """
             namespace MyApp.Controllers;
@@ -178,7 +183,7 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Controllers/UsersController.cs");
 
-        await Assert.That(result).Contains("int.Parse(ctx.RouteValues[\"id\"]");
+        await Assert.That(result).Contains("int.TryParse(ctx.RouteValues[\"id\"]");
         await Assert.That(result).DoesNotContain("Convert.ChangeType");
     }
 
@@ -199,7 +204,7 @@ public sealed class ControllersGeneratorTests
     }
 
     [Test]
-    public async Task Long_route_param_uses_longParse()
+    public async Task Long_route_param_uses_long_TryParse_guard()
     {
         var source = """
             namespace MyApp.Controllers;
@@ -211,7 +216,8 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Controllers/ItemsController.cs");
 
-        await Assert.That(result).Contains("long.Parse(ctx.RouteValues[\"id\"]");
+        await Assert.That(result).Contains("long.TryParse(ctx.RouteValues[\"id\"]");
+        await Assert.That(result).Contains("PicoWeb.Results.Empty(404)");
     }
 
     [Test]
@@ -268,7 +274,7 @@ public sealed class ControllersGeneratorTests
 
         await Assert.That(result).Contains("{blogId}");
         await Assert.That(result).Contains("{slug}");
-        await Assert.That(result).Contains("int.Parse(ctx.RouteValues[\"blogId\"]");
+        await Assert.That(result).Contains("int.TryParse(ctx.RouteValues[\"blogId\"]");
         await Assert.That(result).Contains("var __slug = ctx.RouteValues[\"slug\"]");
     }
 
@@ -475,7 +481,9 @@ public sealed class ControllersGeneratorTests
         // Should generate SvcDescriptor.Create with factory delegate
         await Assert.That(result).Contains("SvcDescriptor.Create");
         await Assert.That(result).Contains("scope =>");
-        await Assert.That(result).Contains("scope.GetService(typeof(global::PicoNode.Web.HtmlResult))");
+        await Assert
+            .That(result)
+            .Contains("scope.GetService(typeof(global::PicoNode.Web.HtmlResult))");
         await Assert.That(result).Contains("new global::TestApp.Controllers.TestController(");
         await Assert.That(result).Contains("SvcLifetime.Scoped");
     }
@@ -495,8 +503,11 @@ public sealed class ControllersGeneratorTests
         var result = RunGenerator(source, "Controllers/StaticController.cs");
 
         // Should NOT contain DI registration for StaticController
-        await Assert.That(result).DoesNotContain(
-            "SvcDescriptor.Create(typeof(global::TestApp.Controllers.StaticController)");
+        await Assert
+            .That(result)
+            .DoesNotContain(
+                "SvcDescriptor.Create(typeof(global::TestApp.Controllers.StaticController)"
+            );
         // But should still generate endpoint
         await Assert.That(result).Contains("MapGet");
     }
@@ -542,7 +553,7 @@ public sealed class ControllersGeneratorTests
     }
 
     [Test]
-    public async Task Guid_parameter_uses_Guid_Parse_not_Convert_ChangeType()
+    public async Task Guid_parameter_uses_Guid_TryParse_not_Convert_ChangeType()
     {
         var source = """
             namespace MyApp.Controllers;
@@ -554,9 +565,89 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Controllers/UsersController.cs");
 
-        // Debug: show generated source for route binding
-        await Assert.That(result).Contains("Guid.Parse");
+        // TryParse guard — an unparseable segment (e.g. img.png) must 404,
+        // never throw FormatException → 500.
+        await Assert.That(result).Contains("Guid.TryParse");
+        await Assert.That(result).Contains("PicoWeb.Results.Empty(404)");
+        await Assert.That(result).DoesNotContain("Guid.Parse(");
         await Assert.That(result).DoesNotContain("Convert.ChangeType");
+    }
+
+    [Test]
+    public async Task Guid_parameter_unparseable_route_value_returns_404()
+    {
+        var source = """
+            namespace MyApp.Controllers;
+            public class UsersController
+            {
+                public string GetUser(System.Guid id) { return "test"; }
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/UsersController.cs");
+
+        // Regression: GET /fragments/sessions/img.png matched {id} and threw
+        // System.FormatException (Guid.Parse) → 500. The guard must bind via
+        // out-var TryParse and short-circuit with 404.
+        await Assert.That(result).Contains("out var __id");
+        await Assert
+            .That(result)
+            .Contains("return ValueTask.FromResult(PicoWeb.Results.Empty(404));");
+    }
+
+    [Test]
+    public async Task Int_parameter_unparseable_route_value_returns_404()
+    {
+        var source = """
+            namespace MyApp.Controllers;
+            public class UsersController
+            {
+                public string GetUser(int id) { return "test"; }
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/UsersController.cs");
+
+        await Assert.That(result).Contains("int.TryParse");
+        await Assert.That(result).Contains("System.Globalization.CultureInfo.InvariantCulture");
+        await Assert.That(result).Contains("PicoWeb.Results.Empty(404)");
+        await Assert.That(result).DoesNotContain("int.Parse(");
+    }
+
+    [Test]
+    public async Task Enum_parameter_unparseable_route_value_returns_404()
+    {
+        var source = """
+            namespace MyApp.Controllers;
+            public enum Color { Red, Green }
+            public class UsersController
+            {
+                public string GetUser(Color color) { return "test"; }
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/UsersController.cs");
+
+        await Assert.That(result).Contains("System.Enum.TryParse");
+        await Assert.That(result).Contains("PicoWeb.Results.Empty(404)");
+    }
+
+    [Test]
+    public async Task String_parameter_has_no_parse_guard()
+    {
+        var source = """
+            namespace MyApp.Controllers;
+            public class UsersController
+            {
+                public string GetUser(string id) { return "test"; }
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/UsersController.cs");
+
+        // Strings bind raw — nothing can fail, so no 404 guard may appear.
+        await Assert.That(result).Contains("var __id = ctx.RouteValues[\"id\"];");
+        await Assert.That(result).DoesNotContain("PicoWeb.Results.Empty(404)");
     }
 
     [Test]
