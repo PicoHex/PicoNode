@@ -152,59 +152,58 @@ Console.ReadLine();
 await node.DisposeAsync();
 ```
 
-### 網頁應用程式（搭配 PicoHex 生態系）
+### 網頁應用程式（DI 優先 + 委派）
 
 ```csharp
-using System.Net;
-using PicoDI.Abs;
-using PicoLog.Abs;
 using PicoNode.Web;
 using PicoWeb;
 
+var api = new WebApiBuilder()
+    .ConfigureApp(_ => new WebAppOptions { ServerHeader = "MyApp" })
+    // ConfigureApp receives the CURRENT options — later calls can build on
+    // earlier configuration instead of starting from defaults.
+    .RegisterScoped<IUserService, UserService>()
+    .Build();
 
-var app = new WebApp(new WebAppOptions
+api.MapGet("/", (WebContext ctx) =>
+    Results.Text(200, "Hello, World!"));
+
+api.MapGet("/users/{id}", async (WebContext ctx, IUserService svc) =>
 {
-    ServerHeader = "MyApp",
+    var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+    return Results.Json(200, bytes);
 });
 
-// Middleware
-app.Use(async (context, next, ct) =>
+api.MapPost("/echo", async (WebContext ctx) =>
 {
-    var response = await next(context, ct);
-    return response;
+    using var reader = new StreamReader(ctx.Request.BodyStream);
+    var body = await reader.ReadToEndAsync();
+    return Results.Text(200, body);
 });
 
-// Routes
-app.MapGet("/", static (_, _) =>
-    ValueTask.FromResult(WebResults.Text(200, "Hello, World!", "OK")));
-
-app.MapGet("/users/{id}", static (ctx, _) =>
-{
-    var id = ctx.RouteValues["id"];
-    return ValueTask.FromResult(
-        WebResults.Json(200, $$"""{"id":"{{id}}"}""", "OK"));
-});
-
-app.MapPost("/echo", static (ctx, _) =>
-{
-    var body = Encoding.UTF8.GetString(ctx.Request.Body.Span);
-    return ValueTask.FromResult(WebResults.Text(200, body, "OK"));
-});
-
-// DI-aware hosting
-var container = new SvcContainer();
-container.RegisterSingleton<IMyService, MyServiceImpl>();
-
-await using var server = new WebServer(app, new WebServerOptions
-{
-    Endpoint = new IPEndPoint(IPAddress.Loopback, 8080),
-}, container);
-
-await server.StartAsync();
-Console.ReadLine();
-await server.StopAsync();
+await api.RunAsync("http://+:8080");
 ```
 
+### 網頁應用程式（控制器式）
+
+```csharp
+// Controllers/UsersController.cs
+using PicoJetson;
+
+public class UsersController
+{
+    public UserDto GetUser(int id) { return new UserDto { Id = id }; }
+}
+
+// Program.cs
+var api = new WebApiBuilder()
+    .RegisterScoped<UsersController>()
+    .Build();
+
+// Controllers.Gen auto-generates endpoint stubs + [PicoJsonSerializable]
+await api.RunAsync("http://+:8080");
+```
 ## 設定
 
 PicoNode 支援兩種設定模式：
@@ -305,25 +304,110 @@ var node = new TcpNode(new TcpNodeOptions
 
 ## 相依性注入
 
-PicoNode 的 Web 層與 PicoDI 整合，提供範圍請求處理：
+PicoNode.Web 在建構時需要 `ISvcContainer`（DI 優先）。作用域會按請求自動建立。
+
+### 在處理器中手動解析 DI
 
 ```csharp
+using PicoNode.Web;
+using PicoWeb;
+using PicoJetson;
+
 var container = new SvcContainer();
 container.RegisterScoped<IDatabase, SqlDatabase>();
-container.RegisterSingleton<ICache, RedisCache>();
 
-var app = new WebApp();
-app.Build(container); // 為每個請求注入範圍中介軟體
-
-// 在路由處理程式中：
-app.MapGet("/db", async (ctx, ct) =>
+var app = new WebApp(container);
+app.MapGet("/db", async (WebContext ctx) =>
 {
-    var db = ctx.Services!.GetService<IDatabase>();
-    var data = await db.QueryAsync("...");
-    return WebResults.Json(200, data);
+    var db = ctx.Services.GetService<IDatabase>() as IDatabase;
+    var data = await db!.QueryAsync("...");
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(data);
+    return Results.Json(200, bytes);
+});
+
+app.Build();
+```
+
+### 透過委派自動參數注入
+
+處理器參數會自動解析（需要 `using PicoNode.Web;`）：
+- `WebContext` → 目前內容
+- `CancellationToken` → 請求取消權杖
+- 任何已註冊的服務 → 從 DI 作用域解析
+
+```csharp
+app.MapGet("/users/{id}", async (WebContext ctx, IUserService svc) =>
+{
+    var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+    return Results.Json(200, bytes);
 });
 ```
 
+### AOT 相容的序列化
+
+PicoJetson 原始碼產生器在編譯期執行。處理器必須在使用者程式碼中直接呼叫 `SerializeToUtf8Bytes<T>()` 才能觸發產生器：
+
+```csharp
+// ✅ Triggers PicoJetson.Gen — UserDto serializer generated
+var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+
+// ❌ Does NOT trigger generator (cross-assembly generic)
+Results.Json<UserDto>(200, user);
+```
+
+### WebApiBuilder（便捷方式）
+
+```csharp
+using PicoNode.Web;
+using PicoWeb;
+
+var api = new WebApiBuilder()
+    .RegisterScoped<IUserService, UserService>()
+    .ConfigureJson(o => o.PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
+    .Build();
+
+api.MapGet("/api/users/{id}", async (WebContext ctx, IUserService svc) =>
+{
+    var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+    return Results.Json(200, bytes);
+});
+
+await api.RunAsync("http://+:5000");
+```
+
+### WebApiBuilder + 控制器（三階段端點註冊）
+
+```csharp
+// 1. Controller in Controllers/ folder (convention)
+//    Controllers/UsersController.cs
+public class UsersController
+{
+    public UserDto GetUser(int id) { return new UserDto { ... }; }
+    public List<UserDto> GetAllUsers() { return ...; }
+}
+
+// 2. Register controller in DI
+builder.RegisterScoped<UsersController>();
+
+// 3. Call EndpointRegistrar (auto-generated by Controllers.Gen)
+EndpointRegistrar.RegisterAll(app);
+
+// 4. Or use WebApiBuilder (calls it automatically)
+new WebApiBuilder()
+    .RegisterScoped<UsersController>()
+    .Build()
+    .RunAsync("http://+:5000");
+```
+
+Controllers.Gen 和 PicoWeb.Gen 原始碼產生器：
+- 掃描 `Controllers/` 資料夾和 `app.MapGet/MapPost` 呼叫
+- 為發現的 DTO 產生 `[PicoJsonSerializable]`
+- 產生從 DI 解析控制器的端點存根
+
+> **注意：** 基於控制器的模式需要 PicoJetson.Gen 來自動註冊 DTO 序列化。
+> 對於 MapXX 模式，請在處理器中明確呼叫 `PicoJetson.JsonSerializer.SerializeToUtf8Bytes<T>()`。
 ## 內建中介軟體
 
 ### 壓縮
@@ -400,6 +484,70 @@ Console.WriteLine($"Accepted: {tcpMetrics.TotalAccepted}");
 Console.WriteLine($"Active: {tcpMetrics.ActiveConnections}");
 Console.WriteLine($"Sent: {tcpMetrics.TotalBytesSent}");
 Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
-n// UDP counters available via internal state
+// UDP counters available via internal state
 // (UdpNode tracks datagrams, bytes, and drops internally)
+```
 
+## 專案
+
+| Project | Target | Description |
+|---------|--------|-------------|
+| **PicoNode.Abs** | netstandard2.0 | 核心介面：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、故障碼、列舉 |
+| **PicoNode** | net10.0 | `TcpNode` 與 `UdpNode` — 生產級非同步 socket 傳輸 |
+| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
+| **PicoNode.Web** | net10.0 | `WebApp`、`WebRouter`、中介軟體、靜態檔案、壓縮、CORS、DI |
+| **PicoWeb** | net10.0 | `WebServer` — 將 `WebApp` 接到 `TcpNode` 的輕量主機 |
+
+## 範例
+
+| Sample | Port | Description |
+|--------|------|-------------|
+| `PicoNode.Samples.Echo` | 7001 (TCP), 7002 (UDP) | 原始 TCP/UDP 回聲伺服器 |
+| `PicoNode.Samples.Http` | 7003 | 以 `HttpRouter` 進行 HTTP 路由 |
+| `PicoWeb.Samples` | 7004 | 具中介軟體與 DI 的完整網頁應用 |
+
+```bash
+dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj
+```
+
+## 建置與測試
+
+```bash
+# Build the entire solution
+dotnet build PicoNode.slnx -c Release
+
+# Run all tests
+dotnet test --solution PicoNode.slnx -c Release
+
+# Run a specific test project
+dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj -c Release
+
+# AOT publish check
+dotnet publish src/PicoWeb/PicoWeb.csproj -c Release -r win-x64 -p:PublishAot=true
+```
+
+## 基準測試
+
+微基準測試透過 [PicoBench](https://github.com/PicoHex/PicoBench) 提供：
+
+```bash
+dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -c Release -- quick
+```
+
+基準涵蓋 HTTP 解析、路由器分發（命中/未命中/405）、完整管線以及 localhost 往返。
+
+## 需求
+
+- **.NET 10.0+** (PicoNode, PicoNode.Http, PicoNode.Web, PicoWeb)
+- **.NET Standard 2.0** (PicoNode.Abs — 最大相容性)
+- PicoHex ecosystem (選用): PicoDI, PicoLog, PicoCfg
+
+## 授權條款
+
+[MIT](LICENSE) © 2025 XiaoFei Du
+
+---
+
+<p align="center">
+  <b>PicoNode</b> — 面向 .NET 的分層網路
+</p>

@@ -152,67 +152,58 @@ Console.ReadLine();
 await node.DisposeAsync();
 ```
 
-### Webアプリケーション (PicoHexエコシステム利用)
+### Webアプリケーション (DIファースト + デリゲート)
 
 ```csharp
-using System.Net;
-using PicoDI.Abs;
-using PicoLog.Abs;
 using PicoNode.Web;
 using PicoWeb;
 
-// 設定
-var config = await Cfg.CreateBuilder()
-    .Add(new Dictionary<string, string>
-    {
-        ["WebApp:ServerHeader"] = "MyApp",
-        ["WebApp:MaxRequestBytes"] = "16384",
-    })
-    .BuildAsync();
+var api = new WebApiBuilder()
+    .ConfigureApp(_ => new WebAppOptions { ServerHeader = "MyApp" })
+    // ConfigureApp receives the CURRENT options — later calls can build on
+    // earlier configuration instead of starting from defaults.
+    .RegisterScoped<IUserService, UserService>()
+    .Build();
 
-var app = new WebApp(new WebAppOptions
+api.MapGet("/", (WebContext ctx) =>
+    Results.Text(200, "Hello, World!"));
+
+api.MapGet("/users/{id}", async (WebContext ctx, IUserService svc) =>
 {
-    ServerHeader = "MyApp",
+    var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+    return Results.Json(200, bytes);
 });
 
-// ミドルウェア
-app.Use(async (context, next, ct) =>
+api.MapPost("/echo", async (WebContext ctx) =>
 {
-    var response = await next(context, ct);
-    return response;
+    using var reader = new StreamReader(ctx.Request.BodyStream);
+    var body = await reader.ReadToEndAsync();
+    return Results.Text(200, body);
 });
 
-// ルート
-app.MapGet("/", static (_, _) =>
-    ValueTask.FromResult(WebResults.Text(200, "Hello, World!", "OK")));
-
-app.MapGet("/users/{id}", static (ctx, _) =>
-{
-    var id = ctx.RouteValues["id"];
-    return ValueTask.FromResult(
-        WebResults.Json(200, $$"""{"id":"{{id}}"}""", "OK"));
-});
-
-app.MapPost("/echo", static (ctx, _) =>
-{
-    var body = Encoding.UTF8.GetString(ctx.Request.Body.Span);
-    return ValueTask.FromResult(WebResults.Text(200, body, "OK"));
-});
-
-// DI対応ホスティング
-var container = new SvcContainer();
-container.RegisterSingleton<IMyService, MyServiceImpl>();
-
-await using var server = new WebServer(app, new WebServerOptions
-{
-    Endpoint = new IPEndPoint(IPAddress.Loopback, 8080),
-}, container);
-
-await server.StartAsync();
-Console.ReadLine();
-await server.StopAsync();
+await api.RunAsync("http://+:8080");
 ```
 
+### Webアプリケーション (コントローラーベース)
+
+```csharp
+// Controllers/UsersController.cs
+using PicoJetson;
+
+public class UsersController
+{
+    public UserDto GetUser(int id) { return new UserDto { Id = id }; }
+}
+
+// Program.cs
+var api = new WebApiBuilder()
+    .RegisterScoped<UsersController>()
+    .Build();
+
+// Controllers.Gen auto-generates endpoint stubs + [PicoJsonSerializable]
+await api.RunAsync("http://+:8080");
+```
 ## 設定
 
 PicoNodeは2つの設定モードをサポートします:
@@ -313,25 +304,110 @@ var node = new TcpNode(new TcpNodeOptions
 
 ## 依存性注入
 
-PicoNodeのWebレイヤはPicoDIと統合し、スコープ付きリクエスト処理を提供します:
+PicoNode.Web は構築時に `ISvcContainer` を必要とします（DIファースト）。スコープはリクエストごとに自動生成されます。
+
+### ハンドラー内での手動 DI 解決
 
 ```csharp
+using PicoNode.Web;
+using PicoWeb;
+using PicoJetson;
+
 var container = new SvcContainer();
 container.RegisterScoped<IDatabase, SqlDatabase>();
-container.RegisterSingleton<ICache, RedisCache>();
 
-var app = new WebApp();
-app.Build(container); // リクエストごとにスコープミドルウェアを注入
-
-// ルートハンドラ内で:
-app.MapGet("/db", async (ctx, ct) =>
+var app = new WebApp(container);
+app.MapGet("/db", async (WebContext ctx) =>
 {
-    var db = ctx.Services!.GetService<IDatabase>();
-    var data = await db.QueryAsync("...");
-    return WebResults.Json(200, data);
+    var db = ctx.Services.GetService<IDatabase>() as IDatabase;
+    var data = await db!.QueryAsync("...");
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(data);
+    return Results.Json(200, bytes);
+});
+
+app.Build();
+```
+
+### デリゲートによる自動パラメータ注入
+
+ハンドラーパラメータは自動的に解決されます（`using PicoNode.Web;` が必要）：
+- `WebContext` → 現在のコンテキスト
+- `CancellationToken` → リクエストのキャンセルトークン
+- 登録済みサービス → DIスコープから解決
+
+```csharp
+app.MapGet("/users/{id}", async (WebContext ctx, IUserService svc) =>
+{
+    var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+    return Results.Json(200, bytes);
 });
 ```
 
+### AOT互換のシリアライゼーション
+
+PicoJetsonソースジェネレーターはコンパイル時に実行されます。ハンドラーはジェネレーターを起動するため、ユーザーコード内で `SerializeToUtf8Bytes<T>()` を直接呼び出す必要があります：
+
+```csharp
+// ✅ Triggers PicoJetson.Gen — UserDto serializer generated
+var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+
+// ❌ Does NOT trigger generator (cross-assembly generic)
+Results.Json<UserDto>(200, user);
+```
+
+### WebApiBuilder（便利版）
+
+```csharp
+using PicoNode.Web;
+using PicoWeb;
+
+var api = new WebApiBuilder()
+    .RegisterScoped<IUserService, UserService>()
+    .ConfigureJson(o => o.PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
+    .Build();
+
+api.MapGet("/api/users/{id}", async (WebContext ctx, IUserService svc) =>
+{
+    var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
+    var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
+    return Results.Json(200, bytes);
+});
+
+await api.RunAsync("http://+:5000");
+```
+
+### WebApiBuilder + コントローラー（三段階のエンドポイント登録）
+
+```csharp
+// 1. Controller in Controllers/ folder (convention)
+//    Controllers/UsersController.cs
+public class UsersController
+{
+    public UserDto GetUser(int id) { return new UserDto { ... }; }
+    public List<UserDto> GetAllUsers() { return ...; }
+}
+
+// 2. Register controller in DI
+builder.RegisterScoped<UsersController>();
+
+// 3. Call EndpointRegistrar (auto-generated by Controllers.Gen)
+EndpointRegistrar.RegisterAll(app);
+
+// 4. Or use WebApiBuilder (calls it automatically)
+new WebApiBuilder()
+    .RegisterScoped<UsersController>()
+    .Build()
+    .RunAsync("http://+:5000");
+```
+
+Controllers.Gen と PicoWeb.Gen ソースジェネレーター：
+- `Controllers/` フォルダと `app.MapGet/MapPost` 呼び出しをスキャン
+- 検出した DTO に対して `[PicoJsonSerializable]` を生成
+- DIからコントローラーを解決するエンドポイントスタブを生成
+
+> **注意：** コントローラーベースのパターンでは DTO の自動シリアライゼーション登録に PicoJetson.Gen が必要です。
+> MapXX パターンでは、ハンドラー内で `PicoJetson.JsonSerializer.SerializeToUtf8Bytes<T>()` を明示的に呼び出してください。
 ## 組み込みミドルウェア
 
 ### 圧縮
@@ -408,6 +484,70 @@ Console.WriteLine($"Accepted: {tcpMetrics.TotalAccepted}");
 Console.WriteLine($"Active: {tcpMetrics.ActiveConnections}");
 Console.WriteLine($"Sent: {tcpMetrics.TotalBytesSent}");
 Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
-n// UDP counters available via internal state
+// UDP counters available via internal state
 // (UdpNode tracks datagrams, bytes, and drops internally)
+```
 
+## プロジェクト
+
+| Project | Target | Description |
+|---------|--------|-------------|
+| **PicoNode.Abs** | netstandard2.0 | コアインターフェース：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、フォルトコード、列挙型 |
+| **PicoNode** | net10.0 | `TcpNode` と `UdpNode` — 本番品質の非同期ソケットトランスポート |
+| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
+| **PicoNode.Web** | net10.0 | `WebApp`、`WebRouter`、ミドルウェア、静的ファイル、圧縮、CORS、DI |
+| **PicoWeb** | net10.0 | `WebServer` — `WebApp` を `TcpNode` に接続する軽量ホスト |
+
+## サンプル
+
+| Sample | Port | Description |
+|--------|------|-------------|
+| `PicoNode.Samples.Echo` | 7001 (TCP), 7002 (UDP) | 生のTCP/UDPエコーサーバー |
+| `PicoNode.Samples.Http` | 7003 | `HttpRouter` によるHTTPルーティング |
+| `PicoWeb.Samples` | 7004 | ミドルウェアとDIを備えた本格的なWebアプリ |
+
+```bash
+dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj
+```
+
+## ビルドとテスト
+
+```bash
+# Build the entire solution
+dotnet build PicoNode.slnx -c Release
+
+# Run all tests
+dotnet test --solution PicoNode.slnx -c Release
+
+# Run a specific test project
+dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj -c Release
+
+# AOT publish check
+dotnet publish src/PicoWeb/PicoWeb.csproj -c Release -r win-x64 -p:PublishAot=true
+```
+
+## ベンチマーク
+
+マイクロベンチマークは [PicoBench](https://github.com/PicoHex/PicoBench) 経由で提供されています：
+
+```bash
+dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -c Release -- quick
+```
+
+ベンチマークは HTTP パース、ルーターのディスパッチ（ヒット/ミス/405）、フルパイプライン、localhost のラウンドトリップをカバーします。
+
+## 要件
+
+- **.NET 10.0+** (PicoNode, PicoNode.Http, PicoNode.Web, PicoWeb)
+- **.NET Standard 2.0** (PicoNode.Abs — 最大限の互換性)
+- PicoHex ecosystem (オプション): PicoDI, PicoLog, PicoCfg
+
+## ライセンス
+
+[MIT](LICENSE) © 2025 XiaoFei Du
+
+---
+
+<p align="center">
+  <b>PicoNode</b> — .NETのためのレイヤードネットワーキング
+</p>

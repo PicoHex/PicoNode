@@ -159,7 +159,9 @@ using PicoNode.Web;
 using PicoWeb;
 
 var api = new WebApiBuilder()
-    .ConfigureApp(o => o.ServerHeader = "MyApp")
+    .ConfigureApp(_ => new WebAppOptions { ServerHeader = "MyApp" })
+    // ConfigureApp receives the CURRENT options — later calls can build on
+    // earlier configuration instead of starting from defaults.
     .RegisterScoped<IUserService, UserService>()
     .Build();
 
