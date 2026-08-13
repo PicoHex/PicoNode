@@ -120,6 +120,50 @@ public sealed class CorsTests
     }
 
     [Test]
+    public async Task Wildcard_origin_with_credentials_echoes_origin_instead_of_star()
+    {
+        // `Access-Control-Allow-Origin: *` with credentials is invalid per the
+        // Fetch spec — browsers reject the response. The correct behavior is to
+        // echo the request origin.
+        var options = new CorsOptions { AllowedOrigins = ["*"], AllowCredentials = true };
+        var request = CreateRequest(
+            "OPTIONS",
+            new("Origin", "https://evil.example"),
+            new("Host", "localhost")
+        );
+
+        var response = CorsHandler.HandlePreflight(request, options);
+
+        var allowOrigin = response!.Headers.FirstOrDefault(h =>
+            h.Key == "Access-Control-Allow-Origin"
+        );
+        await Assert
+            .That(allowOrigin.Value)
+            .IsEqualTo("https://evil.example")
+            .Because("wildcard + credentials must echo the origin, never emit '*'");
+        var allowCredentials = response.Headers.FirstOrDefault(h =>
+            h.Key == "Access-Control-Allow-Credentials"
+        );
+        await Assert.That(allowCredentials.Value).IsEqualTo("true");
+    }
+
+    [Test]
+    public async Task GetResponseHeaders_wildcard_with_credentials_echoes_origin()
+    {
+        var options = new CorsOptions { AllowedOrigins = ["*"], AllowCredentials = true };
+        var request = CreateRequest(
+            "GET",
+            new("Origin", "https://app.example"),
+            new("Host", "localhost")
+        );
+
+        var headers = CorsHandler.GetResponseHeaders(request, options);
+
+        var allowOrigin = headers.FirstOrDefault(h => h.Key == "Access-Control-Allow-Origin");
+        await Assert.That(allowOrigin.Value).IsEqualTo("https://app.example");
+    }
+
+    [Test]
     public async Task HandlePreflight_includes_max_age_when_set()
     {
         var options = new CorsOptions { AllowedOrigins = ["https://example.com"], MaxAge = 3600 };

@@ -109,14 +109,21 @@ internal static class Http2StreamHandler
             return false;
         }
 
-        // Clear pending CONTINUATION tracking �?headers are now complete.
+        // Clear pending CONTINUATION tracking — headers are now complete.
         var clearState = connection.UserState as ConnectionRuntimeState;
         if (clearState is not null)
             clearState.PendingContinuationStreamId = null;
 
         // Decode HPACK header block from the complete (possibly reassembled) data.
         var dynamicTable = runtimeStateForLimit?.HpackTable;
-        if (!HpackDecoder.TryDecode(payloadData.Value.AsSpan(), out var headerFields, dynamicTable))
+        if (
+            !HpackDecoder.TryDecode(
+                payloadData.Value.AsSpan(),
+                out var headerFields,
+                dynamicTable,
+                ConnectionRuntimeState.LocalHeaderTableSize
+            )
+        )
         {
             logger?.Log(
                 LogLevel.Debug,
@@ -155,7 +162,7 @@ internal static class Http2StreamHandler
         regularHeaders = validation.RegularHeaders!;
         headerDict = validation.HeaderDict!;
 
-        // Validate required pseudo-headers �?stream-level error, not connection-level
+        // Validate required pseudo-headers — stream-level error, not connection-level
         if (method is null || path is null)
         {
             await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct)
@@ -235,7 +242,7 @@ internal static class Http2StreamHandler
             (":status", response.StatusCode.ToString()),
         };
 
-        // Map response headers �?skip connection-specific fields
+        // Map response headers — skip connection-specific fields
         foreach (var header in response.Headers)
         {
             var keyLower = header.Key.ToLowerInvariant();
@@ -314,7 +321,8 @@ internal static class Http2StreamHandler
         return false;
     }
 
-    // ── HPACK response encoder (uses shared HpackEncoder with independent dynamic table) ──
+    // ── HPACK response encoder (uses the connection's shared HpackEncoder, whose
+    //    dynamic table is resized by peer SETTINGS — see ConnectionRuntimeState) ──
 
     private static void EncodeResponseHeadersHpack(
         ITcpConnectionContext connection,
@@ -322,10 +330,16 @@ internal static class Http2StreamHandler
         IBufferWriter<byte> writer
     )
     {
-        // Use a fresh encoder per response — the shared encoder's dynamic table
-        // accumulates entries across requests, causing index mismatches (ERR_HTTP2_COMPRESSION_ERROR).
-        var encoder = new HpackEncoder();
-        encoder.Encode(writer, headers);
+        // One encoder per connection: HPACK dynamic tables are per-connection by
+        // RFC 7541 §2.3. The encoder table capacity tracks the peer's advertised
+        // SETTINGS_HEADER_TABLE_SIZE so indices never desync from the peer decoder.
+        var state = connection.UserState as ConnectionRuntimeState;
+        if (state is null)
+        {
+            state = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+            connection.UserState = state;
+        }
+        state.ResponseHpackEncoder.Encode(writer, headers);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -411,6 +425,8 @@ internal static class Http2StreamHandler
                     case ":path":
                         if (hasPath)
                             return HeaderValidationResult.Invalid();
+                        if (!IsValidPathPercentEncoding(value))
+                            return HeaderValidationResult.Invalid();
                         path = value;
                         hasPath = true;
                         break;
@@ -464,6 +480,34 @@ internal static class Http2StreamHandler
         );
     }
 
+    /// <summary>
+    /// Validates %-escapes in an HTTP/2 :path the same way the HTTP/1.1
+    /// request-line parser does: '%' must be followed by exactly two hex
+    /// digits. Malformed escapes would otherwise surface as
+    /// Uri.UnescapeDataString exceptions (500) during routing.
+    /// </summary>
+    private static bool IsValidPathPercentEncoding(string path)
+    {
+        for (var i = 0; i < path.Length; i++)
+        {
+            if (path[i] != '%')
+                continue;
+
+            if (
+                i + 2 >= path.Length
+                || !HttpParseHelpers.IsHexDigit((byte)path[i + 1])
+                || !HttpParseHelpers.IsHexDigit((byte)path[i + 2])
+            )
+            {
+                return false;
+            }
+
+            i += 2;
+        }
+
+        return true;
+    }
+
     internal sealed record HeaderValidationResult(
         bool IsValid,
         string? Method,
@@ -509,8 +553,14 @@ internal static class Http2StreamHandler
         CancellationToken ct
     )
     {
-        if (frame.Payload.Length < 4)
-            return false;
+        // RFC 7540 §6.9: a WINDOW_UPDATE frame with a length other than 4 octets
+        // MUST be treated as a connection error of type FRAME_SIZE_ERROR.
+        if (frame.Payload.Length != 4)
+        {
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.FrameSizeError, ct)
+                .ConfigureAwait(false);
+            return true;
+        }
 
         // Parse window size increment (4 bytes, reserved bit ignored)
         var increment =
@@ -541,6 +591,16 @@ internal static class Http2StreamHandler
 
         if (frame.StreamId == 0)
         {
+            // RFC 7540 §6.9: an increment that makes the window exceed 2^31-1
+            // MUST be treated as FLOW_CONTROL_ERROR. Unchecked accumulation
+            // would overflow the int and stall every response send forever.
+            if (state.ConnectionSendWindow > int.MaxValue - increment)
+            {
+                await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.FlowControlError, ct)
+                    .ConfigureAwait(false);
+                return true;
+            }
+
             // Connection-level window update
             state.AddConnectionSendWindow(increment);
 
@@ -582,6 +642,19 @@ internal static class Http2StreamHandler
         }
         else if (state.Http2Streams?.TryGetValue(frame.StreamId, out var stream) == true)
         {
+            // Same 2^31-1 bound at stream level (RFC 7540 §6.9.1).
+            if (stream.SendWindow > int.MaxValue - increment)
+            {
+                await SendRstStreamAsync(
+                        connection,
+                        frame.StreamId,
+                        Http2ErrorCode.FlowControlError,
+                        ct
+                    )
+                    .ConfigureAwait(false);
+                return false;
+            }
+
             // Stream-level window update
             stream.SendWindow += increment;
             await FlushPendingDataAsync(connection, stream, state, ct).ConfigureAwait(false);
@@ -712,12 +785,21 @@ internal static class Http2StreamHandler
         }
     }
 
-    public static ValueTask<bool> ProcessRstStreamFrame(
+    public static async ValueTask<bool> ProcessRstStreamFrame(
         ITcpConnectionContext connection,
         Http2Frame frame,
         CancellationToken ct
     )
     {
+        // RFC 7540 §6.4: a RST_STREAM frame with a length other than 4 octets
+        // MUST be treated as a connection error of type FRAME_SIZE_ERROR.
+        if (frame.Payload.Length != 4)
+        {
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.FrameSizeError, ct)
+                .ConfigureAwait(false);
+            return true;
+        }
+
         // Update state machine to Closed, then remove stream.
         var runtimeState = connection.UserState as ConnectionRuntimeState;
         if (runtimeState?.Http2Streams?.TryGetValue(frame.StreamId, out var rstState) == true)
@@ -726,7 +808,7 @@ internal static class Http2StreamHandler
             runtimeState.Http2Streams.TryRemove(frame.StreamId, out _);
         }
 
-        return ValueTask.FromResult(false);
+        return false;
     }
 
     public static async ValueTask<bool> ProcessDataFrame(
@@ -737,6 +819,14 @@ internal static class Http2StreamHandler
         CancellationToken ct
     )
     {
+        // RFC 7540 §6.1: DATA on stream 0 is a connection error.
+        if (frame.StreamId == 0)
+        {
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct)
+                .ConfigureAwait(false);
+            return true;
+        }
+
         // Validate stream exists
         var runtimeState = connection.UserState as ConnectionRuntimeState;
         if (
@@ -872,7 +962,6 @@ internal static class Http2StreamHandler
 
             // Invoke handler
             var response = await requestHandler(request, ct).ConfigureAwait(false);
-            state.HandlerInvoked = true;
 
             // Send response
             await SendResponseAsync(connection, state, response, state.StreamId, logger, ct)
@@ -1131,7 +1220,9 @@ internal static class Http2StreamHandler
 
     // ── Shared frame-writing helpers ─────────────────────────────────────
 
-    /// <summary>Writes a HEADERS frame with HPACK-encoded headers using a pooled buffer.</summary>
+    /// <summary>Writes a HEADERS frame with HPACK-encoded headers using a pooled buffer.
+    /// When the encoded block exceeds the peer's max frame size, it is split across
+    /// CONTINUATION frames (RFC 7540 §6.2/§6.10).</summary>
     private static async ValueTask WriteHeadersFrameAsync(
         ITcpConnectionContext connection,
         int streamId,
@@ -1140,26 +1231,81 @@ internal static class Http2StreamHandler
         CancellationToken ct
     )
     {
-        var totalSize = Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length;
-        var rented = ArrayPool<byte>.Shared.Rent(totalSize);
-        try
+        var state = connection.UserState as ConnectionRuntimeState;
+        var maxFrameSize = Math.Max(
+            state?.RemoteMaxFrameSize ?? Http2FrameCodec.DefaultMaxFrameSize,
+            Http2FrameCodec.DefaultMaxFrameSize
+        );
+
+        if (encodedHeaders.Length <= maxFrameSize)
         {
-            Http2FrameCodec.WriteFrameHeader(
-                rented,
-                encodedHeaders.Length,
-                Http2FrameType.Headers,
-                flags,
-                streamId
-            );
-            encodedHeaders.Span.CopyTo(rented.AsSpan(Http2FrameCodec.FrameHeaderSize));
-            await connection.SendAsync(
-                new ReadOnlySequence<byte>(rented.AsMemory(0, totalSize)),
-                ct
-            );
+            var totalSize = Http2FrameCodec.FrameHeaderSize + encodedHeaders.Length;
+            var rented = ArrayPool<byte>.Shared.Rent(totalSize);
+            try
+            {
+                Http2FrameCodec.WriteFrameHeader(
+                    rented,
+                    encodedHeaders.Length,
+                    Http2FrameType.Headers,
+                    flags,
+                    streamId
+                );
+                encodedHeaders.Span.CopyTo(rented.AsSpan(Http2FrameCodec.FrameHeaderSize));
+                await connection.SendAsync(
+                    new ReadOnlySequence<byte>(rented.AsMemory(0, totalSize)),
+                    ct
+                );
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+            return;
         }
-        finally
+
+        // Split: HEADERS without END_HEADERS, then CONTINUATION frames.
+        // END_HEADERS goes on the last frame; other flags (e.g. END_STREAM)
+        // stay on the HEADERS frame only.
+        var offset = 0;
+        var isFirst = true;
+        while (offset < encodedHeaders.Length)
         {
-            ArrayPool<byte>.Shared.Return(rented);
+            var chunkLength = Math.Min(encodedHeaders.Length - offset, maxFrameSize);
+            var isLast = offset + chunkLength >= encodedHeaders.Length;
+            var frameType = isFirst ? Http2FrameType.Headers : Http2FrameType.Continuation;
+            var frameFlags =
+                frameType == Http2FrameType.Headers
+                    ? flags & ~Http2FrameFlags.EndHeaders
+                    : Http2FrameFlags.None;
+            if (isLast)
+                frameFlags |= Http2FrameFlags.EndHeaders;
+
+            var frameSize = Http2FrameCodec.FrameHeaderSize + chunkLength;
+            var rented = ArrayPool<byte>.Shared.Rent(frameSize);
+            try
+            {
+                Http2FrameCodec.WriteFrameHeader(
+                    rented,
+                    chunkLength,
+                    frameType,
+                    frameFlags,
+                    streamId
+                );
+                encodedHeaders
+                    .Span.Slice(offset, chunkLength)
+                    .CopyTo(rented.AsSpan(Http2FrameCodec.FrameHeaderSize));
+                await connection.SendAsync(
+                    new ReadOnlySequence<byte>(rented.AsMemory(0, frameSize)),
+                    ct
+                );
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+
+            offset += chunkLength;
+            isFirst = false;
         }
     }
 

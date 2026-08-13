@@ -136,7 +136,7 @@ internal sealed class TcpConnectionLifecycle
         catch (Exception ex)
         {
             _node.ReportFault(NodeFaultCode.HandlerFailed, OperationCloseCore, ex);
-            // Do NOT rethrow �?close is best-effort
+            // Do NOT rethrow — close is best-effort
         }
     }
 

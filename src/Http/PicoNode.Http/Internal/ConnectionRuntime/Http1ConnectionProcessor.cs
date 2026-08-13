@@ -214,11 +214,10 @@ internal static class Http1ConnectionProcessor
                 state.Protocol = ConnectionProtocol.WebSocket;
                 state.WebSocketHandshakeComplete = true;
 
-                // Detect permessage-deflate compression negotiation
-                if (
-                    request.Headers.TryGetValue("Sec-WebSocket-Extensions", out var ext)
-                    && ext.Contains("permessage-deflate", StringComparison.OrdinalIgnoreCase)
-                )
+                // RFC 7692 §6: permessage-deflate is negotiated only when the
+                // server echoes the extension in the 101 response. A request
+                // header alone must not enable decompression (zip-bomb guard).
+                if (WebSocketUpgrade.IsCompressionNegotiated(request, response))
                 {
                     state.WebSocketMessageState ??= new WebSocketMessageProcessorState();
                     state.WebSocketMessageState.CompressionNegotiated = true;

@@ -64,21 +64,14 @@ internal static class HttpHeaderParser
 
             if (name.Equals(HttpHeaderNames.ContentLength, StringComparison.OrdinalIgnoreCase))
             {
-                if (hasContentLength)
-                {
-                    return HttpRequestParser.HeaderParseState.Rejected(
-                        HttpRequestParseError.DuplicateContentLength
-                    );
-                }
-
                 if (
                     !long.TryParse(
                         value,
                         NumberStyles.None,
                         CultureInfo.InvariantCulture,
-                        out contentLength
+                        out var parsedLength
                     )
-                    || contentLength < 0
+                    || parsedLength < 0
                 )
                 {
                     return HttpRequestParser.HeaderParseState.Rejected(
@@ -86,6 +79,16 @@ internal static class HttpHeaderParser
                     );
                 }
 
+                // RFC 7230 §3.3.2: identical duplicate values are allowed;
+                // conflicting values are a smuggling vector and must be rejected.
+                if (hasContentLength && contentLength != parsedLength)
+                {
+                    return HttpRequestParser.HeaderParseState.Rejected(
+                        HttpRequestParseError.DuplicateContentLength
+                    );
+                }
+
+                contentLength = parsedLength;
                 hasContentLength = true;
             }
 
@@ -139,8 +142,10 @@ internal static class HttpHeaderParser
 
         if (isChunked && hasContentLength)
         {
+            // TE+CL together is a framing violation (request smuggling vector),
+            // not a malformed request line.
             return HttpRequestParser.HeaderParseState.Rejected(
-                HttpRequestParseError.InvalidRequestLine
+                HttpRequestParseError.UnsupportedFraming
             );
         }
 

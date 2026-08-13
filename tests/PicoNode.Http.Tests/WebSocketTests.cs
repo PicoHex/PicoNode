@@ -309,4 +309,134 @@ public sealed class WebSocketTests
         );
         await Assert.That(protoHeader.Value).IsNull();
     }
+
+    [Test]
+    public async Task TryUpgrade_rejects_key_that_is_not_base64()
+    {
+        var request = CreateUpgradeRequest(key: "abc");
+
+        var response = WebSocketUpgrade.TryUpgrade(request);
+
+        await Assert
+            .That(response)
+            .IsNull()
+            .Because("Sec-WebSocket-Key must be valid base64 (RFC 6455 §4.2.1)");
+    }
+
+    [Test]
+    public async Task TryUpgrade_rejects_key_that_does_not_decode_to_16_bytes()
+    {
+        var request = CreateUpgradeRequest(key: "c2hvcnQ="); // base64 of "short" (5 bytes)
+
+        var response = WebSocketUpgrade.TryUpgrade(request);
+
+        await Assert
+            .That(response)
+            .IsNull()
+            .Because("Sec-WebSocket-Key must decode to exactly 16 bytes (RFC 6455 §4.2.1)");
+    }
+
+    [Test]
+    public async Task TryUpgrade_rejects_substring_match_in_connection_header()
+    {
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Host", "localhost"),
+            new("Upgrade", "websocket"),
+            new("Connection", "xUpgradey"),
+            new("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="),
+            new("Sec-WebSocket-Version", "13"),
+        };
+
+        var request = new HttpRequest
+        {
+            Method = "GET",
+            Target = "/ws",
+            Version = HttpVersion.Http11,
+            HeaderFields = headers,
+            Headers = headers.ToDictionary(
+                h => h.Key,
+                h => h.Value,
+                StringComparer.OrdinalIgnoreCase
+            ),
+        };
+
+        var response = WebSocketUpgrade.TryUpgrade(request);
+
+        await Assert
+            .That(response)
+            .IsNull()
+            .Because("header matching must be token-based, not substring-based");
+    }
+
+    [Test]
+    public async Task TryParseExtensions_matches_token_not_substring()
+    {
+        await Assert
+            .That(WebSocketUpgrade.TryParseExtensions("permessage-deflate", out var deflate1))
+            .IsTrue();
+        await Assert.That(deflate1).IsTrue();
+
+        await Assert
+            .That(
+                WebSocketUpgrade.TryParseExtensions(
+                    "permessage-deflate; client_max_window_bits",
+                    out var deflate2
+                )
+            )
+            .IsTrue();
+        await Assert.That(deflate2).IsTrue();
+
+        await Assert
+            .That(WebSocketUpgrade.TryParseExtensions("x-permessage-deflatey", out var deflate3))
+            .IsTrue();
+        await Assert
+            .That(deflate3)
+            .IsFalse()
+            .Because("extension parsing must be token-based, not substring-based");
+
+        await Assert.That(WebSocketUpgrade.TryParseExtensions(null, out _)).IsFalse();
+    }
+
+    [Test]
+    public async Task IsCompressionNegotiated_requires_response_echo()
+    {
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Host", "localhost"),
+            new("Sec-WebSocket-Extensions", "permessage-deflate"),
+        };
+        var request = new HttpRequest
+        {
+            Method = "GET",
+            Target = "/ws",
+            Version = HttpVersion.Http11,
+            HeaderFields = headers,
+            Headers = headers.ToDictionary(
+                h => h.Key,
+                h => h.Value,
+                StringComparer.OrdinalIgnoreCase
+            ),
+        };
+
+        // Request offers the extension but the 101 response does NOT echo it —
+        // per RFC 7692 §6 the extension is then NOT negotiated.
+        var responseWithoutEcho = new HttpResponse { StatusCode = 101 };
+        await Assert
+            .That(WebSocketUpgrade.IsCompressionNegotiated(request, responseWithoutEcho))
+            .IsFalse();
+
+        // A response that echoes the extension completes the negotiation.
+        var responseWithEcho = new HttpResponse
+        {
+            StatusCode = 101,
+            Headers = new HttpHeaderCollection
+            {
+                { "Sec-WebSocket-Extensions", "permessage-deflate" },
+            },
+        };
+        await Assert
+            .That(WebSocketUpgrade.IsCompressionNegotiated(request, responseWithEcho))
+            .IsTrue();
+    }
 }

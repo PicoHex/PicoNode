@@ -154,9 +154,6 @@ public sealed class RouteTable<THandler>
         return null;
     }
 
-    /// <summary>Returns the precomputed Allow header value for an exact path.</summary>
-    public string GetAllowHeader(string path) => _allowCache[path];
-
     /// <summary>Creates a 405 Method Not Allowed response with the given Allow header value.</summary>
     public static HttpResponse MethodNotAllowedResponse(string allowHeader) =>
         new()

@@ -57,7 +57,7 @@ internal sealed class WebSocketMessageProcessorState
     }
 
     /// <summary>Decompresses incoming message payload using inflate.</summary>
-    public byte[] Decompress(ReadOnlySpan<byte> data)
+    public byte[] Decompress(ReadOnlySpan<byte> data, int maxOutputSize = DefaultMaxMessageSize)
     {
         if (!CompressionNegotiated || data.Length == 0)
             return data.ToArray();
@@ -68,7 +68,32 @@ internal sealed class WebSocketMessageProcessorState
         _decompressOutput ??= new MemoryStream();
         _decompressOutput.SetLength(0);
 
-        inflate.CopyTo(_decompressOutput);
+        // Bounded inflate: a small compressed payload can expand enormously
+        // (zip bomb). Abort before the output exceeds the message limit.
+        var buffer = ArrayPool<byte>.Shared.Rent(Math.Min(8192, Math.Max(maxOutputSize, 1)));
+        try
+        {
+            while (true)
+            {
+                var read = inflate.Read(buffer, 0, buffer.Length);
+                if (read == 0)
+                    break;
+
+                if (_decompressOutput.Length + read > maxOutputSize)
+                {
+                    throw new InvalidDataException(
+                        $"Decompressed WebSocket message exceeds the {maxOutputSize} byte limit."
+                    );
+                }
+
+                _decompressOutput.Write(buffer, 0, read);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
         return _decompressOutput.ToArray();
     }
 

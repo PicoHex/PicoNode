@@ -10,11 +10,19 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
     private readonly long _cleanupIntervalTicks;
     private int _disposed;
 
+    /// <summary>Retry-After/Reset timestamp when RefillRate=0 (fixed window, 1 year).</summary>
+    private const long NoRefillRetryAfterSeconds = 31_536_000;
+
     public InMemoryRateLimitStore(RateLimitOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.MaxTokens, 0);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.RefillInterval, TimeSpan.Zero);
+        // RefillRate=0 is legal (fixed window, never refills) — the refill math
+        // below guards against it explicitly.
+        // CleanupInterval=0 makes Timer fire exactly once — buckets would
+        // never be reclaimed (unbounded growth under key-spray attacks).
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.CleanupInterval, TimeSpan.Zero);
 
         _maxTokens = options.MaxTokens;
         _refillRate = options.RefillRate;
@@ -85,6 +93,13 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
         {
             nextAvailable = nowUnix;
         }
+        else if (_refillRate <= 0)
+        {
+            // Fixed window: the bucket never refills. A finite far-future
+            // timestamp (1 year) — the old code divided by zero here and
+            // produced unspecified garbage values.
+            nextAvailable = nowUnix + NoRefillRetryAfterSeconds;
+        }
         else
         {
             var needed = 1.0 - Math.Max(bucket.Tokens, 0);
@@ -94,10 +109,18 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
         }
 
         // ResetAt (when bucket is fully refilled)
-        var toFill = _maxTokens - bucket.Tokens;
-        var resetSeconds = (long)
-            Math.Ceiling(toFill * _refillIntervalTicks / _refillRate / TimeSpan.TicksPerSecond);
-        var resetAt = nowUnix + resetSeconds;
+        long resetAt;
+        if (_refillRate <= 0)
+        {
+            resetAt = nowUnix + NoRefillRetryAfterSeconds;
+        }
+        else
+        {
+            var toFill = _maxTokens - bucket.Tokens;
+            var resetSeconds = (long)
+                Math.Ceiling(toFill * _refillIntervalTicks / _refillRate / TimeSpan.TicksPerSecond);
+            resetAt = nowUnix + resetSeconds;
+        }
 
         return new RateLimitResult
         {

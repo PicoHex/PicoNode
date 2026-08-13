@@ -52,7 +52,10 @@ public sealed class RateLimitMiddleware
         }
         catch
         {
-            key = "error";
+            // Fail open: a shared "error" bucket would let one attacker exhaust
+            // rate limiting for every request whose KeySelector throws. Requests
+            // that cannot derive a key bypass the limiter (per-request impact only).
+            return await next(context, ct);
         }
 
         // Consume token

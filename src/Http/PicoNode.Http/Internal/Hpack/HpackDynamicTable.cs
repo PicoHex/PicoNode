@@ -90,7 +90,10 @@ internal sealed class HpackDynamicTable
     /// <summary>Updates the dynamic table capacity. Evicts entries if needed.</summary>
     public void Resize(int newCapacity)
     {
-        _capacity = newCapacity > 0 ? newCapacity : DefaultCapacity;
+        // RFC 7541 §4.2: a size update to 0 (or a negative raw value from a
+        // malformed peer) clears the table and disables it entirely — it must
+        // NOT be coerced back to the default capacity.
+        _capacity = Math.Max(0, newCapacity);
         while (_currentSize > _capacity)
         {
             EvictOne();

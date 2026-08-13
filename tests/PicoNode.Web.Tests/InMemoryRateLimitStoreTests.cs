@@ -100,6 +100,62 @@ public sealed class InMemoryRateLimitStoreTests
     }
 
     [Test]
+    public async Task Zero_refill_rate_never_refills()
+    {
+        // RefillRate=0 is a legitimate fixed-window configuration — the bucket
+        // must never refill, and the retry/reset timestamps must stay finite
+        // (the old code divided by zero and produced garbage long values).
+        var store = new InMemoryRateLimitStore(
+            new RateLimitOptions
+            {
+                MaxTokens = 1,
+                RefillRate = 0,
+                RefillInterval = TimeSpan.FromHours(1),
+                KeySelector = static _ => "k",
+            }
+        );
+
+        var first = await store.TryConsumeTokenAsync("k");
+        var second = await store.TryConsumeTokenAsync("k");
+
+        await Assert.That(first.Allowed).IsTrue();
+        await Assert
+            .That(second.Allowed)
+            .IsFalse()
+            .Because("a zero refill rate must never replenish the bucket");
+        await Assert
+            .That(second.NextAvailableAt)
+            .IsGreaterThanOrEqualTo(DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+            .Because("the retry timestamp must be finite and in the future");
+        await Assert
+            .That(second.ResetAt)
+            .IsGreaterThanOrEqualTo(second.NextAvailableAt)
+            .Because("the reset timestamp must be finite");
+    }
+
+    [Test]
+    public async Task Constructor_throws_on_zero_cleanup_interval()
+    {
+        await Assert
+            .That(() =>
+                new InMemoryRateLimitStore(
+                    new RateLimitOptions
+                    {
+                        MaxTokens = 5,
+                        RefillRate = 1,
+                        CleanupInterval = TimeSpan.Zero,
+                        KeySelector = static _ => "k",
+                    }
+                )
+            )
+            .Throws<ArgumentOutOfRangeException>()
+            .Because(
+                "CleanupInterval=0 makes the cleanup timer fire once and never again, "
+                    + "leaking buckets under attack"
+            );
+    }
+
+    [Test]
     public async Task Dispose_throws_on_subsequent_calls()
     {
         var store = new InMemoryRateLimitStore(DefaultOptions);

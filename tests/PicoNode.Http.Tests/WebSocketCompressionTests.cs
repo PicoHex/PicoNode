@@ -64,6 +64,32 @@ public sealed class WebSocketCompressionTests
     }
 
     [Test]
+    public async Task Decompress_OutputExceedingLimit_ThrowsInvalidData()
+    {
+        var state = new WebSocketMessageProcessorState { CompressionNegotiated = true };
+        // Highly compressible 1 MiB payload inflates far beyond the limit.
+        var compressed = state.Compress(new byte[1024 * 1024]);
+
+        await Assert
+            .That(() => state.Decompress(compressed, maxOutputSize: 1024))
+            .Throws<InvalidDataException>()
+            .Because("decompression must be bounded to prevent zip-bomb memory exhaustion");
+    }
+
+    [Test]
+    public async Task Decompress_OutputWithinLimit_Succeeds()
+    {
+        var state = new WebSocketMessageProcessorState { CompressionNegotiated = true };
+        var original = new byte[1000];
+        new Random(7).NextBytes(original);
+        var compressed = state.Compress(original);
+
+        var decompressed = state.Decompress(compressed, maxOutputSize: 1024 * 1024);
+
+        await Assert.That(BytesEqual(decompressed, original)).IsTrue();
+    }
+
+    [Test]
     public async Task Fragmented_compressed_message_round_trips()
     {
         var state = new WebSocketMessageProcessorState { CompressionNegotiated = true };

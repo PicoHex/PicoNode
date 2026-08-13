@@ -2,6 +2,13 @@ namespace PicoNode.Http.Internal.ConnectionRuntime;
 
 internal sealed class ConnectionRuntimeState
 {
+    /// <summary>
+    /// The SETTINGS_HEADER_TABLE_SIZE value WE advertise (see the SETTINGS
+    /// frames written by Http2ConnectionProcessor/HttpConnectionHandler).
+    /// Bounds our DECODER dynamic table: the peer's encoder must respect it.
+    /// </summary>
+    public const int LocalHeaderTableSize = 4096;
+
     public ConnectionProtocol Protocol { get; set; }
 
     /// <summary>HTTP/1.1-specific state, allocated on first use to avoid waste on HTTP/2 connections.</summary>
@@ -96,8 +103,10 @@ internal sealed class ConnectionRuntimeState
                     break;
                 case Http2SettingId.HeaderTableSize:
                     RemoteHeaderTableSize = (int)setting.Value;
-                    HpackTable.Resize(RemoteHeaderTableSize);
-                    // Sync response encoder table too
+                    // RFC 7540 §6.5.2: this setting limits what WE may index —
+                    // it governs our response ENCODER table only. The decoder
+                    // table stays bounded by OUR advertised LocalHeaderTableSize
+                    // (the peer's encoder must respect it).
                     ResponseHpackEncoder.DynamicTable.Resize(RemoteHeaderTableSize);
                     break;
             }

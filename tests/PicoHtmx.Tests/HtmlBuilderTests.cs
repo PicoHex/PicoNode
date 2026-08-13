@@ -5,7 +5,8 @@ public sealed class HtmlBuilderTests
     [Test]
     public async Task E_EncodesHtmlSpecials()
     {
-        await Assert.That(H.E("<script>alert('xss')</script>"))
+        await Assert
+            .That(H.E("<script>alert('xss')</script>"))
             .IsEqualTo("&lt;script&gt;alert('xss')&lt;/script&gt;");
     }
 
@@ -74,5 +75,33 @@ public sealed class HtmlBuilderTests
     {
         var result = H.A("link", "/foo", new { @class = "nav" });
         await Assert.That(result).IsEqualTo("<a href=\"/foo\" class=\"nav\">link</a>");
+    }
+
+    [Test]
+    public async Task NonGeneric_overloads_with_object_typed_attrs_fail_loud()
+    {
+        // AOT trap guard: the non-generic overloads cannot preserve attribute
+        // properties through trimming (DAM only flows through the generic
+        // parameter). Under PublishAot these would silently render EMPTY
+        // attributes — fail loudly instead so callers switch to the generic
+        // overloads / statically-typed attr classes.
+        object attrs = new { @class = "foo" };
+
+        await Assert.That(() => H.Tag("div", "x", attrs)).Throws<NotSupportedException>();
+        await Assert.That(() => H.Div("x", attrs)).Throws<NotSupportedException>();
+        await Assert.That(() => H.Span("x", attrs)).Throws<NotSupportedException>();
+        await Assert.That(() => H.P("x", attrs)).Throws<NotSupportedException>();
+        await Assert.That(() => H.Button("x", attrs)).Throws<NotSupportedException>();
+        await Assert.That(() => H.A("x", "/y", attrs)).Throws<NotSupportedException>();
+        await Assert.That(() => H.Input(attrs)).Throws<NotSupportedException>();
+        await Assert.That(() => H.TextArea("v", attrs)).Throws<NotSupportedException>();
+    }
+
+    [Test]
+    public async Task NonGeneric_overloads_without_attrs_keep_working()
+    {
+        await Assert.That(H.Tag("br")).IsEqualTo("<br />");
+        await Assert.That(H.Tag("p", "hello")).IsEqualTo("<p>hello</p>");
+        await Assert.That(H.Div("content")).IsEqualTo("<div>content</div>");
     }
 }

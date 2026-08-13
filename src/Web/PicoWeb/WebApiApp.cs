@@ -10,6 +10,9 @@ public sealed class WebApiApp : IAsyncDisposable
         _app = app;
     }
 
+    /// <summary>The effective <see cref="WebAppOptions"/> (observable for tests/tooling).</summary>
+    internal WebAppOptions Options => _app.Options;
+
     public WebApiApp MapGet(string pattern, WebRequestHandler handler)
     {
         _app.MapGet(pattern, handler);

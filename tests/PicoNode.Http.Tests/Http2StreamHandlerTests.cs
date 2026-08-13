@@ -1327,4 +1327,462 @@ public sealed class Http2StreamHandlerTests
             .IsTrue()
             .Because("streams beyond our advertised limit (100) must be refused");
     }
+
+    [Test]
+    public async Task ApplySettings_HeaderTableSize_ResizesEncoderTableNotDecoderTable()
+    {
+        var state = new ConnectionRuntimeState();
+
+        state.ApplySettings([new Http2Setting(Http2SettingId.HeaderTableSize, 1024)]);
+
+        // Decoder table capacity is OUR advertised value (4096) — the peer's
+        // SETTINGS_HEADER_TABLE_SIZE only limits what WE may index (encoder).
+        await Assert.That(state.HpackTable.Capacity).IsEqualTo(4096);
+        await Assert.That(state.ResponseHpackEncoder.DynamicTable.Capacity).IsEqualTo(1024);
+
+        // 0 must disable the encoder dynamic table (RFC 7541 §4.2).
+        state.ApplySettings([new Http2Setting(Http2SettingId.HeaderTableSize, 0)]);
+        await Assert.That(state.ResponseHpackEncoder.DynamicTable.Capacity).IsEqualTo(0);
+        await Assert
+            .That(state.HpackTable.Capacity)
+            .IsEqualTo(4096)
+            .Because("the peer cannot change our decoder table capacity");
+    }
+
+    [Test]
+    public async Task MultipleResponses_SharedEncoderTable_DecodeRoundTrips()
+    {
+        // Regression guard for ERR_HTTP2_COMPRESSION_ERROR: response encoding
+        // must use the connection's shared encoder table and stay in sync with
+        // a peer decoder that mirrors the same table across requests.
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    Headers = new HttpHeaderCollection
+                    {
+                        { "x-custom", req.Path == "/one" ? "alpha" : "beta" },
+                        { "x-custom-2", "shared-value" },
+                    },
+                }
+            );
+
+        var peerTable = new HpackDynamicTable();
+
+        for (var i = 0; i < 2; i++)
+        {
+            var hpack = BuildMinimalHpack("GET", i == 0 ? "/one" : "/two");
+            var frame = BuildHeadersFrame(
+                hpack,
+                Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+            );
+
+            await Http2StreamHandler.ProcessHeadersFrame(
+                connection,
+                frame,
+                handler,
+                null,
+                CancellationToken.None
+            );
+
+            var sentHeaders = connection.SentFrames[^1];
+            var ok = DecodeHeadersFrameWithTable(sentHeaders, out var headers, out _, peerTable);
+
+            await Assert
+                .That(ok)
+                .IsTrue()
+                .Because("response HPACK must stay in sync with the peer decoder table");
+            await Assert.That(headers!.Any(h => h.Item1 == ":status")).IsTrue();
+        }
+    }
+
+    private static bool DecodeHeadersFrameWithTable(
+        byte[] frameBytes,
+        out List<(string, string)> headers,
+        out Http2FrameFlags flags,
+        HpackDynamicTable table
+    )
+    {
+        headers = new List<(string, string)>();
+        flags = Http2FrameFlags.None;
+
+        if (!TryReadFrame(frameBytes, out var frame))
+            return false;
+
+        if (frame!.Type != Http2FrameType.Headers)
+            return false;
+
+        flags = frame.Flags;
+        return HpackDecoder.TryDecode(frame.Payload.Span, out headers, table);
+    }
+
+    [Test]
+    public async Task Window_update_overflowing_stream_window_sends_flow_control_error()
+    {
+        var state = new ConnectionRuntimeState();
+        var stream = state.GetOrCreateStream(5)!;
+        stream.SendWindow = int.MaxValue - 10;
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = state;
+
+        var frame = BuildFrame(
+            Http2FrameType.WindowUpdate,
+            Http2FrameFlags.None,
+            5,
+            BuildWindowUpdatePayload(0x7FFFFFFF)
+        );
+
+        await Http2StreamHandler.ProcessWindowUpdateFrame(
+            connection,
+            frame,
+            CancellationToken.None
+        );
+
+        // RFC 7540 §6.9: exceeding 2^31-1 must be a FLOW_CONTROL_ERROR.
+        var sentRst = connection.SentFrames.FirstOrDefault(f =>
+            f.Length >= 13
+            && f[3] == (byte)Http2FrameType.RstStream
+            && f[9] == 0
+            && f[10] == 0
+            && f[11] == 0
+            && f[12] == 3 // FLOW_CONTROL_ERROR
+        );
+        await Assert
+            .That(sentRst)
+            .IsNotNull()
+            .Because(
+                "a WINDOW_UPDATE overflowing the stream send window must send RST_STREAM FLOW_CONTROL_ERROR"
+            );
+    }
+
+    [Test]
+    public async Task Window_update_overflowing_connection_window_sends_goaway()
+    {
+        var state = new ConnectionRuntimeState();
+        state.ConnectionSendWindow = int.MaxValue - 10;
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = state;
+
+        var frame = BuildFrame(
+            Http2FrameType.WindowUpdate,
+            Http2FrameFlags.None,
+            0,
+            BuildWindowUpdatePayload(0x7FFFFFFF)
+        );
+
+        var shouldClose = await Http2StreamHandler.ProcessWindowUpdateFrame(
+            connection,
+            frame,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(shouldClose)
+            .IsTrue()
+            .Because("overflowing the connection window is a connection error");
+        await Assert.That(connection.IsClosed).IsTrue();
+        var goAway = connection.SentFrames.FirstOrDefault(f =>
+            f.Length >= 17 && f[3] == (byte)Http2FrameType.GoAway && f[16] == 3
+        );
+        await Assert.That(goAway).IsNotNull().Because("GOAWAY must carry FLOW_CONTROL_ERROR");
+    }
+
+    [Test]
+    public async Task Settings_initial_window_size_above_limit_is_connection_error()
+    {
+        var settings = Http2FrameCodec.EncodeSettings(
+            new Http2Setting(Http2SettingId.InitialWindowSize, 0x80000000u)
+        );
+        var connection = new TestTcpConnectionContext();
+
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(settings),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.IsClosed).IsTrue();
+        var goAway = connection.SentFrames.FirstOrDefault(f =>
+            f.Length >= 17 && f[3] == (byte)Http2FrameType.GoAway && f[16] == 3
+        );
+        await Assert
+            .That(goAway)
+            .IsNotNull()
+            .Because("INITIAL_WINDOW_SIZE above 2^31-1 is a FLOW_CONTROL_ERROR (RFC 7540 §6.9.2)");
+    }
+
+    [Test]
+    public async Task Large_response_headers_are_split_across_continuation_frames()
+    {
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = new ConnectionRuntimeState
+        {
+            Protocol = ConnectionProtocol.Http2,
+            RemoteMaxFrameSize = 16384,
+        };
+        var bigValue = new string('a', 40_000);
+
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    Headers = new HttpHeaderCollection { { "x-big", bigValue } },
+                }
+            );
+
+        var frame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
+
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            frame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        // Reassemble the header block across HEADERS + CONTINUATION frames.
+        using var headerBlock = new MemoryStream();
+        var sawContinuation = false;
+        var endHeadersSeen = false;
+        foreach (var sent in connection.SentFrames)
+        {
+            if (!TryReadFrame(sent, out var sentFrame))
+                continue;
+            if (sentFrame!.Type == Http2FrameType.Headers)
+            {
+                headerBlock.Write(sentFrame.Payload.Span);
+                endHeadersSeen = sentFrame.HasFlag(Http2FrameFlags.EndHeaders);
+            }
+            else if (sentFrame.Type == Http2FrameType.Continuation)
+            {
+                sawContinuation = true;
+                await Assert
+                    .That(sentFrame.StreamId)
+                    .IsEqualTo(1)
+                    .Because("CONTINUATION must target the same stream");
+                headerBlock.Write(sentFrame.Payload.Span);
+                endHeadersSeen = sentFrame.HasFlag(Http2FrameFlags.EndHeaders);
+            }
+        }
+
+        await Assert
+            .That(sawContinuation)
+            .IsTrue()
+            .Because("a 40 KB header block must be split when the peer max frame size is 16 KB");
+        await Assert.That(endHeadersSeen).IsTrue();
+
+        var decoded = HpackDecoder.TryDecode(headerBlock.ToArray(), out var headers);
+        await Assert.That(decoded).IsTrue();
+        await Assert.That(headers!.Any(h => h.Item1 == "x-big" && h.Item2 == bigValue)).IsTrue();
+    }
+
+    [Test]
+    public async Task Push_promise_frame_is_connection_error()
+    {
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = new ConnectionRuntimeState { ReceivedPostPrefaceFrame = true };
+        var frame = Http2FrameCodec.EncodeFrame(
+            Http2FrameType.PushPromise,
+            Http2FrameFlags.None,
+            2,
+            new byte[4]
+        );
+
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(frame),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.IsClosed).IsTrue();
+        var goAway = connection.SentFrames.FirstOrDefault(f =>
+            f.Length >= 17 && f[3] == (byte)Http2FrameType.GoAway && f[16] == 1
+        );
+        await Assert
+            .That(goAway)
+            .IsNotNull()
+            .Because("a client PUSH_PROMISE is a PROTOCOL_ERROR, not HTTP_1_1_REQUIRED");
+    }
+
+    [Test]
+    public async Task Unknown_frame_type_is_ignored()
+    {
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = new ConnectionRuntimeState { ReceivedPostPrefaceFrame = true };
+        var frame = Http2FrameCodec.EncodeFrame(
+            (Http2FrameType)0x0B,
+            Http2FrameFlags.None,
+            0,
+            new byte[4]
+        );
+
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(frame),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        // RFC 7540 §5.5: unknown frame types MUST be ignored.
+        await Assert.That(connection.IsClosed).IsFalse();
+        await Assert.That(connection.SentFrames).IsEmpty();
+    }
+
+    [Test]
+    public async Task Settings_payload_not_multiple_of_six_is_frame_size_error()
+    {
+        var connection = new TestTcpConnectionContext();
+        var frame = Http2FrameCodec.EncodeFrame(
+            Http2FrameType.Settings,
+            Http2FrameFlags.None,
+            0,
+            new byte[5]
+        );
+
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(frame),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.IsClosed).IsTrue();
+        var goAway = connection.SentFrames.FirstOrDefault(f =>
+            f.Length >= 17 && f[3] == (byte)Http2FrameType.GoAway && f[16] == 6
+        );
+        await Assert
+            .That(goAway)
+            .IsNotNull()
+            .Because("SETTINGS payload must be a multiple of 6 bytes (FRAME_SIZE_ERROR)");
+    }
+
+    [Test]
+    public async Task Rst_stream_wrong_length_is_frame_size_error()
+    {
+        var state = new ConnectionRuntimeState();
+        state.GetOrCreateStream(3);
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = state;
+        var frame = BuildFrame(Http2FrameType.RstStream, Http2FrameFlags.None, 3, new byte[2]);
+
+        var shouldClose = await Http2StreamHandler.ProcessRstStreamFrame(
+            connection,
+            frame,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(shouldClose)
+            .IsTrue()
+            .Because("RST_STREAM length != 4 is a connection error (RFC 7540 §6.4)");
+        await Assert.That(connection.IsClosed).IsTrue();
+        var goAway = connection.SentFrames.FirstOrDefault(f =>
+            f.Length >= 17 && f[3] == (byte)Http2FrameType.GoAway && f[16] == 6
+        );
+        await Assert.That(goAway).IsNotNull();
+    }
+
+    [Test]
+    public async Task Window_update_wrong_length_is_frame_size_error()
+    {
+        var connection = new TestTcpConnectionContext();
+        var frame = BuildFrame(Http2FrameType.WindowUpdate, Http2FrameFlags.None, 0, new byte[3]);
+
+        var shouldClose = await Http2StreamHandler.ProcessWindowUpdateFrame(
+            connection,
+            frame,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(shouldClose)
+            .IsTrue()
+            .Because("WINDOW_UPDATE length != 4 is a connection error (RFC 7540 §6.9)");
+        await Assert.That(connection.IsClosed).IsTrue();
+    }
+
+    [Test]
+    public async Task Data_frame_on_stream_zero_is_connection_error()
+    {
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = new ConnectionRuntimeState { ReceivedPostPrefaceFrame = true };
+        var frame = BuildFrame(Http2FrameType.Data, Http2FrameFlags.None, 0, new byte[4]);
+
+        var shouldClose = await Http2StreamHandler.ProcessDataFrame(
+            connection,
+            frame,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(shouldClose)
+            .IsTrue()
+            .Because("DATA on stream 0 is a connection error (RFC 7540 §6.1)");
+        await Assert.That(connection.IsClosed).IsTrue();
+        var goAway = connection.SentFrames.FirstOrDefault(f =>
+            f.Length >= 17 && f[3] == (byte)Http2FrameType.GoAway && f[16] == 1
+        );
+        await Assert.That(goAway).IsNotNull().Because("GOAWAY must carry PROTOCOL_ERROR");
+    }
+
+    [Test]
+    public async Task Path_pseudo_header_with_invalid_percent_encoding_is_rejected()
+    {
+        // HPACK: indexed :method GET (0x82), literal-without-indexing :path
+        // (name index 4 → 0x04) with value "/foo%zz" (7 bytes, invalid percent escape).
+        byte[] hpack =
+        [
+            0x82,
+            0x04,
+            0x07,
+            (byte)'/',
+            (byte)'f',
+            (byte)'o',
+            (byte)'o',
+            (byte)'%',
+            (byte)'z',
+            (byte)'z',
+        ];
+        var frame = BuildHeadersFrame(
+            hpack,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
+        var connection = new TestTcpConnectionContext();
+
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            frame,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        var sentRst = connection.SentFrames.Any(f =>
+            f.Length >= 13 && f[3] == (byte)Http2FrameType.RstStream
+        );
+        await Assert
+            .That(sentRst)
+            .IsTrue()
+            .Because("H2 :path must validate %-escapes like the HTTP/1.1 request line parser does");
+    }
 }

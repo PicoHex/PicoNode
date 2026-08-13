@@ -3,6 +3,42 @@ namespace PicoNode.Tests;
 public sealed class TcpNodeMetricsTests
 {
     [Test]
+    public async Task GetMetrics_concurrent_calls_are_safe_and_monotonic()
+    {
+        await using var node = CreateNode(new EchoTcpHandler());
+        await node.StartAsync();
+
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+        await client.ConnectAsync(node.LocalEndPoint!);
+
+        // Hammer GetMetrics from multiple threads: the rate snapshot fields
+        // must be updated atomically so concurrent callers never observe
+        // torn or backwards totals.
+        var tasks = Enumerable
+            .Range(0, 8)
+            .Select(_ =>
+                Task.Run(() =>
+                {
+                    long lastSent = -1;
+                    for (var i = 0; i < 500; i++)
+                    {
+                        var m = node.GetMetrics();
+                        if (m.TotalBytesSent < lastSent)
+                            throw new InvalidOperationException("metrics went backwards");
+                        lastSent = m.TotalBytesSent;
+                    }
+                })
+            )
+            .ToArray();
+
+        await Task.WhenAll(tasks);
+    }
+
+    [Test]
     public async Task GetMetrics_returns_zero_counters_before_any_activity()
     {
         await using var node = CreateNode(new EchoTcpHandler());

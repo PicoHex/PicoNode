@@ -22,7 +22,7 @@ public static class CorsHandler
             return new HttpResponse { StatusCode = 403 };
 
         var headers = new HttpHeaderCollection([
-            new(HttpHeaderNames.AccessControlAllowOrigin, origin),
+            new(HttpHeaderNames.AccessControlAllowOrigin, GetAllowOriginValue(origin, options)),
             new(HttpHeaderNames.AccessControlAllowMethods, options.AllowedMethodsHeader),
             new(HttpHeaderNames.AccessControlAllowHeaders, options.AllowedHeadersHeader),
         ]);
@@ -59,7 +59,7 @@ public static class CorsHandler
 
         var headers = new List<KeyValuePair<string, string>>
         {
-            new(HttpHeaderNames.AccessControlAllowOrigin, origin),
+            new(HttpHeaderNames.AccessControlAllowOrigin, GetAllowOriginValue(origin, options)),
         };
 
         if (options.AllowCredentials)
@@ -89,6 +89,16 @@ public static class CorsHandler
 
         return origins.Contains("*") || origins.Contains(origin);
     }
+
+    /// <summary>
+    /// The Fetch spec forbids `Access-Control-Allow-Origin: *` combined with
+    /// credentials — browsers reject such responses. When credentials are
+    /// enabled, echo the request origin instead of emitting '*'.
+    /// </summary>
+    private static string GetAllowOriginValue(string origin, CorsOptions options) =>
+        options.AllowCredentials ? origin
+        : options.AllowedOriginsSet.Contains("*") ? "*"
+        : origin;
 
     private static bool IsMethodAllowed(string method, CorsOptions options)
     {

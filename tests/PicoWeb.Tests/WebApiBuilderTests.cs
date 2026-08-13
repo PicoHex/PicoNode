@@ -93,6 +93,26 @@ public sealed class WebApiBuilderTests
     }
 
     [Test]
+    public async Task ConfigureApp_passes_current_options_for_accumulation()
+    {
+        var builder = new WebApiBuilder();
+        builder.ConfigureApp(o => new WebAppOptions { ServerHeader = "First" });
+        // The callback receives the CURRENT options, so later calls can build
+        // on earlier configuration instead of starting from defaults.
+        builder.ConfigureApp(o => new WebAppOptions
+        {
+            ServerHeader = o.ServerHeader,
+            MaxRequestBytes = 12345,
+        });
+
+        var app = builder.Build();
+        var options = app.Options;
+
+        await Assert.That(options.ServerHeader).IsEqualTo("First");
+        await Assert.That(options.MaxRequestBytes).IsEqualTo(12345);
+    }
+
+    [Test]
     public async Task Accepts_custom_ISvcContainer()
     {
         // Arrange: use SpyContainer

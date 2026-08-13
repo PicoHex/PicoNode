@@ -22,6 +22,7 @@ public sealed class TcpNode : INode
     private readonly CancellationTokenSource _configCts = new();
     private readonly ConcurrentDictionary<long, TcpConnection> _connections = new();
     private readonly Lock _stateLock = new();
+    private int _tlsHandshakesInFlight;
     private Task? _acceptTask;
     private Task? _idleMonitorTask;
 
@@ -97,33 +98,38 @@ public sealed class TcpNode : INode
 
     public TcpNodeMetrics GetMetrics()
     {
-        var now = DateTime.UtcNow;
-        var elapsed = (now - _metricsTime).TotalSeconds;
+        // The rate snapshot (prev values + timestamp) is guarded so concurrent
+        // callers cannot observe torn or backwards-moving rate state.
+        lock (_stateLock)
+        {
+            var now = DateTime.UtcNow;
+            var elapsed = (now - _metricsTime).TotalSeconds;
 
-        var accepted = Interlocked.Read(ref _totalAccepted);
-        var sent = Interlocked.Read(ref _totalBytesSent);
-        var received = Interlocked.Read(ref _totalBytesReceived);
+            var accepted = Interlocked.Read(ref _totalAccepted);
+            var sent = Interlocked.Read(ref _totalBytesSent);
+            var received = Interlocked.Read(ref _totalBytesReceived);
 
-        var acceptRate = elapsed > 0 ? (accepted - _prevAccepted) / elapsed : 0;
-        var sentRate = elapsed > 0 ? (sent - _prevSent) / elapsed : 0;
-        var recvRate = elapsed > 0 ? (received - _prevReceived) / elapsed : 0;
+            var acceptRate = elapsed > 0 ? (accepted - _prevAccepted) / elapsed : 0;
+            var sentRate = elapsed > 0 ? (sent - _prevSent) / elapsed : 0;
+            var recvRate = elapsed > 0 ? (received - _prevReceived) / elapsed : 0;
 
-        _prevAccepted = accepted;
-        _prevSent = sent;
-        _prevReceived = received;
-        _metricsTime = now;
+            _prevAccepted = accepted;
+            _prevSent = sent;
+            _prevReceived = received;
+            _metricsTime = now;
 
-        return new TcpNodeMetrics(
-            accepted,
-            Interlocked.Read(ref _totalRejected),
-            Interlocked.Read(ref _totalClosed),
-            _connections.Count,
-            sent,
-            received,
-            acceptRate,
-            sentRate,
-            recvRate
-        );
+            return new TcpNodeMetrics(
+                accepted,
+                Interlocked.Read(ref _totalRejected),
+                Interlocked.Read(ref _totalClosed),
+                _connections.Count,
+                sent,
+                received,
+                acceptRate,
+                sentRate,
+                recvRate
+            );
+        }
     }
 
     internal void RecordBytesSent(long count) => Interlocked.Add(ref _totalBytesSent, count);
@@ -224,7 +230,7 @@ public sealed class TcpNode : INode
                     await _acceptTask.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
-                { /* expected during shutdown �?accept task cancelled */
+                { /* expected during shutdown — accept task cancelled */
                 }
             }
 
@@ -235,7 +241,7 @@ public sealed class TcpNode : INode
                     await _idleMonitorTask.WaitAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
-                { /* expected during shutdown �?idle monitor task cancelled */
+                { /* expected during shutdown — idle monitor task cancelled */
                 }
             }
 
@@ -344,6 +350,16 @@ public sealed class TcpNode : INode
 
         if (Options.SslOptions is not null)
         {
+            // In-flight TLS handshakes count against MaxConnections too — a slow
+            // handshake flood must not swamp the thread pool while bypassing the
+            // connection cap (handshakes are not yet tracked in _connections).
+            if (!TryBeginTlsHandshake())
+            {
+                Interlocked.Increment(ref _totalRejected);
+                RejectAcceptedSocket(socket, NodeFaultCode.SessionRejected, OperationRejectLimit);
+                return Task.CompletedTask;
+            }
+
             // Offload TLS handshake to avoid blocking the accept loop thread.
             _ = Task.Run(async () =>
             {
@@ -354,6 +370,10 @@ public sealed class TcpNode : INode
                 catch (Exception ex)
                 {
                     ReportFault(NodeFaultCode.TlsFailed, OperationTls, ex);
+                }
+                finally
+                {
+                    EndTlsHandshake();
                 }
             });
             return Task.CompletedTask;
@@ -473,7 +493,7 @@ public sealed class TcpNode : INode
             }
         }
         catch (OperationCanceledException) when (_cts.IsCancellationRequested)
-        { /* expected during shutdown �?idle monitor exits via cancellation */
+        { /* expected during shutdown — idle monitor exits via cancellation */
         }
     }
 
@@ -492,6 +512,41 @@ public sealed class TcpNode : INode
             }
 
             return _connections.TryAdd(connection.Id, connection);
+        }
+    }
+
+    /// <summary>
+    /// Reserves an admission slot for a TLS handshake that is not yet tracked
+    /// in <see cref="_connections"/>. In-flight handshakes consume the same
+    /// MaxConnections budget so slow-handshake floods cannot bypass the cap.
+    /// </summary>
+    internal bool TryBeginTlsHandshake()
+    {
+        lock (_stateLock)
+        {
+            if (_state is NodeState.Stopping or NodeState.Stopped or NodeState.Disposed)
+            {
+                return false;
+            }
+
+            if (_connections.Count + _tlsHandshakesInFlight >= Options.MaxConnections)
+            {
+                return false;
+            }
+
+            _tlsHandshakesInFlight++;
+            return true;
+        }
+    }
+
+    internal void EndTlsHandshake()
+    {
+        lock (_stateLock)
+        {
+            if (_tlsHandshakesInFlight > 0)
+            {
+                _tlsHandshakesInFlight--;
+            }
         }
     }
 

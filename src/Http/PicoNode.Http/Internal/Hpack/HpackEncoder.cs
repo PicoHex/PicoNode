@@ -87,7 +87,9 @@ internal sealed class HpackEncoder
     /// <summary>Tries to encode a header using static or dynamic table index.</summary>
     private bool TryEncodeIndexed(IBufferWriter<byte> writer, string name, string value)
     {
-        // 1) Try exact value match from pre-separated index (O(1) + scan 0-2 entries)
+        // 1) Try exact value match from pre-separated index (O(1) + scan 0-2 entries).
+        //    Pure indexed references to the STATIC table are legal regardless of the
+        //    dynamic table capacity.
         if (ExactMatchIndex.TryGetValue(name, out var exactEntries))
         {
             foreach (var (idx, val) in exactEntries)
@@ -99,6 +101,12 @@ internal sealed class HpackEncoder
                 }
             }
         }
+
+        // When the peer disabled its decoder table (HEADER_TABLE_SIZE=0), any
+        // incremental-indexing representation would be silently refused — never
+        // emit one.
+        if (_dynamicTable.Capacity == 0)
+            return false;
 
         // 2) Try name-only match (O(1))
         if (NameOnlyIndex.TryGetValue(name, out var nameIdx))
@@ -135,6 +143,17 @@ internal sealed class HpackEncoder
     /// <summary>Encodes a literal header (new name and value).</summary>
     private void EncodeLiteral(IBufferWriter<byte> writer, string name, string value)
     {
+        // RFC 7541 §6.2.1/§6.2.2: with a disabled dynamic table the encoder
+        // must fall back to literal WITHOUT indexing — incremental indexing
+        // would desync the peer decoder (it refuses entries above capacity 0).
+        if (_dynamicTable.Capacity == 0)
+        {
+            EncodeIntegerWithPrefix(writer, 0, 4, 0x00);
+            EncodeString(writer, name);
+            EncodeString(writer, value);
+            return;
+        }
+
         // Literal with incremental indexing (RFC 7541 §6.2.1)
         // Name index = 0 (new name follows) with 6-bit prefix
         EncodeIntegerWithPrefix(writer, 0, 6, 0x40);

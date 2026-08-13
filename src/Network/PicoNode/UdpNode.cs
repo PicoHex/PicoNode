@@ -445,7 +445,7 @@ public sealed class UdpNode : INode
             }
         }
         catch (OperationCanceledException) when (handlerCancellationToken.IsCancellationRequested)
-        { /* expected during shutdown �?datagram queue processing cancelled */
+        { /* expected during shutdown — datagram queue processing cancelled */
         }
     }
 

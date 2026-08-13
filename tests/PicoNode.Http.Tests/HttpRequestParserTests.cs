@@ -299,11 +299,32 @@ public sealed class HttpRequestParserTests
     }
 
     [Test]
-    public async Task Parse_rejects_duplicate_content_length()
+    public async Task Parse_accepts_duplicate_identical_content_length()
+    {
+        // RFC 7230 §3.3.2: multiple identical Content-Length values are legal;
+        // only CONFLICTING values must be rejected.
+        var buffer = CreateSequence(
+            Encoding.ASCII.GetBytes(
+                "POST /submit HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\ncontent-length: 5\r\n\r\nhello"
+            )
+        );
+
+        var result = HttpRequestParser.Parse(
+            buffer,
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
+        );
+
+        await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Success);
+        await Assert.That(result.Request).IsNotNull();
+        await Assert.That(result.Request!.Body.Length).IsEqualTo(5);
+    }
+
+    [Test]
+    public async Task Parse_rejects_conflicting_content_length_values()
     {
         var buffer = CreateSequence(
             Encoding.ASCII.GetBytes(
-                "POST /submit HTTP/1.1\r\nContent-Length: 5\r\ncontent-length: 5\r\n\r\nhello"
+                "POST /submit HTTP/1.1\r\nContent-Length: 5\r\ncontent-length: 6\r\n\r\nhello!"
             )
         );
 
@@ -315,6 +336,27 @@ public sealed class HttpRequestParserTests
         await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
         await Assert.That(result.Error).IsEqualTo(HttpRequestParseError.DuplicateContentLength);
         await Assert.That(result.Request).IsNull();
+    }
+
+    [Test]
+    public async Task Parse_rejects_transfer_encoding_with_content_length_as_framing_error()
+    {
+        var buffer = CreateSequence(
+            Encoding.ASCII.GetBytes(
+                "POST /submit HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"
+            )
+        );
+
+        var result = HttpRequestParser.Parse(
+            buffer,
+            new HttpConnectionHandlerOptions { RequestHandler = static (_, _) => default }
+        );
+
+        await Assert.That(result.Status).IsEqualTo(HttpRequestParseStatus.Rejected);
+        await Assert
+            .That(result.Error)
+            .IsEqualTo(HttpRequestParseError.UnsupportedFraming)
+            .Because("TE+CL together is a framing violation, not a request-line error");
     }
 
     [Test]

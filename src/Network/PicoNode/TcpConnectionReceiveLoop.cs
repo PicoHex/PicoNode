@@ -83,7 +83,7 @@ internal sealed class TcpConnectionReceiveLoop
             }
         }
         catch (OperationCanceledException)
-        { /* expected during connection close �?pipe read cancelled */
+        { /* expected during connection close — pipe read cancelled */
         }
         finally
         {

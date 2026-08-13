@@ -320,4 +320,75 @@ public sealed class CacheMiddlewareTests
             .IsNull()
             .Because("authenticated responses must not advertise public cacheability");
     }
+
+    [Test]
+    public async Task Not_modified_response_includes_vary_header()
+    {
+        var middleware = new CacheMiddleware();
+        var path = "/vary-test-" + Guid.NewGuid();
+        var body = Encoding.UTF8.GetBytes("cached content");
+        var context = CreateContext("GET", path, ifNoneMatch: null);
+
+        var response1 = await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Body = body,
+                    }
+                ),
+            CancellationToken.None
+        );
+        var etag = GetHeader(response1, "ETag");
+
+        var context2 = CreateContext("GET", path, ifNoneMatch: etag);
+        var response2 = await middleware.InvokeAsync(
+            context2,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        Body = body,
+                    }
+                ),
+            CancellationToken.None
+        );
+
+        await Assert.That(response2.StatusCode).IsEqualTo(304);
+        await Assert
+            .That(GetHeader(response2, "Vary"))
+            .IsEqualTo("Accept-Encoding")
+            .Because("304 responses must keep the Vary header for correct cache semantics");
+    }
+
+    [Test]
+    public async Task Uncached_streaming_response_uses_configured_max_age()
+    {
+        var middleware = new CacheMiddleware(TimeSpan.FromSeconds(60));
+        var context = CreateContext("GET", "/stream-" + Guid.NewGuid(), ifNoneMatch: null);
+
+        var response = await middleware.InvokeAsync(
+            context,
+            (_, _) =>
+                ValueTask.FromResult(
+                    new HttpResponse
+                    {
+                        StatusCode = 200,
+                        ReasonPhrase = "OK",
+                        BodyStream = new MemoryStream([1, 2, 3]),
+                    }
+                ),
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(GetHeader(response, "Cache-Control"))
+            .IsEqualTo("public, max-age=60")
+            .Because("the header must reflect the configured max age, not the default");
+    }
 }

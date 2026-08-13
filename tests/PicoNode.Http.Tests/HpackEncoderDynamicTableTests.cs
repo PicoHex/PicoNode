@@ -64,4 +64,30 @@ public sealed class HpackEncoderDynamicTableTests
 
         await Assert.That(result).IsNull();
     }
+
+    [Test]
+    public async Task Encode_ZeroCapacityTable_EmitsLiteralWithoutIndexing()
+    {
+        // When the peer advertised HEADER_TABLE_SIZE=0, the encoder must not
+        // use incremental indexing (RFC 7541 §6.2.1) — entries would be
+        // silently refused by the peer, desyncing index expectations.
+        var table = new HpackDynamicTable();
+        table.Resize(0);
+        var encoder = new HpackEncoder(table);
+        var writer = new ArrayBufferWriter<byte>();
+
+        encoder.Encode(writer, [("x-custom", "value")]);
+
+        // First byte must be literal WITHOUT indexing, new name: 0000 prefix
+        await Assert.That(writer.WrittenSpan[0] >> 4).IsEqualTo(0);
+        await Assert.That(table.Count).IsEqualTo(0);
+
+        // Round-trip: a decoder with a 0-capacity table must decode it.
+        var peer = new HpackDynamicTable();
+        peer.Resize(0);
+        var ok = HpackDecoder.TryDecode(writer.WrittenSpan, out var headers, peer);
+        await Assert.That(ok).IsTrue();
+        await Assert.That(headers!.Count).IsEqualTo(1);
+        await Assert.That(headers[0]).IsEqualTo(("x-custom", "value"));
+    }
 }

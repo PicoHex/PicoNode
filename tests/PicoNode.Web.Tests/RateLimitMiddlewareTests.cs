@@ -202,6 +202,45 @@ public sealed class RateLimitMiddlewareTests
         await Assert.That(response.StatusCode).IsEqualTo(429);
     }
 
+    [Test]
+    public async Task KeySelector_throwing_fails_open()
+    {
+        // A throwing KeySelector must not land every failing request in a shared
+        // "error" bucket — an attacker could exhaust that bucket (MaxTokens=1
+        // below) and 429 every subsequent request whose key derivation fails.
+        // Fail open per-request instead: BOTH requests must pass through.
+        var store = new InMemoryRateLimitStore(
+            new RateLimitOptions { MaxTokens = 1, KeySelector = static _ => "k" }
+        );
+        var options = new RateLimitOptions
+        {
+            MaxTokens = 1,
+            KeySelector = static _ => throw new InvalidOperationException("no key"),
+        };
+        var middleware = RateLimitMiddleware.Create(store, options);
+
+        var request = new HttpRequest { Method = "GET", Target = "/" };
+        var callCount = 0;
+        WebRequestHandler next = (_, _) =>
+        {
+            callCount++;
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        };
+
+        var response1 = await middleware(WebContext.Create(request), next, CancellationToken.None);
+        var response2 = await middleware(WebContext.Create(request), next, CancellationToken.None);
+
+        await Assert.That(response1.StatusCode).IsEqualTo(200);
+        await Assert
+            .That(response2.StatusCode)
+            .IsEqualTo(200)
+            .Because(
+                "the second erroring request must not be 429'd by a shared "
+                    + "error bucket exhausted by the first"
+            );
+        await Assert.That(callCount).IsEqualTo(2);
+    }
+
     private sealed class ThrowingRateLimitStore : IRateLimitStore
     {
         public ValueTask<RateLimitResult> TryConsumeTokenAsync(string key, CancellationToken ct) =>

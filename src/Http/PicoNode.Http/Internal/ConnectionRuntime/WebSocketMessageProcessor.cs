@@ -48,7 +48,15 @@ internal static class WebSocketMessageProcessor
                 return consumed;
             }
 
-            // RFC 6455 §5.5: control frames must have FIN=1 and payload �?125
+            // RFC 6455 §5.2: RSV2/RSV3 must be 0 — no negotiated extension uses
+            // them, so a set bit is a protocol error.
+            if (frame.Rsv2 || frame.Rsv3)
+            {
+                await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
+                return consumed;
+            }
+
+            // RFC 6455 §5.5: control frames must have FIN=1 and payload ≤ 125
             if (
                 frame.OpCode
                 is WebSocketOpCode.Ping
@@ -97,6 +105,30 @@ internal static class WebSocketMessageProcessor
                 }
                 case WebSocketOpCode.Close:
                 {
+                    // RFC 6455 §5.5.1 + §7.4: payload must be empty or
+                    // code (2 bytes, valid range) + UTF-8 reason.
+                    if (frame.Payload.Length == 1)
+                    {
+                        await CloseWithCodeAsync(connection, 1002, cancellationToken)
+                            .ConfigureAwait(false);
+                        return consumed;
+                    }
+
+                    if (frame.Payload.Length >= 2)
+                    {
+                        var closeCode = (frame.Payload.Span[0] << 8) | frame.Payload.Span[1];
+                        var reason = frame.Payload.Slice(2);
+                        if (
+                            !IsValidCloseCode(closeCode)
+                            || (reason.Length > 0 && !IsValidUtf8(reason.ToArray()))
+                        )
+                        {
+                            await CloseWithCodeAsync(connection, 1002, cancellationToken)
+                                .ConfigureAwait(false);
+                            return consumed;
+                        }
+                    }
+
                     var size = WebSocketFrameCodec.MeasureFrameSize(frame.Payload.Length);
                     var rented = ArrayPool<byte>.Shared.Rent(size);
                     try
@@ -170,6 +202,14 @@ internal static class WebSocketMessageProcessor
                         return consumed;
                     }
 
+                    // RFC 7692 §6: RSV1 is only valid on the FIRST frame of a message.
+                    if (frame.Rsv1)
+                    {
+                        await CloseWithProtocolError(connection, cancellationToken)
+                            .ConfigureAwait(false);
+                        return consumed;
+                    }
+
                     currentState.PayloadBuffer.Write(frame.Payload.Span);
 
                     if (currentState.PayloadBuffer.WrittenCount > currentState.MaxMessageSize)
@@ -201,6 +241,10 @@ internal static class WebSocketMessageProcessor
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
+    /// <summary>Validates close codes per RFC 6455 §7.4.1.</summary>
+    private static bool IsValidCloseCode(int code) =>
+        code is (>= 1000 and <= 1003) or (>= 1007 and <= 1011) or (>= 3000 and <= 4999);
+
     /// <summary>
     /// Decompresses (when the message is permessage-deflate compressed) the fully
     /// reassembled payload, validates UTF-8 for text messages, and delivers it.
@@ -212,9 +256,25 @@ internal static class WebSocketMessageProcessor
         CancellationToken ct
     )
     {
-        var messageBytes = currentState.MessageCompressed
-            ? currentState.Decompress(currentState.PayloadBuffer.WrittenMemory.Span)
-            : currentState.PayloadBuffer.WrittenMemory.ToArray();
+        byte[] messageBytes;
+        try
+        {
+            messageBytes = currentState.MessageCompressed
+                ? currentState.Decompress(
+                    currentState.PayloadBuffer.WrittenMemory.Span,
+                    currentState.MaxMessageSize
+                )
+                : currentState.PayloadBuffer.WrittenMemory.ToArray();
+        }
+        catch (InvalidDataException)
+        {
+            // Zip bomb: compressed payload inflates beyond MaxMessageSize.
+            // RFC 6455 §7.4.1: close with 1009 (Message Too Big).
+            await CloseWithCodeAsync(connection, 1009, ct).ConfigureAwait(false);
+            currentState.MessageOpCode = null;
+            currentState.PayloadBuffer.Clear();
+            return;
+        }
 
         // RFC 6455 §8.1: Text messages must be valid UTF-8
         if (currentState.MessageOpCode == WebSocketOpCode.Text && !IsValidUtf8(messageBytes))

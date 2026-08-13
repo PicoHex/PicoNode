@@ -9,7 +9,8 @@ internal static class HpackDecoder
     public static bool TryDecode(
         ReadOnlySpan<byte> block,
         out List<(string, string)> headers,
-        HpackDynamicTable? dynamicTable = null
+        HpackDynamicTable? dynamicTable = null,
+        int maxTableSize = 4096
     )
     {
         headers = new List<(string, string)>();
@@ -42,6 +43,10 @@ internal static class HpackDecoder
             else if ((first & 0xE0) == 0x20)
             {
                 var newSize = DecodeInteger(block, ref offset, 5);
+                // RFC 7541 §4.2: a size update above the limit WE advertised
+                // is a decoding error — the peer may not grow our decoder table.
+                if (newSize > maxTableSize)
+                    return false;
                 dynamicTable?.Resize(newSize);
             }
             else

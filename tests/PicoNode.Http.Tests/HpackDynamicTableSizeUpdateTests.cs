@@ -48,18 +48,41 @@ public sealed class HpackDynamicTableSizeUpdateTests
     }
 
     [Test]
-    public async Task Decode_DynamicTableSizeUpdate_Zero_SetsToDefaultCapacity()
+    public async Task Decode_DynamicTableSizeUpdate_Zero_ClearsAndDisablesTable()
     {
-        // Size update to 0 — Resize treats <=0 as DefaultCapacity (4096)
+        // RFC 7541 §4.2: size update to 0 clears the table and sets capacity to 0.
         // Value 0: 0 < 31, so single byte: 001|00000 = 0x20
         var block = new byte[] { 0x20 };
         var table = new HpackDynamicTable(8192);
+        table.Add("existing", "entry");
 
         var success = HpackDecoder.TryDecode(block, out var headers, table);
 
         await Assert.That(success).IsTrue();
 
-        // Capacity resets to DefaultCapacity (4096) because 0 → DefaultCapacity
+        // Capacity must be 0 (dynamic table disabled), not reset to 4096.
+        await Assert.That(table.Capacity).IsEqualTo(0);
+        await Assert.That(table.Count).IsEqualTo(0);
+
+        // Indexing against a disabled table is a no-op.
+        table.Add("new", "entry");
+        await Assert.That(table.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Decode_DynamicTableSizeUpdate_ExceedingAdvertisedLimit_Fails()
+    {
+        // RFC 7541 §4.2: a size update above the limit WE advertised (4096)
+        // MUST be treated as a decoding error.
+        // 4097: prefix max=31, remaining=4066; 4066 & 0x7F = 98 (0x62, 0xE2); 4066>>7 = 31 (0x1F)
+        var block = new byte[] { 0x3F, 0xE2, 0x1F };
+        var table = new HpackDynamicTable();
+
+        var success = HpackDecoder.TryDecode(block, out var headers, table);
+
+        await Assert.That(success).IsFalse();
+        await Assert.That(headers).IsEmpty();
+        // The table must not be resized by an illegal update.
         await Assert.That(table.Capacity).IsEqualTo(4096);
     }
 

@@ -16,6 +16,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="PicoNode.Web.Tests" />
     <InternalsVisibleTo Include="PicoNode.Tests" />
+    <InternalsVisibleTo Include="PicoWeb" />
   </ItemGroup>
 
   <ItemGroup>

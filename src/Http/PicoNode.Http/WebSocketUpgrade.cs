@@ -12,16 +12,13 @@ public static class WebSocketUpgrade
         if (!request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
             return null;
 
-        if (!HasHeader(request, "Upgrade", "websocket"))
+        if (!HasToken(request, "Upgrade", "websocket"))
             return null;
 
-        if (!HasHeader(request, HttpHeaderNames.Connection, "Upgrade"))
+        if (!HasToken(request, HttpHeaderNames.Connection, "Upgrade"))
             return null;
 
-        if (
-            !request.Headers.TryGetValue("Sec-WebSocket-Key", out var key)
-            || string.IsNullOrEmpty(key)
-        )
+        if (!request.Headers.TryGetValue("Sec-WebSocket-Key", out var key) || !IsValidKey(key))
             return null;
 
         if (
@@ -75,12 +72,22 @@ public static class WebSocketUpgrade
         if (response.StatusCode != 101)
             return false;
 
-        return response.Headers.TryGetValue("Upgrade", out var upgrade)
-            && upgrade is not null
-            && upgrade.Contains("websocket", StringComparison.OrdinalIgnoreCase)
-            && response.Headers.TryGetValue(HttpHeaderNames.Connection, out var connection)
-            && connection is not null
-            && connection.Contains("Upgrade", StringComparison.OrdinalIgnoreCase);
+        return HasToken(response, "Upgrade", "websocket")
+            && HasToken(response, HttpHeaderNames.Connection, "Upgrade");
+    }
+
+    private static bool HasToken(HttpResponse response, string name, string expectedToken)
+    {
+        if (!response.Headers.TryGetValue(name, out var value) || value is null)
+            return false;
+
+        foreach (var token in value.Split(','))
+        {
+            if (token.Trim().Equals(expectedToken, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     internal static string ComputeAcceptKey(string key)
@@ -90,9 +97,71 @@ public static class WebSocketUpgrade
         return Convert.ToBase64String(hash);
     }
 
-    private static bool HasHeader(HttpRequest request, string name, string expectedValue)
+    /// <summary>
+    /// RFC 6455 §4.2.1: the Sec-WebSocket-Key is a base64-encoded 16-byte
+    /// nonce. Anything else must not be upgraded.
+    /// </summary>
+    internal static bool IsValidKey(string key)
     {
-        return request.Headers.TryGetValue(name, out var value)
-            && value.Contains(expectedValue, StringComparison.OrdinalIgnoreCase);
+        Span<byte> decoded = stackalloc byte[16];
+        return Convert.TryFromBase64String(key, decoded, out var written) && written == 16;
+    }
+
+    /// <summary>
+    /// Parses a Sec-WebSocket-Extensions header value. Returns false when the
+    /// header is absent/empty. Token-based matching (RFC 6455 §9.1) — substring
+    /// matching would let "x-permessage-deflatey" fake a negotiation.
+    /// </summary>
+    internal static bool TryParseExtensions(string? header, out bool permessageDeflate)
+    {
+        permessageDeflate = false;
+        if (string.IsNullOrWhiteSpace(header))
+            return false;
+
+        var anyToken = false;
+        foreach (var part in header.Split(','))
+        {
+            var token = part.Trim().Split(';')[0].Trim();
+            if (token.Length == 0)
+                continue;
+            anyToken = true;
+            if (token.Equals("permessage-deflate", StringComparison.OrdinalIgnoreCase))
+                permessageDeflate = true;
+        }
+
+        return anyToken;
+    }
+
+    /// <summary>
+    /// RFC 7692 §6: permessage-deflate is negotiated only when the server ECHOES
+    /// the extension in its 101 response. A request header alone must not enable
+    /// decompression — an attacker could otherwise force inflated payloads.
+    /// </summary>
+    internal static bool IsCompressionNegotiated(HttpRequest request, HttpResponse response)
+    {
+        if (
+            !request.Headers.TryGetValue("Sec-WebSocket-Extensions", out var requestExtensions)
+            || !TryParseExtensions(requestExtensions, out var requestDeflate)
+            || !requestDeflate
+        )
+            return false;
+
+        return response.Headers.TryGetValue("Sec-WebSocket-Extensions", out var responseExtensions)
+            && TryParseExtensions(responseExtensions, out var responseDeflate)
+            && responseDeflate;
+    }
+
+    private static bool HasToken(HttpRequest request, string name, string expectedToken)
+    {
+        if (!request.Headers.TryGetValue(name, out var value) || value is null)
+            return false;
+
+        foreach (var token in value.Split(','))
+        {
+            if (token.Trim().Equals(expectedToken, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 }

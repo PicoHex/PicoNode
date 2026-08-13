@@ -4,7 +4,8 @@ public sealed class SessionMiddleware
 {
     public static WebMiddleware Create()
     {
-        return Create(SessionCookie.Create().Extract, SessionCookie.Create().Set);
+        var cookie = SessionCookie.Create();
+        return Create(cookie.Extract, cookie.Set);
     }
 
     public static WebMiddleware Create(SessionIdExtractor extractor, SessionIdSetter setter)

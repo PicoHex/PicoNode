@@ -70,8 +70,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
             var route = GetRoute(member, methodSymbol);
 
-            var bodyText = member.Body?.ToString() ?? "";
-            methods.Add(new MethodModel(httpMethod, route, methodSymbol, bodyText));
+            methods.Add(new MethodModel(httpMethod, route, methodSymbol));
         }
 
         if (methods.Count == 0)
@@ -706,13 +705,11 @@ internal sealed class MethodModel
     public string HttpMethod { get; }
     public string Route { get; }
     public IMethodSymbol Symbol { get; }
-    public string BodyText { get; }
 
-    public MethodModel(string httpMethod, string route, IMethodSymbol symbol, string bodyText)
+    public MethodModel(string httpMethod, string route, IMethodSymbol symbol)
     {
         HttpMethod = httpMethod;
         Route = route;
         Symbol = symbol;
-        BodyText = bodyText;
     }
 }

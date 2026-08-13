@@ -22,6 +22,8 @@ public sealed class WebApp
         _options = options;
     }
 
+    internal WebAppOptions Options => _options;
+
     /// <summary>Registers middleware in the pipeline. Middleware are composed in reverse registration order (last added runs closest to the handler).</summary>
     public WebApp Use(WebMiddleware middleware)
     {

@@ -29,7 +29,11 @@ public sealed class WebApiBuilder
 
     public WebApiBuilder ConfigureApp(Func<WebAppOptions, WebAppOptions> configure)
     {
-        _options = configure(new WebAppOptions());
+        ArgumentNullException.ThrowIfNull(configure);
+        // Merge semantics: build on the current options so repeated
+        // ConfigureApp calls accumulate instead of silently discarding
+        // earlier configuration.
+        _options = configure(_options);
         return this;
     }
 

@@ -6,7 +6,6 @@ internal sealed class Http2StreamState
     internal const int MaxHeaderListSize = 16 * 1024;
 
     public int StreamId { get; }
-    public bool EndHeadersReceived { get; set; }
     public bool EndStreamReceived { get; set; }
     public bool EndStreamFromHeaders { get; set; } // EndStream flag from the HEADERS frame
     public ArrayBufferWriter<byte>? HeaderBlockBuffer { get; set; }
@@ -30,7 +29,6 @@ internal sealed class Http2StreamState
     public string? DecodedPath { get; set; }
     public List<KeyValuePair<string, string>>? DecodedHeaderFields { get; set; }
     public Dictionary<string, string>? DecodedHeadersDict { get; set; }
-    public bool HandlerInvoked { get; set; }
 
     // Flow control windows
     public int SendWindow { get; set; } = 65535;
@@ -70,7 +68,6 @@ internal sealed class Http2StreamState
             HeaderBlockBuffer.Write(payload.Span);
             if (HeaderBlockBuffer.WrittenCount > MaxHeaderListSize)
                 throw new Http2HeaderTooLargeException(HeaderBlockBuffer.WrittenCount);
-            EndHeadersReceived = true;
             var result = HeaderBlockBuffer.WrittenMemory.ToArray();
             HeaderBlockBuffer = null;
             return result;

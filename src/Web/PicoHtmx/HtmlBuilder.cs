@@ -35,41 +35,73 @@ public static class H
         return sb.ToString();
     }
 
-    // Non-generic fallback for null / runtime-dynamic attrs (callers passing a
-    // dynamically-typed attrs object must use a type preserved by trimming).
-    public static string Tag(string name, string? content = null, object? attrs = null) =>
-        Tag<object>(name, content, attrs);
+    // Non-generic fallback for null / runtime-dynamic attrs. Passing a non-null
+    // object-typed attrs bag FAILS LOUDLY: reflection cannot see its properties
+    // under PublishAot trimming (DAM only flows through the generic parameter),
+    // which would silently render empty attributes. Use the generic overloads.
+    public static string Tag(string name, string? content = null, object? attrs = null)
+    {
+        ThrowIfObjectTypedAttrs(attrs);
+        return Tag<object>(name, content, attrs);
+    }
+
+    private static void ThrowIfObjectTypedAttrs(object? attrs)
+    {
+        if (attrs is not null)
+        {
+            throw new NotSupportedException(
+                "Attribute objects must be passed through the generic overloads "
+                    + "(e.g. H.Tag<T>(...)) so their properties survive trimming "
+                    + "([DynamicallyAccessedMembers] only flows through the generic "
+                    + "parameter). Object-typed attrs would silently render empty "
+                    + "attributes under PublishAot."
+            );
+        }
+    }
 
     public static string Div<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
     >(string? content = null, T? attrs = null)
         where T : class => Tag("div", content, attrs);
 
-    public static string Div(string? content = null, object? attrs = null) =>
-        Tag<object>("div", content, attrs);
+    public static string Div(string? content = null, object? attrs = null)
+    {
+        ThrowIfObjectTypedAttrs(attrs);
+        return Tag<object>("div", content, attrs);
+    }
 
     public static string Span<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
     >(string? content = null, T? attrs = null)
         where T : class => Tag("span", content, attrs);
 
-    public static string Span(string? content = null, object? attrs = null) =>
-        Tag<object>("span", content, attrs);
+    public static string Span(string? content = null, object? attrs = null)
+    {
+        ThrowIfObjectTypedAttrs(attrs);
+        return Tag<object>("span", content, attrs);
+    }
 
     public static string P<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
     >(string text, T? attrs = null)
         where T : class => Tag("p", E(text), attrs);
 
-    public static string P(string text, object? attrs = null) => Tag<object>("p", E(text), attrs);
+    public static string P(string text, object? attrs = null)
+    {
+        ThrowIfObjectTypedAttrs(attrs);
+        return Tag<object>("p", E(text), attrs);
+    }
 
     public static string Button<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
     >(string text, T? attrs = null)
         where T : class => Tag("button", E(text), attrs);
 
-    public static string Button(string text, object? attrs = null) =>
-        Tag<object>("button", E(text), attrs);
+    public static string Button(string text, object? attrs = null)
+    {
+        ThrowIfObjectTypedAttrs(attrs);
+        return Tag<object>("button", E(text), attrs);
+    }
 
     public static string A<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
@@ -82,6 +114,7 @@ public static class H
 
     public static string A(string text, string href, object? attrs = null)
     {
+        ThrowIfObjectTypedAttrs(attrs);
         var attrStr = BuildAttrString(attrs);
         return $"<a href=\"{E(href)}\"{attrStr}>{E(text)}</a>";
     }
@@ -91,15 +124,22 @@ public static class H
     >(T? attrs = null)
         where T : class => Tag("input", null, attrs);
 
-    public static string Input(object? attrs = null) => Tag<object>("input", null, attrs);
+    public static string Input(object? attrs = null)
+    {
+        ThrowIfObjectTypedAttrs(attrs);
+        return Tag<object>("input", null, attrs);
+    }
 
     public static string TextArea<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] T
     >(string? value = null, T? attrs = null)
         where T : class => Tag("textarea", E(value), attrs);
 
-    public static string TextArea(string? value = null, object? attrs = null) =>
-        Tag<object>("textarea", E(value), attrs);
+    public static string TextArea(string? value = null, object? attrs = null)
+    {
+        ThrowIfObjectTypedAttrs(attrs);
+        return Tag<object>("textarea", E(value), attrs);
+    }
 
     public static string Script(string src) => Tag("script", null, new { src });
 

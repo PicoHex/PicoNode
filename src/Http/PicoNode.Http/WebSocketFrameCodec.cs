@@ -22,6 +22,8 @@ public static class WebSocketFrameCodec
 
         var fin = (b0 & 0x80) != 0;
         var rsv1 = (b0 & 0x40) != 0;
+        var rsv2 = (b0 & 0x20) != 0;
+        var rsv3 = (b0 & 0x10) != 0;
         var opCode = (WebSocketOpCode)(b0 & 0x0F);
         var masked = (b1 & 0x80) != 0;
         var payloadLength = (long)(b1 & 0x7F);
@@ -89,6 +91,8 @@ public static class WebSocketFrameCodec
         {
             Fin = fin,
             Rsv1 = rsv1,
+            Rsv2 = rsv2,
+            Rsv3 = rsv3,
             Masked = masked,
             OpCode = opCode,
             Payload = payload,

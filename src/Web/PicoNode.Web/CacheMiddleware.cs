@@ -85,6 +85,7 @@ public sealed class CacheMiddleware
                             "Cache-Control",
                             $"public, max-age={(int)_maxAge.TotalSeconds}"
                         ),
+                        new KeyValuePair<string, string>("Vary", "Accept-Encoding"),
                     ],
                 };
             }
@@ -100,13 +101,13 @@ public sealed class CacheMiddleware
             if (bodySize == 0 && response.BodyStream is not null)
             {
                 // Streaming response: can't know size without reading; skip caching
-                return AddCacheHeaders(response);
+                return AddCacheHeaders(response, _maxAge);
             }
 
             if (bodySize > _maxBodySize)
             {
                 // Response too large to cache
-                return AddCacheHeaders(response);
+                return AddCacheHeaders(response, _maxAge);
             }
 
             var bodyData = response.Body.ToArray();
@@ -145,12 +146,15 @@ public sealed class CacheMiddleware
         return response;
     }
 
-    private static HttpResponse AddCacheHeaders(HttpResponse response)
+    private static HttpResponse AddCacheHeaders(HttpResponse response) =>
+        AddCacheHeaders(response, DefaultMaxAge);
+
+    private static HttpResponse AddCacheHeaders(HttpResponse response, TimeSpan maxAge)
     {
         AddHeaderIfMissing(
             response.Headers,
             "Cache-Control",
-            $"public, max-age={(int)DefaultMaxAge.TotalSeconds}"
+            $"public, max-age={(int)maxAge.TotalSeconds}"
         );
         AddHeaderIfMissing(response.Headers, "Vary", "Accept-Encoding");
         return response;

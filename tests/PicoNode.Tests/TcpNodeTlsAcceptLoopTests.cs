@@ -105,6 +105,65 @@ public sealed class TcpNodeTlsAcceptLoopTests
         }
     }
 
+    [Test]
+    public async Task Tls_handshake_admission_respects_max_connections()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            using var cert = CreateSelfSignedCertificate();
+            var node = CreateTlsNode(maxConnections: 1, cert: cert);
+
+            // In-flight handshakes must count against MaxConnections so a
+            // slow-TLS connection flood cannot swamp the thread pool.
+            await Assert.That(node.TryBeginTlsHandshake()).IsTrue();
+            await Assert.That(node.TryBeginTlsHandshake()).IsFalse();
+
+            node.EndTlsHandshake();
+
+            await Assert.That(node.TryBeginTlsHandshake()).IsTrue();
+            node.EndTlsHandshake();
+
+            await node.DisposeAsync();
+        }
+        finally
+        {
+            pair.Client.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task Tls_handshake_admission_counts_tracked_connections()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            using var cert = CreateSelfSignedCertificate();
+            var node = CreateTlsNode(maxConnections: 1, cert: cert);
+
+            var dummySocket = new Socket(
+                AddressFamily.InterNetwork,
+                SocketType.Stream,
+                ProtocolType.Tcp
+            );
+            var dummyConnection = new TcpConnection(node, dummySocket, stream: null);
+            GetConnections(node).TryAdd(dummyConnection.Id, dummyConnection);
+
+            await Assert
+                .That(node.TryBeginTlsHandshake())
+                .IsFalse()
+                .Because("tracked connections consume the same admission budget");
+
+            await dummyConnection.DisposeAsync();
+            dummySocket.Dispose();
+            await node.DisposeAsync();
+        }
+        finally
+        {
+            pair.Client.Dispose();
+        }
+    }
+
     private static TcpNode CreateTlsNode(
         ILogger? logger = null,
         int maxConnections = 10,

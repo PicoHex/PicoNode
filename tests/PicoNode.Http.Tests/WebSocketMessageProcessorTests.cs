@@ -642,4 +642,157 @@ public sealed class WebSocketMessageProcessorTests
             .IsGreaterThanOrEqualTo(1)
             .Because("invalid UTF-8 in a text message must be a protocol error (RFC 6455 §8.1)");
     }
+
+    [Test]
+    public async Task Compressed_message_inflating_beyond_limit_closes_with_1009()
+    {
+        var state = new WebSocketMessageProcessorState
+        {
+            CompressionNegotiated = true,
+            MaxMessageSize = 64,
+        };
+        // 1000 zero bytes compress to ~10 bytes (well under 64), but inflate
+        // far beyond MaxMessageSize — a zip bomb must not allocate unbounded memory.
+        var compressed = state.Compress(new byte[1000]);
+        byte[] frame =
+        [
+            (byte)(0x80 | 0x40 | (byte)WebSocketOpCode.Text),
+            (byte)(0x80 | compressed.Length),
+            0,
+            0,
+            0,
+            0,
+        ];
+        frame = frame.Concat(compressed).ToArray();
+        var connection = new RecordingConnectionContext();
+
+        await WebSocketMessageProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(frame),
+            static (_, _, _) => ValueTask.CompletedTask,
+            CancellationToken.None,
+            state
+        );
+
+        await Assert.That(connection.CloseCount).IsGreaterThanOrEqualTo(1);
+        await Assert
+            .That(connection.LastSent.AsSpan().IndexOf(new byte[] { 0x03, 0xF1 }))
+            .IsGreaterThanOrEqualTo(0)
+            .Because("messages inflating beyond MaxMessageSize must close with 1009");
+    }
+
+    [Test]
+    public async Task Close_frame_with_one_byte_payload_is_protocol_error()
+    {
+        // RFC 6455 §5.5.1: close payload of length 1 is invalid.
+        byte[] frame = [0x88, 0x81, 0x00, 0x00, 0x00, 0x00, 0x03];
+        var connection = new RecordingConnectionContext();
+
+        await WebSocketMessageProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(frame),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.CloseCount).IsGreaterThanOrEqualTo(1);
+        await Assert
+            .That(connection.LastSent.AsSpan().IndexOf(new byte[] { 0x03, 0xEA }))
+            .IsGreaterThanOrEqualTo(0)
+            .Because("a 1-byte close payload must be answered with 1002 (Protocol Error)");
+    }
+
+    [Test]
+    public async Task Close_frame_with_reserved_code_is_protocol_error()
+    {
+        // 1005 is reserved and must never appear on the wire (RFC 6455 §7.4.1).
+        byte[] frame = [0x88, 0x82, 0x00, 0x00, 0x00, 0x00, 0x03, 0xED];
+        var connection = new RecordingConnectionContext();
+
+        await WebSocketMessageProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(frame),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.CloseCount).IsGreaterThanOrEqualTo(1);
+        await Assert
+            .That(connection.LastSent.AsSpan().IndexOf(new byte[] { 0x03, 0xEA }))
+            .IsGreaterThanOrEqualTo(0)
+            .Because("reserved close code 1005 must be answered with 1002");
+    }
+
+    [Test]
+    public async Task Close_frame_with_valid_code_is_echoed()
+    {
+        // 1000 = Normal Closure; must be echoed back and the connection closed.
+        byte[] frame = [0x88, 0x82, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE8];
+        var connection = new RecordingConnectionContext();
+
+        await WebSocketMessageProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(frame),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.CloseCount).IsGreaterThanOrEqualTo(1);
+        await Assert
+            .That(connection.LastSent.AsSpan().IndexOf(new byte[] { 0x03, 0xE8 }))
+            .IsGreaterThanOrEqualTo(0);
+    }
+
+    [Test]
+    public async Task Frame_with_rsv2_set_is_protocol_error()
+    {
+        // RFC 6455 §5.2: RSV2 must be 0 unless a negotiated extension defines it.
+        byte[] frame = [0xA1, 0x80, 0x00, 0x00, 0x00, 0x00];
+        var connection = new RecordingConnectionContext();
+
+        await WebSocketMessageProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(frame),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.CloseCount).IsGreaterThanOrEqualTo(1);
+    }
+
+    [Test]
+    public async Task Frame_with_rsv3_set_is_protocol_error()
+    {
+        // RFC 6455 §5.2: RSV3 must be 0 unless a negotiated extension defines it.
+        byte[] frame = [0x91, 0x80, 0x00, 0x00, 0x00, 0x00];
+        var connection = new RecordingConnectionContext();
+
+        await WebSocketMessageProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(frame),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.CloseCount).IsGreaterThanOrEqualTo(1);
+    }
+
+    [Test]
+    public async Task Continuation_frame_with_rsv1_set_is_protocol_error()
+    {
+        // RFC 7692 §6: RSV1 is only legal on the FIRST frame of a message.
+        byte[] first = [0x01, 0x81, 0x00, 0x00, 0x00, 0x00, (byte)'a'];
+        byte[] continuation = [0xC0, 0x81, 0x00, 0x00, 0x00, 0x00, (byte)'b'];
+        var combined = first.Concat(continuation).ToArray();
+        var connection = new RecordingConnectionContext();
+
+        await WebSocketMessageProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(combined),
+            static (_, _, _) => ValueTask.CompletedTask,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.CloseCount).IsGreaterThanOrEqualTo(1);
+    }
 }

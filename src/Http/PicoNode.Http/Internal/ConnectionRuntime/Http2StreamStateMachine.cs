@@ -24,11 +24,12 @@ internal sealed class Http2StreamStateMachine
     }
 
     public StreamState CurrentState { get; private set; } = StreamState.Idle;
-    public int StreamId { get; }
 
     public Http2StreamStateMachine(int streamId)
     {
-        StreamId = streamId;
+        // streamId is accepted for constructor compatibility; the id itself
+        // lives on Http2StreamState (the machine only tracks transitions).
+        _ = streamId;
     }
 
     /// <summary>

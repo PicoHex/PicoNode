@@ -230,33 +230,6 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         return state;
     }
 
-    private static async Task SendInitialSettingsAsync(
-        ITcpConnectionContext connection,
-        CancellationToken ct
-    )
-    {
-        var settings =
-            (ReadOnlySpan<Http2Setting>)
-                [
-                    new(Http2SettingId.MaxConcurrentStreams, 100),
-                    new(Http2SettingId.InitialWindowSize, 65535),
-                    new(Http2SettingId.HeaderTableSize, 4096),
-                ];
-        var size = Http2FrameCodec.FrameHeaderSize + settings.Length * 6;
-        var rented = ArrayPool<byte>.Shared.Rent(size);
-        try
-        {
-            Http2FrameCodec.WriteSettings(rented, settings);
-            await connection
-                .SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(rented);
-        }
-    }
-
     private async ValueTask<SequencePosition> ProcessWebSocketFrameAsync(
         ITcpConnectionContext connection,
         ReadOnlySequence<byte> buffer,

@@ -39,23 +39,12 @@ internal static class Http2ConnectionProcessor
             }
         }
 
-        logger?.Log(
-            LogLevel.Debug,
-            $"[H2] Parsing frames, sendInitialSettings={sendInitialSettings}, bufferLen={buffer.Length}",
-            null
-        );
-
         while (remaining.Length > 0)
         {
             if (!Http2FrameCodec.TryReadFrame(remaining, out var frame, out var frameConsumed))
             {
                 if (Http2FrameCodec.IsFrameTooLarge(remaining))
                 {
-                    logger?.Log(
-                        LogLevel.Debug,
-                        "[H2] Frame too large, sending GOAWAY FRAME_SIZE_ERROR",
-                        null
-                    );
                     await SendGoAwayAndCloseAsync(
                         connection,
                         Http2ErrorCode.FrameSizeError,
@@ -70,12 +59,6 @@ internal static class Http2ConnectionProcessor
             consumed = remaining.GetPosition(frameConsumed);
             remaining = remaining.Slice(frameConsumed);
 
-            logger?.Log(
-                LogLevel.Debug,
-                $"[H2] <- frame Type={frame!.Type} StreamId={frame.StreamId} Length={frame.Length} Flags={frame.Flags}",
-                null
-            );
-
             try
             {
                 // RFC 7540 §3.5: first frame after connection preface must be SETTINGS.
@@ -85,11 +68,6 @@ internal static class Http2ConnectionProcessor
                     connState.ReceivedPostPrefaceFrame = true;
                     if (frame!.Type != Http2FrameType.Settings)
                     {
-                        logger?.Log(
-                            LogLevel.Debug,
-                            $"[H2] Expected SETTINGS as first post-preface frame, got {frame.Type}, sending GOAWAY PROTOCOL_ERROR",
-                            null
-                        );
                         await SendGoAwayAndCloseAsync(
                             connection,
                             Http2ErrorCode.ProtocolError,
@@ -134,11 +112,6 @@ internal static class Http2ConnectionProcessor
             case Http2FrameType.Settings:
                 if (frame.StreamId != 0)
                 {
-                    logger?.Log(
-                        LogLevel.Debug,
-                        "[H2] SETTINGS with non-zero streamId, sending GOAWAY PROTOCOL_ERROR",
-                        null
-                    );
                     await SendGoAwayAndCloseAsync(
                         connection,
                         Http2ErrorCode.ProtocolError,
@@ -163,9 +136,50 @@ internal static class Http2ConnectionProcessor
                     return false;
                 }
 
+                // RFC 7540 §6.5: SETTINGS payload must be a multiple of 6 bytes.
+                if (frame.Length % 6 != 0)
+                {
+                    await SendGoAwayAndCloseAsync(
+                        connection,
+                        Http2ErrorCode.FrameSizeError,
+                        cancellationToken
+                    );
+                    return true;
+                }
+
                 // Apply immediately per RFC 7540 §6.5 ("values MUST be processed
                 // in the order received") — then ACK (§6.5.3: ACK after processing).
                 var receivedSettings = Http2FrameCodec.ParseSettings(frame.Payload.Span);
+                foreach (var setting in receivedSettings)
+                {
+                    // RFC 7540 §6.9.2: values above 2^31-1 are FLOW_CONTROL_ERROR.
+                    if (
+                        setting.Id == Http2SettingId.InitialWindowSize
+                        && setting.Value > int.MaxValue
+                    )
+                    {
+                        await SendGoAwayAndCloseAsync(
+                            connection,
+                            Http2ErrorCode.FlowControlError,
+                            cancellationToken
+                        );
+                        return true;
+                    }
+
+                    // RFC 7540 §6.5.2: valid range is 2^14 .. 2^24-1.
+                    if (
+                        setting.Id == Http2SettingId.MaxFrameSize
+                        && (setting.Value < 16384 || setting.Value > 16777215)
+                    )
+                    {
+                        await SendGoAwayAndCloseAsync(
+                            connection,
+                            Http2ErrorCode.ProtocolError,
+                            cancellationToken
+                        );
+                        return true;
+                    }
+                }
                 GetRuntimeState(connection).ApplySettings(receivedSettings);
 
                 await connection.SendAsync(
@@ -220,9 +234,11 @@ internal static class Http2ConnectionProcessor
                 return false;
 
             case Http2FrameType.PushPromise:
+                // RFC 7540 §8.2: a server receiving PUSH_PROMISE (clients cannot
+                // push) MUST treat it as a connection error of type PROTOCOL_ERROR.
                 await SendGoAwayAndCloseAsync(
                     connection,
-                    Http2ErrorCode.Http11Required,
+                    Http2ErrorCode.ProtocolError,
                     cancellationToken
                 );
                 return true;
@@ -275,12 +291,8 @@ internal static class Http2ConnectionProcessor
                 );
 
             default:
-                await SendGoAwayAndCloseAsync(
-                    connection,
-                    Http2ErrorCode.ProtocolError,
-                    cancellationToken
-                );
-                return true;
+                // RFC 7540 §5.5: unknown frame types MUST be ignored.
+                return false;
         }
     }
 
