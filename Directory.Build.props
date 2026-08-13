@@ -28,6 +28,10 @@
 
     <!-- Default: don't pack unless opted in -->
     <IsPackable Condition="'$(IsPackable)' == ''">false</IsPackable>
+
+    <!-- PicoJetson (≥ 2026.4) generates unsafe code paths for anonymous-type
+         serialization; its analyzer requires the flag in consuming projects. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <!-- ═══════════════════════════════════════════════════════
