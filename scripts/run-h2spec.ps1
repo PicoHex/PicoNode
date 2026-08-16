@@ -62,6 +62,14 @@ if (!(Test-Path $h2spec)) {
 }
 
 # ── 2. Build and start the sample server ─────────────────────────────
+$LogFile = Join-Path $RepoRoot ".tools/h2spec-ci.log"
+New-Item -ItemType Directory -Force -Path (Split-Path $LogFile) | Out-Null
+function Log($msg) {
+    Write-Host $msg
+    Add-Content -Path $LogFile -Value $msg
+}
+Log "h2spec gate: platform=$([System.Environment]::OSVersion.Platform) dotnet=$(dotnet --version)"
+
 Write-Host "Building sample server..." -ForegroundColor Cyan
 & dotnet build "$RepoRoot/samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj" -c Release -v q
 if ($LASTEXITCODE -ne 0) {
@@ -106,8 +114,10 @@ try {
 
     # ── 3. Run h2spec (strict suite — includes strict test cases) ────
     Write-Host "Running h2spec (strict)..." -ForegroundColor Cyan
-    & $h2spec -h 127.0.0.1 -p $Port -S
+    Log "h2spec binary: $h2spec (exists=$(Test-Path $h2spec))"
+    & $h2spec -h 127.0.0.1 -p $Port -S 2>&1 | Tee-Object -FilePath $LogFile -Append
     $exitCode = $LASTEXITCODE
+    Log "h2spec exit code: $exitCode"
 
     if ($exitCode -eq 0) {
         Write-Host "h2spec: ALL TESTS PASSED" -ForegroundColor Green

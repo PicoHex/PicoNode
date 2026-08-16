@@ -125,6 +125,14 @@ jobs:
         shell: pwsh
         run: ./scripts/run-h2spec.ps1
 
+      - name: Upload h2spec logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: h2spec-logs
+          path: .tools/h2spec-ci.log
+          if-no-files-found: ignore
+
   # WebSocket protocol conformance gate (Autobahn Testsuite, official frozen
   # image). The fuzzing client container drives 500+ RFC 6455 cases against
   # the sample server over the host network; any FAILED case fails the job.
@@ -142,3 +150,13 @@ jobs:
       - name: Run Autobahn fuzzing client
         shell: pwsh
         run: ./scripts/run-autobahn.ps1
+
+      - name: Upload autobahn logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autobahn-logs
+          path: |
+            .tools/autobahn-ci.log
+            .tools/autobahn-reports/servers/index.json
+          if-no-files-found: ignore

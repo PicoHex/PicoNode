@@ -45,6 +45,13 @@ if ($LASTEXITCODE -ne 0) {
 # ── 2. Build and start the WebSocket echo server ─────────────────────
 # The WebSocket echo lives in the HTTP sample (PicoNode.Samples.Http, /ws).
 Write-Host "Building sample server..." -ForegroundColor Cyan
+$LogFile = Join-Path $RepoRoot ".tools/autobahn-ci.log"
+New-Item -ItemType Directory -Force -Path (Split-Path $LogFile) | Out-Null
+function Log($msg) {
+    Write-Host $msg
+    Add-Content -Path $LogFile -Value $msg
+}
+Log "autobahn gate: platform=$([System.Environment]::OSVersion.Platform) docker=$(& $docker.Source --version 2>&1)"
 & dotnet build "$RepoRoot/samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj" -c Release -v q
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Sample server build failed."
@@ -111,8 +118,9 @@ try {
         -v "$($ReportDir.Replace('\', '/')):/reports" `
         -v "$($configPath.Replace('\', '/')):/config/fuzzingclient.json" `
         crossbario/autobahn-testsuite `
-        wstest -m fuzzingclient -s /config/fuzzingclient.json
+        wstest -m fuzzingclient -s /config/fuzzingclient.json 2>&1 | Tee-Object -FilePath $LogFile -Append
     $exitCode = $LASTEXITCODE
+    Log "fuzzing client exit code: $exitCode"
 
     # ── 5. Parse the report and fail on any FAILED case ───────────────
     $reportJson = Join-Path $ReportDir "index.json"
