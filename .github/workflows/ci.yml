@@ -124,3 +124,21 @@ jobs:
       - name: Run h2spec (strict)
         shell: pwsh
         run: ./scripts/run-h2spec.ps1
+
+  # WebSocket protocol conformance gate (Autobahn Testsuite, official frozen
+  # image). The fuzzing client container drives 500+ RFC 6455 cases against
+  # the sample server over the host network; any FAILED case fails the job.
+  autobahn:
+    runs-on: ubuntu-latest
+    name: autobahn WebSocket conformance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run Autobahn fuzzing client
+        shell: pwsh
+        run: ./scripts/run-autobahn.ps1
