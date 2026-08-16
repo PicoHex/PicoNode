@@ -106,3 +106,21 @@ jobs:
           --no-restore -c Release -r ${{ matrix.rid }}
           --self-contained
           -o publish-htmx/${{ matrix.rid }}
+
+  # HTTP/2 protocol conformance gate (h2spec v2.6.0, strict suite).
+  # The script downloads the linux h2spec binary, builds the sample server
+  # and fails the job on any failing test case.
+  h2spec:
+    runs-on: ubuntu-latest
+    name: h2spec protocol conformance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run h2spec (strict)
+        shell: pwsh
+        run: ./scripts/run-h2spec.ps1

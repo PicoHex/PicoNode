@@ -1,17 +1,33 @@
 <#
 .SYNOPSIS
-    Runs Autobahn WebSocket compliance tests against PicoNode WebSocket implementation.
+    Runs Autobahn WebSocket compliance tests against PicoNode's WebSocket implementation.
 .DESCRIPTION
-    1. Builds a WebSocket echo server
+    1. Builds the PicoNode sample HTTP server (WebSocket echo at /ws)
     2. Installs Autobahn TestSuite if not present
-    3. Runs Autobahn fuzzing client against the server
-    4. Generates a compliance report
+    3. Runs the fuzzing client against the server
+    4. Generates a compliance report under .tools/autobahn-reports
+
+.NOTES
+    Known environment requirement: the autobahntestsuite pip package needs a
+    working `_version` module. On some Python/pip combinations the published
+    wheel is missing it — use a pinned venv (e.g. autobahntestsuite==0.8.2 in
+    a dedicated virtualenv) if `import autobahntestsuite` fails.
+
+.PARAMETER Port
+    Port the sample server listens on (default 7003).
+
+.EXAMPLE
+    pwsh ./scripts/run-autobahn.ps1
 #>
+param(
+    [int]$Port = 7003
+)
 
+$ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path $PSScriptRoot -Parent
-$ServerPort = 9002
+$ReportDir = Join-Path $RepoRoot ".tools/autobahn-reports"
 
-# Check Python/Autobahn availability
+# ── 1. Check Python/Autobahn availability ────────────────────────────
 $python = Get-Command python3 -ErrorAction SilentlyContinue
 if (!$python) { $python = Get-Command python -ErrorAction SilentlyContinue }
 if (!$python) {
@@ -19,23 +35,27 @@ if (!$python) {
     exit 1
 }
 
-# Install Autobahn if needed
-$autobahn = & $python.Source -c "import autobahn; print(autobahn.__version__)" 2>&1
+& $python.Source -c "import autobahntestsuite" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Installing Autobahn TestSuite..." -ForegroundColor Cyan
     & $python.Source -m pip install autobahntestsuite
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to install autobahntestsuite (see NOTES in this script about pinning a venv)."
+        exit 1
+    }
 }
 
-# Create Autobahn config
-$configPath = "$RepoRoot\scripts\autobahn-config.json"
+# ── 2. Write the fuzzing client spec ─────────────────────────────────
+New-Item -ItemType Directory -Force -Path $ReportDir | Out-Null
+$configPath = Join-Path $RepoRoot "scripts/autobahn-fuzzingclient.json"
 @"
 {
-    "outdir": "$RepoRoot\.tools\autobahn-reports",
+    "outdir": "$($ReportDir.Replace('\', '/'))",
     "servers": [
         {
             "agent": "PicoNode",
-            "url": "ws://localhost:$ServerPort",
-            "options": {"failByDrop": false}
+            "url": "ws://127.0.0.1:$Port/ws",
+            "options": { "failByDrop": false }
         }
     ],
     "cases": ["*"],
@@ -44,22 +64,56 @@ $configPath = "$RepoRoot\scripts\autobahn-config.json"
 }
 "@ | Out-File -Encoding UTF8 $configPath
 
-# Start WebSocket echo server
-Write-Host "Starting WebSocket echo server on port $ServerPort..." -ForegroundColor Cyan
-$serverJob = Start-Job -ScriptBlock {
-    Set-Location $using:RepoRoot
-    dotnet run --project samples/PicoNode.Samples.Echo/PicoNode.Samples.Echo.csproj `
-        -- --port $using:ServerPort
+# ── 3. Build and start the WebSocket echo server ─────────────────────
+# The WebSocket echo lives in the HTTP sample (PicoNode.Samples.Http, /ws).
+Write-Host "Building sample server..." -ForegroundColor Cyan
+& dotnet build "$RepoRoot/samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj" -c Release -v q
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Sample server build failed."
+    exit 1
 }
 
-Start-Sleep -Seconds 3
+Write-Host "Starting server on port $Port..." -ForegroundColor Cyan
+$server = Start-Process `
+    -FilePath "dotnet" `
+    -ArgumentList @(
+        "run",
+        "--project", "$RepoRoot/samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj",
+        "-c", "Release",
+        "--no-build",
+        "--", "--port", "$Port"
+    ) `
+    -PassThru `
+    -WindowStyle Hidden
 
-# Run Autobahn fuzzing client
-Write-Host "Running Autobahn TestSuite..." -ForegroundColor Cyan
-& $python.Source -m autobahn.testee --ws "ws://localhost:$ServerPort/ws" --outdir "$RepoRoot\.tools\autobahn-reports"
+try {
+    $ready = $false
+    for ($i = 0; $i -lt 30; $i++) {
+        try {
+            $client = New-Object System.Net.Sockets.TcpClient
+            $client.Connect("127.0.0.1", $Port)
+            $client.Close()
+            $ready = $true
+            break
+        } catch {
+            Start-Sleep -Seconds 1
+        }
+    }
 
-# Cleanup
-Stop-Job $serverJob -ErrorAction SilentlyContinue
-Remove-Job $serverJob -ErrorAction SilentlyContinue
+    if (!$ready) {
+        Write-Error "Server did not start listening on port $Port within 30s."
+        exit 1
+    }
 
-Write-Host "Test complete. Report: .tools/autobahn-reports/index.html" -ForegroundColor Cyan
+    # ── 4. Run the fuzzing client ────────────────────────────────────
+    Write-Host "Running Autobahn fuzzing client..." -ForegroundColor Cyan
+    & $python.Source -m autobahntestsuite.wstest -m fuzzingclient -s $configPath
+    $exitCode = $LASTEXITCODE
+
+    Write-Host "Test complete. Report: $ReportDir/index.html" -ForegroundColor Cyan
+    exit $exitCode
+} finally {
+    if ($server -and !$server.HasExited) {
+        Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+    }
+}

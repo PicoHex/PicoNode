@@ -1,7 +1,13 @@
+var tcpPort = 7001;
+if (args.Length >= 2 && args[0] == "--tcp-port" && int.TryParse(args[1], out var parsedTcp))
+{
+    tcpPort = parsedTcp;
+}
+
 var tcpNode = new TcpNode(
     new TcpNodeOptions
     {
-        Endpoint = new IPEndPoint(IPAddress.Loopback, 7001),
+        Endpoint = new IPEndPoint(IPAddress.Loopback, tcpPort),
         ConnectionHandler = new EchoTcpHandler(),
         EnableKeepAlive = true,
     }
@@ -20,11 +26,10 @@ await udpNode.StartAsync();
 
 Console.WriteLine($"TCP echo listening on {tcpNode.LocalEndPoint}");
 Console.WriteLine($"UDP echo listening on {udpNode.LocalEndPoint}");
-Console.WriteLine("Press Enter to stop...");
-Console.ReadLine();
 
-await udpNode.DisposeAsync();
-await tcpNode.DisposeAsync();
+// Keep the server alive without depending on stdin — a redirected/absent
+// stdin would end the process immediately (breaks CI and scripted runs).
+await Task.Delay(Timeout.Infinite);
 
 file sealed class EchoTcpHandler : ITcpConnectionHandler
 {

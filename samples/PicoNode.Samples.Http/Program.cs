@@ -85,16 +85,23 @@ app.MapGet(
 
 // ── Start ──────────────────────────────────────────────────
 
+var port = 7003;
+if (args.Length >= 2 && args[0] == "--port" && int.TryParse(args[1], out var parsed))
+{
+    port = parsed;
+}
+
 var node = new TcpNode(
     new TcpNodeOptions
     {
-        Endpoint = new IPEndPoint(IPAddress.Loopback, 7003),
+        Endpoint = new IPEndPoint(IPAddress.Loopback, port),
         ConnectionHandler = app.Build(),
     }
 );
 
 await node.StartAsync();
 Console.WriteLine($"Listening on {node.LocalEndPoint}");
-Console.WriteLine("Press Enter to stop...");
-Console.ReadLine();
-await node.DisposeAsync();
+
+// Keep the server alive without depending on stdin — a redirected/absent
+// stdin would end the process immediately (breaks CI and scripted runs).
+await Task.Delay(Timeout.Infinite);
