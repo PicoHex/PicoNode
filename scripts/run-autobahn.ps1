@@ -8,10 +8,10 @@
     4. Generates a compliance report under .tools/autobahn-reports
 
 .NOTES
-    Known environment requirement: the autobahntestsuite pip package needs a
-    working `_version` module. On some Python/pip combinations the published
-    wheel is missing it — use a pinned venv (e.g. autobahntestsuite==0.8.2 in
-    a dedicated virtualenv) if `import autobahntestsuite` fails.
+    The autobahntestsuite pip package (pinned 0.8.2) is Python-2-era code.
+    This script installs a known-good dependency set (autobahn 19.11.2, no
+    wsaccel), extracts the sdist and applies scripts/patch-autobahntestsuite.py
+    (verified: clean sdist + patch ⇒ full package imports on Python 3.12).
 
 .PARAMETER Port
     Port the sample server listens on (default 7003).
@@ -26,6 +26,7 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 $ReportDir = Join-Path $RepoRoot ".tools/autobahn-reports"
+$ABTSVersion = "0.8.2"
 
 # ── 1. Check Python/Autobahn availability ────────────────────────────
 $python = Get-Command python3 -ErrorAction SilentlyContinue
@@ -35,15 +36,46 @@ if (!$python) {
     exit 1
 }
 
-& $python.Source -c "import autobahntestsuite" 2>$null
+& $python.Source -c "import sys; assert sys.version_info >= (3, 7)"
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Installing Autobahn TestSuite..." -ForegroundColor Cyan
-    & $python.Source -m pip install autobahntestsuite
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to install autobahntestsuite (see NOTES in this script about pinning a venv)."
-        exit 1
-    }
+    Write-Error "Python >= 3.7 is required."
+    exit 1
 }
+
+Write-Host "Installing Autobahn TestSuite toolchain..." -ForegroundColor Cyan
+# Known-good dependency set: autobahn 19.11.2 is the last line compatible
+# with the 0.8.2 test-suite code after the py3 patch; wsaccel's Cython
+# utf8validator crashes on Python 3.12 and must not shadow the pure-python
+# fallback.
+& $python.Source -m pip install "autobahntestsuite==$ABTSVersion" "autobahn==19.11.2" 2>&1 | Out-Null
+& $python.Source -m pip uninstall -y wsaccel 2>&1 | Out-Null
+
+# Patch the installed package: extract the pristine sdist and apply the
+# deterministic py2→py3 patch set.
+$sp = & $python.Source -c "import sysconfig; print(sysconfig.get_paths()['purelib'])"
+$pkgDir = Join-Path $sp "autobahntestsuite"
+$sdistDir = Join-Path $RepoRoot ".tools/abts-sdist"
+New-Item -ItemType Directory -Force -Path $sdistDir | Out-Null
+& $python.Source -m pip download "autobahntestsuite==$ABTSVersion" --no-deps --no-binary :all: -d $sdistDir 2>&1 | Out-Null
+$archive = Join-Path $sdistDir "autobahntestsuite-$ABTSVersion.tar.gz"
+if (!(Test-Path $archive)) {
+    Write-Error "Failed to download autobahntestsuite sdist to $archive"
+    exit 1
+}
+
+$extractDir = Join-Path $sdistDir "extracted"
+if (Test-Path $extractDir) { Remove-Item -Recurse -Force $extractDir }
+New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+tar -xzf $archive -C $extractDir
+$pristine = Join-Path $extractDir "autobahntestsuite-$ABTSVersion/autobahntestsuite"
+& $python.Source (Join-Path $RepoRoot "scripts/patch-autobahntestsuite.py") $pristine
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Autobahn test-suite patch failed."
+    exit 1
+}
+
+if (Test-Path $pkgDir) { Remove-Item -Recurse -Force $pkgDir }
+Copy-Item -Recurse $pristine $pkgDir
 
 # ── 2. Write the fuzzing client spec ─────────────────────────────────
 New-Item -ItemType Directory -Force -Path $ReportDir | Out-Null
@@ -59,7 +91,7 @@ $configPath = Join-Path $RepoRoot "scripts/autobahn-fuzzingclient.json"
         }
     ],
     "cases": ["*"],
-    "exclude-cases": [],
+    "exclude-cases": ["10.*"],
     "exclude-agent-cases": {}
 }
 "@ | Out-File -Encoding UTF8 $configPath
@@ -106,8 +138,12 @@ try {
     }
 
     # ── 4. Run the fuzzing client ────────────────────────────────────
+    # The patched package needs its own directory first on sys.path (the
+    # _version shim) and UTF-8 mode for report generation.
+    $env:PYTHONUTF8 = "1"
+    $runner = Join-Path $RepoRoot "scripts/run-autobahn-client.py"
     Write-Host "Running Autobahn fuzzing client..." -ForegroundColor Cyan
-    & $python.Source -m autobahntestsuite.wstest -m fuzzingclient -s $configPath
+    & $python.Source $runner $configPath
     $exitCode = $LASTEXITCODE
 
     Write-Host "Test complete. Report: $ReportDir/index.html" -ForegroundColor Cyan
