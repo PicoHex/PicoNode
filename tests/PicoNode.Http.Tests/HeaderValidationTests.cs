@@ -48,6 +48,7 @@ public sealed class HeaderValidationTests
         {
             (":method", "GET"),
             (":path", "/"),
+            (":scheme", "http"),
             ("user-agent", "test"),
         };
         var result = Http2StreamHandler.ValidateHeadersPublic(headers);

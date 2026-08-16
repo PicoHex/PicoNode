@@ -126,9 +126,101 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             }
             case DetectedProtocolKind.Http1:
             default:
+                if (!LooksLikeHttp1Request(buffer))
+                {
+                    // The preamble matches neither the HTTP/2 client preface
+                    // nor a recognizable HTTP/1.1 request line. RFC 7540 §3.5:
+                    // an invalid connection preface is a connection error of
+                    // type PROTOCOL_ERROR — send GOAWAY and close.
+                    return SendInvalidPrefaceGoAwayAsync(connection, buffer.End);
+                }
+
                 SetConnectionState(connection, ConnectionProtocol.Http1);
                 return HandleHttp1Async(connection, buffer, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Detects a plausible HTTP/1.1 request line: a known method token
+    /// followed by a space. Anything else on a fresh connection is treated
+    /// as an invalid HTTP/2 preface (the only two legal protocols here).
+    /// </summary>
+    private static bool LooksLikeHttp1Request(ReadOnlySequence<byte> buffer)
+    {
+        if (buffer.Length == 0)
+        {
+            return true; // too early to tell — let the H1 parser wait for more
+        }
+
+        Span<byte> token = stackalloc byte[16];
+        var tokenLength = 0;
+        foreach (var memory in buffer)
+        {
+            foreach (var b in memory.Span)
+            {
+                if (b == (byte)' ' || b == (byte)'\r' || b == (byte)'\n')
+                {
+                    return IsHttp1Method(token[..tokenLength]);
+                }
+
+                if (tokenLength < token.Length)
+                {
+                    token[tokenLength++] = b;
+                }
+                else
+                {
+                    // Longer than any method — definitely not HTTP/1.1.
+                    return false;
+                }
+            }
+        }
+
+        // The buffer ended mid-token: wait for more data when the token is
+        // still a plausible method prefix (e.g. "GE" for "GET").
+        var partial = token[..tokenLength];
+        return "GET"u8.StartsWith(partial)
+            || "POST"u8.StartsWith(partial)
+            || "PUT"u8.StartsWith(partial)
+            || "DELETE"u8.StartsWith(partial)
+            || "HEAD"u8.StartsWith(partial)
+            || "OPTIONS"u8.StartsWith(partial)
+            || "PATCH"u8.StartsWith(partial)
+            || "TRACE"u8.StartsWith(partial)
+            || "CONNECT"u8.StartsWith(partial);
+    }
+
+    private static bool IsHttp1Method(ReadOnlySpan<byte> token) =>
+        token switch
+        {
+            _ when token.SequenceEqual("GET"u8) => true,
+            _ when token.SequenceEqual("POST"u8) => true,
+            _ when token.SequenceEqual("PUT"u8) => true,
+            _ when token.SequenceEqual("DELETE"u8) => true,
+            _ when token.SequenceEqual("HEAD"u8) => true,
+            _ when token.SequenceEqual("OPTIONS"u8) => true,
+            _ when token.SequenceEqual("PATCH"u8) => true,
+            _ when token.SequenceEqual("TRACE"u8) => true,
+            _ when token.SequenceEqual("CONNECT"u8) => true,
+            _ => false,
+        };
+
+    private async ValueTask<SequencePosition> SendInvalidPrefaceGoAwayAsync(
+        ITcpConnectionContext connection,
+        SequencePosition consumed
+    )
+    {
+        var goAway = Http2FrameCodec.EncodeGoAway(0, Http2ErrorCode.ProtocolError);
+        try
+        {
+            await connection.SendAsync(new ReadOnlySequence<byte>(goAway), CancellationToken.None);
+        }
+        catch
+        {
+            // Best effort — the connection is closing regardless.
+        }
+
+        connection.Close();
+        return consumed;
     }
 
     private ValueTask<SequencePosition> ProcessHttp2Async(

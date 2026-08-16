@@ -27,6 +27,7 @@ internal sealed class Http2StreamState
     // Decoded request headers (set when HEADERS arrive without EndStream)
     public string? DecodedMethod { get; set; }
     public string? DecodedPath { get; set; }
+    public string? DecodedScheme { get; set; }
     public List<KeyValuePair<string, string>>? DecodedHeaderFields { get; set; }
     public Dictionary<string, string>? DecodedHeadersDict { get; set; }
 
@@ -40,6 +41,17 @@ internal sealed class Http2StreamState
     public int ReceiveWindow { get; set; } = 65535;
 
     public int AddSendWindow(int delta) => Interlocked.Add(ref _sendWindow, delta);
+
+    /// <summary>
+    /// Marks the response fully sent (our END_STREAM) and advances the state
+    /// machine — HalfClosedRemote → Closed. Kept on the state so every
+    /// response-completion site stays consistent.
+    /// </summary>
+    public void CompleteResponse()
+    {
+        ResponseSent = true;
+        StateMachine.TryTransition(Http2StreamStateMachine.Trigger.EndStream, out _);
+    }
 
     /// <summary>
     /// RFC 7540 §6.9.2: a SETTINGS_INITIAL_WINDOW_SIZE change applies a delta to

@@ -15,6 +15,7 @@ internal static class HpackDecoder
     {
         headers = new List<(string, string)>();
         int offset = 0;
+        bool sawField = false;
 
         while (offset < block.Length)
         {
@@ -24,24 +25,34 @@ internal static class HpackDecoder
             {
                 if (!TryDecodeIndexed(block, ref offset, headers, dynamicTable))
                     return false;
+                sawField = true;
             }
             else if ((first & 0xC0) == 0x40)
             {
                 if (!TryDecodeLiteral(block, ref offset, 6, headers, dynamicTable))
                     return false;
+                sawField = true;
             }
             else if ((first & 0xF0) == 0x00)
             {
                 if (!TryDecodeLiteral(block, ref offset, 4, headers, dynamicTable))
                     return false;
+                sawField = true;
             }
             else if ((first & 0xF0) == 0x10)
             {
                 if (!TryDecodeLiteral(block, ref offset, 4, headers, dynamicTable))
                     return false;
+                sawField = true;
             }
             else if ((first & 0xE0) == 0x20)
             {
+                // RFC 7541 §4.2: dynamic table size updates MUST occur at the
+                // beginning of the header block, before any header field
+                // representation. Multiple consecutive updates are allowed.
+                if (sawField)
+                    return false;
+
                 var newSize = DecodeInteger(block, ref offset, 5);
                 // RFC 7541 §4.2: a size update above the limit WE advertised
                 // is a decoding error — the peer may not grow our decoder table.

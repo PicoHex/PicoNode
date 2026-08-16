@@ -87,13 +87,13 @@ public sealed class HpackDynamicTableSizeUpdateTests
     }
 
     [Test]
-    public async Task Decode_DynamicTableSizeUpdate_AfterLiteralIndexing_UsesUpdatedTable()
+    public async Task Decode_DynamicTableSizeUpdate_MidBlock_IsRejected()
     {
-        // First: add an entry with literal-with-indexing (adds to dynamic table)
-        // 0x40 = 01|000000 (new name indexing), "key", "val"
-        // Then: size update to 1024
-        // This tests that the decoder applies the size update correctly
-        // and that the dynamic table respects the reduced capacity
+        // RFC 7541 §4.2: a dynamic table size update MUST occur at the
+        // beginning of the first header block. One appearing after other
+        // header field representations is a decoding error (h2spec:
+        // "Sends a dynamic table size update at the end of header block"
+        // → COMPRESSION_ERROR).
 
         var addBlock = new byte[]
         {
@@ -116,17 +116,14 @@ public sealed class HpackDynamicTableSizeUpdateTests
 
         var table = new HpackDynamicTable();
 
-        var success = HpackDecoder.TryDecode(combined, out var headers, table);
+        var success = HpackDecoder.TryDecode(combined, out _, table);
 
-        await Assert.That(success).IsTrue();
-        await Assert.That(headers!.Count).IsEqualTo(1);
-        await Assert.That(headers[0].Item1).IsEqualTo("key");
-        await Assert.That(headers[0].Item2).IsEqualTo("val");
+        await Assert
+            .That(success)
+            .IsFalse()
+            .Because("a size update after other field representations is a decoding error");
 
-        // Capacity should be 1024 after size update
-        await Assert.That(table.Capacity).IsEqualTo(1024);
-
-        // The key=val entry (size = 3+3+32 = 38) should still fit in 1024
-        await Assert.That(table.Count).IsEqualTo(1);
+        // The table must not be resized by an illegal update.
+        await Assert.That(table.Capacity).IsEqualTo(4096);
     }
 }

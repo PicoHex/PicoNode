@@ -34,10 +34,17 @@ internal static class Http2StreamHandler
         var state = GetStreamState(connection, frame.StreamId);
         if (state is null)
         {
-            // Invalid stream ID (even, non-monotonic, or closed reuse)
-            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct)
+            // Invalid stream ID (even, non-monotonic, or stream 0) — a
+            // connection error, not a stream error (RFC 7540 §5.1.1).
+            var unknownRuntime = connection.UserState as ConnectionRuntimeState;
+            if (unknownRuntime?.GoAwayReceived == true)
+            {
+                return false;
+            }
+
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct)
                 .ConfigureAwait(false);
-            return false;
+            return true;
         }
 
         // Update activity timestamp for timeout tracking
@@ -51,6 +58,43 @@ internal static class Http2StreamHandler
             )
         )
         {
+            if (prevState == Http2StreamStateMachine.StreamState.HalfClosedRemote)
+            {
+                // §5.1: additional frames after the peer's END_STREAM →
+                // stream error STREAM_CLOSED.
+                await SendRstStreamAsync(
+                        connection,
+                        frame.StreamId,
+                        Http2ErrorCode.StreamClosed,
+                        ct
+                    )
+                    .ConfigureAwait(false);
+                return false;
+            }
+
+            if (prevState == Http2StreamStateMachine.StreamState.Closed)
+            {
+                if (state.StateMachine.ClosedByPeerRst)
+                {
+                    // §5.1: frames after the peer's RST_STREAM → stream error
+                    // STREAM_CLOSED.
+                    await SendRstStreamAsync(
+                            connection,
+                            frame.StreamId,
+                            Http2ErrorCode.StreamClosed,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                    return false;
+                }
+
+                // §5.1: frames on a closed stream (closed via END_STREAM) →
+                // connection error STREAM_CLOSED.
+                await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.StreamClosed, ct)
+                    .ConfigureAwait(false);
+                return true;
+            }
+
             logger?.Log(
                 LogLevel.Debug,
                 $"[H2] State transition failed: StreamId={frame.StreamId} State={prevState} Trigger=Headers, sending RST_STREAM PROTOCOL_ERROR",
@@ -67,6 +111,39 @@ internal static class Http2StreamHandler
         {
             var headerPayload = frame.Payload;
 
+            // RFC 7540 §6.2: HEADERS with PADDED flag has a 1-byte Pad Length
+            // field at the start, followed by that many padding octets.
+            if (frame.HasFlag(Http2FrameFlags.Padded))
+            {
+                if (headerPayload.Length < 1)
+                {
+                    await SendRstStreamAsync(
+                            connection,
+                            frame.StreamId,
+                            Http2ErrorCode.ProtocolError,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                    return false;
+                }
+
+                var padLength = headerPayload.Span[0];
+                headerPayload = headerPayload.Slice(1);
+                if (padLength > headerPayload.Length)
+                {
+                    await SendRstStreamAsync(
+                            connection,
+                            frame.StreamId,
+                            Http2ErrorCode.ProtocolError,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                    return false;
+                }
+
+                headerPayload = headerPayload.Slice(0, headerPayload.Length - padLength);
+            }
+
             // RFC 7540 §6.2: HEADERS with PRIORITY flag has 5 extra bytes
             // at the start: Exclusive(1b) + StreamDependency(31b) + Weight(8b).
             // Slice them off before passing to HPACK decompression.
@@ -82,6 +159,23 @@ internal static class Http2StreamHandler
                     );
                     return false;
                 }
+
+                // RFC 7540 §5.3.1: a stream cannot depend on itself.
+                if (
+                    Http2FrameCodec.TryGetStreamDependency(headerPayload.Span, out var dependency)
+                    && dependency == frame.StreamId
+                )
+                {
+                    await SendRstStreamAsync(
+                            connection,
+                            frame.StreamId,
+                            Http2ErrorCode.ProtocolError,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                    return false;
+                }
+
                 headerPayload = headerPayload.Slice(5);
             }
 
@@ -101,7 +195,12 @@ internal static class Http2StreamHandler
         {
             // Headers not yet complete (waiting for CONTINUATION).
             // Save the EndStream flag from the HEADERS frame for later use.
-            state.EndStreamFromHeaders = frame.HasFlag(Http2FrameFlags.EndStream);
+            // CONTINUATION frames never carry the EndStream flag — only the
+            // original HEADERS frame decides it.
+            if (frame.Type == Http2FrameType.Headers)
+            {
+                state.EndStreamFromHeaders = frame.HasFlag(Http2FrameFlags.EndStream);
+            }
 
             var runtimeState = connection.UserState as ConnectionRuntimeState;
             if (runtimeState is not null)
@@ -135,32 +234,72 @@ internal static class Http2StreamHandler
             return true;
         }
 
-        // Check for WebSocket over HTTP/2 (RFC 8441 extended CONNECT)
-        string? protocol = null;
-
         // Extract pseudo-headers and regular headers with RFC 7540 §8.1.2 validations.
         string? method = null;
         string? path = null;
         string? scheme = null;
         string? authority = null;
-        var regularHeaders = new List<KeyValuePair<string, string>>();
-        var headerDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        // Validate pseudo-headers and extract values
-        var validation = ValidateHeadersPublic(headerFields);
-        if (!validation.IsValid)
-        {
-            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.ProtocolError, ct)
-                .ConfigureAwait(false);
-            return false;
-        }
+        string? protocol = null;
+        List<KeyValuePair<string, string>> regularHeaders;
+        Dictionary<string, string> headerDict;
 
-        method = validation.Method;
-        path = validation.Path;
-        scheme = validation.Scheme;
-        authority = validation.Authority;
-        protocol = validation.Protocol;
-        regularHeaders = validation.RegularHeaders!;
-        headerDict = validation.HeaderDict!;
+        // Trailers (§8.1): a HEADERS frame arriving on a stream whose
+        // request headers are already complete. Trailers MUST NOT contain
+        // pseudo-header fields and MUST carry END_STREAM. Valid trailers
+        // complete the request — fall through to the common handler
+        // invocation path below.
+        if (frame.Type == Http2FrameType.Headers && state.DecodedMethod is not null)
+        {
+            if (
+                headerFields.Any(h => h.Item1.StartsWith(':'))
+                || !frame.HasFlag(Http2FrameFlags.EndStream)
+            )
+            {
+                await SendRstStreamAsync(
+                        connection,
+                        frame.StreamId,
+                        Http2ErrorCode.ProtocolError,
+                        ct
+                    )
+                    .ConfigureAwait(false);
+                return false;
+            }
+
+            foreach (var (name, value) in headerFields)
+            {
+                state.DecodedHeadersDict![name] = value;
+            }
+
+            method = state.DecodedMethod;
+            path = state.DecodedPath;
+            scheme = state.DecodedScheme;
+            regularHeaders = state.DecodedHeaderFields ?? [];
+            headerDict = state.DecodedHeadersDict!;
+            state.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.EndStream, out _);
+        }
+        else
+        {
+            var validation = ValidateHeadersPublic(headerFields);
+            if (!validation.IsValid)
+            {
+                await SendRstStreamAsync(
+                        connection,
+                        frame.StreamId,
+                        Http2ErrorCode.ProtocolError,
+                        ct
+                    )
+                    .ConfigureAwait(false);
+                return false;
+            }
+
+            method = validation.Method;
+            path = validation.Path;
+            scheme = validation.Scheme;
+            authority = validation.Authority;
+            protocol = validation.Protocol;
+            regularHeaders = validation.RegularHeaders!;
+            headerDict = validation.HeaderDict!;
+        }
 
         // Validate required pseudo-headers — stream-level error, not connection-level
         if (method is null || path is null)
@@ -191,13 +330,19 @@ internal static class Http2StreamHandler
         var endStream = frame.HasFlag(Http2FrameFlags.EndStream) || state.EndStreamFromHeaders;
         if (!endStream)
         {
-            StoreDecodedHeaders(state, method, path, regularHeaders, headerDict);
+            StoreDecodedHeaders(state, method, path, scheme, regularHeaders, headerDict);
             state.EndStreamReceived = false;
             return false;
         }
 
         // State machine: EndStream received
         state.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.EndStream, out _);
+
+        // RFC 7540 §8.1.2.6: content-length must match the request body.
+        if (!await ValidateContentLengthAsync(connection, state, 0, ct))
+        {
+            return false;
+        }
 
         // Construct HttpRequest
         var request = new HttpRequest
@@ -277,47 +422,15 @@ internal static class Http2StreamHandler
                 headerWriter.WrittenMemory,
                 ct
             );
+            state.CompleteResponse();
             return false;
         }
 
-        if (response.BodyStream is not null)
-        {
-            await SendResponseAsync(connection, state, response, frame.StreamId, null, ct);
-            return false;
-        }
-
-        // Has body: send HEADERS frame first, then DATA
-        await WriteHeadersFrameAsync(
-            connection,
-            frame.StreamId,
-            headersFlags,
-            headerWriter.WrittenMemory,
-            ct
-        );
-
-        // Send DATA frame(s) with body, chunked by max frame size
-        {
-            var bodyBytes = response.Body.ToArray();
-            var connState = connection.UserState as ConnectionRuntimeState;
-            var maxFrame = connState?.RemoteMaxFrameSize ?? 16384;
-            var offset = 0;
-
-            while (offset < bodyBytes.Length)
-            {
-                var chunkSize = Math.Min(bodyBytes.Length - offset, maxFrame);
-                var isLast = offset + chunkSize >= bodyBytes.Length;
-                var dataFlags = isLast ? Http2FrameFlags.EndStream : Http2FrameFlags.None;
-                await WriteDataFrameAsync(
-                    connection,
-                    frame.StreamId,
-                    dataFlags,
-                    bodyBytes.AsMemory(offset, chunkSize),
-                    ct
-                );
-                offset += chunkSize;
-            }
-        }
-
+        // Has body: HEADERS (no EndStream) + DATA (with EndStream) sent by a
+        // background pump (see SendResponseAsync). Buffered bodies go through
+        // the same path as streaming bodies so flow-control windows are
+        // respected uniformly.
+        await SendResponseAsync(connection, state, response, frame.StreamId, null, ct);
         return false;
     }
 
@@ -408,6 +521,10 @@ internal static class Http2StreamHandler
             if (!name.StartsWith(':'))
             {
                 pseudoEnded = true;
+
+                // RFC 7540 §8.1.2: header field names MUST be lowercase.
+                if (!name.Equals(name.ToLowerInvariant(), StringComparison.Ordinal))
+                    return HeaderValidationResult.Invalid();
             }
             else
             {
@@ -424,6 +541,8 @@ internal static class Http2StreamHandler
                         break;
                     case ":path":
                         if (hasPath)
+                            return HeaderValidationResult.Invalid();
+                        if (value.Length == 0)
                             return HeaderValidationResult.Invalid();
                         if (!IsValidPathPercentEncoding(value))
                             return HeaderValidationResult.Invalid();
@@ -445,6 +564,11 @@ internal static class Http2StreamHandler
                     case ":protocol":
                         protocol = value;
                         break;
+                    default:
+                        // RFC 7540 §8.1.2.1: unknown pseudo-header fields (and
+                        // response pseudo-headers like :status in a request)
+                        // MUST be treated as malformed.
+                        return HeaderValidationResult.Invalid();
                 }
                 continue;
             }
@@ -467,6 +591,12 @@ internal static class Http2StreamHandler
             if (!headerDict.ContainsKey(name))
                 headerDict[name] = value;
         }
+
+        // RFC 7540 §8.1.2.3: :method, :path and :scheme are REQUIRED in
+        // requests. (Pseudo-header presence/absence for trailers is checked
+        // separately by the caller.)
+        if (!hasMethod || !hasPath || !hasScheme)
+            return HeaderValidationResult.Invalid();
 
         return new HeaderValidationResult(
             true,
@@ -537,12 +667,14 @@ internal static class Http2StreamHandler
         Http2StreamState state,
         string method,
         string path,
+        string? scheme,
         List<KeyValuePair<string, string>> regularHeaders,
         Dictionary<string, string> headerDict
     )
     {
         state.DecodedMethod = method;
         state.DecodedPath = path;
+        state.DecodedScheme = scheme;
         state.DecodedHeaderFields = regularHeaders;
         state.DecodedHeadersDict = headerDict;
     }
@@ -628,6 +760,19 @@ internal static class Http2StreamHandler
             stream.AddSendWindow(increment);
             stream.FlowControlSignal?.Release();
         }
+        else
+        {
+            // RFC 7540 §6.9: WINDOW_UPDATE for an idle stream is a connection
+            // error of type PROTOCOL_ERROR.
+            if (state.GoAwayReceived)
+            {
+                return false;
+            }
+
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct)
+                .ConfigureAwait(false);
+            return true;
+        }
 
         return false;
     }
@@ -647,17 +792,38 @@ internal static class Http2StreamHandler
             return true;
         }
 
-        // Update state machine to Closed, then remove stream.
-        var runtimeState = connection.UserState as ConnectionRuntimeState;
-        if (runtimeState?.Http2Streams?.TryGetValue(frame.StreamId, out var rstState) == true)
+        // RFC 7540 §6.4: RST_STREAM with stream identifier 0x0 is a
+        // connection error of type PROTOCOL_ERROR.
+        if (frame.StreamId == 0)
         {
-            rstState.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.RstStream, out _);
-            // Stop the response pump if one is streaming — without this, a
-            // stalled body producer would keep the pump (and its task) alive
-            // for the lifetime of the connection.
-            rstState.ResponseCts?.Cancel();
-            runtimeState.Http2Streams.TryRemove(frame.StreamId, out _);
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct)
+                .ConfigureAwait(false);
+            return true;
         }
+
+        // Update state machine to Closed. The stream state is kept as a
+        // tombstone so later frames on the closed stream get a STREAM_CLOSED
+        // error instead of being treated as idle.
+        var runtimeState = connection.UserState as ConnectionRuntimeState;
+        if (runtimeState?.Http2Streams?.TryGetValue(frame.StreamId, out var rstState) != true)
+        {
+            // RFC 7540 §6.4: RST_STREAM for an idle stream is a connection
+            // error of type PROTOCOL_ERROR.
+            if (runtimeState?.GoAwayReceived == true)
+            {
+                return false;
+            }
+
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct)
+                .ConfigureAwait(false);
+            return true;
+        }
+
+        rstState!.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.RstStream, out _);
+        // Stop the response pump if one is streaming — without this, a
+        // stalled body producer would keep the pump (and its task) alive
+        // for the lifetime of the connection.
+        rstState.ResponseCts?.Cancel();
 
         return false;
     }
@@ -678,31 +844,69 @@ internal static class Http2StreamHandler
             return true;
         }
 
-        // Validate stream exists
+        // Validate stream exists. A DATA frame for a stream that was never
+        // opened (idle) is a connection error of type PROTOCOL_ERROR
+        // (RFC 7540 §5.1).
         var runtimeState = connection.UserState as ConnectionRuntimeState;
         if (
             runtimeState?.Http2Streams?.TryGetValue(frame.StreamId, out var state) != true
             || state is null
         )
         {
-            return false;
+            if (runtimeState?.GoAwayReceived == true)
+            {
+                return false;
+            }
+
+            await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct)
+                .ConfigureAwait(false);
+            return true;
         }
 
         // Update activity timestamp for timeout tracking
         state.LastActivityUtc = DateTime.UtcNow;
 
-        // State machine: validate DATA is legal in current state
+        // State machine: validate DATA is legal in current state. Frames on
+        // half-closed (remote) / closed streams → stream error STREAM_CLOSED.
         if (!state.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.Data, out _))
         {
+            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.StreamClosed, ct)
+                .ConfigureAwait(false);
             return false;
         }
 
+        // RFC 7540 §6.1: DATA with PADDED flag has a 1-byte Pad Length field
+        // at the start. The padding octets are not part of the body.
+        var dataPayload = frame.Payload;
+        if (frame.HasFlag(Http2FrameFlags.Padded))
+        {
+            if (dataPayload.Length < 1)
+            {
+                await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct)
+                    .ConfigureAwait(false);
+                return true;
+            }
+
+            var padLength = dataPayload.Span[0];
+            dataPayload = dataPayload.Slice(1);
+            if (padLength > dataPayload.Length)
+            {
+                // RFC 7540 §6.1: pad length >= payload length is a CONNECTION
+                // error of type PROTOCOL_ERROR.
+                await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.ProtocolError, ct)
+                    .ConfigureAwait(false);
+                return true;
+            }
+
+            dataPayload = dataPayload.Slice(0, dataPayload.Length - padLength);
+        }
+
         // Buffer the data
-        if (frame.Payload.Length > 0)
+        if (dataPayload.Length > 0)
         {
             // RFC 7540 §6.9: an endpoint MUST treat a DATA frame exceeding a receive
             // window as a flow-control error.
-            if (frame.Payload.Length > state.ReceiveWindow)
+            if (dataPayload.Length > state.ReceiveWindow)
             {
                 await SendRstStreamAsync(
                         connection,
@@ -716,7 +920,7 @@ internal static class Http2StreamHandler
 
             if (
                 runtimeState is not null
-                && frame.Payload.Length > runtimeState.ConnectionReceiveWindow
+                && dataPayload.Length > runtimeState.ConnectionReceiveWindow
             )
             {
                 // Connection-level window exceeded — connection error per RFC 7540 §6.9.1.
@@ -727,7 +931,7 @@ internal static class Http2StreamHandler
 
             // Check request body size limit (protects against OOM from large or multi-stream bodies)
             var maxBody = runtimeState?.MaxRequestBodyBytes ?? 64 * 1024 * 1024;
-            if (state.DataBuffer.WrittenCount > maxBody - frame.Payload.Length)
+            if (state.DataBuffer.WrittenCount > maxBody - dataPayload.Length)
             {
                 await SendRstStreamAsync(
                         connection,
@@ -738,18 +942,18 @@ internal static class Http2StreamHandler
                     .ConfigureAwait(false);
                 return false;
             }
-            state.DataBuffer.Write(frame.Payload.Span);
+            state.DataBuffer.Write(dataPayload.Span);
 
             // Flow control: decrement receive windows and send WINDOW_UPDATE
             // when they drop below half the initial window size.
             const int initialWindow = 65535;
             const int windowThreshold = initialWindow / 2;
 
-            state.ReceiveWindow -= frame.Payload.Length;
+            state.ReceiveWindow -= dataPayload.Length;
 
             if (runtimeState is not null)
             {
-                runtimeState.AddConnectionReceiveWindow(-frame.Payload.Length);
+                runtimeState.AddConnectionReceiveWindow(-dataPayload.Length);
 
                 if (runtimeState.ConnectionReceiveWindow <= windowThreshold)
                 {
@@ -810,6 +1014,19 @@ internal static class Http2StreamHandler
                     ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                 BodyStream = bodyStream,
             };
+
+            // RFC 7540 §8.1.2.6: content-length must match the request body.
+            if (
+                !await ValidateContentLengthAsync(
+                    connection,
+                    state,
+                    state.DataBuffer.WrittenCount,
+                    ct
+                )
+            )
+            {
+                return false;
+            }
 
             // Invoke handler
             var response = await requestHandler(request, ct).ConfigureAwait(false);
@@ -881,6 +1098,7 @@ internal static class Http2StreamHandler
         {
             headersFlags |= Http2FrameFlags.EndStream;
             await WriteHeadersFrameAsync(connection, streamId, headersFlags, encodedHeaders, ct);
+            state?.CompleteResponse();
             return;
         }
 
@@ -1047,7 +1265,7 @@ internal static class Http2StreamHandler
                     ct
                 )
                 .ConfigureAwait(false);
-            stream.ResponseSent = true;
+            stream.CompleteResponse();
         }
         catch (OperationCanceledException)
         {
@@ -1091,7 +1309,39 @@ internal static class Http2StreamHandler
         }
     }
 
-    private static async ValueTask SendRstStreamAsync(
+    /// <summary>
+    /// RFC 7540 §8.1.2.6: a request whose content-length does not equal the
+    /// actual request body size is malformed → stream error PROTOCOL_ERROR.
+    /// </summary>
+    private static async ValueTask<bool> ValidateContentLengthAsync(
+        ITcpConnectionContext connection,
+        Http2StreamState state,
+        int bodyLength,
+        CancellationToken ct
+    )
+    {
+        if (
+            state.DecodedHeadersDict is { } headers
+            && headers.TryGetValue("content-length", out var raw)
+        )
+        {
+            if (!long.TryParse(raw, out var expected) || expected != bodyLength)
+            {
+                await SendRstStreamAsync(
+                        connection,
+                        state.StreamId,
+                        Http2ErrorCode.ProtocolError,
+                        ct
+                    )
+                    .ConfigureAwait(false);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    internal static async ValueTask SendRstStreamAsync(
         ITcpConnectionContext connection,
         int streamId,
         Http2ErrorCode errorCode,

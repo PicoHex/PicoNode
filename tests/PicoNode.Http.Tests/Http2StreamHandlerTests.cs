@@ -80,7 +80,7 @@ public sealed class Http2StreamHandlerTests
         await AwaitStreamPumpsAsync(connection);
 
         await Assert.That(shouldClose).IsFalse();
-        await Assert.That(connection.SentFrames.Count).IsEqualTo(2);
+        await Assert.That(connection.SentFrames.Count).IsEqualTo(3);
 
         var sentHeaders = connection.SentFrames[0];
         var headersDecoded = DecodeHeadersFrame(sentHeaders, out var respHeaders, out var hdrFlags);
@@ -89,15 +89,24 @@ public sealed class Http2StreamHandlerTests
         await Assert.That(hdrFlags.HasFlag(Http2FrameFlags.EndHeaders)).IsTrue();
         await Assert.That(hdrFlags.HasFlag(Http2FrameFlags.EndStream)).IsFalse();
 
+        // DATA payload frame + separate empty DATA frame carrying EndStream
+        // (the pump's wire shape for buffered bodies).
         var dataFrameBytes = connection.SentFrames[1];
         var dataParsed = TryReadFrame(dataFrameBytes, out var dataFrame);
 
         await Assert.That(dataParsed).IsTrue();
         await Assert.That(dataFrame!.Type).IsEqualTo(Http2FrameType.Data);
         await Assert.That(dataFrame.StreamId).IsEqualTo(1);
-        await Assert.That(dataFrame.HasFlag(Http2FrameFlags.EndStream)).IsTrue();
+        await Assert.That(dataFrame.HasFlag(Http2FrameFlags.EndStream)).IsFalse();
         await Assert.That(dataFrame.Length).IsEqualTo(bodyText.Length);
         await Assert.That(Encoding.ASCII.GetString(dataFrame.Payload.Span)).IsEqualTo(bodyText);
+
+        var endFrameBytes = connection.SentFrames[2];
+        var endParsed = TryReadFrame(endFrameBytes, out var endFrame);
+        await Assert.That(endParsed).IsTrue();
+        await Assert.That(endFrame!.Type).IsEqualTo(Http2FrameType.Data);
+        await Assert.That(endFrame.HasFlag(Http2FrameFlags.EndStream)).IsTrue();
+        await Assert.That(endFrame.Length).IsEqualTo(0);
     }
 
     [Test]
@@ -347,6 +356,7 @@ public sealed class Http2StreamHandlerTests
 
         output.Add(0x04);
         EncodeRawString(output, path);
+        output.Add(0x86); // :scheme http (static index 6)
 
         return output.ToArray();
     }
@@ -783,7 +793,7 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
-    public async Task RstStream_removes_stream_and_keeps_connection_open()
+    public async Task RstStream_on_idle_stream_triggers_GOAWAY_and_closes()
     {
         var connection = new TestTcpConnectionContext();
 
@@ -803,7 +813,8 @@ public sealed class Http2StreamHandlerTests
         // The stream should exist and response should have been sent
         await Assert.That(connection.SentFrames.Count).IsEqualTo(1);
 
-        // Send RST_STREAM for an unused stream ID — should be no-op
+        // RFC 7540 §6.4: RST_STREAM on an idle stream is a connection error
+        // of type PROTOCOL_ERROR (stream 3 was never opened).
         var rstFrame = BuildRstStreamFrame(3);
         var shouldClose = await Http2StreamHandler.ProcessRstStreamFrame(
             connection,
@@ -811,8 +822,8 @@ public sealed class Http2StreamHandlerTests
             CancellationToken.None
         );
 
-        await Assert.That(shouldClose).IsFalse();
-        await Assert.That(connection.IsClosed).IsFalse();
+        await Assert.That(shouldClose).IsTrue();
+        await Assert.That(connection.IsClosed).IsTrue();
     }
 
     private static Http2Frame BuildDataFrame(int streamId, byte[] data, bool endStream)
@@ -1487,14 +1498,21 @@ public sealed class Http2StreamHandlerTests
         for (var i = 0; i < 2; i++)
         {
             var hpack = BuildMinimalHpack("GET", i == 0 ? "/one" : "/two");
-            var frame = BuildHeadersFrame(
-                hpack,
-                Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+            // Each request goes on its own stream (1, then 3) — reusing a
+            // half-closed stream would be a protocol violation.
+            var streamId = 2 * i + 1;
+            var encoded = Http2FrameCodec.EncodeFrame(
+                Http2FrameType.Headers,
+                Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+                streamId,
+                hpack
             );
+            var buffer = new ReadOnlySequence<byte>(encoded);
+            Http2FrameCodec.TryReadFrame(buffer, out var frame, out _);
 
             await Http2StreamHandler.ProcessHeadersFrame(
                 connection,
-                frame,
+                frame!,
                 handler,
                 null,
                 CancellationToken.None

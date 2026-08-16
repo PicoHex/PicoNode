@@ -373,6 +373,8 @@ internal static class HuffmanCodec
         long accumulator = 0;
         int bitsAvailable = 0;
         int byteIndex = 0;
+        int paddingBits = 0;
+        int paddingValue = 0;
 
         while (byteIndex < data.Length)
         {
@@ -384,6 +386,9 @@ internal static class HuffmanCodec
                 int bit = (int)((accumulator >> (bitsAvailable - 1)) & 1);
                 bitsAvailable--;
 
+                paddingValue = (paddingValue << 1) | bit;
+                paddingBits++;
+
                 node = bit == 0 ? HuffLeft[node] : HuffRight[node];
 
                 if (HuffSym[node] != -1)
@@ -394,18 +399,21 @@ internal static class HuffmanCodec
 
                     output.Add((byte)symbol);
                     node = 0;
+                    paddingBits = 0;
+                    paddingValue = 0;
                 }
             }
         }
 
-        if (bitsAvailable > 7)
-            return false;
-
-        if (bitsAvailable > 0)
+        // RFC 7541 §5.2: the decoder ends mid-tree when the data carries
+        // trailing padding. The padding must be at most 7 bits and must be a
+        // prefix of the EOS code (all ones).
+        if (node != 0)
         {
-            long remaining = accumulator & ((1L << bitsAvailable) - 1);
-            long padMask = (1L << bitsAvailable) - 1;
-            if (remaining != padMask)
+            if (paddingBits > 7)
+                return false;
+
+            if (paddingValue != (1 << paddingBits) - 1)
                 return false;
         }
 

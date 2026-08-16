@@ -246,6 +246,25 @@ public static class Http2FrameCodec
         return result;
     }
 
+    /// <summary>
+    /// Parses the 5-byte priority payload of a PRIORITY frame (or the
+    /// priority section of a HEADERS frame): Exclusive(1b) + Stream
+    /// Dependency(31b) + Weight(8b). Returns false when the payload is
+    /// shorter than 5 bytes.
+    /// </summary>
+    public static bool TryGetStreamDependency(ReadOnlySpan<byte> payload, out int streamDependency)
+    {
+        if (payload.Length < 4)
+        {
+            streamDependency = 0;
+            return false;
+        }
+
+        streamDependency =
+            ((payload[0] & 0x7F) << 24) | (payload[1] << 16) | (payload[2] << 8) | payload[3];
+        return true;
+    }
+
     public static IReadOnlyList<Http2Setting> ParseSettings(ReadOnlySpan<byte> payload)
     {
         var settings = new List<Http2Setting>();

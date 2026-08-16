@@ -25,6 +25,9 @@ internal sealed class Http2StreamStateMachine
 
     public StreamState CurrentState { get; private set; } = StreamState.Idle;
 
+    /// <summary>True when the stream was closed by the peer's RST_STREAM.</summary>
+    public bool ClosedByPeerRst { get; private set; }
+
     public Http2StreamStateMachine(int streamId)
     {
         // streamId is accepted for constructor compatibility; the id itself
@@ -40,15 +43,21 @@ internal sealed class Http2StreamStateMachine
     {
         previousState = CurrentState;
 
+        if (trigger == Trigger.RstStream)
+        {
+            // RST_STREAM is valid from any state and is idempotent.
+            if (CurrentState != StreamState.Closed)
+            {
+                CurrentState = StreamState.Closed;
+            }
+
+            ClosedByPeerRst = true;
+            return true;
+        }
+
         // Read-only checks are faster than the switch below
         if (CurrentState == StreamState.Closed)
             return false;
-
-        if (trigger == Trigger.RstStream)
-        {
-            CurrentState = StreamState.Closed;
-            return true;
-        }
 
         switch (CurrentState)
         {
@@ -67,13 +76,15 @@ internal sealed class Http2StreamStateMachine
 
             case StreamState.HalfClosedLocal:
                 // We (server) sent END_STREAM — waiting for peer's END_STREAM
-                return trigger == Trigger.Data || trigger == Trigger.EndStream;
+                return trigger == Trigger.Data
+                    || (trigger == Trigger.EndStream && TransitionTo(StreamState.Closed));
 
             case StreamState.HalfClosedRemote:
-                // Peer sent END_STREAM — we can still send response
-                return trigger == Trigger.Headers
-                    || trigger == Trigger.Data
-                    || trigger == Trigger.EndStream;
+                // Peer sent END_STREAM — the peer may only send
+                // WINDOW_UPDATE/PRIORITY/RST_STREAM now (handled outside the
+                // machine). The only legal transition left is OUR response
+                // END_STREAM → Closed.
+                return trigger == Trigger.EndStream && TransitionTo(StreamState.Closed);
 
             default:
                 return false;

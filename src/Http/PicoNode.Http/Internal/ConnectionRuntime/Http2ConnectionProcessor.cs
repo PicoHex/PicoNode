@@ -107,6 +107,24 @@ internal static class Http2ConnectionProcessor
         CancellationToken cancellationToken
     )
     {
+        // RFC 7540 §4.3: header blocks MUST be transmitted as a contiguous
+        // sequence of frames. Any frame other than CONTINUATION while a
+        // header block is pending is a connection error of type
+        // PROTOCOL_ERROR.
+        if (
+            GetRuntimeState(connection).PendingContinuationStreamId is not null
+            && frame.Type != Http2FrameType.Continuation
+        )
+        {
+            await SendGoAwayAndCloseAsync(
+                    connection,
+                    Http2ErrorCode.ProtocolError,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            return true;
+        }
+
         switch (frame.Type)
         {
             case Http2FrameType.Settings:
@@ -152,6 +170,19 @@ internal static class Http2ConnectionProcessor
                 var receivedSettings = Http2FrameCodec.ParseSettings(frame.Payload.Span);
                 foreach (var setting in receivedSettings)
                 {
+                    // RFC 7540 §6.5.2: ENABLE_PUSH values other than 0 or 1
+                    // are a connection error of type PROTOCOL_ERROR.
+                    if (setting.Id == Http2SettingId.EnablePush && setting.Value > 1)
+                    {
+                        await SendGoAwayAndCloseAsync(
+                                connection,
+                                Http2ErrorCode.ProtocolError,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+                        return true;
+                    }
+
                     // RFC 7540 §6.9.2: values above 2^31-1 are FLOW_CONTROL_ERROR.
                     if (
                         setting.Id == Http2SettingId.InitialWindowSize
@@ -234,6 +265,50 @@ internal static class Http2ConnectionProcessor
                 );
 
             case Http2FrameType.Priority:
+                // RFC 7540 §6.3: PRIORITY MUST be associated with a stream.
+                if (frame.StreamId == 0)
+                {
+                    await SendGoAwayAndCloseAsync(
+                            connection,
+                            Http2ErrorCode.ProtocolError,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                    return true;
+                }
+
+                // RFC 7540 §6.3: a PRIORITY frame with a length other than
+                // 5 octets is a stream error of type FRAME_SIZE_ERROR.
+                if (frame.Length != 5)
+                {
+                    await Http2StreamHandler
+                        .SendRstStreamAsync(
+                            connection,
+                            frame.StreamId,
+                            Http2ErrorCode.FrameSizeError,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                    return false;
+                }
+
+                // RFC 7540 §5.3.1: a stream cannot depend on itself.
+                if (
+                    Http2FrameCodec.TryGetStreamDependency(frame.Payload.Span, out var dependency)
+                    && dependency == frame.StreamId
+                )
+                {
+                    await Http2StreamHandler
+                        .SendRstStreamAsync(
+                            connection,
+                            frame.StreamId,
+                            Http2ErrorCode.ProtocolError,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                    return false;
+                }
+
                 return false;
 
             case Http2FrameType.PushPromise:
@@ -247,11 +322,20 @@ internal static class Http2ConnectionProcessor
                 return true;
 
             case Http2FrameType.Continuation:
-                // Per RFC 7540 §6.10, CONTINUATION MUST be on the same stream as the HEADERS it continues.
-                if (
-                    GetRuntimeState(connection).PendingContinuationStreamId is int pendingId
-                    && frame.StreamId != pendingId
-                )
+                // Per RFC 7540 §6.10, CONTINUATION MUST continue an open
+                // header block on the same stream.
+                if (GetRuntimeState(connection).PendingContinuationStreamId is not int pendingId)
+                {
+                    await SendGoAwayAndCloseAsync(
+                            connection,
+                            Http2ErrorCode.ProtocolError,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                    return true;
+                }
+
+                if (frame.StreamId != pendingId)
                 {
                     await SendGoAwayAndCloseAsync(
                         connection,
