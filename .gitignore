@@ -417,3 +417,4 @@ FodyWeavers.xsd
 .omo/samples/PicoAgent.Web/settings.json
 .omo/
 samples/PicoAgent.Web/data/
+.tools/

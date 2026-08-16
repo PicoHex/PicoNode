@@ -31,15 +31,46 @@ internal sealed class Http2StreamState
     public Dictionary<string, string>? DecodedHeadersDict { get; set; }
 
     // Flow control windows
-    public int SendWindow { get; set; } = 65535;
+    private int _sendWindow = 65535;
+    public int SendWindow
+    {
+        get => Volatile.Read(ref _sendWindow);
+        set => Interlocked.Exchange(ref _sendWindow, value);
+    }
     public int ReceiveWindow { get; set; } = 65535;
 
-    // Buffered response data when send window is exhausted
-    public byte[]? PendingDataFrame { get; set; }
+    public int AddSendWindow(int delta) => Interlocked.Add(ref _sendWindow, delta);
 
-    // The response body stream being read when flow-control backpressure
-    // interrupted streaming. FlushPendingDataAsync resumes reading from this.
+    /// <summary>
+    /// RFC 7540 §6.9.2: a SETTINGS_INITIAL_WINDOW_SIZE change applies a delta to
+    /// the stream's send window, clamped to int range so a malicious peer's
+    /// delta cannot overflow.
+    /// </summary>
+    public void AdjustSendWindowForSettingsDelta(int delta) =>
+        Interlocked.Exchange(
+            ref _sendWindow,
+            (int)
+                Math.Clamp((long)Volatile.Read(ref _sendWindow) + delta, int.MinValue, int.MaxValue)
+        );
+
+    // The response body stream currently being pumped to the peer. Set when the
+    // response pump starts, cleared when it completes — the idle reaper skips
+    // streams with an active body stream.
     public Stream? ResponseBodyStream { get; set; }
+
+    // Background task pumping the response body to the peer. Decoupled from the
+    // connection frame loop so a stalled producer (e.g. an SSE stream whose
+    // handler never ends) cannot wedge every other request on the connection.
+    public Task? ResponsePumpTask { get; set; }
+
+    // Per-stream cancellation: cancelled when the peer sends RST_STREAM.
+    // Never disposed explicitly — the stream state is dropped as a whole when
+    // the stream is removed, avoiding dispose/cancel races with the frame loop.
+    public CancellationTokenSource? ResponseCts { get; set; }
+
+    // Released when flow-control windows grow (WINDOW_UPDATE or a SETTINGS
+    // initial-window increase) so blocked response pumps wake up.
+    public SemaphoreSlim? FlowControlSignal { get; set; }
 
     // Timeout tracking
     public DateTime LastActivityUtc { get; set; } = DateTime.UtcNow;

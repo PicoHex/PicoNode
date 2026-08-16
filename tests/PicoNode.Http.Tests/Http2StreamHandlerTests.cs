@@ -1,3 +1,5 @@
+using System.IO.Pipelines;
+
 namespace PicoNode.Http.Tests;
 
 public sealed class Http2StreamHandlerTests
@@ -74,6 +76,8 @@ public sealed class Http2StreamHandlerTests
             null,
             CancellationToken.None
         );
+
+        await AwaitStreamPumpsAsync(connection);
 
         await Assert.That(shouldClose).IsFalse();
         await Assert.That(connection.SentFrames.Count).IsEqualTo(2);
@@ -406,20 +410,40 @@ public sealed class Http2StreamHandlerTests
 
     private sealed class TestTcpConnectionContext : ITcpConnectionContext
     {
+        private readonly object _sendGate = new();
+        private readonly List<byte[]> _sentFrames = new();
+
         public long ConnectionId => 1;
         public EndPoint RemoteEndPoint => new IPEndPoint(IPAddress.Loopback, 12345);
         public DateTimeOffset ConnectedAtUtc => DateTimeOffset.MinValue;
         public DateTimeOffset LastActivityUtc => DateTimeOffset.MinValue;
         public object? UserState { get; set; }
         public string? NegotiatedProtocol => null;
-        public List<byte[]> SentFrames { get; } = new();
+
+        // Snapshot accessor: response pumps write DATA frames from background
+        // tasks, so enumeration must not race with frame recording.
+        public List<byte[]> SentFrames
+        {
+            get
+            {
+                lock (_sendGate)
+                {
+                    return _sentFrames.ToList();
+                }
+            }
+        }
+
         public bool IsClosed { get; private set; }
 
         public Task SendAsync(ReadOnlySequence<byte> buffer, CancellationToken ct = default)
         {
             var bytes = new byte[buffer.Length];
             buffer.CopyTo(bytes);
-            SentFrames.Add(bytes);
+            lock (_sendGate)
+            {
+                _sentFrames.Add(bytes);
+            }
+
             return Task.CompletedTask;
         }
 
@@ -680,6 +704,9 @@ public sealed class Http2StreamHandlerTests
             CancellationToken.None
         );
 
+        // The pump resumes on the background task once the windows are credited.
+        await AwaitStreamPumpsAsync(connection);
+
         // Now all data should be sent including EndStream.
         var hasEndStreamAfter = false;
         var totalDataSent = 0;
@@ -821,6 +848,85 @@ public sealed class Http2StreamHandlerTests
     // ── H2 BodyStream tests ─────────────────────────────────
 
     [Test]
+    public async Task Streaming_response_does_not_block_the_frame_loop()
+    {
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+
+        // SSE-like body: a pipe whose writer is never completed — the producer
+        // handler never ends (e.g. a chat turn that ignores cancellation).
+        var pipe = new Pipe();
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse { StatusCode = 200, BodyStream = pipe.Reader.AsStream() }
+            );
+
+        var frame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
+
+        var processTask = Http2StreamHandler
+            .ProcessHeadersFrame(connection, frame, handler, null, CancellationToken.None)
+            .AsTask();
+        var completed = await Task.WhenAny(processTask, Task.Delay(TimeSpan.FromSeconds(2)));
+
+        await Assert
+            .That(ReferenceEquals(completed, processTask))
+            .IsTrue()
+            .Because(
+                "a stalled streaming response must not block the frame loop — "
+                    + "other requests on the same HTTP/2 connection must still be served"
+            );
+
+        // Cleanup: RST the stream so the background pump stops.
+        var rst = BuildFrame(
+            Http2FrameType.RstStream,
+            Http2FrameFlags.None,
+            1,
+            new byte[] { 0, 0, 0, 8 }
+        );
+        await Http2StreamHandler.ProcessRstStreamFrame(connection, rst, CancellationToken.None);
+    }
+
+    [Test]
+    public async Task RstStream_stops_the_streaming_pump()
+    {
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+
+        var pipe = new Pipe();
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse { StatusCode = 200, BodyStream = pipe.Reader.AsStream() }
+            );
+
+        var frame = BuildHeadersFrame(
+            MinimalHpackPayload,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream
+        );
+        await Http2StreamHandler
+            .ProcessHeadersFrame(connection, frame, handler, null, CancellationToken.None)
+            .AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(2));
+
+        var runtime = (ConnectionRuntimeState)connection.UserState!;
+        var pump = runtime.Http2Streams![1].ResponsePumpTask;
+        await Assert.That(pump).IsNotNull();
+
+        var rst = BuildFrame(
+            Http2FrameType.RstStream,
+            Http2FrameFlags.None,
+            1,
+            new byte[] { 0, 0, 0, 8 }
+        );
+        await Http2StreamHandler.ProcessRstStreamFrame(connection, rst, CancellationToken.None);
+
+        // The pump must observe the RST cancellation and complete.
+        await pump!.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Test]
     public async Task BodyStream_sends_data_in_DATA_frames()
     {
         var connection = new TestTcpConnectionContext();
@@ -844,12 +950,15 @@ public sealed class Http2StreamHandlerTests
             CancellationToken.None
         );
 
+        await AwaitStreamPumpsAsync(connection);
+
         await Assert.That(connection.SentFrames.Count).IsGreaterThanOrEqualTo(2);
 
         var totalPayloadBytes = 0;
-        for (var i = 1; i < connection.SentFrames.Count; i++)
+        var frames = connection.SentFrames;
+        for (var i = 1; i < frames.Count; i++)
         {
-            if (!TryReadFrame(connection.SentFrames[i], out var frame) || frame is null)
+            if (!TryReadFrame(frames[i], out var frame) || frame is null)
                 continue;
             await Assert.That(frame.Type).IsEqualTo(Http2FrameType.Data);
             totalPayloadBytes += frame.Payload.Length;
@@ -883,6 +992,8 @@ public sealed class Http2StreamHandlerTests
             null,
             CancellationToken.None
         );
+
+        await AwaitStreamPumpsAsync(connection);
 
         var dataFrameCount = 0;
         var totalBytes = 0L;
@@ -1397,6 +1508,24 @@ public sealed class Http2StreamHandlerTests
                 .IsTrue()
                 .Because("response HPACK must stay in sync with the peer decoder table");
             await Assert.That(headers!.Any(h => h.Item1 == ":status")).IsTrue();
+        }
+    }
+
+    private static async Task AwaitStreamPumpsAsync(TestTcpConnectionContext connection)
+    {
+        var runtime = connection.UserState as ConnectionRuntimeState;
+        if (runtime?.Http2Streams is null)
+            return;
+
+        // Response pumps clear their own task reference on completion; collect
+        // the current tasks first, then await each one.
+        var pumps = runtime
+            .Http2Streams.Values.Where(s => s.ResponsePumpTask is not null)
+            .Select(s => s.ResponsePumpTask!)
+            .ToList();
+        foreach (var pump in pumps)
+        {
+            await pump;
         }
     }
 

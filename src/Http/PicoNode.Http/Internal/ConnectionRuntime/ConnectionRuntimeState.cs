@@ -84,14 +84,14 @@ internal sealed class ConnectionRuntimeState
                     // int range, and checked arithmetic would turn that into a crash.
                     if (Http2Streams is not null)
                     {
-                        foreach (var stream in Http2Streams.Values)
+                        // Adjust under the send-window lock so the read-modify-write
+                        // cannot interleave with a response pump's reservation.
+                        lock (SendWindowLock)
                         {
-                            stream.SendWindow = (int)
-                                Math.Clamp(
-                                    (long)stream.SendWindow + delta,
-                                    int.MinValue,
-                                    int.MaxValue
-                                );
+                            foreach (var stream in Http2Streams.Values)
+                            {
+                                stream.AdjustSendWindowForSettingsDelta(delta);
+                            }
                         }
                     }
                     // Do NOT set ConnectionSendWindow — connection-level flow control
@@ -140,8 +140,22 @@ internal sealed class ConnectionRuntimeState
     /// </summary>
     public bool InitialSettingsSent { get; set; }
 
-    /// <summary>For fair round-robin scheduling across streams.</summary>
-    public int LastServedStreamId { get; set; }
+    /// <summary>
+    /// Serializes the check-and-reserve of the connection send window across
+    /// concurrent response pumps and the frame loop (Interlocked alone cannot
+    /// make min(connWindow, streamWindow) + subtract atomic).
+    /// </summary>
+    public object SendWindowLock { get; } = new();
+
+    /// <summary>Wakes all response pumps blocked on flow-control backpressure.</summary>
+    public void ReleaseAllFlowControlSignals()
+    {
+        if (Http2Streams is null || Http2Streams.Count == 0)
+            return;
+
+        foreach (var stream in Http2Streams.Values)
+            stream.FlowControlSignal?.Release();
+    }
 
     /// <summary>Removes streams that have been idle beyond the timeout.</summary>
     public void RemoveIdleStreams()
@@ -155,9 +169,9 @@ internal sealed class ConnectionRuntimeState
         {
             var stream = kvp.Value;
             // Never reap a stream that still has response work in flight: it may be
-            // mid-streaming (ResponseBodyStream) or stalled on flow control
-            // (PendingDataFrame) and would deadlock on the next WINDOW_UPDATE.
-            if (stream.ResponseBodyStream is not null || stream.PendingDataFrame is not null)
+            // mid-streaming (ResponseBodyStream) or its pump may still be running
+            // (ResponsePumpTask) and would deadlock on the next WINDOW_UPDATE.
+            if (stream.ResponseBodyStream is not null || stream.ResponsePumpTask is not null)
                 continue;
 
             if (now - stream.LastActivityUtc >= StreamIdleTimeout)

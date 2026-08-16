@@ -181,6 +181,9 @@ internal static class Http2ConnectionProcessor
                     }
                 }
                 GetRuntimeState(connection).ApplySettings(receivedSettings);
+                // A SETTINGS_INITIAL_WINDOW_SIZE increase may have unblocked
+                // response pumps stalled on flow-control backpressure.
+                GetRuntimeState(connection).ReleaseAllFlowControlSignals();
 
                 await connection.SendAsync(
                     new ReadOnlySequence<byte>(Http2FrameCodec.EncodeSettingsAck()),

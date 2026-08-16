@@ -40,7 +40,8 @@ internal sealed class TcpConnection : IAsyncDisposable
             _pipe,
             node,
             _receiveBufferSize,
-            Touch
+            Touch,
+            _cts
         );
         _lifecycle = new TcpConnectionLifecycle(
             node,

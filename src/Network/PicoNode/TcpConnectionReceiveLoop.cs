@@ -8,6 +8,7 @@ internal sealed class TcpConnectionReceiveLoop
     private readonly TcpNode _node;
     private readonly int _receiveBufferSize;
     private readonly Action _touchCallback;
+    private readonly CancellationTokenSource _connectionCts;
 
     internal TcpConnectionReceiveLoop(
         Socket socket,
@@ -15,7 +16,8 @@ internal sealed class TcpConnectionReceiveLoop
         Pipe pipe,
         TcpNode node,
         int receiveBufferSize,
-        Action touchCallback
+        Action touchCallback,
+        CancellationTokenSource connectionCts
     )
     {
         _socket = socket;
@@ -24,6 +26,7 @@ internal sealed class TcpConnectionReceiveLoop
         _node = node;
         _receiveBufferSize = receiveBufferSize;
         _touchCallback = touchCallback;
+        _connectionCts = connectionCts;
     }
 
     internal async Task<TcpCloseReason> ExecuteReceiveLoopAsync(
@@ -35,7 +38,41 @@ internal sealed class TcpConnectionReceiveLoop
         await InvokeConnectedAsync(handler, context, cancellationToken).ConfigureAwait(false);
 
         var processingTask = ProcessPipeAsync(handler, context, cancellationToken);
-        var reason = await PumpSocketToPipeAsync(cancellationToken).ConfigureAwait(false);
+
+        TcpCloseReason reason;
+        try
+        {
+            reason = await PumpSocketToPipeAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (SocketException)
+        {
+            // The client is gone (abortive close/reset). Cancel the connection
+            // token IMMEDIATELY so an in-flight streaming response (e.g. an SSE
+            // stream whose body pipe never completes) unblocks now — the close
+            // sequence can only run after this method returns, so without this
+            // the handler waits for cancellation while cancellation waits for
+            // the handler (deadlock).
+            //
+            // A graceful FIN below is handled differently: a half-closed
+            // client still expects responses to requests already sent, so the
+            // token stays alive while the processing task drains the buffered
+            // requests.
+            await _connectionCts.CancelAsync().ConfigureAwait(false);
+            await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
+            try
+            {
+                await processingTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                // The handler's fault is secondary to the reset; RunAsync
+                // reports the receive fault instead. Swallow so the close
+                // sequence can run.
+            }
+
+            throw;
+        }
+
         await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
         await processingTask.ConfigureAwait(false);
         return NormalizeCompletionReason(reason, cancellationToken);
@@ -57,9 +94,13 @@ internal sealed class TcpConnectionReceiveLoop
     {
         try
         {
-            while (!cancellationToken.IsCancellationRequested)
+            while (true)
             {
-                var readOperation = _pipe.Reader.ReadAsync(cancellationToken);
+                // Read with no cancellation token: buffered requests must be
+                // DRAINED even after the connection token is cancelled. The
+                // final request of a half-closing client (request + FIN, still
+                // reading the response) must still be served.
+                var readOperation = _pipe.Reader.ReadAsync();
                 var readResult = readOperation.IsCompletedSuccessfully
                     ? readOperation.Result
                     : await readOperation.ConfigureAwait(false);
@@ -67,11 +108,20 @@ internal sealed class TcpConnectionReceiveLoop
 
                 if (buffer.Length > 0)
                 {
+                    // On the reset path the connection token is already
+                    // cancelled; drained requests still get a live token so
+                    // their sends fail fast on the dead socket instead of
+                    // being aborted by a token that belongs to the previous,
+                    // in-flight request. On the FIN path the token is still
+                    // live and is passed through unchanged.
+                    var handlerToken = cancellationToken.IsCancellationRequested
+                        ? CancellationToken.None
+                        : cancellationToken;
                     var consumedPosition = await InvokeOnReceivedAsync(
                         handler,
                         context,
                         buffer,
-                        cancellationToken
+                        handlerToken
                     );
                     _pipe.Reader.AdvanceTo(consumedPosition, buffer.End);
                 }

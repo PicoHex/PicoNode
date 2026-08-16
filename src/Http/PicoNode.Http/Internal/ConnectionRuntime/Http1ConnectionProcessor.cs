@@ -511,16 +511,16 @@ internal static class Http1ConnectionProcessor
                 );
                 try
                 {
-                    // Read loop: use CancellationToken.None for the Pipe read so that
-                    // data already written by the producer IS returned even when the
-                    // cancellation token fires — PipeReader.ReadAsync checks the token
-                    // BEFORE returning buffered data. The connection SendAsync still
-                    // uses the real CT so connection shutdown cancels the send.
+                    // Read loop: pass the real cancellation token so that a
+                    // client disconnect (connection close → token cancelled)
+                    // unblocks the read even when the body pipe never
+                    // completes. Buffered-but-unread data may be discarded on
+                    // cancellation — irrelevant here, the client is gone.
                     while (true)
                     {
                         var read = await stream.ReadAsync(
                             buffer.AsMemory(0, options.StreamingResponseBufferSize),
-                            CancellationToken.None
+                            cancellationToken
                         );
                         if (read == 0)
                         {

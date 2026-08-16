@@ -604,41 +604,10 @@ internal static class Http2StreamHandler
             // Connection-level window update
             state.AddConnectionSendWindow(increment);
 
-            // Distribute window across pending streams fairly (round-robin)
-            if (state.Http2Streams is not null && state.Http2Streams.Count > 0)
-            {
-                // Collect streams with pending data, sorted for consistent ordering
-                var pending = state
-                    .Http2Streams.Where(k =>
-                        k.Value.PendingDataFrame is not null && !k.Value.ResponseSent
-                    )
-                    .Select(k => k.Key)
-                    .OrderBy(id => id)
-                    .ToList();
-
-                if (pending.Count > 0)
-                {
-                    // Start from the last served stream for fairness
-                    var startIdx = pending.IndexOf(state.LastServedStreamId);
-                    if (startIdx < 0)
-                        startIdx = 0;
-
-                    for (int i = 0; i < pending.Count; i++)
-                    {
-                        var idx = (startIdx + i) % pending.Count;
-                        var sid = pending[idx];
-                        if (state.Http2Streams.TryGetValue(sid, out var stream))
-                        {
-                            await FlushPendingDataAsync(connection, stream, state, ct)
-                                .ConfigureAwait(false);
-                        }
-                    }
-
-                    state.LastServedStreamId = pending[
-                        (startIdx + pending.Count - 1) % pending.Count
-                    ];
-                }
-            }
+            // Wake every response pump blocked on flow-control backpressure.
+            // Each pump re-checks the windows and goes back to sleep if still
+            // insufficient.
+            state.ReleaseAllFlowControlSignals();
         }
         else if (state.Http2Streams?.TryGetValue(frame.StreamId, out var stream) == true)
         {
@@ -656,133 +625,11 @@ internal static class Http2StreamHandler
             }
 
             // Stream-level window update
-            stream.SendWindow += increment;
-            await FlushPendingDataAsync(connection, stream, state, ct).ConfigureAwait(false);
+            stream.AddSendWindow(increment);
+            stream.FlowControlSignal?.Release();
         }
 
         return false;
-    }
-
-    private static async ValueTask FlushPendingDataAsync(
-        ITcpConnectionContext connection,
-        Http2StreamState stream,
-        ConnectionRuntimeState state,
-        CancellationToken ct
-    )
-    {
-        if (stream.PendingDataFrame is null || stream.ResponseSent)
-            return;
-
-        var maxFrame = state.RemoteMaxFrameSize;
-        var data = stream.PendingDataFrame;
-        var offset = 0;
-
-        while (offset < data.Length)
-        {
-            var available = Math.Min(state.ConnectionSendWindow, stream.SendWindow);
-            if (available <= 0)
-            {
-                // Update pending to reflect what we've sent so far
-                stream.PendingDataFrame = offset > 0 ? data[offset..] : data;
-                return;
-            }
-
-            var chunkSize = Math.Min(data.Length - offset, maxFrame);
-            var toSend = Math.Min(chunkSize, available);
-            var isLast = offset + toSend >= data.Length;
-            var dataFlags = isLast ? Http2FrameFlags.EndStream : Http2FrameFlags.None;
-            await WriteDataFrameAsync(
-                connection,
-                stream.StreamId,
-                dataFlags,
-                data.AsMemory(offset, toSend),
-                ct
-            );
-
-            state.AddConnectionSendWindow(-toSend);
-            stream.SendWindow -= toSend;
-            offset += toSend;
-        }
-
-        stream.PendingDataFrame = null;
-
-        // Resume reading from BodyStream if present (streaming response was
-        // interrupted by flow-control backpressure).
-        if (stream.ResponseBodyStream is { } bodyStream)
-        {
-            var bufferSize = 4096;
-            var resumeBuffer = ArrayPool<byte>.Shared.Rent(bufferSize);
-            try
-            {
-                int bytesRead;
-                while (
-                    (
-                        bytesRead = await bodyStream
-                            .ReadAsync(resumeBuffer.AsMemory(0, bufferSize), ct)
-                            .ConfigureAwait(false)
-                    ) > 0
-                )
-                {
-                    var resumeOffset = 0;
-                    while (resumeOffset < bytesRead)
-                    {
-                        var available = Math.Min(state.ConnectionSendWindow, stream.SendWindow);
-                        if (available <= 0)
-                        {
-                            stream.PendingDataFrame = resumeBuffer[resumeOffset..bytesRead];
-                            return;
-                        }
-
-                        var chunkSize = Math.Min(bytesRead - resumeOffset, maxFrame);
-                        var toSend = Math.Min(chunkSize, available);
-
-                        await WriteDataFrameAsync(
-                                connection,
-                                stream.StreamId,
-                                Http2FrameFlags.None,
-                                resumeBuffer.AsMemory(resumeOffset, toSend),
-                                ct
-                            )
-                            .ConfigureAwait(false);
-
-                        state.AddConnectionSendWindow(-toSend);
-                        stream.SendWindow -= toSend;
-                        resumeOffset += toSend;
-                    }
-                }
-
-                // Stream complete — send final DATA with EndStream
-                await WriteDataFrameAsync(
-                        connection,
-                        stream.StreamId,
-                        Http2FrameFlags.EndStream,
-                        ReadOnlyMemory<byte>.Empty,
-                        ct
-                    )
-                    .ConfigureAwait(false);
-
-                stream.ResponseSent = true;
-                stream.ResponseBodyStream = null;
-                await bodyStream.DisposeAsync().ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception)
-            {
-                await SendRstStreamAsync(connection, stream.StreamId, Http2ErrorCode.Cancel, ct)
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(resumeBuffer);
-            }
-        }
-        else
-        {
-            stream.ResponseSent = true;
-        }
     }
 
     public static async ValueTask<bool> ProcessRstStreamFrame(
@@ -805,6 +652,10 @@ internal static class Http2StreamHandler
         if (runtimeState?.Http2Streams?.TryGetValue(frame.StreamId, out var rstState) == true)
         {
             rstState.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.RstStream, out _);
+            // Stop the response pump if one is streaming — without this, a
+            // stalled body producer would keep the pump (and its task) alive
+            // for the lifetime of the connection.
+            rstState.ResponseCts?.Cancel();
             runtimeState.Http2Streams.TryRemove(frame.StreamId, out _);
         }
 
@@ -1033,145 +884,211 @@ internal static class Http2StreamHandler
             return;
         }
 
-        // Has body: HEADERS (no EndStream) + DATA (with EndStream)
+        // Has body: HEADERS (no EndStream) + DATA (with EndStream) sent by a
+        // background pump. The pump is decoupled from the frame loop so a slow
+        // or stalled producer (e.g. an SSE stream whose handler never ends)
+        // cannot wedge every other request on the connection.
         await WriteHeadersFrameAsync(connection, streamId, headersFlags, encodedHeaders, ct);
 
-        // Send DATA from BodyStream (streaming response)
-        if (response.BodyStream is not null)
+        if (state is null)
         {
-            var connState = connection.UserState as ConnectionRuntimeState;
-            var maxFrame = connState?.RemoteMaxFrameSize ?? 16384;
-            var bufferSize = 4096;
-            var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
-            var stream = response.BodyStream;
-            var streamCompleted = false;
-
-            try
+            // Defensive fallback (unreachable in practice: every caller passes
+            // a stream state) — drain inline without flow-control accounting.
+            var fallbackStream =
+                response.BodyStream
+                ?? new ReadOnlySequenceStream(new ReadOnlySequence<byte>(response.Body));
+            await using (fallbackStream.ConfigureAwait(false))
             {
-                int bytesRead;
-                while ((bytesRead = await stream.ReadAsync(buffer.AsMemory(0, bufferSize), ct)) > 0)
+                var fallbackBuffer = ArrayPool<byte>.Shared.Rent(4096);
+                try
                 {
-                    var offset = 0;
-                    while (offset < bytesRead)
+                    int bytesRead;
+                    while (
+                        (
+                            bytesRead = await fallbackStream
+                                .ReadAsync(fallbackBuffer.AsMemory(0, 4096), ct)
+                                .ConfigureAwait(false)
+                        ) > 0
+                    )
                     {
-                        var connWindow = connState?.ConnectionSendWindow ?? int.MaxValue;
-                        var streamWindow = state?.SendWindow ?? int.MaxValue;
-                        var available = Math.Min(connWindow, streamWindow);
-
-                        if (available <= 0)
-                        {
-                            // Backpressure: hand the stream to FlushPendingDataAsync for
-                            // later resume — do NOT dispose it here.
-                            if (state is not null)
-                            {
-                                state.PendingDataFrame = buffer[offset..bytesRead];
-                                state.ResponseBodyStream = stream;
-                            }
-                            return;
-                        }
-
-                        var chunkSize = Math.Min(bytesRead - offset, maxFrame);
-                        var sendSize = Math.Min(chunkSize, available);
-
                         await WriteDataFrameAsync(
+                                connection,
+                                streamId,
+                                Http2FrameFlags.None,
+                                fallbackBuffer.AsMemory(0, bytesRead),
+                                ct
+                            )
+                            .ConfigureAwait(false);
+                    }
+
+                    await WriteDataFrameAsync(
                             connection,
                             streamId,
+                            Http2FrameFlags.EndStream,
+                            ReadOnlyMemory<byte>.Empty,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(fallbackBuffer);
+                }
+            }
+
+            return;
+        }
+
+        var bodyStream =
+            response.BodyStream
+            ?? new ReadOnlySequenceStream(new ReadOnlySequence<byte>(response.Body));
+        state.ResponseCts ??= new CancellationTokenSource();
+        state.FlowControlSignal ??= new SemaphoreSlim(0, int.MaxValue);
+        state.ResponseBodyStream = bodyStream;
+        var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            ct,
+            state.ResponseCts.Token
+        );
+        state.ResponsePumpTask = PumpResponseAsync(
+            connection,
+            connection.UserState as ConnectionRuntimeState,
+            state,
+            bodyStream,
+            linkedCts
+        );
+    }
+
+    private static async Task PumpResponseAsync(
+        ITcpConnectionContext connection,
+        ConnectionRuntimeState? connState,
+        Http2StreamState stream,
+        Stream bodyStream,
+        CancellationTokenSource linkedCts
+    )
+    {
+        var ct = linkedCts.Token;
+        var maxFrame = connState?.RemoteMaxFrameSize ?? 16384;
+        var bufferSize = 4096;
+        var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+        try
+        {
+            while (true)
+            {
+                var bytesRead = await bodyStream
+                    .ReadAsync(buffer.AsMemory(0, bufferSize), ct)
+                    .ConfigureAwait(false);
+                if (bytesRead == 0)
+                    break;
+
+                var offset = 0;
+                while (offset < bytesRead)
+                {
+                    var chunkSize = Math.Min(bytesRead - offset, maxFrame);
+                    int sendSize;
+                    if (connState is not null)
+                    {
+                        // Atomic check-and-reserve: concurrent pumps share the
+                        // connection send window, so read + subtract must not
+                        // interleave (would overdraw the window).
+                        lock (connState.SendWindowLock)
+                        {
+                            var available = Math.Min(
+                                connState.ConnectionSendWindow,
+                                stream.SendWindow
+                            );
+                            sendSize = Math.Min(chunkSize, available);
+                            if (sendSize > 0)
+                            {
+                                connState.AddConnectionSendWindow(-sendSize);
+                                stream.AddSendWindow(-sendSize);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        sendSize = chunkSize;
+                    }
+
+                    if (sendSize <= 0)
+                    {
+                        // Flow-control backpressure: wait until WINDOW_UPDATE /
+                        // SETTINGS releases the signal.
+                        var signal = stream.FlowControlSignal;
+                        if (signal is not null)
+                        {
+                            await signal.WaitAsync(ct).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await Task.Delay(50, ct).ConfigureAwait(false);
+                        }
+
+                        continue;
+                    }
+
+                    await WriteDataFrameAsync(
+                            connection,
+                            stream.StreamId,
                             Http2FrameFlags.None,
                             buffer.AsMemory(offset, sendSize),
                             ct
-                        );
-
-                        if (connState is not null)
-                            connState.AddConnectionSendWindow(-sendSize);
-                        if (state is not null)
-                            state.SendWindow -= sendSize;
-                        offset += sendSize;
-                    }
+                        )
+                        .ConfigureAwait(false);
+                    offset += sendSize;
                 }
+            }
 
-                // Stream complete — send final DATA with EndStream, then dispose.
-                await WriteDataFrameAsync(
+            // Stream complete — send the final DATA with EndStream.
+            await WriteDataFrameAsync(
                     connection,
-                    streamId,
+                    stream.StreamId,
                     Http2FrameFlags.EndStream,
                     ReadOnlyMemory<byte>.Empty,
                     ct
-                );
-
-                if (state is not null)
-                    state.ResponseSent = true;
-                streamCompleted = true;
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception)
-            {
-                await SendRstStreamAsync(connection, streamId, Http2ErrorCode.Cancel, ct);
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(buffer);
-                if (streamCompleted)
-                {
-                    await stream.DisposeAsync();
-                }
-            }
-            return;
+                )
+                .ConfigureAwait(false);
+            stream.ResponseSent = true;
         }
-
-        // Send DATA frames, chunked by max frame size and flow control window
-        if (response.Body.Length > 0)
+        catch (OperationCanceledException)
         {
-            var data = response.Body.ToArray();
-            var connState = connection.UserState as ConnectionRuntimeState;
-            var maxFrame = connState?.RemoteMaxFrameSize ?? 16384;
-
-            // Send in chunks
-            var offset = 0;
-            while (offset < data.Length)
+            // RST_STREAM or connection close — exit quietly. The client
+            // aborted the stream; the EndStream frame must not be sent.
+        }
+        catch (Exception)
+        {
+            // Producer error (e.g. the SSE pipe completed with an exception).
+            try
             {
-                var chunkSize = Math.Min(data.Length - offset, maxFrame);
-
-                var connWindow = connState?.ConnectionSendWindow ?? int.MaxValue;
-                var streamWindow = state?.SendWindow ?? int.MaxValue;
-                var available = Math.Min(connWindow, streamWindow);
-
-                if (available <= 0)
-                {
-                    // Buffer remaining for WINDOW_UPDATE
-                    if (state is not null)
-                        state.PendingDataFrame = data[offset..];
-                    return;
-                }
-
-                var sendSize = Math.Min(chunkSize, available);
-                var isLast = offset + sendSize >= data.Length;
-                var dataFlags = isLast ? Http2FrameFlags.EndStream : Http2FrameFlags.None;
-                await WriteDataFrameAsync(
-                    connection,
-                    streamId,
-                    dataFlags,
-                    data.AsMemory(offset, sendSize),
-                    ct
-                );
-
-                if (connState is not null)
-                    connState.AddConnectionSendWindow(-sendSize);
-                if (state is not null)
-                    state.SendWindow -= sendSize;
-
-                offset += sendSize;
+                await SendRstStreamAsync(
+                        connection,
+                        stream.StreamId,
+                        Http2ErrorCode.Cancel,
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                // Connection is going away — nothing to do.
+            }
+        }
+        finally
+        {
+            stream.ResponseBodyStream = null;
+            stream.ResponsePumpTask = null;
+            ArrayPool<byte>.Shared.Return(buffer);
+            try
+            {
+                await bodyStream.DisposeAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // Disposal is best-effort — the pump task must never fault
+                // unobserved.
             }
 
-            if (state is not null)
-                state.ResponseSent = true;
-            return;
+            linkedCts.Dispose();
         }
-
-        if (state is not null)
-            state.ResponseSent = true;
     }
 
     private static async ValueTask SendRstStreamAsync(
