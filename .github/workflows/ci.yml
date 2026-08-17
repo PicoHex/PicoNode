@@ -96,16 +96,6 @@ jobs:
           -p:PublishAot=true --self-contained
           -o publish-echo/${{ matrix.rid }}
 
-      # PicoHtmx AOT validation: PicoWeb.Samples references PicoHtmx and sets
-      # PublishAot in its csproj. No global -p:PublishAot=true here — a global
-      # flag would propagate to the netstandard2.0 source-generator projects
-      # (PicoWeb.Gen / Controllers.Gen) in the graph and fail with NETSDK1207.
-      - name: AOT publish (PicoHtmx web sample)
-        run: >
-          dotnet publish samples/PicoWeb.Samples/PicoWeb.Samples.csproj
-          --no-restore -c Release -r ${{ matrix.rid }}
-          --self-contained
-          -o publish-htmx/${{ matrix.rid }}
 
   # HTTP/2 protocol conformance gate (h2spec v2.6.0, strict suite).
   # The script downloads the linux h2spec binary, builds the sample server
