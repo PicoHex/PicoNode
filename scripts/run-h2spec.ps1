@@ -86,17 +86,22 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Starting test server on port $Port..." -ForegroundColor Cyan
 # The sample stays alive without stdin (Task.Delay(Timeout.Infinite)), so a
 # detached process needs no stdin plumbing.
-$server = Start-Process `
-    -FilePath "dotnet" `
-    -ArgumentList @(
+# -WindowStyle only exists on Windows PowerShell — Linux pwsh rejects it.
+$startArgs = @{
+    FilePath = "dotnet"
+    ArgumentList = @(
         "run",
         "--project", "$RepoRoot/samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj",
         "-c", "Release",
         "--no-build",
         "--", "--port", "$Port"
-    ) `
-    -PassThru `
-    -WindowStyle Hidden
+    )
+    PassThru = $true
+}
+if ($IsWindowsPlatform) {
+    $startArgs.WindowStyle = "Hidden"
+}
+$server = Start-Process @startArgs
 
 try {
     # Wait for the server to accept connections.
