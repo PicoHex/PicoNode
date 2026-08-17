@@ -121,6 +121,10 @@ try {
         wstest -m fuzzingclient -s /config/fuzzingclient.json 2>&1 | Tee-Object -FilePath $LogFile -Append
     $exitCode = $LASTEXITCODE
     Log "fuzzing client exit code: $exitCode"
+    if ($exitCode -ne 0) {
+        $tail = (Get-Content $LogFile -Tail 25) -join "`n"
+        Write-Host "::error title=autobahn fuzzing client failed (exit $exitCode)::$tail"
+    }
 
     # ── 5. Parse the report and fail on any FAILED case ───────────────
     $reportJson = Join-Path $ReportDir "index.json"

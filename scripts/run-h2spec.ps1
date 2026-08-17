@@ -118,6 +118,10 @@ try {
     & $h2spec -h 127.0.0.1 -p $Port -S 2>&1 | Tee-Object -FilePath $LogFile -Append
     $exitCode = $LASTEXITCODE
     Log "h2spec exit code: $exitCode"
+    if ($exitCode -ne 0) {
+        $tail = (Get-Content $LogFile -Tail 25) -join "`n"
+        Write-Host "::error title=h2spec failed (exit $exitCode)::$tail"
+    }
 
     if ($exitCode -eq 0) {
         Write-Host "h2spec: ALL TESTS PASSED" -ForegroundColor Green
