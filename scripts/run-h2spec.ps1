@@ -20,6 +20,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+trap {
+    $tail = (Get-Content $LogFile -Tail 30 -ErrorAction SilentlyContinue) -join "`n"
+    Write-Output "::error title=conformance script failed::$($_.Exception.Message)`n$tail"
+    exit 1
+}
+
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 $H2SpecDir = Join-Path $RepoRoot ".tools/h2spec"
 $H2SpecVersion = "2.6.0"

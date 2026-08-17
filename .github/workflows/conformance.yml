@@ -1,0 +1,67 @@
+# Protocol conformance gates — runs on every branch for fast iteration.
+# (The full ci.yml build matrix only runs on main.)
+
+name: conformance
+
+on:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+jobs:
+  # HTTP/2 protocol conformance (h2spec v2.6.0, strict suite).
+  h2spec:
+    runs-on: ubuntu-latest
+    name: h2spec protocol conformance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run h2spec (strict)
+        shell: pwsh
+        run: ./scripts/run-h2spec.ps1
+
+      - name: Upload h2spec logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: h2spec-logs
+          path: .tools/h2spec-ci.log
+          if-no-files-found: ignore
+
+  # WebSocket protocol conformance (Autobahn Testsuite, official frozen image).
+  autobahn:
+    runs-on: ubuntu-latest
+    name: autobahn WebSocket conformance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run Autobahn fuzzing client
+        shell: pwsh
+        run: ./scripts/run-autobahn.ps1
+
+      - name: Upload autobahn logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autobahn-logs
+          path: |
+            .tools/autobahn-ci.log
+            .tools/autobahn-reports/servers/index.json
+          if-no-files-found: ignore
