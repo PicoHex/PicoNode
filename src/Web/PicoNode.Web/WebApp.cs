@@ -5,7 +5,7 @@ public sealed class WebApp
     private readonly ISvcContainer _container;
     private readonly WebAppOptions _options;
     private List<WebMiddleware> _middlewares = [];
-    private readonly List<WebRoute> _routes = [];
+    private readonly List<Route<WebRequestHandler>> _routes = [];
 
     private WebRequestHandler? _fallbackHandler;
 
@@ -39,7 +39,7 @@ public sealed class WebApp
             new()
             {
                 Method = method,
-                Pattern = pattern,
+                Path = pattern,
                 Handler = handler,
             }
         );

@@ -137,4 +137,17 @@ public sealed class WebApiBuilderTests
             .That(() => builder.RegisterSingleton<SpyContainer, SpyContainer>())
             .Throws<InvalidOperationException>();
     }
+
+    [Test]
+    public async Task ConfigureJson_is_scoped_to_builder_instance()
+    {
+        // Regression: ConfigureJson used to write a process-wide static
+        // (AppSerializationOptions.Default), leaking configuration between
+        // builder instances. It must be per-instance.
+        var appA = new WebApiBuilder().ConfigureJson(o => o.Indented = true).Build();
+        var appB = new WebApiBuilder().Build();
+
+        await Assert.That(appA.SerializationOptions?.Indented).IsTrue();
+        await Assert.That(appB.SerializationOptions?.Indented ?? false).IsFalse();
+    }
 }

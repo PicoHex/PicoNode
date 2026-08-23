@@ -41,52 +41,38 @@ public sealed class WebApiBuilder
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] TService,
         TImpl
     >()
-        where TImpl : TService
+        where TImpl : TService =>
+        Register(c => c.RegisterSingleton(typeof(TService), typeof(TImpl)));
+
+    public WebApiBuilder RegisterScoped<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] TService,
+        TImpl
+    >()
+        where TImpl : TService => Register(c => c.RegisterScoped(typeof(TService), typeof(TImpl)));
+
+    public WebApiBuilder RegisterTransient<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] TService,
+        TImpl
+    >()
+        where TImpl : TService =>
+        Register(c => c.RegisterTransient(typeof(TService), typeof(TImpl)));
+
+    private WebApiBuilder Register(Action<SvcContainer> register)
     {
         if (_ownedContainer is null)
             throw new InvalidOperationException(
                 "Cannot register services on an externally-provided DI container. "
                     + "Use the default constructor or register services directly on your container."
             );
-        _ownedContainer.RegisterSingleton(typeof(TService), typeof(TImpl));
-        return this;
-    }
-
-    public WebApiBuilder RegisterScoped<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] TService,
-        TImpl
-    >()
-        where TImpl : TService
-    {
-        if (_ownedContainer is null)
-            throw new InvalidOperationException(
-                "Cannot register services on an externally-provided DI container."
-            );
-        _ownedContainer.RegisterScoped(typeof(TService), typeof(TImpl));
-        return this;
-    }
-
-    public WebApiBuilder RegisterTransient<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)] TService,
-        TImpl
-    >()
-        where TImpl : TService
-    {
-        if (_ownedContainer is null)
-            throw new InvalidOperationException(
-                "Cannot register services on an externally-provided DI container."
-            );
-        _ownedContainer.RegisterTransient(typeof(TService), typeof(TImpl));
+        register(_ownedContainer);
         return this;
     }
 
     public WebApiApp Build()
     {
         _ownedContainer?.Build();
-        if (_jsonOptions is not null)
-            AppSerializationOptions.Default = _jsonOptions;
 
         var app = new WebApp(_container, _options ?? new());
-        return new WebApiApp(app);
+        return new WebApiApp(app, _jsonOptions);
     }
 }

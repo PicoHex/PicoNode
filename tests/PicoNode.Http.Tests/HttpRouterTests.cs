@@ -6,7 +6,7 @@ public sealed class HttpRouterTests
     public async Task HandleAsync_dispatches_exact_method_and_path_match()
     {
         var router = CreateRouter([
-            HttpRoute.MapGet(
+            Route<HttpRequestHandler>.MapGet(
                 "/hello",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -25,7 +25,7 @@ public sealed class HttpRouterTests
     public async Task HandleAsync_matches_path_component_of_request_target()
     {
         var router = CreateRouter([
-            HttpRoute.MapGet(
+            Route<HttpRequestHandler>.MapGet(
                 "/hello",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -44,7 +44,7 @@ public sealed class HttpRouterTests
     public async Task HandleAsync_treats_trailing_slashes_as_distinct_paths()
     {
         var router = CreateRouter([
-            HttpRoute.MapGet(
+            Route<HttpRequestHandler>.MapGet(
                 "/hello",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -99,7 +99,7 @@ public sealed class HttpRouterTests
     public async Task HandleAsync_returns_405_when_path_exists_for_other_methods()
     {
         var router = CreateRouter([
-            HttpRoute.MapPost(
+            Route<HttpRequestHandler>.MapPost(
                 "/echo",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -121,12 +121,12 @@ public sealed class HttpRouterTests
     public async Task HandleAsync_sorts_and_joins_allow_header_values()
     {
         var router = CreateRouter([
-            HttpRoute.MapPost(
+            Route<HttpRequestHandler>.MapPost(
                 "/echo",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
             ),
-            HttpRoute.Map(
+            Route<HttpRequestHandler>.Map(
                 "DELETE",
                 "/echo",
                 static (_, _) =>
@@ -157,7 +157,7 @@ public sealed class HttpRouterTests
             {
                 Routes =
                 [
-                    new HttpRoute
+                    new Route<HttpRequestHandler>
                     {
                         Method = "POST",
                         Path = "/echo",
@@ -193,7 +193,7 @@ public sealed class HttpRouterTests
     [Test]
     public async Task MapGet_creates_get_route()
     {
-        var route = HttpRoute.MapGet(
+        var route = Route<HttpRequestHandler>.MapGet(
             "/hello",
             static (_, _) =>
                 ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -206,7 +206,7 @@ public sealed class HttpRouterTests
     [Test]
     public async Task MapPost_creates_post_route()
     {
-        var route = HttpRoute.MapPost(
+        var route = Route<HttpRequestHandler>.MapPost(
             "/echo",
             static (_, _) =>
                 ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -219,7 +219,7 @@ public sealed class HttpRouterTests
     [Test]
     public async Task MapPut_creates_put_route()
     {
-        var route = HttpRoute.MapPut(
+        var route = Route<HttpRequestHandler>.MapPut(
             "/resource",
             static (_, _) =>
                 ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -232,7 +232,7 @@ public sealed class HttpRouterTests
     [Test]
     public async Task MapDelete_creates_delete_route()
     {
-        var route = HttpRoute.MapDelete(
+        var route = Route<HttpRequestHandler>.MapDelete(
             "/resource",
             static (_, _) =>
                 ValueTask.FromResult(
@@ -250,7 +250,7 @@ public sealed class HttpRouterTests
         await Assert
             .That(() =>
                 CreateRouter([
-                    new HttpRoute
+                    new Route<HttpRequestHandler>
                     {
                         Method = "GET",
                         Path = "/hello",
@@ -259,7 +259,7 @@ public sealed class HttpRouterTests
                                 new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
                             ),
                     },
-                    new HttpRoute
+                    new Route<HttpRequestHandler>
                     {
                         Method = "GET",
                         Path = "/hello",
@@ -279,7 +279,7 @@ public sealed class HttpRouterTests
         await Assert
             .That(() =>
                 CreateRouter([
-                    new HttpRoute
+                    new Route<HttpRequestHandler>
                     {
                         Method = "GET",
                         Path = "hello",
@@ -299,7 +299,7 @@ public sealed class HttpRouterTests
         await Assert
             .That(() =>
                 CreateRouter([
-                    new HttpRoute
+                    new Route<HttpRequestHandler>
                     {
                         Method = "GET",
                         Path = "/hello?name=pico",
@@ -319,7 +319,7 @@ public sealed class HttpRouterTests
         await Assert
             .That(() =>
                 CreateRouter([
-                    new HttpRoute
+                    new Route<HttpRequestHandler>
                     {
                         Method = " ",
                         Path = "/hello",
@@ -333,7 +333,7 @@ public sealed class HttpRouterTests
             .Throws<ArgumentException>();
     }
 
-    private static HttpRouter CreateRouter(IReadOnlyList<HttpRoute> routes) =>
+    private static HttpRouter CreateRouter(IReadOnlyList<Route<HttpRequestHandler>> routes) =>
         new(new HttpRouterOptions { Routes = routes });
 
     private static HttpRequest CreateRequest(string method, string target)

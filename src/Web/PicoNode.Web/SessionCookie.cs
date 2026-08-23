@@ -31,10 +31,12 @@ public static class SessionCookie
             },
             Set: (response, sessionId) =>
             {
-                response.Headers.Add(
-                    "Set-Cookie",
-                    $"{cookieName}={sessionId}; Path=/; HttpOnly; SameSite=Lax"
-                );
+                var cookie = new SetCookieBuilder(cookieName, sessionId)
+                    .Path("/")
+                    .HttpOnly()
+                    .SameSite("Lax")
+                    .Build();
+                response.Headers.Add(cookie.Key, cookie.Value);
             }
         );
     }

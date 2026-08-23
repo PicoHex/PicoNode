@@ -156,7 +156,7 @@ public sealed class HttpContractTests
     [Test]
     public async Task HttpRoute_exposes_expected_contract_shape()
     {
-        var type = typeof(HttpRoute);
+        var type = typeof(Route<HttpRequestHandler>);
         var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .OrderBy(x => x.Name)
             .ToArray();
@@ -165,18 +165,18 @@ public sealed class HttpContractTests
         await Assert
             .That(properties.Select(x => x.Name).ToArray())
             .IsEquivalentTo([
-                nameof(HttpRoute.Handler),
-                nameof(HttpRoute.Method),
-                nameof(HttpRoute.Path),
+                nameof(Route<HttpRequestHandler>.Handler),
+                nameof(Route<HttpRequestHandler>.Method),
+                nameof(Route<HttpRequestHandler>.Path),
             ]);
         await Assert
-            .That(type.GetProperty(nameof(HttpRoute.Method))?.PropertyType)
+            .That(type.GetProperty(nameof(Route<HttpRequestHandler>.Method))?.PropertyType)
             .IsEqualTo(typeof(string));
         await Assert
-            .That(type.GetProperty(nameof(HttpRoute.Path))?.PropertyType)
+            .That(type.GetProperty(nameof(Route<HttpRequestHandler>.Path))?.PropertyType)
             .IsEqualTo(typeof(string));
         await Assert
-            .That(type.GetProperty(nameof(HttpRoute.Handler))?.PropertyType)
+            .That(type.GetProperty(nameof(Route<HttpRequestHandler>.Handler))?.PropertyType)
             .IsEqualTo(typeof(HttpRequestHandler));
     }
 
@@ -197,7 +197,7 @@ public sealed class HttpContractTests
             ]);
         await Assert
             .That(type.GetProperty(nameof(HttpRouterOptions.Routes))?.PropertyType)
-            .IsEqualTo(typeof(IReadOnlyList<HttpRoute>));
+            .IsEqualTo(typeof(IReadOnlyList<Route<HttpRequestHandler>>));
         await Assert
             .That(type.GetProperty(nameof(HttpRouterOptions.FallbackHandler))?.PropertyType)
             .IsEqualTo(typeof(HttpRequestHandler));

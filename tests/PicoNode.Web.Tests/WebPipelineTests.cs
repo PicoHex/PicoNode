@@ -22,7 +22,7 @@ public sealed class WebPipelineTests
         };
 
         var router = new WebRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -48,7 +48,7 @@ public sealed class WebPipelineTests
             );
 
         var router = new WebRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/",
                 (_, _) =>
                 {
@@ -86,7 +86,7 @@ public sealed class WebPipelineTests
         };
 
         var router = new WebRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -106,7 +106,7 @@ public sealed class WebPipelineTests
     public async Task Empty_middleware_chain_routes_directly()
     {
         var router = new WebRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/hello",
                 static (_, _) => ValueTask.FromResult(WebResults.Text(200, "hi", "OK"))
             ),

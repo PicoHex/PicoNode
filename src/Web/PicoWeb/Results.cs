@@ -16,22 +16,13 @@ public static class Results
         int statusCode,
         ReadOnlyMemory<byte> jsonBody,
         string? reasonPhrase = null
-    )
-    {
-        return new HttpResponse
-        {
-            StatusCode = statusCode,
-            ReasonPhrase = reasonPhrase ?? GetDefaultReason(statusCode),
-            Headers =
-            [
-                new KeyValuePair<string, string>(
-                    HttpHeaderNames.ContentType,
-                    "application/json; charset=utf-8"
-                ),
-            ],
-            Body = jsonBody,
-        };
-    }
+    ) =>
+        WebResults.Bytes(
+            statusCode,
+            jsonBody,
+            "application/json; charset=utf-8",
+            reasonPhrase ?? GetDefaultReason(statusCode)
+        );
 
     public static HttpResponse Text(int statusCode, string body, string? reasonPhrase = null) =>
         WebResults.Text(statusCode, body, reasonPhrase ?? "");
@@ -52,34 +43,5 @@ public static class Results
             404 => "Not Found",
             500 => "Internal Server Error",
             _ => "",
-        };
-}
-
-internal static class AppSerializationOptions
-{
-    private static PicoJetson.JsonOptions _default = CreateDefault();
-
-    public static PicoJetson.JsonOptions Default
-    {
-        get => Clone(_default);
-        set => _default = Clone(value ?? CreateDefault());
-    }
-
-    private static PicoJetson.JsonOptions CreateDefault() =>
-        new() { PropertyNamingPolicy = PicoJetson.JsonNamingPolicy.CamelCase };
-
-    private static PicoJetson.JsonOptions Clone(PicoJetson.JsonOptions source) =>
-        new()
-        {
-            PropertyNamingPolicy = source.PropertyNamingPolicy,
-            Indented = source.Indented,
-            MaxDepth = source.MaxDepth,
-            DefaultIgnoreCondition = source.DefaultIgnoreCondition,
-            IncludeFields = source.IncludeFields,
-            NumberHandling = source.NumberHandling,
-            PropertyNameCaseInsensitive = source.PropertyNameCaseInsensitive,
-            AllowTrailingCommas = source.AllowTrailingCommas,
-            ReadCommentHandling = source.ReadCommentHandling,
-            UnmappedMemberHandling = source.UnmappedMemberHandling,
         };
 }

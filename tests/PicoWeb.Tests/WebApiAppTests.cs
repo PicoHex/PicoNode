@@ -9,7 +9,7 @@ public sealed class WebApiAppTests
         var api = builder.Build();
 
         var invoked = false;
-        api.MapGet(
+        api.App.MapGet(
             "/hello",
             (WebContext ctx, CancellationToken _) =>
             {

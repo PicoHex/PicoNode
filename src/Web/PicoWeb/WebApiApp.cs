@@ -5,37 +5,24 @@ public sealed class WebApiApp : IAsyncDisposable
     private readonly WebApp _app;
     private WebServer? _server;
 
-    internal WebApiApp(WebApp app)
+    internal WebApiApp(WebApp app, PicoJetson.JsonOptions? jsonOptions = null)
     {
         _app = app;
+        SerializationOptions = jsonOptions;
     }
+
+    /// <summary>
+    /// Per-instance JSON serialization options configured via
+    /// <see cref="WebApiBuilder.ConfigureJson"/>. Instance-scoped — never a
+    /// process-wide static — so multiple apps/tests cannot leak configuration.
+    /// </summary>
+    internal PicoJetson.JsonOptions? SerializationOptions { get; }
+
+    /// <summary>The underlying <see cref="WebApp"/> — register routes and middleware on it.</summary>
+    public WebApp App => _app;
 
     /// <summary>The effective <see cref="WebAppOptions"/> (observable for tests/tooling).</summary>
     internal WebAppOptions Options => _app.Options;
-
-    public WebApiApp MapGet(string pattern, WebRequestHandler handler)
-    {
-        _app.MapGet(pattern, handler);
-        return this;
-    }
-
-    public WebApiApp MapPost(string pattern, WebRequestHandler handler)
-    {
-        _app.MapPost(pattern, handler);
-        return this;
-    }
-
-    public WebApiApp MapPut(string pattern, WebRequestHandler handler)
-    {
-        _app.MapPut(pattern, handler);
-        return this;
-    }
-
-    public WebApiApp MapDelete(string pattern, WebRequestHandler handler)
-    {
-        _app.MapDelete(pattern, handler);
-        return this;
-    }
 
     public async Task RunAsync(string uri, CancellationToken ct = default)
     {
@@ -43,39 +30,8 @@ public sealed class WebApiApp : IAsyncDisposable
         _server = new WebServer(_app, new WebServerOptions { Endpoint = ep });
         await _server.StartAsync(ct);
 
-        // Register process exit signals for graceful shutdown
-        using var shutdownCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var shutdownTcs = new TaskCompletionSource(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-
-        ConsoleCancelEventHandler cancelHandler = (sender, e) =>
-        {
-            e.Cancel = true;
-            shutdownTcs.TrySetResult();
-        };
-        EventHandler processExitHandler = (sender, e) =>
-        {
-            shutdownTcs.TrySetResult();
-        };
-
-        Console.CancelKeyPress += cancelHandler;
-        AppDomain.CurrentDomain.ProcessExit += processExitHandler;
-
-        try
-        {
-            await Task.WhenAny(Task.Delay(Timeout.Infinite, shutdownCts.Token), shutdownTcs.Task);
-        }
-        catch (OperationCanceledException)
-        {
-            // graceful shutdown via cancellation token
-        }
-        finally
-        {
-            Console.CancelKeyPress -= cancelHandler;
-            AppDomain.CurrentDomain.ProcessExit -= processExitHandler;
-        }
-
+        // Wait for Ctrl+C / process exit / cancellation, then stop gracefully.
+        await ProcessShutdown.WaitAsync(ct);
         await _server.StopAsync(CancellationToken.None);
     }
 

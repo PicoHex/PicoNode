@@ -42,7 +42,7 @@ public sealed partial class HttpTcpNodeRoundTripPostEchoComparisonBenchmarks
                 {
                     Routes =
                     [
-                        HttpRoute.MapPost(
+                        Route<HttpRequestHandler>.MapPost(
                             "/echo",
                             static (request, _) =>
                                 ValueTask.FromResult(

@@ -6,7 +6,7 @@ public sealed class WebRouterTests
     public async Task HandleAsync_dispatches_exact_route()
     {
         var router = CreateRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/hello",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -34,7 +34,7 @@ public sealed class WebRouterTests
     public async Task HandleAsync_returns_405_when_method_does_not_match()
     {
         var router = CreateRouter([
-            WebRoute.MapPost(
+            Route<WebRequestHandler>.MapPost(
                 "/echo",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -54,7 +54,7 @@ public sealed class WebRouterTests
     public async Task HandleAsync_matches_parameterized_route()
     {
         var router = CreateRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/users/{id}",
                 static (ctx, _) =>
                     ValueTask.FromResult(WebResults.Text(200, ctx.RouteValues["id"], "OK"))
@@ -72,7 +72,7 @@ public sealed class WebRouterTests
     public async Task HandleAsync_matches_multi_segment_parameterized_route()
     {
         var router = CreateRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/users/{userId}/orders/{orderId}",
                 static (ctx, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -94,7 +94,7 @@ public sealed class WebRouterTests
         var paramCalled = false;
 
         var router = CreateRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/users/me",
                 (_, _) =>
                 {
@@ -104,7 +104,7 @@ public sealed class WebRouterTests
                     );
                 }
             ),
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/users/{id}",
                 (_, _) =>
                 {
@@ -128,7 +128,7 @@ public sealed class WebRouterTests
     public async Task HandleAsync_returns_405_for_parameterized_route_method_mismatch()
     {
         var router = CreateRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/users/{id}",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -148,7 +148,7 @@ public sealed class WebRouterTests
     public async Task HandleAsync_parameterized_route_does_not_match_extra_segments()
     {
         var router = CreateRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/users/{id}",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -165,7 +165,7 @@ public sealed class WebRouterTests
     public async Task HandleAsync_parameterized_route_does_not_match_fewer_segments()
     {
         var router = CreateRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/users/{id}",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -182,7 +182,7 @@ public sealed class WebRouterTests
     public async Task HandleAsync_matches_root_path()
     {
         var router = CreateRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -199,7 +199,7 @@ public sealed class WebRouterTests
     public async Task HandleAsync_strips_query_from_matching()
     {
         var router = CreateRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/search",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
@@ -216,12 +216,12 @@ public sealed class WebRouterTests
     public async Task HandleAsync_sorts_allow_header_methods()
     {
         var router = CreateRouter([
-            WebRoute.MapPost(
+            Route<WebRequestHandler>.MapPost(
                 "/echo",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
             ),
-            WebRoute.Map(
+            Route<WebRequestHandler>.Map(
                 "DELETE",
                 "/echo",
                 static (_, _) =>
@@ -243,12 +243,12 @@ public sealed class WebRouterTests
     public async Task HandleAsync_falls_through_to_param_route_when_exact_method_mismatches()
     {
         var router = CreateRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/users/me",
                 static (_, _) =>
                     ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
             ),
-            WebRoute.MapPost(
+            Route<WebRequestHandler>.MapPost(
                 "/users/{id}",
                 static (_, _) =>
                     ValueTask.FromResult(
@@ -270,14 +270,14 @@ public sealed class WebRouterTests
         await Assert
             .That(() =>
                 CreateRouter([
-                    WebRoute.MapGet(
+                    Route<WebRequestHandler>.MapGet(
                         "/hello",
                         static (_, _) =>
                             ValueTask.FromResult(
                                 new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
                             )
                     ),
-                    WebRoute.MapGet(
+                    Route<WebRequestHandler>.MapGet(
                         "/hello",
                         static (_, _) =>
                             ValueTask.FromResult(
@@ -295,14 +295,14 @@ public sealed class WebRouterTests
         await Assert
             .That(() =>
                 CreateRouter([
-                    WebRoute.MapGet(
+                    Route<WebRequestHandler>.MapGet(
                         "/users/{id}",
                         static (_, _) =>
                             ValueTask.FromResult(
                                 new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" }
                             )
                     ),
-                    WebRoute.MapGet(
+                    Route<WebRequestHandler>.MapGet(
                         "/users/{id}",
                         static (_, _) =>
                             ValueTask.FromResult(
@@ -320,7 +320,7 @@ public sealed class WebRouterTests
         await Assert
             .That(() =>
                 CreateRouter([
-                    WebRoute.MapGet(
+                    Route<WebRequestHandler>.MapGet(
                         "hello",
                         static (_, _) =>
                             ValueTask.FromResult(
@@ -338,7 +338,7 @@ public sealed class WebRouterTests
         await Assert
             .That(() =>
                 CreateRouter([
-                    WebRoute.MapGet(
+                    Route<WebRequestHandler>.MapGet(
                         "/hello?q=1",
                         static (_, _) =>
                             ValueTask.FromResult(
@@ -350,10 +350,11 @@ public sealed class WebRouterTests
             .Throws<ArgumentException>();
     }
 
-    private static WebRouter CreateRouter(IReadOnlyList<WebRoute> routes) => new(routes);
+    private static WebRouter CreateRouter(IReadOnlyList<Route<WebRequestHandler>> routes) =>
+        new(routes);
 
     private static WebRouter CreateRouterWithFallback(
-        IReadOnlyList<WebRoute> routes,
+        IReadOnlyList<Route<WebRequestHandler>> routes,
         WebRequestHandler fallback
     ) => new(routes, fallback);
 
@@ -393,7 +394,7 @@ public sealed class WebRouterTests
 
         var router = CreateRouterWithFallback(
             [
-                WebRoute.MapPost(
+                Route<WebRequestHandler>.MapPost(
                     "/echo",
                     static (_, _) =>
                         ValueTask.FromResult(
@@ -421,7 +422,7 @@ public sealed class WebRouterTests
     public async Task HandleAsync_decodes_percent_encoded_route_values()
     {
         var router = CreateRouter([
-            WebRoute.MapGet(
+            Route<WebRequestHandler>.MapGet(
                 "/files/{name}",
                 static (ctx, _) =>
                     ValueTask.FromResult(WebResults.Text(200, ctx.RouteValues["name"], "OK"))

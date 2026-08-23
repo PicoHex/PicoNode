@@ -227,7 +227,7 @@ public sealed class SmokeTests
                 {
                     Routes =
                     [
-                        HttpRoute.MapPost(
+                        Route<HttpRequestHandler>.MapPost(
                             "/echo",
                             static (_, _) =>
                                 ValueTask.FromResult(CreateTextResponse(200, "OK", "echo"))
@@ -264,7 +264,7 @@ public sealed class SmokeTests
                 {
                     Routes =
                     [
-                        HttpRoute.MapGet(
+                        Route<HttpRequestHandler>.MapGet(
                             "/hello",
                             static (_, _) =>
                                 ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))
@@ -304,7 +304,7 @@ public sealed class SmokeTests
                 {
                     Routes =
                     [
-                        HttpRoute.MapGet(
+                        Route<HttpRequestHandler>.MapGet(
                             "/hello",
                             static (_, _) =>
                                 ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))
@@ -343,12 +343,12 @@ public sealed class SmokeTests
                 {
                     Routes =
                     [
-                        HttpRoute.MapPut(
+                        Route<HttpRequestHandler>.MapPut(
                             "/resource",
                             static (_, _) =>
                                 ValueTask.FromResult(CreateTextResponse(200, "OK", "put-ok"))
                         ),
-                        HttpRoute.MapDelete(
+                        Route<HttpRequestHandler>.MapDelete(
                             "/resource",
                             static (_, _) =>
                                 ValueTask.FromResult(
@@ -397,7 +397,7 @@ public sealed class SmokeTests
                 {
                     Routes =
                     [
-                        HttpRoute.MapGet(
+                        Route<HttpRequestHandler>.MapGet(
                             "/hello",
                             static (_, _) =>
                                 ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))
@@ -436,7 +436,7 @@ public sealed class SmokeTests
                 {
                     Routes =
                     [
-                        HttpRoute.MapGet(
+                        Route<HttpRequestHandler>.MapGet(
                             "/hello",
                             static (_, _) =>
                                 ValueTask.FromResult(CreateTextResponse(200, "OK", "hello"))

@@ -15,7 +15,10 @@ internal sealed class WebRouter
     private readonly RouteTable<WebRequestHandler> _exactRouteTable;
     private readonly RadixTree<CompiledRoute> _paramTree;
 
-    internal WebRouter(IReadOnlyList<WebRoute> routes, WebRequestHandler? fallbackHandler = null)
+    internal WebRouter(
+        IReadOnlyList<Route<WebRequestHandler>> routes,
+        WebRequestHandler? fallbackHandler = null
+    )
     {
         ArgumentNullException.ThrowIfNull(routes);
 
@@ -31,17 +34,17 @@ internal sealed class WebRouter
                 throw new ArgumentException("Route methods must not be blank.", nameof(routes));
             }
 
-            if (string.IsNullOrWhiteSpace(route.Pattern))
+            if (string.IsNullOrWhiteSpace(route.Path))
             {
                 throw new ArgumentException("Route patterns must not be blank.", nameof(routes));
             }
 
-            if (!route.Pattern.StartsWith('/'))
+            if (!route.Path.StartsWith('/'))
             {
                 throw new ArgumentException("Route patterns must start with '/'.", nameof(routes));
             }
 
-            if (route.Pattern.Contains('?'))
+            if (route.Path.Contains('?'))
             {
                 throw new ArgumentException(
                     "Route patterns must not contain query components.",
@@ -49,27 +52,27 @@ internal sealed class WebRouter
                 );
             }
 
-            var pattern = RoutePattern.Parse(route.Pattern);
+            var pattern = RoutePattern.Parse(route.Path);
             var method = route.Method.Trim();
 
             if (pattern.IsExact)
             {
-                exactRouteList.Add((method, route.Pattern, route.Handler));
+                exactRouteList.Add((method, route.Path, route.Handler));
             }
             else
             {
                 try
                 {
                     _paramTree.Insert(
-                        route.Pattern,
+                        route.Path,
                         method,
-                        new CompiledRoute(method, route.Pattern, pattern, route.Handler)
+                        new CompiledRoute(method, route.Path, pattern, route.Handler)
                     );
                 }
                 catch (InvalidOperationException)
                 {
                     throw new ArgumentException(
-                        $"Duplicate route registration for method '{method}' and pattern '{route.Pattern}'.",
+                        $"Duplicate route registration for method '{method}' and pattern '{route.Path}'.",
                         nameof(routes)
                     );
                 }

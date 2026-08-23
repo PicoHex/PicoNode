@@ -11,7 +11,7 @@ var builder = new WebApiBuilder().ConfigureApp(o => new WebAppOptions
 var api = builder.Build();
 
 // Static SSE endpoint: streams 5 events then completes
-api.MapGet(
+api.App.MapGet(
     "/sse/stream",
     SseEndpoint.Create(
         async (sse, ct) =>
@@ -27,7 +27,7 @@ api.MapGet(
 );
 
 // Endpoint that tests cancellation — writes one event then waits
-api.MapGet(
+api.App.MapGet(
     "/sse/cancel-test",
     SseEndpoint.Create(
         async (sse, ct) =>
@@ -40,7 +40,7 @@ api.MapGet(
 );
 
 // Endpoint that simulates a thinking-mode response via SSE
-api.MapGet(
+api.App.MapGet(
     "/sse/thinking",
     SseEndpoint.Create(
         async (sse, ct) =>

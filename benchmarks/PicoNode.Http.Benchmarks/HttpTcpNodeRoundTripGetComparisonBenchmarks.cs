@@ -38,7 +38,7 @@ public sealed partial class HttpTcpNodeRoundTripGetComparisonBenchmarks
                 {
                     Routes =
                     [
-                        HttpRoute.MapGet(
+                        Route<HttpRequestHandler>.MapGet(
                             "/hello",
                             static (_, _) =>
                                 ValueTask.FromResult(

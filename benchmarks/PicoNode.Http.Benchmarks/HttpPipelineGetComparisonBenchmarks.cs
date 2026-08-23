@@ -43,7 +43,7 @@ public sealed partial class HttpPipelineGetComparisonBenchmarks
                     {
                         Routes =
                         [
-                            HttpRoute.MapGet(
+                            Route<HttpRequestHandler>.MapGet(
                                 "/hello",
                                 static (_, _) =>
                                     ValueTask.FromResult(

@@ -44,7 +44,7 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
                     {
                         Routes =
                         [
-                            HttpRoute.MapPost(
+                            Route<HttpRequestHandler>.MapPost(
                                 "/echo",
                                 static (request, _) =>
                                     ValueTask.FromResult(

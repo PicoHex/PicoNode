@@ -27,13 +27,16 @@ public sealed partial class HttpRouterBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        var routes = new List<HttpRoute>(RouteCount);
+        var routes = new List<Route<HttpRequestHandler>>(RouteCount);
 
         for (var index = 0; index < RouteCount; index++)
         {
             var path = $"/route-{index}";
             routes.Add(
-                HttpRoute.MapGet(path, static (_, _) => ValueTask.FromResult(NoContentResponse))
+                Route<HttpRequestHandler>.MapGet(
+                    path,
+                    static (_, _) => ValueTask.FromResult(NoContentResponse)
+                )
             );
         }
 
