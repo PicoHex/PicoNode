@@ -40,4 +40,28 @@
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
     <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all" />
   </ItemGroup>
+
+  <!-- ═══════════════════════════════════════════════════════
+       AOT tiers (see csproj-format skill "AOT Strategy Centralization"):
+       minimal    — default. PublishAot + TrimMode only (Tests).
+       aggressive — Samples/Benchmarks. Size levers live in
+                    Directory.Build.targets (evaluated AFTER the project file,
+                    so csproj-level <AotOptimizationLevel> declarations work).
+       NOTE: classic Ilc* MSBuild properties were removed in .NET 10 SDK
+       (>= 10.0.400) and are silently ignored — ILC uses its built-in
+       defaults. Replacements: StackTraceSupport / UseSystemResourceKeys /
+       InvariantGlobalization (app-level).
+       ═══════════════════════════════════════════════════════ -->
+  <PropertyGroup>
+    <AotOptimizationLevel Condition="'$(AotOptimizationLevel)' == ''">minimal</AotOptimizationLevel>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(AotOptimizationLevel)' == 'minimal'">
+    <PublishAot Condition="'$(PublishAot)' == ''">true</PublishAot>
+    <TrimMode Condition="'$(TrimMode)' == ''">full</TrimMode>
+  </PropertyGroup>
+
+  <!-- netstandard2.0 must NEVER AOT — the guard lives in
+       Directory.Build.targets (evaluated where TargetFrameworkIdentifier is
+       known; Directory.Build.props evaluates before the TFM is resolved). -->
 </Project>

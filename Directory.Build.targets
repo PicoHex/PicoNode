@@ -1,0 +1,31 @@
+<Project>
+  <!--
+    Aggressive AOT tier. Must live in this .targets file (not
+    Directory.Build.props): a csproj-level <AotOptimizationLevel> is
+    evaluated after Directory.Build.props, so a conditional block there never
+    sees the override. Samples and benchmarks declare
+    <AotOptimizationLevel>aggressive</AotOptimizationLevel> as the
+    production-configuration preview; tests stay on minimal.
+    .NET 10 SDK (>= 10.0.400) removed the classic Ilc* properties (silently
+    ignored) — these are the verified replacements (see csproj-format skill).
+    InvariantGlobalization is an app-level decision, intentionally not
+    defaulted here.
+  -->
+  <PropertyGroup Condition="'$(AotOptimizationLevel)' == 'aggressive'">
+    <PublishAot Condition="'$(PublishAot)' == ''">true</PublishAot>
+    <TrimMode Condition="'$(TrimMode)' == ''">full</TrimMode>
+    <StackTraceSupport>false</StackTraceSupport>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+  </PropertyGroup>
+
+  <!-- netstandard2.0 must NEVER AOT. Only source generators (PicoXxx.Gen)
+       and Abs abstractions remain on netstandard2.0 — evaluated here where
+       the TFM is known. -->
+  <PropertyGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETStandard'">
+    <PublishAot>false</PublishAot>
+    <IsAotCompatible>false</IsAotCompatible>
+    <!-- IsTrimmable / EnableTrimAnalyzer are NOT supported on netstandard2.0
+         (NETSDK1212) — net10.0 libraries opt in per-csproj. -->
+    <TrimMode>partial</TrimMode>
+  </PropertyGroup>
+</Project>

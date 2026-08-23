@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
-    <PublishAot>true</PublishAot>
+    <AotOptimizationLevel>aggressive</AotOptimizationLevel>
     <TrimMode>full</TrimMode>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
