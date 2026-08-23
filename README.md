@@ -165,17 +165,18 @@ var api = new WebApiBuilder()
     .RegisterScoped<IUserService, UserService>()
     .Build();
 
-api.App.MapGet("/", (WebContext ctx) =>
-    Results.Text(200, "Hello, World!"));
+api.App.MapGet("/", static (WebContext ctx, CancellationToken _) =>
+    ValueTask.FromResult(Results.Text(200, "Hello, World!")));
 
-api.App.MapGet("/users/{id}", async (WebContext ctx, IUserService svc) =>
+api.App.MapGet("/users/{id}", async (WebContext ctx, CancellationToken _) =>
 {
+    var svc = (IUserService)ctx.Services.GetService(typeof(IUserService))!;
     var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
     var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
     return Results.Json(200, bytes);
 });
 
-api.App.MapPost("/echo", async (WebContext ctx) =>
+api.App.MapPost("/echo", async (WebContext ctx, CancellationToken _) =>
 {
     using var reader = new StreamReader(ctx.Request.BodyStream);
     var body = await reader.ReadToEndAsync();
@@ -329,9 +330,9 @@ var container = new SvcContainer();
 container.RegisterScoped<IDatabase, SqlDatabase>();
 
 var app = new WebApp(container);
-app.MapGet("/db", async (WebContext ctx) =>
+app.MapGet("/db", async (WebContext ctx, CancellationToken _) =>
 {
-    var db = ctx.Services.GetService<IDatabase>() as IDatabase;
+    var db = (IDatabase)ctx.Services.GetService(typeof(IDatabase))!;
     var data = await db!.QueryAsync("...");
     var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(data);
     return Results.Json(200, bytes);
@@ -340,16 +341,16 @@ app.MapGet("/db", async (WebContext ctx) =>
 app.Build();
 ```
 
-### Auto-parameter injection via Delegate
+### Resolving services inside handlers
 
-Handler parameters are automatically resolved (requires `using PicoNode.Web;`):
-- `WebContext` → current context
-- `CancellationToken` → request cancellation token
-- Any registered service → resolved from DI scope
+Handlers always use the `WebRequestHandler` signature
+`(WebContext, CancellationToken)`. Services come from the request scope via
+`ctx.Services` — there is no parameter injection:
 
 ```csharp
-app.MapGet("/users/{id}", async (WebContext ctx, IUserService svc) =>
+app.MapGet("/users/{id}", async (WebContext ctx, CancellationToken _) =>
 {
+    var svc = (IUserService)ctx.Services.GetService(typeof(IUserService))!;
     var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
     var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
     return Results.Json(200, bytes);
@@ -379,8 +380,9 @@ var api = new WebApiBuilder()
     .ConfigureJson(o => o.PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
     .Build();
 
-api.App.MapGet("/api/users/{id}", async (WebContext ctx, IUserService svc) =>
+api.App.MapGet("/api/users/{id}", async (WebContext ctx, CancellationToken _) =>
 {
+    var svc = (IUserService)ctx.Services.GetService(typeof(IUserService))!;
     var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
     var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
     return Results.Json(200, bytes);
