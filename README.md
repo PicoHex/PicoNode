@@ -130,11 +130,11 @@ var node = new TcpNode(new TcpNodeOptions
     Endpoint = new IPEndPoint(IPAddress.Loopback, 7002),
     ConnectionHandler = new HttpConnectionHandler(new HttpConnectionHandlerOptions
     {
-        RequestHandler = new HttpRouter(new HttpRouterOptions
+        RequestHandler = new Route<HttpRequestHandler>r(new Route<HttpRequestHandler>rOptions
         {
             Routes =
             [
-                HttpRoute.MapGet("/", static (_, _) =>
+                Route<HttpRequestHandler>.MapGet("/", static (_, _) =>
                     ValueTask.FromResult(new HttpResponse
                     {
                         StatusCode = 200, ReasonPhrase = "OK",
@@ -165,17 +165,17 @@ var api = new WebApiBuilder()
     .RegisterScoped<IUserService, UserService>()
     .Build();
 
-api.MapGet("/", (WebContext ctx) =>
+api.App.MapGet("/", (WebContext ctx) =>
     Results.Text(200, "Hello, World!"));
 
-api.MapGet("/users/{id}", async (WebContext ctx, IUserService svc) =>
+api.App.MapGet("/users/{id}", async (WebContext ctx, IUserService svc) =>
 {
     var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
     var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
     return Results.Json(200, bytes);
 });
 
-api.MapPost("/echo", async (WebContext ctx) =>
+api.App.MapPost("/echo", async (WebContext ctx) =>
 {
     using var reader = new StreamReader(ctx.Request.BodyStream);
     var body = await reader.ReadToEndAsync();
@@ -379,7 +379,7 @@ var api = new WebApiBuilder()
     .ConfigureJson(o => o.PropertyNamingPolicy = JsonNamingPolicy.CamelCase)
     .Build();
 
-api.MapGet("/api/users/{id}", async (WebContext ctx, IUserService svc) =>
+api.App.MapGet("/api/users/{id}", async (WebContext ctx, IUserService svc) =>
 {
     var user = await svc.GetByIdAsync(ctx.RouteValues["id"]);
     var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
