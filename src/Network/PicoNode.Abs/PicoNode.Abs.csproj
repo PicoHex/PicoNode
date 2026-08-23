@@ -1,24 +1,19 @@
-﻿<Project Sdk="Microsoft.NET.Sdk" TreatAsLocalProperty="PublishAot">
-  <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <PublishAot>false</PublishAot>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <LangVersion>latest</LangVersion>
-    <IsPackable>true</IsPackable>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageId>PicoNode.Abs</PackageId>
-    <Description>Core abstractions for PicoNode networking framework: INode, ITcpConnectionHandler, IUdpDatagramHandler, and fault contracts. Targets netstandard2.0 for maximum compatibility.</Description>
-    <PackageTags>PicoHex;PicoNode;AOT;Networking;Abstractions</PackageTags>
-  </PropertyGroup>
+<Project Sdk="Microsoft.NET.Sdk">
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" />
-    <PackageReference Include="System.IO.Pipelines" />
-    <PackageReference Include="System.Buffers" />
-  </ItemGroup>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>true</IsPackable>
+    <PackageId>PicoNode.Abs</PackageId>
+    <Description>Core abstractions for PicoNode networking framework: INode, ITcpConnectionHandler, IUdpDatagramHandler, and fault contracts. Targets net10.0 (PicoHex AOT-first ecosystem baseline).</Description>
+    <PackageTags>PicoHex;PicoNode;AOT;Networking;Abstractions</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
 
   <ItemGroup>
     <None Include="..\..\..\README.md" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
+
 </Project>

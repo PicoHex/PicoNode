@@ -19,8 +19,8 @@
   </PropertyGroup>
 
   <!-- netstandard2.0 must NEVER AOT. Only source generators (PicoXxx.Gen)
-       and Abs abstractions remain on netstandard2.0 — evaluated here where
-       the TFM is known. -->
+       remain on netstandard2.0 (Roslyn loader compatibility) — Abs packages
+       moved to net10.0. Evaluated here where the TFM is known. -->
   <PropertyGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETStandard'">
     <PublishAot>false</PublishAot>
     <IsAotCompatible>false</IsAotCompatible>
