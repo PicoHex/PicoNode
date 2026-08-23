@@ -45,6 +45,10 @@ var app = PicoWeb.Samples.Abs.ShowcaseApp.Create(
     logger: logger
 );
 
+// Wire the Controllers.Gen generated endpoints (README documents this step;
+// without it the controller routes below are never registered).
+EndpointRegistrar.RegisterAll(app);
+
 // Use --http to force plain HTTP, --fresh-cert to create a new runtime cert
 var useHttp = args.Contains("--http");
 var useFreshCert = args.Contains("--fresh-cert");

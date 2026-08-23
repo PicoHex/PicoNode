@@ -404,6 +404,26 @@ public sealed class ControllersGeneratorTests
     }
 
     [Test]
+    public async Task Method_name_containing_param_substring_not_truncated()
+    {
+        var source = """
+            namespace MyApp.Controllers;
+            public class WidgetsController
+            {
+                public string GetWidget(int id) { return "test"; }
+            }
+            """;
+
+        var result = RunGenerator(source, "Controllers/WidgetsController.cs");
+
+        // Regression: "Widget".IndexOf("id") matched mid-word (W-i-d-g-e-t)
+        // and truncated the route to "widg". Only a trailing parameter-name
+        // suffix may be stripped.
+        await Assert.That(result).Contains("/api/widgets/widget/{id}");
+        await Assert.That(result).DoesNotContain("/api/widgets/widg/{id}");
+    }
+
+    [Test]
     public async Task Method_without_prefix_http_verb_skipped()
     {
         var source = """

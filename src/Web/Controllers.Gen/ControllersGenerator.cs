@@ -52,8 +52,6 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
         if (!inControllersFolder && !hasApiControllerAttr)
             return null;
-        if (classSymbol is null)
-            return null;
 
         var methods = new List<MethodModel>();
         foreach (var member in classDecl.Members.OfType<MethodDeclarationSyntax>())
@@ -98,7 +96,6 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             routePrefix,
             methods,
             isStatic,
-            ctor,
             ctorParams
         );
     }
@@ -185,7 +182,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         var lastParam = methodSymbol.Parameters.LastOrDefault();
         if (
             lastParam != null
-            && methodName.IndexOf(lastParam.Name, StringComparison.OrdinalIgnoreCase) >= 0
+            && methodName.EndsWith(lastParam.Name, StringComparison.OrdinalIgnoreCase)
         )
         {
             methodName = methodName.Substring(0, methodName.Length - lastParam.Name.Length);
@@ -677,7 +674,6 @@ internal sealed class ControllerModel
     public string RoutePrefix { get; }
     public List<MethodModel> Methods { get; }
     public bool IsStatic { get; }
-    public IMethodSymbol? Constructor { get; }
     public ImmutableArray<IParameterSymbol> ConstructorParams { get; }
 
     public ControllerModel(
@@ -686,7 +682,6 @@ internal sealed class ControllerModel
         string routePrefix,
         List<MethodModel> methods,
         bool isStatic,
-        IMethodSymbol? constructor,
         ImmutableArray<IParameterSymbol> ctorParams
     )
     {
@@ -695,7 +690,6 @@ internal sealed class ControllerModel
         RoutePrefix = routePrefix;
         Methods = methods;
         IsStatic = isStatic;
-        Constructor = constructor;
         ConstructorParams = ctorParams;
     }
 }
