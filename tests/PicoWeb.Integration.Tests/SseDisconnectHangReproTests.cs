@@ -406,7 +406,7 @@ public sealed class SseDisconnectHangReproTests
         Action<DisposeTrackingStream>? trackerCapture = null
     )
     {
-        var port = GetRandomPort();
+        var port = TestSupport.GetRandomPort();
         var handler = new PicoNode.Http.HttpConnectionHandler(
             new PicoNode.Http.HttpConnectionHandlerOptions
             {
@@ -427,13 +427,6 @@ public sealed class SseDisconnectHangReproTests
 
         var node = new TcpNode(options);
         return (node, port);
-    }
-
-    private static int GetRandomPort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
     /// <summary>Tracks whether the HTTP layer disposed the streaming body.</summary>

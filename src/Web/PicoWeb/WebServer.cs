@@ -30,24 +30,7 @@ public sealed class WebServer : IAsyncDisposable
         }
 
         var handler = _app.Build();
-
-        var node = new TcpNode(
-            new TcpNodeOptions
-            {
-                Endpoint = _options.Endpoint,
-                ConnectionHandler = handler,
-                Logger = _options.Logger,
-                SslOptions = _options.SslOptions,
-                EnableDualMode = _options.EnableDualMode,
-                MaxConnections = _options.MaxConnections,
-                ReceiveSocketBufferSize = _options.ReceiveSocketBufferSize,
-                SendSocketBufferSize = _options.SendSocketBufferSize,
-                NoDelay = _options.NoDelay,
-                IdleTimeout = _options.IdleTimeout,
-                DrainTimeout = _options.DrainTimeout,
-                AcceptFaultBackoff = _options.AcceptFaultBackoff,
-            }
-        );
+        var node = new TcpNode(_options.ToTcpNodeOptions(handler));
 
         await node.StartAsync(cancellationToken);
         _node = node;

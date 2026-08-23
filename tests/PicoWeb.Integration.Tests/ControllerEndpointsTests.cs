@@ -12,7 +12,7 @@ public sealed class ControllerEndpointsTests
         // EndpointRegistrar.RegisterAll(app) to wire the routes (README
         // documents this). Regression: PicoWeb.Samples never called it, so
         // the generated endpoints were dead code retained in AOT binaries.
-        var port = GetRandomPort();
+        var port = TestSupport.GetRandomPort();
         var container = new SvcContainer();
         container.Build();
         var app = new WebApp(container);
@@ -30,14 +30,5 @@ public sealed class ControllerEndpointsTests
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
         await Assert.That(body).Contains("item 42");
-    }
-
-    private static int GetRandomPort()
-    {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 }

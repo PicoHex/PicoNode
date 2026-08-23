@@ -108,18 +108,7 @@ public sealed class WebApp
             return response;
         };
 
-        return new HttpConnectionHandler(
-            new HttpConnectionHandlerOptions
-            {
-                RequestHandler = httpHandler,
-                ServerHeader = _options.ServerHeader,
-                Logger = _options.Logger,
-                MaxRequestBytes = _options.MaxRequestBytes,
-                StreamingResponseBufferSize = _options.StreamingResponseBufferSize,
-                RequestTimeout = _options.RequestTimeout,
-                WebSocketMessageHandler = _options.WebSocketMessageHandler,
-            }
-        );
+        return new HttpConnectionHandler(_options.ToHttpConnectionHandlerOptions(httpHandler));
     }
 
     private WebRequestHandler BuildPipeline(WebRouter router)

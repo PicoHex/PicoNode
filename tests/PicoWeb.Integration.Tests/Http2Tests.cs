@@ -30,7 +30,7 @@ public sealed class Http2Tests
     [Test]
     public async Task Http1_works_as_baseline()
     {
-        var port = GetRandomPort();
+        var port = TestSupport.GetRandomPort();
         var app = new WebApp(new DummyContainer());
         app.MapGet(
             "/api/health",
@@ -55,7 +55,7 @@ public sealed class Http2Tests
     [Test]
     public async Task Http2_h2c_upgrade_works()
     {
-        var port = GetRandomPort();
+        var port = TestSupport.GetRandomPort();
         var app = new WebApp(new DummyContainer());
         app.MapGet(
             "/api/health",
@@ -92,7 +92,7 @@ public sealed class Http2Tests
         if (cert is null)
             return;
 
-        var port = GetRandomPort();
+        var port = TestSupport.GetRandomPort();
         var app = new WebApp(new DummyContainer());
         app.MapGet(
             "/api/health",
@@ -143,19 +143,10 @@ public sealed class Http2Tests
         await Assert.That(body).Contains("ok");
     }
 
-    private static int GetRandomPort()
-    {
-        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
-    }
-
     [Test]
     public async Task Http2_upgrade_header_path_works()
     {
-        var port = GetRandomPort();
+        var port = TestSupport.GetRandomPort();
         var app = new WebApp(new DummyContainer());
         app.MapGet(
             "/api/health",
