@@ -130,7 +130,7 @@ var node = new TcpNode(new TcpNodeOptions
     Endpoint = new IPEndPoint(IPAddress.Loopback, 7002),
     ConnectionHandler = new HttpConnectionHandler(new HttpConnectionHandlerOptions
     {
-        RequestHandler = new Route<HttpRequestHandler>r(new Route<HttpRequestHandler>rOptions
+        RequestHandler = new HttpRouter(new HttpRouterOptions
         {
             Routes =
             [
