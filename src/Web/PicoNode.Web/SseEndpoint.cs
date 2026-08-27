@@ -141,7 +141,16 @@ public sealed class SseConnection
                 }
                 catch
                 {
-                    break; // pipe completed / connection gone
+                    // Downstream pipeline terminated (writer completed by
+                    // RunSseWriterAsync): surface the terminal state to the
+                    // handler via the linked stream token instead of exiting
+                    // silently. This is defense-in-depth — the primary
+                    // disconnect channel is the transport's RemoteCloseToken;
+                    // keep-alive write failures cannot fire while the handler
+                    // is still running (pipe writes only fail after the pipe
+                    // writer itself completes).
+                    StreamCts?.Cancel();
+                    break;
                 }
             }
         }

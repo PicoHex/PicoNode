@@ -14,18 +14,20 @@ public sealed class SseDisconnectPropagationTests
             TaskCreationOptions.RunContinuationsAsynchronously
         );
 
-        var endpoint = SseEndpoint.Create(async (sse, ct) =>
-        {
-            try
+        var endpoint = SseEndpoint.Create(
+            async (sse, ct) =>
             {
-                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    handlerCancelled.TrySetResult();
+                    throw;
+                }
             }
-            catch (OperationCanceledException)
-            {
-                handlerCancelled.TrySetResult();
-                throw;
-            }
-        });
+        );
 
         var app = new WebApp(new TestContainer());
         app.MapGet("/events", endpoint);
@@ -47,6 +49,31 @@ public sealed class SseDisconnectPropagationTests
         // cleanly (pipe writer completed), unblocking the HTTP streaming read.
         await handlerCancelled.Task.WaitAsync(TimeSpan.FromSeconds(3));
         await processing.AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+    }
+
+    [Test]
+    public async Task KeepAlive_write_failure_cancels_stream_token()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer, keepAliveInterval: TimeSpan.FromMilliseconds(50));
+        var streamCts = new CancellationTokenSource();
+        sse.StreamCts = streamCts;
+
+        // The keep-alive loop starts lazily on the first write. Kick it off
+        // with a successful write, THEN terminate the downstream pipeline:
+        // the next keep-alive ping write throws InvalidOperationException
+        // and the loop must cancel the stream token instead of breaking
+        // silently.
+        await sse.WriteAsync(": kick\n\n", CancellationToken.None);
+        pipe.Writer.Complete();
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        while (!streamCts.IsCancellationRequested)
+        {
+            await Task.Delay(20, timeout.Token);
+        }
+
+        await Assert.That(streamCts.IsCancellationRequested).IsTrue();
     }
 
     /// <summary>ITcpConnectionContext double whose RemoteCloseToken can be cancelled by the test.</summary>
