@@ -9,6 +9,7 @@ internal sealed class TcpConnectionReceiveLoop
     private readonly int _receiveBufferSize;
     private readonly Action _touchCallback;
     private readonly CancellationTokenSource _connectionCts;
+    private readonly CancellationTokenSource _remoteCloseCts;
 
     internal TcpConnectionReceiveLoop(
         Socket socket,
@@ -17,7 +18,8 @@ internal sealed class TcpConnectionReceiveLoop
         TcpNode node,
         int receiveBufferSize,
         Action touchCallback,
-        CancellationTokenSource connectionCts
+        CancellationTokenSource connectionCts,
+        CancellationTokenSource remoteCloseCts
     )
     {
         _socket = socket;
@@ -27,6 +29,7 @@ internal sealed class TcpConnectionReceiveLoop
         _receiveBufferSize = receiveBufferSize;
         _touchCallback = touchCallback;
         _connectionCts = connectionCts;
+        _remoteCloseCts = remoteCloseCts;
     }
 
     internal async Task<TcpCloseReason> ExecuteReceiveLoopAsync(
@@ -58,6 +61,7 @@ internal sealed class TcpConnectionReceiveLoop
             // token stays alive while the processing task drains the buffered
             // requests.
             await _connectionCts.CancelAsync().ConfigureAwait(false);
+            await _remoteCloseCts.CancelAsync().ConfigureAwait(false);
             await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
             try
             {
@@ -72,6 +76,13 @@ internal sealed class TcpConnectionReceiveLoop
 
             throw;
         }
+
+        // The peer is gone (graceful FIN observed as a 0-byte receive).
+        // Unlike the connection token — which must stay alive so buffered
+        // requests of a half-closing client are still served — the
+        // remote-close token fires immediately, letting long-lived streaming
+        // responses (SSE) observe the disconnect deterministically.
+        await _remoteCloseCts.CancelAsync().ConfigureAwait(false);
 
         await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
         await processingTask.ConfigureAwait(false);

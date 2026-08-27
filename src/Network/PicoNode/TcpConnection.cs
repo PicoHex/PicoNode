@@ -10,6 +10,7 @@ internal sealed class TcpConnection : IAsyncDisposable
     private readonly Pipe _pipe;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
+    private readonly CancellationTokenSource _remoteCloseCts = new();
     private readonly SendPath _sendPath;
     private readonly TcpConnectionLifecycle _lifecycle;
     private readonly TcpConnectionReceiveLoop _receiveLoop;
@@ -17,6 +18,9 @@ internal sealed class TcpConnection : IAsyncDisposable
 
     /// <summary>ALPN-negotiated protocol from TLS handshake, if any.</summary>
     internal string? NegotiatedProtocol { get; }
+
+    /// <summary>Cancelled when the peer closes the connection (FIN or RST).</summary>
+    internal CancellationToken RemoteCloseToken => _remoteCloseCts.Token;
 
     public TcpConnection(TcpNode node, Socket socket, Stream? stream = null)
     {
@@ -41,7 +45,8 @@ internal sealed class TcpConnection : IAsyncDisposable
             node,
             _receiveBufferSize,
             Touch,
-            _cts
+            _cts,
+            _remoteCloseCts
         );
         _lifecycle = new TcpConnectionLifecycle(
             node,
@@ -50,6 +55,7 @@ internal sealed class TcpConnection : IAsyncDisposable
             _pipe,
             _sendLock,
             _cts,
+            _remoteCloseCts,
             context,
             _receiveLoop,
             onClosed: () => _node.OnConnectionClosed(this)

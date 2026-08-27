@@ -35,6 +35,7 @@ internal sealed class RecordingConnectionContext : ITcpConnectionContext
     public DateTimeOffset ConnectedAtUtc => DateTimeOffset.UtcNow;
     public DateTimeOffset LastActivityUtc => DateTimeOffset.UtcNow;
     public object? UserState { get; set; }
+    public CancellationToken RemoteCloseToken => CancellationToken.None;
     public string? NegotiatedProtocol => null;
 
     public Task SendAsync(ReadOnlySequence<byte> buffer, CancellationToken ct = default) =>

@@ -13,6 +13,7 @@ internal sealed class TcpConnectionLifecycle
     private readonly Pipe _pipe;
     private readonly SemaphoreSlim _sendLock;
     private readonly CancellationTokenSource _cts;
+    private readonly CancellationTokenSource _remoteCloseCts;
     private readonly TcpConnectionContext _context;
     private readonly TcpConnectionReceiveLoop _receiveLoop;
     private readonly Action? _onClosed;
@@ -26,6 +27,7 @@ internal sealed class TcpConnectionLifecycle
         Pipe pipe,
         SemaphoreSlim sendLock,
         CancellationTokenSource cts,
+        CancellationTokenSource remoteCloseCts,
         TcpConnectionContext context,
         TcpConnectionReceiveLoop receiveLoop,
         Action? onClosed = null
@@ -37,6 +39,7 @@ internal sealed class TcpConnectionLifecycle
         _pipe = pipe;
         _sendLock = sendLock;
         _cts = cts;
+        _remoteCloseCts = remoteCloseCts;
         _context = context;
         _receiveLoop = receiveLoop;
         _onClosed = onClosed;
@@ -151,6 +154,7 @@ internal sealed class TcpConnectionLifecycle
         _pipe.Writer.Complete();
         _sendLock.Dispose();
         _cts.Dispose();
+        _remoteCloseCts.Dispose();
 
         if (_stream is not null)
         {
