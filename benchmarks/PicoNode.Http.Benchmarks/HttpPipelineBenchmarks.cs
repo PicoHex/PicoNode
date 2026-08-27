@@ -184,6 +184,8 @@ public sealed partial class HttpPipelineBenchmarks
 
         public object? UserState { get; set; }
 
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
+
         public string? NegotiatedProtocol => null;
 
         public int SendCount { get; private set; }

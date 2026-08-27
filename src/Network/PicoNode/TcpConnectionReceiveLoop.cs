@@ -58,8 +58,10 @@ internal sealed class TcpConnectionReceiveLoop
             //
             // A graceful FIN below is handled differently: a half-closed
             // client still expects responses to requests already sent, so the
-            // token stays alive while the processing task drains the buffered
-            // requests.
+            // CONNECTION token stays alive while the processing task drains
+            // the buffered requests. The remote-close token (used by
+            // long-lived streaming responses such as SSE) is cancelled on
+            // BOTH paths — see the FIN branch below.
             await _connectionCts.CancelAsync().ConfigureAwait(false);
             await _remoteCloseCts.CancelAsync().ConfigureAwait(false);
             await _pipe.Writer.CompleteAsync().ConfigureAwait(false);

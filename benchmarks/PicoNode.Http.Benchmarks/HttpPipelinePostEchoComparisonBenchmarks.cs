@@ -170,6 +170,8 @@ public sealed partial class HttpPipelinePostEchoComparisonBenchmarks
 
         public object? UserState { get; set; }
 
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
+
         public string? NegotiatedProtocol => null;
 
         public int SendCount { get; private set; }
