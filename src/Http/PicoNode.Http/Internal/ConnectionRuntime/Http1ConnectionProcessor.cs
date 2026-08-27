@@ -168,6 +168,8 @@ internal static class Http1ConnectionProcessor
             );
         }
 
+        request.RemoteCloseToken = connection.RemoteCloseToken;
+
         try
         {
             var response = await requestHandler(request, cancellationToken).ConfigureAwait(false);

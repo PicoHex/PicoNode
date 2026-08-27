@@ -10,6 +10,13 @@ public sealed class HttpRequest
 
     public string QueryString { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Cancelled by the transport when the peer closes the connection
+    /// (FIN or RST). Stamped by the HTTP layer at dispatch time; used by
+    /// endpoints that outlive the request (SSE) to detect client disconnect.
+    /// </summary>
+    public CancellationToken RemoteCloseToken { get; internal set; }
+
     public HttpVersion Version { get; init; } = HttpVersion.Http11;
 
     public IReadOnlyList<KeyValuePair<string, string>> HeaderFields { get; init; } = [];

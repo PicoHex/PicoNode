@@ -176,6 +176,7 @@ public sealed class WebSocketCompressionTests
         public DateTimeOffset LastActivityUtc => DateTimeOffset.UnixEpoch;
 
         public object? UserState { get; set; }
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
 
         public string? NegotiatedProtocol => null;
 

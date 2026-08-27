@@ -1417,6 +1417,7 @@ public sealed class Http2ProtocolComplianceTests
         public DateTimeOffset ConnectedAtUtc => DateTimeOffset.MinValue;
         public DateTimeOffset LastActivityUtc => DateTimeOffset.MinValue;
         public object? UserState { get; set; }
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
         public string? NegotiatedProtocol => null;
 
         public List<byte[]> SentFrames

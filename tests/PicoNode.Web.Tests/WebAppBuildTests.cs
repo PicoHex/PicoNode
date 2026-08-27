@@ -113,6 +113,7 @@ public sealed class WebAppBuildTests
         public DateTimeOffset LastActivityUtc { get; init; } = DateTimeOffset.UnixEpoch;
 
         public object? UserState { get; set; }
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
 
         public string? NegotiatedProtocol => null;
 
@@ -345,6 +346,7 @@ public sealed class WebAppBuildTests
         public DateTimeOffset LastActivityUtc { get; init; } = DateTimeOffset.UnixEpoch;
 
         public object? UserState { get; set; }
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
 
         public string? NegotiatedProtocol => null;
 

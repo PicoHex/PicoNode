@@ -358,6 +358,7 @@ public sealed class SseEndpointPipeTests
         public DateTimeOffset ConnectedAtUtc { get; init; } = DateTimeOffset.UnixEpoch;
         public DateTimeOffset LastActivityUtc { get; init; } = DateTimeOffset.UnixEpoch;
         public object? UserState { get; set; }
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
         public string? NegotiatedProtocol => null;
 
         public byte[] LastSent { get; private set; } = [];
@@ -397,6 +398,7 @@ public sealed class SseEndpointPipeTests
         public DateTimeOffset ConnectedAtUtc { get; init; } = DateTimeOffset.UnixEpoch;
         public DateTimeOffset LastActivityUtc { get; init; } = DateTimeOffset.UnixEpoch;
         public object? UserState { get; set; }
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
         public string? NegotiatedProtocol => null;
 
         public byte[] LastSent { get; private set; } = [];
@@ -428,6 +430,7 @@ public sealed class SseEndpointPipeTests
         public DateTimeOffset ConnectedAtUtc { get; init; } = DateTimeOffset.UnixEpoch;
         public DateTimeOffset LastActivityUtc { get; init; } = DateTimeOffset.UnixEpoch;
         public object? UserState { get; set; }
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
         public string? NegotiatedProtocol => null;
 
         public int CloseCount { get; private set; }

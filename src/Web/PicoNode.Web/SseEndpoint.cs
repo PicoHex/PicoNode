@@ -13,6 +13,13 @@ public sealed class SseConnection
     private CancellationTokenSource? _keepAliveCts;
 
     /// <summary>
+    /// Connection-level disconnect source (set by SseEndpoint.Create): fires on
+    /// remote close (FIN/RST) and on keep-alive write failure. The handler's
+    /// token is linked to it so client disconnect cancels the handler.
+    /// </summary>
+    internal CancellationTokenSource? StreamCts { get; set; }
+
+    /// <summary>
     /// Interval between automatic keep-alive pings.
     /// Default: 15 seconds. Zero or negative disables keep-alive.
     /// </summary>
@@ -190,8 +197,17 @@ public static class SseEndpoint
             var pipe = new Pipe();
             var sse = new SseConnection(pipe.Writer, keepAliveInterval);
 
+            // Per-stream disconnect source: fires on remote close (transport's
+            // RemoteCloseToken) or when keep-alive writes start failing, which
+            // means the client is gone even if the request token stays alive.
+            var streamCts = CancellationTokenSource.CreateLinkedTokenSource(
+                ct,
+                context.Request.RemoteCloseToken
+            );
+            sse.StreamCts = streamCts;
+
             // Start background writer task
-            _ = RunSseWriterAsync(handler, sse, pipe.Writer, ct);
+            _ = RunSseWriterAsync(handler, sse, pipe.Writer, streamCts.Token);
 
             return new HttpResponse
             {
@@ -237,6 +253,8 @@ public static class SseEndpoint
             // no write can hold the lock; a loop blocked in WaitAsync or a pipe
             // write observes the loop's own cancellation token and exits.
             await sse.StopKeepAliveAsync();
+            sse.StreamCts?.Dispose();
+            sse.StreamCts = null;
         }
     }
 }

@@ -355,6 +355,8 @@ internal static partial class Http2StreamHandler
             Headers = headerDict,
         };
 
+        request.RemoteCloseToken = connection.RemoteCloseToken;
+
         // Invoke request handler
         HttpResponse response;
         try

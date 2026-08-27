@@ -351,6 +351,8 @@ internal static partial class Http2StreamHandler
                 return false;
             }
 
+            request.RemoteCloseToken = connection.RemoteCloseToken;
+
             // Invoke handler
             var response = await requestHandler(request, ct).ConfigureAwait(false);
 

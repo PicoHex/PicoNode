@@ -428,6 +428,7 @@ public sealed class Http2StreamHandlerTests
         public DateTimeOffset ConnectedAtUtc => DateTimeOffset.MinValue;
         public DateTimeOffset LastActivityUtc => DateTimeOffset.MinValue;
         public object? UserState { get; set; }
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
         public string? NegotiatedProtocol => null;
 
         // Snapshot accessor: response pumps write DATA frames from background

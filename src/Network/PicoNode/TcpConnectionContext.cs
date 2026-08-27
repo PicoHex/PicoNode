@@ -21,6 +21,8 @@ public sealed class TcpConnectionContext : ITcpConnectionContext
 
     public string? NegotiatedProtocol => _connection.NegotiatedProtocol;
 
+    public CancellationToken RemoteCloseToken => _connection.RemoteCloseToken;
+
     public Task SendAsync(
         ReadOnlySequence<byte> buffer,
         CancellationToken cancellationToken = default

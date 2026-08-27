@@ -25,6 +25,15 @@ public interface ITcpConnectionContext
 
     /// <summary>ALPN-negotiated protocol, e.g. "h2", "http/1.1". Null when not negotiated.</summary>
     string? NegotiatedProtocol { get; }
+
+    /// <summary>
+    /// Cancelled when the peer closes the connection (graceful FIN or aborted
+    /// RST). Unlike the request cancellation token — which stays alive while a
+    /// half-closed client's buffered responses drain — this token fires on any
+    /// remote close, so long-lived responses (e.g. SSE) can observe the
+    /// disconnect deterministically.
+    /// </summary>
+    CancellationToken RemoteCloseToken { get; }
 }
 
 /// <summary>Type-safe accessors for <see cref="ITcpConnectionContext.UserState"/>.</summary>
