@@ -97,6 +97,19 @@ jobs:
           -p:PublishAot=true --self-contained
           -o publish-echo/${{ matrix.rid }}
 
+      - name: AOT publish (PicoJsonRpc.Sample) + run smoke
+        run: >
+          dotnet publish samples/PicoJsonRpc.Sample/PicoJsonRpc.Sample.csproj
+          --no-restore -c Release -r ${{ matrix.rid }}
+          -p:PublishAot=true --self-contained
+          -o publish-jsonrpc/${{ matrix.rid }}
+
+      - name: Run PicoJsonRpc.Sample (linux smoke, self-spawn round trip)
+        if: matrix.rid == 'linux-x64'
+        shell: bash
+        run: |
+          "$GITHUB_WORKSPACE/publish-jsonrpc/linux-x64/PicoJsonRpc.Sample"
+
 
   # HTTP/2 protocol conformance gate (h2spec v2.6.0, strict suite).
   # The script downloads the linux h2spec binary, builds the sample server
