@@ -69,6 +69,7 @@ jobs:
 
       - name: Test PicoNode.Http
         run: dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj --no-build -c Release
+        run: dotnet test --project tests/PicoJsonRpc.Tests/PicoJsonRpc.Tests.csproj --no-build -c Release
 
       - name: Test PicoNode.Web
         run: dotnet test --project tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj --no-build -c Release

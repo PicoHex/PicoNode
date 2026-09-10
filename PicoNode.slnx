@@ -17,6 +17,9 @@
   <Folder Name="/src/Http/">
     <Project Path="src/Http/PicoNode.Http/PicoNode.Http.csproj" />
   </Folder>
+  <Folder Name="/src/Rpc/">
+    <Project Path="src/Rpc/PicoJsonRpc/PicoJsonRpc.csproj" />
+  </Folder>
   <Folder Name="/src/Web/">
     <Project Path="src/Web/PicoNode.Web.Session.Abs/PicoNode.Web.Session.Abs.csproj" />
     <Project Path="src/Web/PicoNode.Web/PicoNode.Web.csproj" />
@@ -27,6 +30,7 @@
   <Folder Name="/tests/">
     <File Path="tests\README.md" />
     <Project Path="tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj" />
+    <Project Path="tests/PicoJsonRpc.Tests/PicoJsonRpc.Tests.csproj" />
     <Project Path="tests/PicoNode.PerfHarness/PicoNode.PerfHarness.csproj" />
     <Project Path="tests/PicoNode.Smoke/PicoNode.Smoke.csproj" />
     <Project Path="tests/PicoNode.Tests/PicoNode.Tests.csproj" />

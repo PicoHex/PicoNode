@@ -54,6 +54,7 @@ PicoNode.Http       HTTP/1.1 + HTTP/2 + WebSocket             (net10.0)
 PicoNode.Web        Webフレームワーク + PicoDI ISvcContainer  (net10.0)
     ↓
 PicoWeb             即時実行可能なWebサーバー + PicoCfg        (net10.0)
+PicoJsonRpc           JSON-RPC 2.0 / stdio（NDJSON）        (net10.0)
 ```
 
 ## クイックスタート

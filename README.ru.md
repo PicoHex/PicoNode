@@ -54,6 +54,7 @@ PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket            (net10.0)
 PicoNode.Web         Веб-фреймворк + PicoDI ISvcContainer     (net10.0)
     ↓
 PicoWeb              Готовый к запуску веб-сервер + PicoCfg   (net10.0)
+PicoJsonRpc           JSON-RPC 2.0 через stdio (NDJSON)    (net10.0)
 ```
 
 ## Быстрый старт

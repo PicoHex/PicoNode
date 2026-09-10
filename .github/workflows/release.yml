@@ -59,6 +59,13 @@ jobs:
           -p:UseProjectReferences=false
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
           -o packages
+      - name: Pack PicoJsonRpc
+        run: >
+          dotnet pack src/Rpc/PicoJsonRpc/PicoJsonRpc.csproj
+          -c Release -p:Version=${{ env.PACKAGE_VERSION }}
+          -p:UseProjectReferences=false
+          -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
+          -o packages
 
       - name: Pack PicoNode.Web.Session.Abs
         run: >

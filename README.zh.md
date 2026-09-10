@@ -54,6 +54,7 @@ PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket            (net10.0)
 PicoNode.Web         Web 框架 + PicoDI ISvcContainer          (net10.0)
     ↓
 PicoWeb              开箱即用的 Web 服务器 + PicoCfg            (net10.0)
+PicoJsonRpc           JSON-RPC 2.0 / stdio（NDJSON）        (net10.0)
 ```
 
 ## 快速开始
