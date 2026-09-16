@@ -228,6 +228,36 @@ public sealed class TcpNodeMetricsTests
     }
 
     /// <summary>Poll metrics until TotalClosed reaches the expected value or timeout.</summary>
+    [Test]
+    public async Task GetMetrics_negative_elapsed_call_does_not_reset_rate_baseline()
+    {
+        await using var node = CreateNode(new EchoTcpHandler());
+        await node.StartAsync();
+
+        node.RecordBytesSent(1000);
+
+        // Deterministically force elapsed <= 0: put the snapshot time in the
+        // future. The rate reported is 0, but the total must NOT be consumed
+        // as the new baseline.
+        SetMetricsTime(node, DateTime.UtcNow.AddSeconds(5));
+        var zero = node.GetMetrics();
+        await Assert.That(zero.BytesSentPerSecond).IsEqualTo(0);
+
+        // One second of real elapsed time: the 1000 bytes must still be counted.
+        SetMetricsTime(node, DateTime.UtcNow.AddSeconds(-1));
+        var rate = node.GetMetrics();
+        await Assert.That(rate.BytesSentPerSecond).IsGreaterThan(0);
+    }
+
+    private static void SetMetricsTime(TcpNode node, DateTime value)
+    {
+        var field = typeof(TcpNode).GetField(
+            "_metricsTime",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+        );
+        field!.SetValue(node, value);
+    }
+
     private static async ValueTask<TcpNodeMetrics> WaitForTotalClosedAsync(
         TcpNode node,
         long expected,

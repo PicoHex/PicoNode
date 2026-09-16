@@ -109,14 +109,24 @@ public sealed class TcpNode : INode
             var sent = Interlocked.Read(ref _totalBytesSent);
             var received = Interlocked.Read(ref _totalBytesReceived);
 
-            var acceptRate = elapsed > 0 ? (accepted - _prevAccepted) / elapsed : 0;
-            var sentRate = elapsed > 0 ? (sent - _prevSent) / elapsed : 0;
-            var recvRate = elapsed > 0 ? (received - _prevReceived) / elapsed : 0;
+            double acceptRate = 0,
+                sentRate = 0,
+                recvRate = 0;
 
-            _prevAccepted = accepted;
-            _prevSent = sent;
-            _prevReceived = received;
-            _metricsTime = now;
+            // Only advance the snapshot when time actually moved. Otherwise a
+            // zero/negative-elapsed call would consume the pending deltas as
+            // its new baseline and the next real measurement would report 0.
+            if (elapsed > 0)
+            {
+                acceptRate = (accepted - _prevAccepted) / elapsed;
+                sentRate = (sent - _prevSent) / elapsed;
+                recvRate = (received - _prevReceived) / elapsed;
+
+                _prevAccepted = accepted;
+                _prevSent = sent;
+                _prevReceived = received;
+                _metricsTime = now;
+            }
 
             return new TcpNodeMetrics(
                 accepted,
@@ -580,9 +590,9 @@ public sealed class TcpNode : INode
     /// </summary>
     private async Task ConfigReloadLoopAsync(ICfgRoot config, TcpNodeOptions options)
     {
-        try
+        while (!_configCts.IsCancellationRequested)
         {
-            while (!_configCts.IsCancellationRequested)
+            try
             {
                 await config.WaitForChangeAsync(_configCts.Token).ConfigureAwait(false);
 
@@ -595,18 +605,22 @@ public sealed class TcpNode : INode
                     ApplyConfigReload(config, options);
                 }
             }
-        }
-        catch (OperationCanceledException) when (_configCts.IsCancellationRequested)
-        { /* expected during shutdown */
-        }
-        catch (Exception ex)
-        {
-            Options.Logger?.Log(
-                LogLevel.Warning,
-                new EventId(0),
-                "Config reload failed (best-effort, continuing)",
-                ex
-            );
+            catch (OperationCanceledException) when (_configCts.IsCancellationRequested)
+            {
+                // expected during shutdown
+                break;
+            }
+            catch (Exception ex)
+            {
+                // A transient reload failure must not kill the loop — log and
+                // keep waiting for the next published change.
+                Options.Logger?.Log(
+                    LogLevel.Warning,
+                    new EventId(0),
+                    "Config reload failed (best-effort, continuing)",
+                    ex
+                );
+            }
         }
     }
 

@@ -108,47 +108,44 @@ internal sealed class SendPath(Socket socket, Stream? stream)
         CancellationToken cancellationToken
     )
     {
-        try
+        var remainingOffset = 0;
+        while (remainingOffset < segments.Length)
         {
-            var remainingOffset = 0;
-            while (remainingOffset < segments.Length)
+            cancellationToken.ThrowIfCancellationRequested();
+            var sendOperation = socket.SendAsync(segments, SocketFlags.None);
+            int bytesSent;
+            if (sendOperation.IsCompletedSuccessfully)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var sendOperation = socket.SendAsync(segments, SocketFlags.None);
-                int bytesSent;
-                if (sendOperation.IsCompletedSuccessfully)
-                {
-                    bytesSent = sendOperation.Result;
-                }
-                else
-                {
-                    // The IList<ArraySegment<byte>> overload has no CancellationToken
-                    // parameter; WaitAsync cancels the await but the socket operation
-                    // keeps running until the socket is closed. Observe its fault so it
-                    // never surfaces as an unobserved task exception.
-                    _ = sendOperation.ContinueWith(
-                        static t => _ = t.Exception,
-                        CancellationToken.None,
-                        TaskContinuationOptions.OnlyOnFaulted
-                            | TaskContinuationOptions.ExecuteSynchronously,
-                        TaskScheduler.Default
-                    );
-                    bytesSent = await sendOperation
-                        .WaitAsync(cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                if (bytesSent <= 0)
-                {
-                    throw new SocketException((int)SocketError.ConnectionAborted);
-                }
-
-                remainingOffset = AdvanceSentSegments(segments, remainingOffset, bytesSent);
+                bytesSent = sendOperation.Result;
             }
+            else
+            {
+                // The IList<ArraySegment<byte>> overload has no CancellationToken
+                // parameter; WaitAsync cancels the await but the socket operation
+                // keeps running until the socket is closed. Observe its fault so it
+                // never surfaces as an unobserved task exception.
+                _ = sendOperation.ContinueWith(
+                    static t => _ = t.Exception,
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted
+                        | TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default
+                );
+                bytesSent = await sendOperation.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            if (bytesSent <= 0)
+            {
+                throw new SocketException((int)SocketError.ConnectionAborted);
+            }
+
+            remainingOffset = AdvanceSentSegments(segments, remainingOffset, bytesSent);
         }
-        finally
-        {
-            Array.Clear(segments, 0, segments.Length);
-        }
+
+        // Clear only after the send completed. On cancellation/exception the
+        // in-flight socket operation may still be reading this array (the IList
+        // overload cannot be aborted), so clearing it in a finally would be a
+        // use-after-clear hazard; the array is left to the GC instead.
+        Array.Clear(segments, 0, segments.Length);
     }
 
     private static int AdvanceSentSegments(

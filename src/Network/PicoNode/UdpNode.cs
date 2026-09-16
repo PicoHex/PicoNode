@@ -472,9 +472,9 @@ public sealed class UdpNode : INode
     /// </summary>
     private async Task ConfigReloadLoopAsync(ICfgRoot config, UdpNodeOptions options)
     {
-        try
+        while (!_configCts.IsCancellationRequested)
         {
-            while (!_configCts.IsCancellationRequested)
+            try
             {
                 await config.WaitForChangeAsync(_configCts.Token).ConfigureAwait(false);
 
@@ -487,18 +487,22 @@ public sealed class UdpNode : INode
                     ApplyConfigReload(config, options);
                 }
             }
-        }
-        catch (OperationCanceledException) when (_configCts.IsCancellationRequested)
-        { /* expected during shutdown */
-        }
-        catch (Exception ex)
-        {
-            Options.Logger?.Log(
-                LogLevel.Warning,
-                new EventId(0),
-                "Config reload failed (best-effort, continuing)",
-                ex
-            );
+            catch (OperationCanceledException) when (_configCts.IsCancellationRequested)
+            {
+                // expected during shutdown
+                break;
+            }
+            catch (Exception ex)
+            {
+                // A transient reload failure must not kill the loop — log and
+                // keep waiting for the next published change.
+                Options.Logger?.Log(
+                    LogLevel.Warning,
+                    new EventId(0),
+                    "Config reload failed (best-effort, continuing)",
+                    ex
+                );
+            }
         }
     }
 
