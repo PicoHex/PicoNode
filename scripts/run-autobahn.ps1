@@ -144,13 +144,34 @@ try {
         exit 1
     }
 
-    $verdict = & $RepoRoot/scripts/check-autobahn-report.py $reportJson
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error $verdict
+    # Invoke the checker through an explicit Python interpreter. On Linux,
+    # `& script.py` is NOT executed as Python — PowerShell falls back to
+    # xdg-open and the verdict is silently dropped, so the gate always
+    # passed (38 real FAILED section-9 cases went unnoticed on main).
+    $python = $null
+    foreach ($candidate in @("python3", "python", "py")) {
+        if (Get-Command $candidate -ErrorAction SilentlyContinue) {
+            $python = $candidate
+            break
+        }
+    }
+    if (-not $python) {
+        Write-Error "Python is required to evaluate the Autobahn report."
         exit 1
     }
 
-    Write-Host $verdict
+    $verdict = & $python "$RepoRoot/scripts/check-autobahn-report.py" $reportJson 2>&1
+    $verdictText = ($verdict | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error $verdictText
+        exit 1
+    }
+    if ([string]::IsNullOrWhiteSpace($verdictText)) {
+        Write-Error "Autobahn verdict checker produced no output — refusing to report success."
+        exit 1
+    }
+
+    Write-Host $verdictText
     Write-Host "Report: $ReportDir/index.html" -ForegroundColor Cyan
     exit 0
 } finally {
