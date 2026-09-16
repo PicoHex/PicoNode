@@ -42,6 +42,7 @@ F:PicoNode.Http.Http2SettingId.MaxHeaderListSize : PicoNode.Http.Http2SettingId 
 F:PicoNode.Http.Http2SettingId.value__ : ushort
 F:PicoNode.Http.HttpConnectionHandlerOptions.DefaultRequestTimeoutSeconds : int = 30 const
 F:PicoNode.Http.HttpConnectionHandlerOptions.DefaultStreamingResponseBufferSize : int = 4096 const
+F:PicoNode.Http.HttpConnectionHandlerOptions.DefaultWebSocketMaxMessageSize : int = 262144 const
 F:PicoNode.Http.HttpHeaderNames.AcceptEncoding : string = "Accept-Encoding" const
 F:PicoNode.Http.HttpHeaderNames.AccessControlAllowCredentials : string = "Access-Control-Allow-Credentials" const
 F:PicoNode.Http.HttpHeaderNames.AccessControlAllowHeaders : string = "Access-Control-Allow-Headers" const
@@ -67,7 +68,6 @@ F:PicoNode.Http.HttpVersion.Http10 : PicoNode.Http.HttpVersion = 0 const
 F:PicoNode.Http.HttpVersion.Http11 : PicoNode.Http.HttpVersion = 1 const
 F:PicoNode.Http.HttpVersion.Http2 : PicoNode.Http.HttpVersion = 2 const
 F:PicoNode.Http.HttpVersion.value__ : int
-F:PicoNode.Http.Internal.RouteTable`1.NotFoundResponse : PicoNode.Http.HttpResponse static readonly
 F:PicoNode.Http.WebSocketOpCode.Binary : PicoNode.Http.WebSocketOpCode = 2 const
 F:PicoNode.Http.WebSocketOpCode.Close : PicoNode.Http.WebSocketOpCode = 8 const
 F:PicoNode.Http.WebSocketOpCode.Continuation : PicoNode.Http.WebSocketOpCode = 0 const
@@ -124,6 +124,7 @@ M:PicoNode.Http.HttpRouter..ctor(PicoNode.Http.HttpRouterOptions options) : void
 M:PicoNode.Http.HttpRouter.HandleAsync(PicoNode.Http.HttpRequest request, System.Threading.CancellationToken cancellationToken) : System.Threading.Tasks.ValueTask`1<PicoNode.Http.HttpResponse>
 M:PicoNode.Http.HttpRouterOptions..ctor() : void
 M:PicoNode.Http.Internal.RouteTable`1..ctor(System.Collections.Generic.IReadOnlyList`1<System.ValueTuple`3<string, string, THandler>> routes, THandler fallback, string paramName) : void
+M:PicoNode.Http.Internal.RouteTable`1.CreateNotFoundResponse() : PicoNode.Http.HttpResponse static
 M:PicoNode.Http.Internal.RouteTable`1.GetMethodsForPath(string path) : System.Collections.Generic.IReadOnlyCollection`1<string>
 M:PicoNode.Http.Internal.RouteTable`1.MethodNotAllowedResponse(string allowHeader) : PicoNode.Http.HttpResponse static
 M:PicoNode.Http.Internal.RouteTable`1.TryMatch(System.ReadOnlySpan`1<char> path, System.ReadOnlySpan`1<char> method, out THandler handler, out string allowHeader) : bool
@@ -161,6 +162,7 @@ P:PicoNode.Http.HttpConnectionHandlerOptions.RequestHandler : PicoNode.Http.Http
 P:PicoNode.Http.HttpConnectionHandlerOptions.RequestTimeout : System.TimeSpan { get; init; }
 P:PicoNode.Http.HttpConnectionHandlerOptions.ServerHeader : string { get; init; }
 P:PicoNode.Http.HttpConnectionHandlerOptions.StreamingResponseBufferSize : int { get; init; }
+P:PicoNode.Http.HttpConnectionHandlerOptions.WebSocketMaxMessageSize : int { get; init; }
 P:PicoNode.Http.HttpConnectionHandlerOptions.WebSocketMessageHandler : PicoNode.Http.WebSocketMessageHandler { get; init; }
 P:PicoNode.Http.HttpHeaderCollection.Count : int { get; }
 P:PicoNode.Http.HttpHeaderCollection.Item[int] : System.Collections.Generic.KeyValuePair`2<string, string> { get; }

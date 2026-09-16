@@ -72,7 +72,9 @@ M:PicoNode.Web.RedirectResult.Execute(PicoNode.Web.WebContext ctx) : PicoNode.Ht
 M:PicoNode.Web.RouteAttribute..ctor(string path) : void
 M:PicoNode.Web.SecurityHeadersMiddleware..ctor() : void
 M:PicoNode.Web.SecurityHeadersMiddleware.InvokeAsync(PicoNode.Web.WebContext context, PicoNode.Web.WebRequestHandler next, System.Threading.CancellationToken cancellationToken) : System.Threading.Tasks.ValueTask`1<PicoNode.Http.HttpResponse>
+M:PicoNode.Web.SessionCookie.Create(PicoNode.Web.SessionCookieOptions options) : System.ValueTuple`2<PicoNode.Web.SessionIdExtractor, PicoNode.Web.SessionIdSetter> static
 M:PicoNode.Web.SessionCookie.Create(string cookieName = "sid") : System.ValueTuple`2<PicoNode.Web.SessionIdExtractor, PicoNode.Web.SessionIdSetter> static
+M:PicoNode.Web.SessionCookieOptions..ctor() : void
 M:PicoNode.Web.SessionHeader.Create(string headerName = "X-Session-Id") : System.ValueTuple`2<PicoNode.Web.SessionIdExtractor, PicoNode.Web.SessionIdSetter> static
 M:PicoNode.Web.SessionIdExtractor..ctor(object object, nint method) : void
 M:PicoNode.Web.SessionIdExtractor.BeginInvoke(PicoNode.Http.HttpRequest request, System.AsyncCallback callback, object object) : System.IAsyncResult virtual
@@ -145,6 +147,7 @@ M:PicoNode.Web.WebResults.Text(int statusCode, string body, string reasonPhrase 
 P:PicoNode.Web.AuthIdentity.Metadata : System.Collections.Generic.IReadOnlyDictionary`2<string, string> { get; init; }
 P:PicoNode.Web.AuthIdentity.Permissions : System.Collections.Generic.IReadOnlyList`1<string> { get; init; }
 P:PicoNode.Web.AuthIdentity.UserId : string { get; init; }
+P:PicoNode.Web.AuthOptions.Logger : PicoLog.Abs.ILogger { get; init; }
 P:PicoNode.Web.AuthOptions.ValidateToken : System.Func`3<string, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask`1<PicoNode.Web.AuthIdentity>> { get; init; }
 P:PicoNode.Web.CorsOptions.AllowCredentials : bool { get; init; }
 P:PicoNode.Web.CorsOptions.AllowedHeaders : System.Collections.Generic.IReadOnlyList`1<string> { get; init; }
@@ -186,6 +189,11 @@ P:PicoNode.Web.RateLimitState.Limit : int { get; init; }
 P:PicoNode.Web.RateLimitState.NextAvailableAt : long { get; init; }
 P:PicoNode.Web.RateLimitState.Remaining : int { get; init; }
 P:PicoNode.Web.RouteAttribute.Path : string { get; }
+P:PicoNode.Web.SessionCookieOptions.CookieName : string { get; init; }
+P:PicoNode.Web.SessionCookieOptions.HttpOnly : bool { get; init; }
+P:PicoNode.Web.SessionCookieOptions.Path : string { get; init; }
+P:PicoNode.Web.SessionCookieOptions.SameSite : string { get; init; }
+P:PicoNode.Web.SessionCookieOptions.Secure : bool { get; init; }
 P:PicoNode.Web.SseConnection.KeepAliveInterval : System.TimeSpan { get; init; }
 P:PicoNode.Web.StaticFileMiddlewareOptions.DefaultDocument : string { get; init; }
 P:PicoNode.Web.StaticFileMiddlewareOptions.RequestPathPrefix : string { get; init; }
@@ -196,6 +204,7 @@ P:PicoNode.Web.WebAppOptions.MaxRequestBytes : int { get; init; }
 P:PicoNode.Web.WebAppOptions.RequestTimeout : System.TimeSpan { get; init; }
 P:PicoNode.Web.WebAppOptions.ServerHeader : string { get; init; }
 P:PicoNode.Web.WebAppOptions.StreamingResponseBufferSize : int { get; init; }
+P:PicoNode.Web.WebAppOptions.WebSocketMaxMessageSize : int { get; init; }
 P:PicoNode.Web.WebAppOptions.WebSocketMessageHandler : PicoNode.Http.WebSocketMessageHandler { get; init; }
 P:PicoNode.Web.WebContext.Items : System.Collections.Generic.IDictionary`2<string, object> { get; }
 P:PicoNode.Web.WebContext.Path : string { get; }
@@ -237,6 +246,7 @@ T:class PicoNode.Web.RedirectResult
 T:class PicoNode.Web.RouteAttribute
 T:class PicoNode.Web.SecurityHeadersMiddleware
 T:class PicoNode.Web.SessionCookie
+T:class PicoNode.Web.SessionCookieOptions
 T:class PicoNode.Web.SessionHeader
 T:class PicoNode.Web.SessionMiddleware
 T:class PicoNode.Web.SetCookieBuilder
