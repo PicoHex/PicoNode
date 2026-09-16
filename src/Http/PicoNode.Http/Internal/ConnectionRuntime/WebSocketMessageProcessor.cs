@@ -17,15 +17,15 @@ internal static class WebSocketMessageProcessor
         while (remaining.Length > 0)
         {
             if (
-                !WebSocketFrameCodec.TryReadFrame(
+                !WebSocketFrameCodec.TryReadFrameHeader(
                     remaining,
-                    out var frame,
-                    out var frameConsumed,
+                    out var header,
+                    out var tooLarge,
                     currentState.MaxMessageSize
                 )
             )
             {
-                if (frameConsumed < 0)
+                if (tooLarge)
                 {
                     // Frame declares a payload larger than the configured maximum — close 1009.
                     await CloseWithCodeAsync(connection, 1009, cancellationToken)
@@ -35,14 +35,14 @@ internal static class WebSocketMessageProcessor
                 return consumed;
             }
 
-            consumed = remaining.GetPosition(frameConsumed);
-            remaining = remaining.Slice(frameConsumed);
+            consumed = remaining.GetPosition(header.FrameLength);
+            remaining = remaining.Slice(header.FrameLength);
 
             // Update activity timestamp for heartbeat tracking
             currentState.LastFrameReceivedAt = DateTime.UtcNow;
 
             // RFC 6455 §5.1: client-to-server frames must be masked
-            if (!frame!.Masked)
+            if (!header.Masked)
             {
                 await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
                 return consumed;
@@ -50,7 +50,16 @@ internal static class WebSocketMessageProcessor
 
             // RFC 6455 §5.2: RSV2/RSV3 must be 0 — no negotiated extension uses
             // them, so a set bit is a protocol error.
-            if (frame.Rsv2 || frame.Rsv3)
+            if (header.Rsv2 || header.Rsv3)
+            {
+                await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
+                return consumed;
+            }
+
+            // RFC 7692 §5.2: RSV1 is only legal once permessage-deflate was
+            // negotiated. Accepting it otherwise silently treats arbitrary
+            // client data as a compressed message.
+            if (header.Rsv1 && !currentState.CompressionNegotiated)
             {
                 await CloseWithProtocolError(connection, cancellationToken).ConfigureAwait(false);
                 return consumed;
@@ -58,19 +67,27 @@ internal static class WebSocketMessageProcessor
 
             // RFC 6455 §5.5: control frames must have FIN=1 and payload ≤ 125
             if (
-                frame.OpCode
+                header.OpCode
                 is WebSocketOpCode.Ping
                     or WebSocketOpCode.Pong
                     or WebSocketOpCode.Close
             )
             {
-                if (!frame.Fin)
+                if (!header.Fin)
                 {
                     await CloseWithProtocolError(connection, cancellationToken)
                         .ConfigureAwait(false);
                     return consumed;
                 }
-                if (frame.Payload.Length > 125)
+                if (header.Payload.Length > 125)
+                {
+                    await CloseWithProtocolError(connection, cancellationToken)
+                        .ConfigureAwait(false);
+                    return consumed;
+                }
+
+                // RFC 7692 §6.1: RSV1 must be 0 on control frames.
+                if (header.Rsv1)
                 {
                     await CloseWithProtocolError(connection, cancellationToken)
                         .ConfigureAwait(false);
@@ -78,19 +95,17 @@ internal static class WebSocketMessageProcessor
                 }
             }
 
-            switch (frame.OpCode)
+            switch (header.OpCode)
             {
                 case WebSocketOpCode.Ping:
                 {
-                    var size = WebSocketFrameCodec.MeasureFrameSize(frame.Payload.Length);
+                    // Control payloads are ≤ 125 bytes; the small array is fine.
+                    var payload = WebSocketFrameCodec.MaterializePayload(header);
+                    var size = WebSocketFrameCodec.MeasureFrameSize(payload.Length);
                     var rented = ArrayPool<byte>.Shared.Rent(size);
                     try
                     {
-                        WebSocketFrameCodec.WriteFrame(
-                            rented,
-                            WebSocketOpCode.Pong,
-                            frame.Payload.Span
-                        );
+                        WebSocketFrameCodec.WriteFrame(rented, WebSocketOpCode.Pong, payload);
                         await connection.SendAsync(
                             new ReadOnlySequence<byte>(rented.AsMemory(0, size)),
                             cancellationToken
@@ -105,19 +120,21 @@ internal static class WebSocketMessageProcessor
                 }
                 case WebSocketOpCode.Close:
                 {
+                    var payload = WebSocketFrameCodec.MaterializePayload(header);
+
                     // RFC 6455 §5.5.1 + §7.4: payload must be empty or
                     // code (2 bytes, valid range) + UTF-8 reason.
-                    if (frame.Payload.Length == 1)
+                    if (payload.Length == 1)
                     {
                         await CloseWithCodeAsync(connection, 1002, cancellationToken)
                             .ConfigureAwait(false);
                         return consumed;
                     }
 
-                    if (frame.Payload.Length >= 2)
+                    if (payload.Length >= 2)
                     {
-                        var closeCode = (frame.Payload.Span[0] << 8) | frame.Payload.Span[1];
-                        var reason = frame.Payload.Slice(2);
+                        var closeCode = (payload[0] << 8) | payload[1];
+                        var reason = payload.AsSpan(2);
                         if (
                             !IsValidCloseCode(closeCode)
                             || (reason.Length > 0 && !IsValidUtf8(reason.ToArray()))
@@ -129,15 +146,11 @@ internal static class WebSocketMessageProcessor
                         }
                     }
 
-                    var size = WebSocketFrameCodec.MeasureFrameSize(frame.Payload.Length);
+                    var size = WebSocketFrameCodec.MeasureFrameSize(payload.Length);
                     var rented = ArrayPool<byte>.Shared.Rent(size);
                     try
                     {
-                        WebSocketFrameCodec.WriteFrame(
-                            rented,
-                            WebSocketOpCode.Close,
-                            frame.Payload.Span
-                        );
+                        WebSocketFrameCodec.WriteFrame(rented, WebSocketOpCode.Close, payload);
                         await connection.SendAsync(
                             new ReadOnlySequence<byte>(rented.AsMemory(0, size)),
                             cancellationToken
@@ -165,14 +178,22 @@ internal static class WebSocketMessageProcessor
                             .ConfigureAwait(false);
                         return consumed;
                     }
-                    currentState.MessageOpCode = frame.OpCode;
+                    currentState.MessageOpCode = header.OpCode;
                     currentState.PayloadBuffer.Clear();
 
                     // RSV1 is only valid on the FIRST frame of a message (RFC 7692 §6);
                     // record it and buffer the RAW payload — decompression must happen
                     // once over the whole reassembled message, not per fragment.
-                    currentState.MessageCompressed = frame.Rsv1;
-                    currentState.PayloadBuffer.Write(frame.Payload.Span);
+                    // Payload streams straight into the reassembly buffer (one copy,
+                    // no per-frame array — data frames can be MaxMessageSize-sized,
+                    // i.e. LOH-allocated by the old code).
+                    currentState.MessageCompressed = header.Rsv1;
+                    WebSocketFrameCodec.AppendPayload(
+                        currentState.PayloadBuffer,
+                        header.Payload,
+                        header.Masked,
+                        header.MaskKey
+                    );
 
                     if (currentState.PayloadBuffer.WrittenCount > currentState.MaxMessageSize)
                     {
@@ -181,15 +202,26 @@ internal static class WebSocketMessageProcessor
                         return consumed;
                     }
 
-                    if (frame.Fin && handler is not null)
+                    if (header.Fin)
                     {
-                        await DeliverMessageAsync(
-                                connection,
-                                currentState,
-                                handler,
-                                cancellationToken
-                            )
-                            .ConfigureAwait(false);
+                        if (handler is not null)
+                        {
+                            await DeliverMessageAsync(
+                                    connection,
+                                    currentState,
+                                    handler,
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            // No handler: drop the completed message but reset
+                            // fragment state — otherwise the NEXT data frame is
+                            // rejected as "new message during fragmentation".
+                            currentState.MessageOpCode = null;
+                            currentState.PayloadBuffer.Clear();
+                        }
                     }
                     break;
 
@@ -203,14 +235,19 @@ internal static class WebSocketMessageProcessor
                     }
 
                     // RFC 7692 §6: RSV1 is only valid on the FIRST frame of a message.
-                    if (frame.Rsv1)
+                    if (header.Rsv1)
                     {
                         await CloseWithProtocolError(connection, cancellationToken)
                             .ConfigureAwait(false);
                         return consumed;
                     }
 
-                    currentState.PayloadBuffer.Write(frame.Payload.Span);
+                    WebSocketFrameCodec.AppendPayload(
+                        currentState.PayloadBuffer,
+                        header.Payload,
+                        header.Masked,
+                        header.MaskKey
+                    );
 
                     if (currentState.PayloadBuffer.WrittenCount > currentState.MaxMessageSize)
                     {
@@ -219,20 +256,35 @@ internal static class WebSocketMessageProcessor
                         return consumed;
                     }
 
-                    if (frame.Fin && handler is not null)
+                    if (header.Fin)
                     {
-                        await DeliverMessageAsync(
-                                connection,
-                                currentState,
-                                handler,
-                                cancellationToken
-                            )
-                            .ConfigureAwait(false);
+                        if (handler is not null)
+                        {
+                            await DeliverMessageAsync(
+                                    connection,
+                                    currentState,
+                                    handler,
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            // No handler: drop the completed message but reset
+                            // fragment state so the next data frame starts a
+                            // new message (mirrors the Text/Binary path).
+                            currentState.MessageOpCode = null;
+                            currentState.PayloadBuffer.Clear();
+                        }
                     }
                     break;
 
                 default:
-                    break;
+                    // RFC 6455 §5.2: unknown opcodes MUST fail the connection
+                    // (reserved non-control 0x3-0x7, reserved control 0xB-0xF).
+                    await CloseWithProtocolError(connection, cancellationToken)
+                        .ConfigureAwait(false);
+                    return consumed;
             }
         }
 

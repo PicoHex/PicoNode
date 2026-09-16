@@ -12,22 +12,71 @@ public static class WebSocketFrameCodec
         frame = null;
         consumed = 0;
 
+        if (!TryReadFrameHeader(buffer, out var header, out var tooLarge, maxPayloadLength))
+        {
+            // Public contract: -1 means "too large / invalid length" (not merely
+            // incomplete). Rejecting before the array allocation keeps a malicious
+            // 127-form length with the sign bit set from overflowing new byte[].
+            if (tooLarge)
+                consumed = -1;
+            return false;
+        }
+
+        var payload = MaterializePayload(header);
+
+        frame = new WebSocketFrame
+        {
+            Fin = header.Fin,
+            Rsv1 = header.Rsv1,
+            Rsv2 = header.Rsv2,
+            Rsv3 = header.Rsv3,
+            Masked = header.Masked,
+            OpCode = header.OpCode,
+            Payload = payload,
+        };
+
+        consumed = header.FrameLength;
+        return true;
+    }
+
+    /// <summary>
+    /// Parsed frame metadata without a materialised payload: the payload is a
+    /// slice of the input sequence. Control-frame consumers can use the public
+    /// <see cref="TryReadFrame"/>; the message processor streams data payloads
+    /// into its reassembly buffer via <see cref="AppendPayload"/> to avoid a
+    /// per-frame array (data frames can be MaxMessageSize-sized, i.e. LOH).
+    /// </summary>
+    internal readonly struct WebSocketFrameHeader
+    {
+        public bool Fin { get; init; }
+        public bool Rsv1 { get; init; }
+        public bool Rsv2 { get; init; }
+        public bool Rsv3 { get; init; }
+        public bool Masked { get; init; }
+        public WebSocketOpCode OpCode { get; init; }
+        public uint MaskKey { get; init; }
+        public ReadOnlySequence<byte> Payload { get; init; }
+        public long FrameLength { get; init; }
+    }
+
+    internal static bool TryReadFrameHeader(
+        ReadOnlySequence<byte> buffer,
+        out WebSocketFrameHeader header,
+        out bool tooLarge,
+        int maxPayloadLength = int.MaxValue
+    )
+    {
+        header = default;
+        tooLarge = false;
+
         if (buffer.Length < 2)
             return false;
 
         var reader = new SequenceReader<byte>(buffer);
-
         reader.TryRead(out var b0);
         reader.TryRead(out var b1);
 
-        var fin = (b0 & 0x80) != 0;
-        var rsv1 = (b0 & 0x40) != 0;
-        var rsv2 = (b0 & 0x20) != 0;
-        var rsv3 = (b0 & 0x10) != 0;
-        var opCode = (WebSocketOpCode)(b0 & 0x0F);
-        var masked = (b1 & 0x80) != 0;
         var payloadLength = (long)(b1 & 0x7F);
-
         if (payloadLength == 126)
         {
             if (reader.Remaining < 2)
@@ -50,56 +99,96 @@ public static class WebSocketFrameCodec
             }
         }
 
-        Span<byte> maskKey = stackalloc byte[4];
-        if (masked)
+        uint maskKey = 0;
+        if ((b1 & 0x80) != 0)
         {
             if (reader.Remaining < 4)
                 return false;
 
-            reader.TryRead(out maskKey[0]);
-            reader.TryRead(out maskKey[1]);
-            reader.TryRead(out maskKey[2]);
-            reader.TryRead(out maskKey[3]);
+            reader.TryRead(out var key0);
+            reader.TryRead(out var key1);
+            reader.TryRead(out var key2);
+            reader.TryRead(out var key3);
+            maskKey = (uint)(key0 | (key1 << 8) | (key2 << 16) | (key3 << 24));
         }
 
-        // Sentinel: -1 means "too large / invalid length" (not merely incomplete).
-        // Reject BEFORE any payload allocation — a malicious 127-form length with
-        // the sign bit set would otherwise overflow into new byte[length].
+        // Reject BEFORE slicing: a malicious 127-form length with the sign bit
+        // set arrives here negative.
         if (payloadLength > maxPayloadLength || payloadLength < 0)
         {
-            consumed = -1;
+            tooLarge = true;
             return false;
         }
 
         if (reader.Remaining < payloadLength)
             return false;
 
-        var payload = new byte[payloadLength];
-        var payloadSlice = buffer.Slice(reader.Consumed, payloadLength);
-        payloadSlice.CopyTo(payload);
-        reader.Advance(payloadLength);
+        header = new WebSocketFrameHeader
+        {
+            Fin = (b0 & 0x80) != 0,
+            Rsv1 = (b0 & 0x40) != 0,
+            Rsv2 = (b0 & 0x20) != 0,
+            Rsv3 = (b0 & 0x10) != 0,
+            Masked = (b1 & 0x80) != 0,
+            OpCode = (WebSocketOpCode)(b0 & 0x0F),
+            MaskKey = maskKey,
+            Payload = buffer.Slice(reader.Consumed, payloadLength),
+            FrameLength = reader.Consumed + payloadLength,
+        };
+        return true;
+    }
+
+    /// <summary>
+    /// Appends a frame payload slice to <paramref name="writer"/>, unmasking in
+    /// place when the frame was masked — one copy, no intermediate array.
+    /// </summary>
+    internal static void AppendPayload(
+        IBufferWriter<byte> writer,
+        ReadOnlySequence<byte> payload,
+        bool masked,
+        uint maskKey
+    )
+    {
+        var length = (int)payload.Length;
+        if (length == 0)
+            return;
+
+        var span = writer.GetSpan(length);
+        payload.CopyTo(span);
 
         if (masked)
         {
-            for (long i = 0; i < payload.Length; i++)
+            for (var i = 0; i < length; i++)
             {
-                payload[i] ^= maskKey[(int)(i % 4)];
+                span[i] ^= (byte)(maskKey >> (8 * (i & 3)));
             }
         }
 
-        frame = new WebSocketFrame
-        {
-            Fin = fin,
-            Rsv1 = rsv1,
-            Rsv2 = rsv2,
-            Rsv3 = rsv3,
-            Masked = masked,
-            OpCode = opCode,
-            Payload = payload,
-        };
+        writer.Advance(length);
+    }
 
-        consumed = reader.Consumed;
-        return true;
+    /// <summary>
+    /// Copies a frame payload into a new array, unmasking it when the frame
+    /// was masked. Control-frame consumers (Ping echo, Close reason) use this;
+    /// data frames stream through <see cref="AppendPayload"/> instead.
+    /// </summary>
+    internal static byte[] MaterializePayload(in WebSocketFrameHeader header)
+    {
+        if (header.Payload.Length == 0)
+            return [];
+
+        var payload = new byte[header.Payload.Length];
+        header.Payload.CopyTo(payload);
+
+        if (header.Masked)
+        {
+            for (var i = 0; i < payload.Length; i++)
+            {
+                payload[i] ^= (byte)(header.MaskKey >> (8 * (i & 3)));
+            }
+        }
+
+        return payload;
     }
 
     public static int MeasureFrameSize(int payloadLength, bool mask = false)
