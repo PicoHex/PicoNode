@@ -33,9 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="PicoCfg" />
     <PackageReference Include="PicoDI" />
-    <PackageReference Include="PicoLog.Abs" />
     <PackageReference Include="PicoLog" />
   </ItemGroup>
 
