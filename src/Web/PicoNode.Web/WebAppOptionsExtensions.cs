@@ -22,5 +22,6 @@ internal static class WebAppOptionsExtensions
             StreamingResponseBufferSize = options.StreamingResponseBufferSize,
             RequestTimeout = options.RequestTimeout,
             WebSocketMessageHandler = options.WebSocketMessageHandler,
+            WebSocketMaxMessageSize = options.WebSocketMaxMessageSize,
         };
 }

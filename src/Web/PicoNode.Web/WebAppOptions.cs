@@ -14,5 +14,12 @@ public sealed class WebAppOptions
 
     public WebSocketMessageHandler? WebSocketMessageHandler { get; init; }
 
+    /// <summary>
+    /// Maximum reassembled WebSocket message size in bytes (default 256 KB).
+    /// See <see cref="HttpConnectionHandlerOptions.WebSocketMaxMessageSize"/>.
+    /// </summary>
+    public int WebSocketMaxMessageSize { get; init; } =
+        HttpConnectionHandlerOptions.DefaultWebSocketMaxMessageSize;
+
     public ILogger? Logger { get; init; }
 }

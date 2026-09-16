@@ -973,6 +973,119 @@ public sealed class HttpConnectionHandlerTests
         await Assert.That(context.SendCount).IsGreaterThanOrEqualTo(3);
     }
 
+    [Test]
+    public async Task WebSocket_max_message_size_option_allows_larger_messages()
+    {
+        var context = new RecordingConnectionContext();
+        var receivedLength = -1;
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = static (request, _) =>
+                    ValueTask.FromResult(WebSocketUpgrade.TryUpgrade(request)!),
+                WebSocketMessageHandler = (message, _, _) =>
+                {
+                    receivedLength = message.Payload.Length;
+                    return ValueTask.CompletedTask;
+                },
+                WebSocketMaxMessageSize = 512 * 1024,
+            }
+        );
+
+        var requestBytes = Encoding.ASCII.GetBytes(
+            "GET /ws HTTP/1.1\r\n"
+                + "Host: localhost\r\n"
+                + "Upgrade: websocket\r\n"
+                + "Connection: Upgrade\r\n"
+                + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                + "Sec-WebSocket-Version: 13\r\n\r\n"
+        );
+        await handler.OnReceivedAsync(
+            context,
+            new ReadOnlySequence<byte>(requestBytes),
+            CancellationToken.None
+        );
+
+        var payload = new byte[400 * 1024];
+        var frame = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Binary, payload, mask: true);
+
+        await handler.OnReceivedAsync(
+            context,
+            new ReadOnlySequence<byte>(frame),
+            CancellationToken.None
+        );
+
+        await Assert.That(receivedLength).IsEqualTo(payload.Length);
+        await Assert.That(context.CloseCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task WebSocket_max_message_size_option_rejects_oversized_messages()
+    {
+        var context = new RecordingConnectionContext();
+        var received = false;
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = static (request, _) =>
+                    ValueTask.FromResult(WebSocketUpgrade.TryUpgrade(request)!),
+                WebSocketMessageHandler = (_, _, _) =>
+                {
+                    received = true;
+                    return ValueTask.CompletedTask;
+                },
+                WebSocketMaxMessageSize = 512 * 1024,
+            }
+        );
+
+        var requestBytes = Encoding.ASCII.GetBytes(
+            "GET /ws HTTP/1.1\r\n"
+                + "Host: localhost\r\n"
+                + "Upgrade: websocket\r\n"
+                + "Connection: Upgrade\r\n"
+                + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                + "Sec-WebSocket-Version: 13\r\n\r\n"
+        );
+        await handler.OnReceivedAsync(
+            context,
+            new ReadOnlySequence<byte>(requestBytes),
+            CancellationToken.None
+        );
+
+        var payload = new byte[600 * 1024];
+        var frame = WebSocketFrameCodec.EncodeFrame(WebSocketOpCode.Binary, payload, mask: true);
+
+        await handler.OnReceivedAsync(
+            context,
+            new ReadOnlySequence<byte>(frame),
+            CancellationToken.None
+        );
+
+        await Assert.That(received).IsFalse();
+        await Assert.That(context.CloseCount).IsEqualTo(1);
+        // RFC 6455 §7.4.1: 1009 = Message Too Big (0x3F1).
+        await Assert
+            .That(context.LastSent.AsSpan().IndexOf(new byte[] { 0x03, 0xF1 }))
+            .IsGreaterThanOrEqualTo(0);
+    }
+
+    [Test]
+    public async Task WebSocket_max_message_size_option_must_be_positive()
+    {
+        await Assert
+            .That(() =>
+                new HttpConnectionHandler(
+                    new HttpConnectionHandlerOptions
+                    {
+                        RequestHandler = static (_, _) =>
+                            ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+                        WebSocketMaxMessageSize = 0,
+                    }
+                )
+            )
+            .Throws<ArgumentOutOfRangeException>();
+    }
+
     private static HttpConnectionHandler CreateHandler(HttpRequestHandler requestHandler) =>
         new(new HttpConnectionHandlerOptions { RequestHandler = requestHandler });
 

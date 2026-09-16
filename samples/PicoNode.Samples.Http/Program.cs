@@ -10,7 +10,14 @@ WebSocketMessageHandler wsHandler = async (message, connection, ct) =>
 
 var app = new WebApp(
     new SvcContainer(),
-    new WebAppOptions { ServerHeader = "PicoNode.Samples", WebSocketMessageHandler = wsHandler }
+    new WebAppOptions
+    {
+        ServerHeader = "PicoNode.Samples",
+        WebSocketMessageHandler = wsHandler,
+        // Autobahn section 9 sends messages up to 64 MB; the library default
+        // is 256 KB, so the conformance target opts into a larger cap.
+        WebSocketMaxMessageSize = 64 * 1024 * 1024,
+    }
 );
 
 app.Use(new SecurityHeadersMiddleware().InvokeAsync);

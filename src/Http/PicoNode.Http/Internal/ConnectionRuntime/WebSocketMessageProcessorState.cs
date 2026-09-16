@@ -2,7 +2,8 @@ namespace PicoNode.Http.Internal.ConnectionRuntime;
 
 internal sealed class WebSocketMessageProcessorState
 {
-    public const int DefaultMaxMessageSize = 256 * 1024; // 256 KB
+    public const int DefaultMaxMessageSize =
+        HttpConnectionHandlerOptions.DefaultWebSocketMaxMessageSize;
 
     public WebSocketOpCode? MessageOpCode { get; set; }
 

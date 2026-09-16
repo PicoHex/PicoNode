@@ -45,6 +45,13 @@ public sealed class HttpContractTests
             )
             .IsEqualTo(typeof(TimeSpan));
         await Assert
+            .That(
+                type.GetProperty(
+                    nameof(HttpConnectionHandlerOptions.WebSocketMaxMessageSize)
+                )?.PropertyType
+            )
+            .IsEqualTo(typeof(int));
+        await Assert
             .That(properties)
             .IsEquivalentTo([
                 nameof(HttpConnectionHandlerOptions.MaxRequestBytes),
@@ -54,6 +61,7 @@ public sealed class HttpContractTests
                 nameof(HttpConnectionHandlerOptions.StreamingResponseBufferSize),
                 nameof(HttpConnectionHandlerOptions.MaxRequestBodySize),
                 nameof(HttpConnectionHandlerOptions.WebSocketMessageHandler),
+                nameof(HttpConnectionHandlerOptions.WebSocketMaxMessageSize),
                 nameof(HttpConnectionHandlerOptions.Logger),
             ]);
     }

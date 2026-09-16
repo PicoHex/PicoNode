@@ -28,6 +28,15 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
             );
         }
 
+        if (options.WebSocketMaxMessageSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.WebSocketMaxMessageSize,
+                "WebSocketMaxMessageSize must be greater than zero."
+            );
+        }
+
         _options = options;
         _logger = options.Logger;
         _requestHandler =
@@ -329,7 +338,10 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     )
     {
-        state.WebSocketMessageState ??= new WebSocketMessageProcessorState();
+        state.WebSocketMessageState ??= new WebSocketMessageProcessorState
+        {
+            MaxMessageSize = _options.WebSocketMaxMessageSize,
+        };
         return await WebSocketMessageProcessor.ProcessAsync(
             connection,
             buffer,
