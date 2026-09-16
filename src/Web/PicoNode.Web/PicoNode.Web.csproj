@@ -22,7 +22,6 @@
   <ItemGroup>
     <PackageReference Include="PicoDI.Abs" />
     <PackageReference Include="PicoLog.Abs" />
-    <PackageReference Include="PicoCfg.Abs" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
