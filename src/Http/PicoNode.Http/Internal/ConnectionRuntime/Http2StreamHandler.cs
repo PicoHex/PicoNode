@@ -276,6 +276,12 @@ internal static partial class Http2StreamHandler
             regularHeaders = state.DecodedHeaderFields ?? [];
             headerDict = state.DecodedHeadersDict!;
             state.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.EndStream, out _);
+
+            // Trailers complete a request that may have buffered DATA frames:
+            // reuse the deferred path so the body is delivered to the handler
+            // and content-length is validated against the ACTUAL body size
+            // (validating against zero rejected every trailered body request).
+            return await CompleteDeferredRequest(connection, state, requestHandler, logger, ct);
         }
         else
         {
@@ -338,6 +344,13 @@ internal static partial class Http2StreamHandler
         // State machine: EndStream received
         state.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.EndStream, out _);
 
+        // Record the decoded request on the stream state so downstream paths
+        // (HEAD response handling, content-length validation) see the same
+        // request metadata the deferred path stores. Previously the immediate
+        // END_STREAM path left DecodedHeadersDict null, silently skipping the
+        // RFC 7540 §8.1.2.6 content-length check.
+        StoreDecodedHeaders(state, method, path, scheme, regularHeaders, headerDict);
+
         // RFC 7540 §8.1.2.6: content-length must match the request body.
         if (!await ValidateContentLengthAsync(connection, state, 0, ct))
         {
@@ -383,56 +396,12 @@ internal static partial class Http2StreamHandler
             };
         }
 
-        // Build response pseudo-headers and headers
-        var responseHeaders = new List<(string, string)>
-        {
-            (":status", response.StatusCode.ToString()),
-        };
-
-        // Map response headers — skip connection-specific fields
-        foreach (var header in response.Headers)
-        {
-            var keyLower = header.Key.ToLowerInvariant();
-            if (
-                keyLower
-                is "connection"
-                    or "transfer-encoding"
-                    or "keep-alive"
-                    or "proxy-connection"
-                    or "upgrade"
-            )
-            {
-                continue;
-            }
-
-            responseHeaders.Add((header.Key, header.Value));
-        }
-
-        // Encode response headers as HPACK block in a temporary buffer,
-        // then write HEADERS frame using a single pooled buffer
-        var headerWriter = new ArrayBufferWriter<byte>();
-        EncodeResponseHeadersHpack(connection, responseHeaders, headerWriter);
-        var headersFlags = Http2FrameFlags.EndHeaders;
-
-        if (response.Body.Length == 0 && response.BodyStream is null)
-        {
-            headersFlags |= Http2FrameFlags.EndStream;
-            await WriteHeadersFrameAsync(
-                connection,
-                frame.StreamId,
-                headersFlags,
-                headerWriter.WrittenMemory,
-                ct
-            );
-            state.CompleteResponse();
-            return false;
-        }
-
-        // Has body: HEADERS (no EndStream) + DATA (with EndStream) sent by a
-        // background pump (see SendResponseAsync). Buffered bodies go through
-        // the same path as streaming bodies so flow-control windows are
-        // respected uniformly.
-        await SendResponseAsync(connection, state, response, frame.StreamId, null, ct);
+        // Response headers are HPACK-encoded exactly once inside SendResponseAsync.
+        // Encoding here as well would mutate the connection's encoder dynamic table
+        // for a header block that is never sent, desynchronising it from the peer's
+        // decoder (verified regression: body responses carrying a header outside
+        // the HPACK static table became undecodable, e.g. X-Content-Type-Options).
+        await SendResponseAsync(connection, state, response, frame.StreamId, logger, ct);
         return false;
     }
 

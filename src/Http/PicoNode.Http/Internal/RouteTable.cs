@@ -77,6 +77,18 @@ public sealed class RouteTable<THandler>
         {
             var methods = entry.Value.Keys.ToArray();
             Array.Sort(methods, StringComparer.Ordinal);
+
+            // RFC 7231 §4.3.2: HEAD is served by the GET handler, so a GET
+            // route advertises HEAD in its Allow header.
+            if (
+                methods.Contains("GET", StringComparer.Ordinal)
+                && !methods.Contains("HEAD", StringComparer.Ordinal)
+            )
+            {
+                methods = [.. methods, "HEAD"];
+                Array.Sort(methods, StringComparer.Ordinal);
+            }
+
             _allowCache.Add(entry.Key, string.Join(", ", methods));
         }
     }
@@ -99,6 +111,17 @@ public sealed class RouteTable<THandler>
         {
             var methodLookup = handlersByMethod.GetAlternateLookup<ReadOnlySpan<char>>();
             if (methodLookup.TryGetValue(method, out handler))
+            {
+                allowHeader = null;
+                return true;
+            }
+
+            // RFC 7231 §4.3.2: HEAD is GET without the payload. An explicit HEAD
+            // registration wins (checked above); otherwise serve HEAD with GET.
+            if (
+                method.Equals("HEAD", StringComparison.OrdinalIgnoreCase)
+                && methodLookup.TryGetValue("GET", out handler)
+            )
             {
                 allowHeader = null;
                 return true;
@@ -133,6 +156,16 @@ public sealed class RouteTable<THandler>
                 return true;
             }
 
+            // RFC 7231 §4.3.2: HEAD is GET without the payload.
+            if (
+                method.Equals("HEAD", StringComparison.OrdinalIgnoreCase)
+                && handlersByMethod.TryGetValue("GET", out handler)
+            )
+            {
+                allowHeader = null;
+                return true;
+            }
+
             _allowCache.TryGetValue(path, out allowHeader);
             handler = null;
             return false;
@@ -148,6 +181,12 @@ public sealed class RouteTable<THandler>
     {
         if (_exactRoutes.TryGetValue(path, out var methods))
         {
+            // HEAD is implicitly available on every GET route (RFC 7231 §4.3.2).
+            if (methods.ContainsKey("GET") && !methods.ContainsKey("HEAD"))
+            {
+                return [.. methods.Keys, "HEAD"];
+            }
+
             return methods.Keys;
         }
 
@@ -163,10 +202,11 @@ public sealed class RouteTable<THandler>
             Headers = [new KeyValuePair<string, string>("Allow", allowHeader)],
         };
 
-    /// <summary>Singleton 404 Not Found response.</summary>
-    public static readonly HttpResponse NotFoundResponse = new()
-    {
-        StatusCode = 404,
-        ReasonPhrase = "Not Found",
-    };
+    /// <summary>
+    /// Creates a fresh 404 Not Found response. Callers and middleware mutate
+    /// response headers (rate limiting, CORS, ...), so a shared instance would
+    /// leak headers between requests and is not thread-safe.
+    /// </summary>
+    public static HttpResponse CreateNotFoundResponse() =>
+        new() { StatusCode = 404, ReasonPhrase = "Not Found" };
 }

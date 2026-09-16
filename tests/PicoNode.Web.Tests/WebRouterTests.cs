@@ -139,9 +139,10 @@ public sealed class WebRouterTests
         var response = await router.HandleAsync(context, CancellationToken.None);
 
         await Assert.That(response.StatusCode).IsEqualTo(405);
+        // HEAD is implicitly supported wherever GET is (RFC 7231 §4.3.2).
         await Assert
             .That(response.Headers)
-            .Contains(new KeyValuePair<string, string>("Allow", "GET"));
+            .Contains(new KeyValuePair<string, string>("Allow", "GET, HEAD"));
     }
 
     [Test]
@@ -348,6 +349,77 @@ public sealed class WebRouterTests
                 ])
             )
             .Throws<ArgumentException>();
+    }
+
+    [Test]
+    public async Task HandleAsync_HEAD_falls_back_to_GET_handler()
+    {
+        var router = CreateRouter([
+            Route<WebRequestHandler>.MapGet(
+                "/hello",
+                static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            ),
+        ]);
+
+        var context = CreateContext("HEAD", "/hello");
+        var response = await router.HandleAsync(context, CancellationToken.None);
+
+        await Assert.That(response.StatusCode).IsEqualTo(200);
+    }
+
+    [Test]
+    public async Task HandleAsync_HEAD_falls_back_to_parameterized_GET_handler()
+    {
+        var router = CreateRouter([
+            Route<WebRequestHandler>.MapGet(
+                "/users/{id}",
+                static (ctx, _) =>
+                    ValueTask.FromResult(WebResults.Text(200, ctx.RouteValues["id"], "OK"))
+            ),
+        ]);
+
+        var context = CreateContext("HEAD", "/users/42");
+        var response = await router.HandleAsync(context, CancellationToken.None);
+
+        await Assert.That(response.StatusCode).IsEqualTo(200);
+        await Assert.That(context.RouteValues["id"]).IsEqualTo("42");
+    }
+
+    [Test]
+    public async Task Allow_header_for_GET_route_includes_HEAD()
+    {
+        var router = CreateRouter([
+            Route<WebRequestHandler>.MapGet(
+                "/hello",
+                static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            ),
+        ]);
+
+        var context = CreateContext("POST", "/hello");
+        var response = await router.HandleAsync(context, CancellationToken.None);
+
+        await Assert.That(response.StatusCode).IsEqualTo(405);
+        await Assert
+            .That(response.Headers)
+            .Contains(new KeyValuePair<string, string>("Allow", "GET, HEAD"));
+    }
+
+    [Test]
+    public async Task NotFound_responses_are_not_shared_instances()
+    {
+        var router = CreateRouter([]);
+
+        var first = await router.HandleAsync(CreateContext("GET", "/a"), CancellationToken.None);
+        var second = await router.HandleAsync(CreateContext("GET", "/b"), CancellationToken.None);
+
+        await Assert.That(ReferenceEquals(first, second)).IsFalse();
+
+        // Rate-limit/CORS middleware mutate response headers; a shared 404
+        // instance would leak them across requests.
+        first.Headers.Add("X-Test", "1");
+        await Assert.That(second.Headers.TryGetValue("X-Test", out _)).IsFalse();
     }
 
     private static WebRouter CreateRouter(IReadOnlyList<Route<WebRequestHandler>> routes) =>

@@ -61,6 +61,6 @@ public sealed class HttpRouter
             return _routes.Fallback(request, cancellationToken);
         }
 
-        return ValueTask.FromResult(RouteTable<HttpRequestHandler>.NotFoundResponse);
+        return ValueTask.FromResult(RouteTable<HttpRequestHandler>.CreateNotFoundResponse());
     }
 }

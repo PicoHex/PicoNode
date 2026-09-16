@@ -850,6 +850,34 @@ public sealed class Http2ProtocolComplianceTests
         await Assert.That(connection.LastRstStreamCode).IsEqualTo(Http2ErrorCode.ProtocolError);
     }
 
+    [Test]
+    public async Task Immediate_request_content_length_mismatch_triggers_RST_PROTOCOL_ERROR()
+    {
+        var connection = NewConnection();
+        // POST with content-length: 5 but END_STREAM on HEADERS (no body).
+        var block = new List<byte> { 0x83, 0x04, 0x04 };
+        block.AddRange("/foo"u8.ToArray());
+        block.Add(0x86);
+        AddLiteral(block, "content-length", "5");
+        var headers = BuildHeadersFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+            1,
+            block.ToArray()
+        );
+
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(headers),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.LastRstStreamCode).IsEqualTo(Http2ErrorCode.ProtocolError);
+    }
+
     // ── 8.1 Trailers ────────────────────────────────────────────────
 
     [Test]

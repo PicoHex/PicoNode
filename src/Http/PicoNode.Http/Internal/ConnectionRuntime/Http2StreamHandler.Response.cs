@@ -32,6 +32,25 @@ internal static partial class Http2StreamHandler
         }
 
         var headerWriter = new ArrayBufferWriter<byte>();
+
+        // RFC 7231 §4.3.2: a HEAD response advertises the same metadata a GET
+        // would return, including the content-length of a buffered body.
+        var isHead = string.Equals(
+            state?.DecodedMethod,
+            "HEAD",
+            StringComparison.OrdinalIgnoreCase
+        );
+        if (
+            isHead
+            && response.Body.Length > 0
+            && !response.Headers.TryGetValue("content-length", out _)
+        )
+        {
+            responseHeaders.Add(
+                ("content-length", response.Body.Length.ToString(CultureInfo.InvariantCulture))
+            );
+        }
+
         EncodeResponseHeadersHpack(connection, responseHeaders, headerWriter);
         var headersFlags = Http2FrameFlags.EndHeaders;
         var encodedHeaders = headerWriter.WrittenMemory;
@@ -41,6 +60,22 @@ internal static partial class Http2StreamHandler
             headersFlags |= Http2FrameFlags.EndStream;
             await WriteHeadersFrameAsync(connection, streamId, headersFlags, encodedHeaders, ct);
             state?.CompleteResponse();
+            return;
+        }
+
+        if (isHead)
+        {
+            // No DATA frames for HEAD; release the (unused) body stream so a
+            // DI scope bound to it is closed.
+            headersFlags |= Http2FrameFlags.EndStream;
+            await WriteHeadersFrameAsync(connection, streamId, headersFlags, encodedHeaders, ct);
+            state?.CompleteResponse();
+
+            if (response.BodyStream is not null)
+            {
+                await response.BodyStream.DisposeAsync().ConfigureAwait(false);
+            }
+
             return;
         }
 

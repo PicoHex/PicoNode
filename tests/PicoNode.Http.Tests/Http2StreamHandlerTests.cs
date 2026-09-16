@@ -418,6 +418,34 @@ public sealed class Http2StreamHandlerTests
         return Http2FrameCodec.TryReadFrame(buffer, out frame, out _);
     }
 
+    [Test]
+    public async Task SendRstStreamAsync_writes_exact_rst_frame()
+    {
+        var connection = new TestTcpConnectionContext();
+        connection.UserState = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+
+        await Http2StreamHandler.SendRstStreamAsync(
+            connection,
+            7,
+            Http2ErrorCode.FlowControlError,
+            CancellationToken.None
+        );
+
+        var code = (uint)Http2ErrorCode.FlowControlError;
+        var expected = Http2FrameCodec.EncodeFrame(
+            Http2FrameType.RstStream,
+            Http2FrameFlags.None,
+            7,
+            [(byte)(code >> 24), (byte)(code >> 16), (byte)(code >> 8), (byte)code]
+        );
+
+        await Assert.That(connection.SentFrames).Count().IsEqualTo(1);
+        await Assert
+            .That(connection.SentFrames[0].AsSpan().SequenceEqual(expected))
+            .IsTrue()
+            .Because("RST_STREAM must keep the exact 9-byte header + 4-byte error code framing");
+    }
+
     private sealed class TestTcpConnectionContext : ITcpConnectionContext
     {
         private readonly object _sendGate = new();

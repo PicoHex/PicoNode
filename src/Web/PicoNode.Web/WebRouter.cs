@@ -125,8 +125,33 @@ internal sealed class WebRouter
             return compiledRoute.Handler(context, cancellationToken);
         }
 
+        // RFC 7231 §4.3.2: HEAD has the same semantics as GET without the body.
+        // An explicit HEAD route wins (matched above); otherwise serve HEAD
+        // with the GET handler so MapGet routes answer HEAD (with the body
+        // suppressed by the protocol layer).
+        if (
+            method.Equals("HEAD", StringComparison.OrdinalIgnoreCase)
+            && _paramTree.TryMatch(path, "GET", out var headRoute, out var headValues)
+        )
+        {
+            if (headValues.Count > 0)
+            {
+                context.SetRouteValues(headValues);
+            }
+
+            return headRoute.Handler(context, cancellationToken);
+        }
+
         // Collect methods from param tree for 405
         var paramMethods = _paramTree.TryGetMethodsForPath(path);
+        if (
+            paramMethods is not null
+            && paramMethods.Contains("GET")
+            && !paramMethods.Contains("HEAD")
+        )
+        {
+            paramMethods = [.. paramMethods, "HEAD"];
+        }
         if (paramMethods is not null)
         {
             if (allowedMethods is null)
@@ -166,7 +191,7 @@ internal sealed class WebRouter
         }
 
         return _exactRouteTable.Fallback?.Invoke(context, cancellationToken)
-            ?? ValueTask.FromResult(RouteTable<WebRequestHandler>.NotFoundResponse);
+            ?? ValueTask.FromResult(RouteTable<WebRequestHandler>.CreateNotFoundResponse());
     }
 
     private sealed class CompiledRoute(

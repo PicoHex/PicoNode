@@ -11,7 +11,8 @@ internal static class HttpResponseSerializer
     public static ReadOnlySequence<byte> Serialize(
         HttpResponse response,
         bool closeConnection = false,
-        string? serverHeader = null
+        string? serverHeader = null,
+        bool omitBody = false
     )
     {
         ArgumentNullException.ThrowIfNull(response);
@@ -28,6 +29,35 @@ internal static class HttpResponseSerializer
             serverHeader,
             isChunked: false
         );
+
+        if (omitBody)
+        {
+            // HEAD (RFC 7231 §4.3.2): identical metadata to the GET response,
+            // no payload. An application-provided Content-Length describes the
+            // entity a GET would return (e.g. static files) and is preserved;
+            // otherwise the length of the in-memory body is used.
+            if (
+                response.Headers.TryGetValue(HttpHeaderNames.ContentLength, out var declared)
+                && long.TryParse(
+                    declared,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out var declaredLength
+                )
+                && declaredLength >= 0
+            )
+            {
+                WriteHeader(headerBuffer, HttpHeaderNames.ContentLength, declaredLength);
+            }
+            else
+            {
+                WriteHeader(headerBuffer, HttpHeaderNames.ContentLength, response.Body.Length);
+            }
+
+            WriteCrlf(headerBuffer);
+            return new ReadOnlySequence<byte>(headerBuffer.WrittenMemory);
+        }
+
         WriteHeader(headerBuffer, HttpHeaderNames.ContentLength, response.Body.Length);
         WriteCrlf(headerBuffer);
 
@@ -294,6 +324,14 @@ internal static class HttpResponseSerializer
         WriteAscii(buffer, name);
         WriteAscii(buffer, ": ");
         WriteInt(buffer, value);
+        WriteCrlf(buffer);
+    }
+
+    private static void WriteHeader(ArrayBufferWriter<byte> buffer, string name, long value)
+    {
+        WriteAscii(buffer, name);
+        WriteAscii(buffer, ": ");
+        WriteUtf8(buffer, value.ToString(CultureInfo.InvariantCulture));
         WriteCrlf(buffer);
     }
 

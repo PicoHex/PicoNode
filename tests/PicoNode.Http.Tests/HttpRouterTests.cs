@@ -333,6 +333,63 @@ public sealed class HttpRouterTests
             .Throws<ArgumentException>();
     }
 
+    [Test]
+    public async Task HandleAsync_HEAD_falls_back_to_GET_handler()
+    {
+        var router = CreateRouter([
+            Route<HttpRequestHandler>.MapGet(
+                "/hello",
+                static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            ),
+        ]);
+
+        var response = await router.HandleAsync(
+            CreateRequest("HEAD", "/hello"),
+            CancellationToken.None
+        );
+
+        await Assert.That(response.StatusCode).IsEqualTo(200);
+    }
+
+    [Test]
+    public async Task Allow_header_for_GET_route_includes_HEAD()
+    {
+        var router = CreateRouter([
+            Route<HttpRequestHandler>.MapGet(
+                "/hello",
+                static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200, ReasonPhrase = "OK" })
+            ),
+        ]);
+
+        var response = await router.HandleAsync(
+            CreateRequest("POST", "/hello"),
+            CancellationToken.None
+        );
+
+        await Assert.That(response.StatusCode).IsEqualTo(405);
+        await Assert
+            .That(response.Headers)
+            .Contains(new KeyValuePair<string, string>("Allow", "GET, HEAD"));
+    }
+
+    [Test]
+    public async Task NotFound_responses_are_not_shared_instances()
+    {
+        var router = CreateRouter([]);
+
+        var first = await router.HandleAsync(CreateRequest("GET", "/a"), CancellationToken.None);
+        var second = await router.HandleAsync(CreateRequest("GET", "/b"), CancellationToken.None);
+
+        await Assert.That(ReferenceEquals(first, second)).IsFalse();
+
+        // Middleware adds headers to the returned response; a shared instance
+        // would leak them into every other 404 (and mutate concurrently).
+        first.Headers.Add("X-Test", "1");
+        await Assert.That(second.Headers.TryGetValue("X-Test", out _)).IsFalse();
+    }
+
     private static HttpRouter CreateRouter(IReadOnlyList<Route<HttpRequestHandler>> routes) =>
         new(new HttpRouterOptions { Routes = routes });
 

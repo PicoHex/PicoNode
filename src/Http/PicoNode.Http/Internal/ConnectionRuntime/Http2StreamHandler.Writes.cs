@@ -9,20 +9,34 @@ internal static partial class Http2StreamHandler
         CancellationToken ct
     )
     {
-        // RST_STREAM has a 4-byte payload for the error code
-        var payload = new byte[4];
-        payload[0] = (byte)(((int)errorCode >> 24) & 0xFF);
-        payload[1] = (byte)(((int)errorCode >> 16) & 0xFF);
-        payload[2] = (byte)(((int)errorCode >> 8) & 0xFF);
-        payload[3] = (byte)((int)errorCode & 0xFF);
+        // RST_STREAM carries a 4-byte error code. Write it into a pooled frame
+        // buffer (same pattern as the DATA/WINDOW_UPDATE writers) instead of
+        // allocating a payload array plus an encoded frame per reset.
+        var totalSize = Http2FrameCodec.FrameHeaderSize + 4;
+        var rented = ArrayPool<byte>.Shared.Rent(totalSize);
+        try
+        {
+            Span<byte> payload = stackalloc byte[4];
+            payload[0] = (byte)(((int)errorCode >> 24) & 0xFF);
+            payload[1] = (byte)(((int)errorCode >> 16) & 0xFF);
+            payload[2] = (byte)(((int)errorCode >> 8) & 0xFF);
+            payload[3] = (byte)((int)errorCode & 0xFF);
 
-        var frame = Http2FrameCodec.EncodeFrame(
-            Http2FrameType.RstStream,
-            Http2FrameFlags.None,
-            streamId,
-            payload
-        );
-        await connection.SendAsync(new ReadOnlySequence<byte>(frame), ct).ConfigureAwait(false);
+            Http2FrameCodec.WriteFrame(
+                rented,
+                Http2FrameType.RstStream,
+                Http2FrameFlags.None,
+                streamId,
+                payload
+            );
+            await connection
+                .SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, totalSize)), ct)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
 
         // Remove the stream from tracking
         var state = connection.UserState as ConnectionRuntimeState;

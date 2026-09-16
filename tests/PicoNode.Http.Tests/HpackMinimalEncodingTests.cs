@@ -92,4 +92,28 @@ public sealed class HpackMinimalEncodingTests
         await Assert.That(decoded).Contains((":authority", "example.com"));
         await Assert.That(decoded).Contains(("cookie", "sid=abc"));
     }
+
+    [Test]
+    public async Task EncodeMinimalHpack_does_not_mutate_decoder_dynamic_table()
+    {
+        // The h2c upgrade path feeds this block into the connection's decoder.
+        // Incremental-indexing representations (0x44 :path / 0x41 :authority)
+        // would add entries the real client encoder never emitted, so the
+        // decoder table would drift from the client's encoder table once either
+        // table nears capacity.
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Host", "example.com"),
+            new("Cookie", "sid=abc"),
+        };
+        var block = Http1ConnectionProcessor.EncodeMinimalHpack("GET", "/chat", headers);
+
+        var table = new HpackDynamicTable();
+        var ok = HpackDecoder.TryDecode(block, out var decoded, table);
+
+        await Assert.That(ok).IsTrue();
+        await Assert.That(decoded).Contains((":path", "/chat"));
+        await Assert.That(decoded).Contains((":authority", "example.com"));
+        await Assert.That(table.Count).IsEqualTo(0);
+    }
 }

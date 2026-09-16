@@ -170,6 +170,8 @@ internal static class Http1ConnectionProcessor
 
         request.RemoteCloseToken = connection.RemoteCloseToken;
 
+        var isHead = request.Method.Equals("HEAD", StringComparison.OrdinalIgnoreCase);
+
         try
         {
             var response = await requestHandler(request, cancellationToken).ConfigureAwait(false);
@@ -177,7 +179,18 @@ internal static class Http1ConnectionProcessor
 
             if (response.BodyStream is not null)
             {
-                if (request.Version == HttpVersion.Http10)
+                if (isHead)
+                {
+                    await SendHeadStreamingResponseAsync(
+                        connection,
+                        request,
+                        response,
+                        shouldClose,
+                        options,
+                        cancellationToken
+                    );
+                }
+                else if (request.Version == HttpVersion.Http10)
                 {
                     var buffered = await BufferStreamResponseAsync(response, cancellationToken)
                         .ConfigureAwait(false);
@@ -207,7 +220,8 @@ internal static class Http1ConnectionProcessor
                     response,
                     shouldClose,
                     options,
-                    cancellationToken
+                    cancellationToken,
+                    omitBody: isHead
                 );
             }
 
@@ -358,8 +372,10 @@ internal static class Http1ConnectionProcessor
             EncodeHpackStringLiteral(result, method);
         }
 
-        // :path via static table index 4 = literal with indexing (prefix 0100)
-        result.Add(0x44);
+        // :path — literal WITHOUT indexing (prefix 0000, name index 4). Indexed
+        // representations would mutate the connection decoder's dynamic table
+        // with entries the real client encoder never emitted (RFC 7541 §6.2.2).
+        result.Add(0x04);
         EncodeHpackStringLiteral(result, path);
 
         // :scheme — static table index 6 IS the complete indexed field ":scheme: http".
@@ -372,7 +388,8 @@ internal static class Http1ConnectionProcessor
             .Value;
         if (!string.IsNullOrEmpty(host))
         {
-            result.Add(0x41); // literal with indexing, name = static index 1 (:authority)
+            // Literal WITHOUT indexing, name = static index 1 (:authority).
+            result.Add(0x01);
             EncodeHpackStringLiteral(result, host);
         }
 
@@ -465,13 +482,15 @@ internal static class Http1ConnectionProcessor
         HttpResponse response,
         bool closeConnection,
         HttpConnectionHandlerOptions options,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool omitBody = false
     )
     {
         var payload = HttpResponseSerializer.Serialize(
             response,
             closeConnection,
-            options.ServerHeader
+            options.ServerHeader,
+            omitBody
         );
 
         try
@@ -480,6 +499,49 @@ internal static class Http1ConnectionProcessor
         }
         finally
         {
+            if (closeConnection)
+            {
+                connection.Close();
+            }
+        }
+    }
+
+    /// <summary>
+    /// HEAD with a streamed GET body: send the same framing metadata a GET
+    /// would use, but no payload and no chunk terminator; the body stream is
+    /// released immediately (it is never consumed).
+    /// </summary>
+    private static async ValueTask SendHeadStreamingResponseAsync(
+        ITcpConnectionContext connection,
+        HttpRequest request,
+        HttpResponse response,
+        bool closeConnection,
+        HttpConnectionHandlerOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        var headers =
+            request.Version == HttpVersion.Http10
+                ? HttpResponseSerializer.Serialize(
+                    response,
+                    closeConnection,
+                    options.ServerHeader,
+                    omitBody: true
+                )
+                : HttpResponseSerializer.SerializeChunkedHeaders(
+                    response,
+                    closeConnection,
+                    options.ServerHeader
+                );
+
+        try
+        {
+            await connection.SendAsync(headers, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            await response.BodyStream!.DisposeAsync().ConfigureAwait(false);
+
             if (closeConnection)
             {
                 connection.Close();
