@@ -15,7 +15,28 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
         var combined = controllerClasses.Collect();
 
-        context.RegisterSourceOutput(combined, GenerateSources);
+        // A compilation that already has an EndpointRegistrar (typically an Exe
+        // referencing another app's generated public registrar) must not emit an
+        // empty shim: CS0436 would bind calls to the local empty implementation
+        // and the referenced app's controllers would silently never register.
+        // Projects that own controllers still emit their own registrar — an
+        // imported one cannot know about this assembly's endpoints.
+        var hasRegistrar = context.CompilationProvider.Select(
+            static (compilation, _) =>
+                compilation.GetTypeByMetadataName("EndpointRegistrar") is not null
+        );
+
+        context.RegisterSourceOutput(
+            combined.Combine(hasRegistrar),
+            static (spc, pair) =>
+            {
+                var (controllers, registrarExists) = pair;
+                if (registrarExists && controllers.Length == 0)
+                    return;
+
+                GenerateSources(spc, controllers);
+            }
+        );
     }
 
     private static ControllerModel? GetClassModel(GeneratorSyntaxContext ctx, CancellationToken ct)

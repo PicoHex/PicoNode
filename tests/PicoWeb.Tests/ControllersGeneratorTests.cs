@@ -104,6 +104,85 @@ public sealed class ControllersGeneratorTests
     }
 
     [Test]
+    public async Task No_controllers_with_imported_registrar_emits_nothing()
+    {
+        var source = """
+            namespace MyApp;
+            public class NotAController
+            {
+                public string GetSomething() { return "ok"; }
+            }
+            """;
+
+        var result = RunGenerator(
+            source,
+            "Models/NotAController.cs",
+            [CreateAssemblyWithEndpointRegistrar()]
+        );
+
+        // An Exe referencing another app that already carries the registrar must
+        // not emit its own: the local public shim shadows the imported real one
+        // (CS0436) and the referenced app's controllers would never register.
+        await Assert.That(result).DoesNotContain("EndpointRegistrar");
+    }
+
+    [Test]
+    public async Task No_controllers_without_imported_registrar_keeps_empty_shim()
+    {
+        var source = """
+            namespace MyApp;
+            public class NotAController { }
+            """;
+
+        var result = RunGenerator(source, "Models/NotAController.cs");
+
+        // Standalone projects (no controllers, no imported registrar) keep the
+        // shim so EndpointRegistrar.RegisterAll(app) still compiles as a no-op.
+        await Assert.That(result).Contains("public static class EndpointRegistrar");
+    }
+
+    [Test]
+    public async Task Controllers_with_imported_registrar_still_emit_own_registrar()
+    {
+        var source = """
+            namespace MyApp.Controllers;
+            public class UsersController
+            {
+                public string GetUser(int id) { return "test"; }
+            }
+            """;
+
+        var result = RunGenerator(
+            source,
+            "Controllers/UsersController.cs",
+            [CreateAssemblyWithEndpointRegistrar()]
+        );
+
+        // A project that owns controllers must keep registering them: an
+        // imported registrar cannot know about this assembly's endpoints.
+        await Assert.That(result).Contains("public static class EndpointRegistrar");
+        await Assert.That(result).Contains("UsersController_Endpoints.Register");
+    }
+
+    [Test]
+    public async Task No_controllers_with_imported_registrar_does_not_reproduce_CS0436()
+    {
+        var source = """
+            namespace MyApp;
+            public class NotAController { }
+            """;
+
+        var (generated, cs0436) = RunGeneratorWithDiagnostics(
+            source,
+            "Models/NotAController.cs",
+            [CreateAssemblyWithEndpointRegistrar()]
+        );
+
+        await Assert.That(generated).DoesNotContain("EndpointRegistrar");
+        await Assert.That(cs0436.Count).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task Get_method_with_int_param_generates_route_containing_id_placeholder()
     {
         var source = """
@@ -707,7 +786,26 @@ public sealed class ControllersGeneratorTests
         await Assert.That(result).DoesNotContain("JsonSerializer.SerializeToUtf8Bytes");
     }
 
-    private static string RunGenerator(string source, string fileName)
+    private static string RunGenerator(
+        string source,
+        string fileName,
+        IReadOnlyList<MetadataReference>? extraReferences = null
+    ) => RunGeneratorCore(source, fileName, extraReferences ?? []).Generated;
+
+    private static (
+        string Generated,
+        IReadOnlyList<Diagnostic> Cs0436Diagnostics
+    ) RunGeneratorWithDiagnostics(
+        string source,
+        string fileName,
+        IReadOnlyList<MetadataReference> extraReferences
+    ) => RunGeneratorCore(source, fileName, extraReferences);
+
+    private static (string Generated, IReadOnlyList<Diagnostic> Cs0436Diagnostics) RunGeneratorCore(
+        string source,
+        string fileName,
+        IReadOnlyList<MetadataReference> extraReferences
+    )
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(
             source,
@@ -715,8 +813,32 @@ public sealed class ControllersGeneratorTests
             path: fileName
         );
 
-        var references = new[]
-        {
+        var references = BaseReferences().Concat(extraReferences).ToArray();
+
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [syntaxTree],
+            references,
+            new CSharpCompilationOptions(OutputKind.ConsoleApplication)
+        );
+
+        var driver = CSharpGeneratorDriver.Create(new ControllersGenerator());
+        var runResult = driver.RunGenerators(compilation).GetRunResult();
+
+        if (runResult.Results.Length == 0 || runResult.Results[0].GeneratedSources.IsEmpty)
+            return ("", []);
+
+        var sources = runResult.Results[0].GeneratedSources;
+        var generated = string.Join("\n", sources.Select(s => s.SourceText.ToString()));
+
+        var updated = compilation.AddSyntaxTrees(sources.Select(s => s.SyntaxTree));
+        var cs0436 = updated.GetDiagnostics().Where(d => d.Id == "CS0436").ToArray();
+
+        return (generated, cs0436);
+    }
+
+    private static MetadataReference[] BaseReferences() =>
+        [
             MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
             MetadataReference.CreateFromFile(
                 typeof(System.Collections.Generic.List<>).Assembly.Location
@@ -729,29 +851,27 @@ public sealed class ControllersGeneratorTests
             MetadataReference.CreateFromFile(typeof(PicoNode.Web.WebContext).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(PicoNode.Web.WebResults).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(PicoWeb.Results).Assembly.Location),
-        };
+        ];
 
-        var compilation = CSharpCompilation.Create(
-            "TestAssembly",
-            new[] { syntaxTree },
-            references,
-            new CSharpCompilationOptions(OutputKind.ConsoleApplication)
+    /// <summary>
+    /// Builds a referenced assembly that already exports EndpointRegistrar — the
+    /// "Exe B references Exe A (with controllers)" shape.
+    /// </summary>
+    private static MetadataReference CreateAssemblyWithEndpointRegistrar()
+    {
+        var tree = CSharpSyntaxTree.ParseText(
+            "public static class EndpointRegistrar { public static void RegisterAll(object app) { } }"
         );
-
-        var generator = new ControllersGenerator();
-
-        // Create driver, run generators, get results
-        var driver = CSharpGeneratorDriver.Create(generator);
-        var runResult = driver.RunGenerators(compilation).GetRunResult();
-
-        // Collect all generated source texts
-        if (runResult.Results.Length == 0)
-            return "";
-
-        var sources = runResult.Results[0].GeneratedSources;
-        if (sources.IsEmpty)
-            return "";
-
-        return string.Join("\n", sources.Select(s => s.SourceText.ToString()));
+        var compilation = CSharpCompilation.Create(
+            "ImportedApp",
+            [tree],
+            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+        );
+        using var stream = new MemoryStream();
+        var emit = compilation.Emit(stream);
+        if (!emit.Success)
+            throw new InvalidOperationException("failed to emit the imported registrar assembly");
+        return MetadataReference.CreateFromImage(stream.ToArray());
     }
 }
