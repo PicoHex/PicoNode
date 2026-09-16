@@ -278,6 +278,11 @@ var options = new TcpNodeOptions
 | `RequestHandler` | *(обязательно)* | Делегат HttpRequestHandler |
 | `ServerHeader` | `null` | Значение заголовка `Server` |
 | `MaxRequestBytes` | 8192 | Максимальный размер запроса в байтах |
+| `MaxRequestBodySize` | 67108864 (64 MB) | Максимальный размер тела запроса в байтах |
+| `StreamingResponseBufferSize` | 4096 | Размер буфера для потоковых тел ответа |
+| `RequestTimeout` | 30 с | Максимальное время на приём полного запроса |
+| `WebSocketMessageHandler` | `null` | Обработчик сообщений WebSocket |
+| `WebSocketMaxMessageSize` | 262144 (256 KB) | Максимальный размер собранного сообщения WebSocket |
 | `Logger` | `null` | PicoLog `ILogger` |
 
 ## Логирование
@@ -412,6 +417,8 @@ new WebApiBuilder()
 PicoWeb.Gen выдаёт диагностику сборки (PWR001) для типов возврата обработчиков
 `app.MapGet/MapPost`; исходный код он не генерирует. Сериализаторы DTO создаёт
 PicoJetson.Gen по явным вызовам `SerializeToUtf8Bytes<T>()`.
+
+> **Примечание:** Если в проекте нет собственных контроллеров и он ссылается на приложение, уже экспортирующее `EndpointRegistrar` (например, интеграционный тест, ссылающийся на пример приложения), Controllers.Gen ничего не создаёт, а `RegisterAll` привязывается к регистратору такого приложения — это исключает ошибку дублирования типа CS0436 и молчаливую пустую регистрацию.
 
 > **Примечание:** паттерн на основе контроллеров требует PicoJetson.Gen для автоматической регистрации сериализации DTO.
 > Для паттерна MapXX явно вызывайте `PicoJetson.JsonSerializer.SerializeToUtf8Bytes<T>()` в обработчике.

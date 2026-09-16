@@ -11,4 +11,4 @@ PicoNode source code, organized by module:
 | `Web/PicoNode.Web` | `PicoNode.Web` | Web middleware framework: routing, CORS, compression, caching, SSE, multipart |
 | `Web/PicoWeb` | `PicoWeb` | Web hosting: WebServer = WebApp + TcpNode + DI |
 | `Web/Controllers.Gen` | (embedded in PicoWeb) | Source generator: controller method binding |
-| `Web/PicoWeb.Gen` | (embedded in PicoWeb) | Source generator: MapMethod API binding |
+| `Web/PicoWeb.Gen` | (embedded in PicoWeb) | Build-time diagnostics (PWR001) for handler return types — emits no source |

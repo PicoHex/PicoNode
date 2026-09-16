@@ -5,8 +5,11 @@ Core abstraction layer for PicoNode transport nodes. Defines the public interfac
 ## Package Info
 
 - **NuGet**: `PicoNode.Abs`
-- **TFM**: `netstandard2.0`
-- **Dependencies**: `System.Threading.Channels`, `Microsoft.Bcl.AsyncInterfaces`
+- **TFM**: `net10.0`
+- **Dependencies**: none (zero-dependency abstraction layer)
+
+Only the Roslyn generator projects (`Controllers.Gen`, `PicoWeb.Gen`) remain on
+`netstandard2.0` for analyzer-loader compatibility.
 
 ## Key Types
 

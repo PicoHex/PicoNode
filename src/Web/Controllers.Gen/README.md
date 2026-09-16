@@ -24,7 +24,7 @@ Only executable projects (`ConsoleApplication` / `WindowsApplication`) that refe
 | Input | Output |
 |---|---|
 | Controller classes (above) | `Controllers_Endpoints.g.cs` — per-controller `{Name}_Endpoints` classes registering one `MapGet/MapPost/MapPut/MapDelete/MapPatch` handler per HTTP method |
-| Same | `EndpointRegistrar.g.cs` — `public static class EndpointRegistrar` with `RegisterAll(WebApp app)`; consumers must call it to wire routes (see README) |
+| Same | `EndpointRegistrar.g.cs` — `public static class EndpointRegistrar` with `RegisterAll(WebApp app)`; consumers must call it to wire routes (see README). Skipped when the compilation already carries an `EndpointRegistrar` and this project has no controllers; with no controllers and no existing registrar, a no-op `RegisterAll(object)` shim keeps the call compiling |
 | Same | `ControllerServiceRegistrations.g.cs` — `[ModuleInitializer]` that registers every non-static controller in PicoDI via `SvcContainerAutoConfiguration.RegisterConfigurator` (Scoped lifetime) |
 
 ## Route Convention
@@ -44,5 +44,10 @@ Complex-typed parameters and `WebContext`/`CancellationToken` are resolved at ru
 
 - The generator emits **no `[PicoJsonSerializable]` markers** — apply the attribute to DTOs
   directly for PicoJetson.Gen serialization.
-- `EndpointRegistrar` is emitted into the **global namespace** — do not define your own
-  type with that name in a project referencing Controllers.Gen.
+- `EndpointRegistrar` lives in the **global namespace** — do not declare your own type
+  with that name in a project that owns controllers.
+- Imported registrar: an Exe referencing an application that already exports
+  `EndpointRegistrar` (e.g. an integration-test project referencing a sample app) does not
+  get a second one — `RegisterAll` binds to the referenced app's registrar. Without this
+  rule the two public types collide (CS0436, a hard error under warnings-as-errors) and the
+  local empty shim silently swallows the referenced app's endpoint registration.

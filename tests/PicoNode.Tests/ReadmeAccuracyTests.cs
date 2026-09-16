@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace PicoNode.Tests;
 
 /// <summary>
@@ -74,5 +76,84 @@ public sealed class ReadmeAccuracyTests
 
         await Assert.That(text).Contains("build-time diagnostic (PWR001)");
         await Assert.That(text).Contains("PicoJetson.Gen");
+    }
+
+    private static readonly string[] ModuleCsprojs =
+    [
+        "src/Network/PicoNode.Abs/PicoNode.Abs.csproj",
+        "src/Network/PicoNode/PicoNode.csproj",
+        "src/Http/PicoNode.Http/PicoNode.Http.csproj",
+        "src/Rpc/PicoJsonRpc/PicoJsonRpc.csproj",
+        "src/Web/PicoNode.Web.Session.Abs/PicoNode.Web.Session.Abs.csproj",
+        "src/Web/PicoNode.Web/PicoNode.Web.csproj",
+        "src/Web/PicoWeb/PicoWeb.csproj",
+        "src/Web/Controllers.Gen/Controllers.Gen.csproj",
+        "src/Web/PicoWeb.Gen/PicoWeb.Gen.csproj",
+    ];
+
+    /// <summary>
+    /// Module READMEs state their TFM and PicoHex dependencies; both must match
+    /// the csproj (a moved TFM or a pruned reference otherwise goes unnoticed).
+    /// </summary>
+    [Test]
+    public async Task Module_readmes_match_csproj_tfm_and_dependencies()
+    {
+        var failures = new List<string>();
+
+        foreach (var relativeCsproj in ModuleCsprojs)
+        {
+            var csprojPath = Path.GetFullPath(Path.Combine(RepoRoot, relativeCsproj));
+            var readmePath = Path.Combine(Path.GetDirectoryName(csprojPath)!, "README.md");
+            if (!File.Exists(readmePath))
+                continue;
+
+            var readme = File.ReadAllText(readmePath);
+            var csproj = XDocument.Load(csprojPath);
+
+            var tfmMatch = Regex.Match(readme, @"\*\*TFM\*\*: `([^`]+)`");
+            if (tfmMatch.Success)
+            {
+                var csprojTfm = csproj
+                    .Descendants("TargetFramework")
+                    .Select(x => x.Value.Trim())
+                    .FirstOrDefault();
+                if (csprojTfm is not null && csprojTfm != tfmMatch.Groups[1].Value)
+                {
+                    failures.Add(
+                        $"{relativeCsproj}: README TFM '{tfmMatch.Groups[1].Value}' != csproj '{csprojTfm}'"
+                    );
+                }
+            }
+
+            var depMatch = Regex.Match(readme, @"\*\*Dependencies\*\*:([^\r\n]*)");
+            if (depMatch.Success)
+            {
+                var documented = Regex
+                    .Matches(depMatch.Groups[1].Value, @"`([^`]+)`")
+                    .Select(m => m.Groups[1].Value)
+                    .OrderBy(x => x, StringComparer.Ordinal)
+                    .ToArray();
+                var actual = csproj
+                    .Descendants("PackageReference")
+                    .Select(x => x.Attribute("Include")?.Value)
+                    .Where(v => v is not null && v.StartsWith("Pico", StringComparison.Ordinal))
+                    .Select(v => v!)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(x => x, StringComparer.Ordinal)
+                    .ToArray();
+
+                if (!documented.SequenceEqual(actual, StringComparer.Ordinal))
+                {
+                    failures.Add(
+                        $"{relativeCsproj}: README deps [{string.Join(", ", documented)}] != csproj [{string.Join(", ", actual)}]"
+                    );
+                }
+            }
+        }
+
+        await Assert
+            .That(string.Join(" | ", failures))
+            .IsEqualTo("")
+            .Because("module README metadata must match the csproj");
     }
 }

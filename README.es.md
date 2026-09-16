@@ -278,6 +278,11 @@ var options = new TcpNodeOptions
 | `RequestHandler` | *(obligatorio)* | Delegado HttpRequestHandler |
 | `ServerHeader` | `null` | Valor para la cabecera `Server` |
 | `MaxRequestBytes` | 8192 | Tamaño máximo de solicitud en bytes |
+| `MaxRequestBodySize` | 67108864 (64 MB) | Tamaño máximo del cuerpo de la solicitud en bytes |
+| `StreamingResponseBufferSize` | 4096 | Tamaño del búfer para cuerpos de respuesta en streaming |
+| `RequestTimeout` | 30 s | Tiempo máximo para recibir una solicitud completa |
+| `WebSocketMessageHandler` | `null` | Manejador de mensajes WebSocket |
+| `WebSocketMaxMessageSize` | 262144 (256 KB) | Tamaño máximo de un mensaje WebSocket reensamblado |
 | `Logger` | `null` | `ILogger` de PicoLog |
 
 ## Logging
@@ -412,6 +417,8 @@ El generador de código fuente Controllers.Gen:
 PicoWeb.Gen emite un diagnóstico de compilación (PWR001) para los tipos de retorno
 de los handlers `app.MapGet/MapPost`; no genera código fuente. Los serializadores
 DTO los genera PicoJetson.Gen a partir de llamadas explícitas a `SerializeToUtf8Bytes<T>()`.
+
+> **Nota:** Si un proyecto no tiene controladores propios y referencia una aplicación que ya exporta `EndpointRegistrar` (p. ej. una prueba de integración que referencia una app de ejemplo), Controllers.Gen no emite ninguno y `RegisterAll` se enlaza al de la aplicación referenciada — evitando el error de tipo duplicado CS0436 y un registro no-op silencioso.
 
 > **Nota:** el patrón basado en controladores requiere PicoJetson.Gen para el registro automático de serialización de DTO.
 > Para el patrón MapXX, llama a `PicoJetson.JsonSerializer.SerializeToUtf8Bytes<T>()` explícitamente en el manejador.

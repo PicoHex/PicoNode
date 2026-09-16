@@ -278,6 +278,11 @@ var options = new TcpNodeOptions
 | `RequestHandler` | *（必填）* | HttpRequestHandler 委托 |
 | `ServerHeader` | `null` | `Server` 响应头的值 |
 | `MaxRequestBytes` | 8192 | 最大请求大小（字节） |
+| `MaxRequestBodySize` | 67108864 (64 MB) | 最大请求体大小（字节） |
+| `StreamingResponseBufferSize` | 4096 | 流式响应体缓冲区大小 |
+| `RequestTimeout` | 30 秒 | 接收完整请求的最长时间 |
+| `WebSocketMessageHandler` | `null` | WebSocket 消息处理器 |
+| `WebSocketMaxMessageSize` | 262144 (256 KB) | WebSocket 消息重组后的最大大小 |
 | `Logger` | `null` | PicoLog `ILogger` |
 
 ## 日志
@@ -412,6 +417,8 @@ Controllers.Gen 源生成器：
 PicoWeb.Gen 针对 `app.MapGet/MapPost` 处理程序的返回类型输出构建期诊断（PWR001），
 不生成任何源代码。DTO 序列化器由 PicoJetson.Gen 根据显式的
 `SerializeToUtf8Bytes<T>()` 调用生成。
+
+> **注意：** 若工程自身没有控制器，又引用了已导出 `EndpointRegistrar` 的应用（例如集成测试引用示例应用），Controllers.Gen 将不再发射注册器，`RegisterAll` 会绑定到被引用应用的注册器——避免 CS0436 重复类型错误与静默空注册。
 
 > **注意：** 基于控制器的模式需要 PicoJetson.Gen 来自动注册 DTO 序列化。
 > 对于 MapXX 模式，请在处理器中显式调用 `PicoJetson.JsonSerializer.SerializeToUtf8Bytes<T>()`。
