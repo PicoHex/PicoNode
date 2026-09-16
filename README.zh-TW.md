@@ -30,7 +30,7 @@
 | **AOT 支援** | ✅ 原生支援 — 所有 net10.0 程式庫 | ⚠️ 需要修剪（trimming） |
 | **DI / 紀錄 / 設定** | PicoDI + PicoLog + PicoCfg（PicoHex 原生） | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 框架編解碼器，訊息處理器抽象 | 透過中介軟體透明處理 |
-| **程式碼行數** | 全堆疊約 15K 行 | ASP.NET Core 約 1M+ 行 |
+| **程式碼行數** | 全堆疊約 17K 行 | ASP.NET Core 約 1M+ 行 |
 
 > **設計優先順序：** PicoNode 優先考量配置效率和 AOT 相容性。熱路徑委派使用 `ValueTask`、ArrayPool 基礎的緩衝區管理，以及可選委派（無強迫配置）都是經過審慎權衡的取捨 — 它們讓傳輸層保持精簡且可預測。
 
@@ -45,7 +45,7 @@ PicoNode 是 PicoHex 家族的一員，並與以下專案原生整合：
 | [PicoCfg](https://github.com/PicoHex/PicoCfg) | 原始碼產生的設定檔繫結 | `PicoCfg.Abs` |
 
 ```
-PicoNode.Abs        Core interfaces                          (netstandard2.0, zero deps)
+PicoNode.Abs        Core interfaces                          (net10.0, zero deps)
     ↓
 PicoNode             TCP & UDP transports + ILogger           (net10.0)
     ↓
@@ -203,7 +203,7 @@ var api = new WebApiBuilder()
     .RegisterScoped<UsersController>()
     .Build();
 
-// Controllers.Gen auto-generates endpoint stubs + [PicoJsonSerializable]
+// Controllers.Gen auto-generates endpoint stubs (DTO serializers: PicoJetson.Gen)
 await api.RunAsync("http://+:8080");
 ```
 ## 設定
@@ -405,10 +405,13 @@ new WebApiBuilder()
     .RunAsync("http://+:5000");
 ```
 
-Controllers.Gen 和 PicoWeb.Gen 原始碼產生器：
-- 掃描 `Controllers/` 資料夾和 `app.MapGet/MapPost` 呼叫
-- 為發現的 DTO 產生 `[PicoJsonSerializable]`
-- 產生從 DI 解析控制器的端點存根
+Controllers.Gen 原始碼產生器：
+- 掃描 `Controllers/` 資料夾（或 `[ApiController]` 類別）
+- 產生從 DI 解析控制器並完成註冊的端點存根
+
+PicoWeb.Gen 針對 `app.MapGet/MapPost` 處理常式的傳回型別輸出建置期診斷（PWR001），
+不產生任何原始碼。DTO 序列化器由 PicoJetson.Gen 根據明確的
+`SerializeToUtf8Bytes<T>()` 呼叫產生。
 
 > **注意：** 基於控制器的模式需要 PicoJetson.Gen 來自動註冊 DTO 序列化。
 > 對於 MapXX 模式，請在處理器中明確呼叫 `PicoJetson.JsonSerializer.SerializeToUtf8Bytes<T>()`。
@@ -496,7 +499,7 @@ Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
 
 | Project | Target | Description |
 |---------|--------|-------------|
-| **PicoNode.Abs** | netstandard2.0 | 核心介面：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、故障碼、列舉 |
+| **PicoNode.Abs** | net10.0 | 核心介面：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、故障碼、列舉 |
 | **PicoNode** | net10.0 | `TcpNode` 與 `UdpNode` — 生產級非同步 socket 傳輸 |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
 | **PicoNode.Web** | net10.0 | `WebApp`、`WebRouter`、中介軟體、靜態檔案、壓縮、CORS、DI |
@@ -543,7 +546,7 @@ dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmark
 ## 需求
 
 - **.NET 10.0+** (PicoNode, PicoNode.Http, PicoNode.Web, PicoWeb)
-- **.NET Standard 2.0** (PicoNode.Abs — 最大相容性)
+- **.NET 10.0** (PicoNode.Abs — 最大相容性)
 - PicoHex ecosystem (選用): PicoDI, PicoLog, PicoCfg
 
 ## 授權條款

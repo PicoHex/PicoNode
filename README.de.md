@@ -30,7 +30,7 @@
 | **AOT-Support** | ✅ Nativ — alle net10.0-Bibliotheken | ⚠️ Erfordert Trimming |
 | **DI / Logging / Config** | PicoDI + PicoLog + PicoCfg (PicoHex-nativ) | Microsoft.Extensions.* |
 | **WebSocket** | RFC-6455-Frame-Codec mit Message-Handler-Abstraktion | Transparent via Middleware |
-| **Codezeilen** | ~15K für den gesamten Stack | ~1M+ für ASP.NET Core |
+| **Codezeilen** | ~17K für den gesamten Stack | ~1M+ für ASP.NET Core |
 
 > **Entwurfspriorität:** PicoNode legt Wert auf Allokationseffizienz und AOT-Kompatibilität. `ValueTask` auf Hot-Path-Delegates, ArrayPool-basiertes Puffermanagement und optionale Delegates (keine erzwungenen Allokationen) sind bewusste Kompromisse. Sie halten die Transportschicht kompakt und vorhersagbar.
 
@@ -45,7 +45,7 @@ PicoNode ist Teil der PicoHex-Familie und lässt sich nativ mit folgenden Biblio
 | [PicoCfg](https://github.com/PicoHex/PicoCfg) | Quellgenerierte Konfigurationsbindung | `PicoCfg.Abs` |
 
 ```
-PicoNode.Abs        Kernschnittstellen                      (netstandard2.0, keine Dependencies)
+PicoNode.Abs        Kernschnittstellen                      (net10.0, keine Dependencies)
     ↓
 PicoNode             TCP- & UDP-Transporte + ILogger         (net10.0)
     ↓
@@ -203,7 +203,7 @@ var api = new WebApiBuilder()
     .RegisterScoped<UsersController>()
     .Build();
 
-// Controllers.Gen auto-generates endpoint stubs + [PicoJsonSerializable]
+// Controllers.Gen auto-generates endpoint stubs (DTO serializers: PicoJetson.Gen)
 await api.RunAsync("http://+:8080");
 ```
 ## Konfiguration
@@ -405,10 +405,13 @@ new WebApiBuilder()
     .RunAsync("http://+:5000");
 ```
 
-Die Source-Generatoren Controllers.Gen und PicoWeb.Gen:
-- Scannen den Ordner `Controllers/` und `app.MapGet/MapPost`-Aufrufe
-- Erzeugen `[PicoJsonSerializable]` für gefundene DTOs
-- Erzeugen Endpunkt-Stubs, die Controller aus DI auflösen
+Der Controllers.Gen Source-Generator:
+- Scannt den Ordner `Controllers/` (oder `[ApiController]`-Klassen)
+- Erzeugt Endpunkt-Stubs, die Controller aus DI auflösen und registrieren
+
+PicoWeb.Gen gibt eine Build-Diagnose (PWR001) für Rückgabetypen von
+`app.MapGet/MapPost`-Handlern aus; er erzeugt keinen Quellcode. DTO-Serializer
+werden von PicoJetson.Gen aus expliziten `SerializeToUtf8Bytes<T>()`-Aufrufen erzeugt.
 
 > **Hinweis:** Das Controller-basierte Muster erfordert PicoJetson.Gen für die automatische DTO-Serialisierungsregistrierung.
 > Beim MapXX-Muster rufen Sie `PicoJetson.JsonSerializer.SerializeToUtf8Bytes<T>()` explizit im Handler auf.
@@ -496,7 +499,7 @@ Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
 
 | Project | Target | Description |
 |---------|--------|-------------|
-| **PicoNode.Abs** | netstandard2.0 | Kern-Interfaces: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, Fehlercodes, Enums |
+| **PicoNode.Abs** | net10.0 | Kern-Interfaces: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, Fehlercodes, Enums |
 | **PicoNode** | net10.0 | `TcpNode` und `UdpNode` — produktionsreife asynchrone Socket-Transporte |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
 | **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, Middleware, statische Dateien, Kompression, CORS, DI |
@@ -543,7 +546,7 @@ Die Benchmarks decken HTTP-Parsing, Router-Dispatch (Treffer/Fehlschlag/405), di
 ## Anforderungen
 
 - **.NET 10.0+** (PicoNode, PicoNode.Http, PicoNode.Web, PicoWeb)
-- **.NET Standard 2.0** (PicoNode.Abs — maximale Kompatibilität)
+- **.NET 10.0** (PicoNode.Abs — maximale Kompatibilität)
 - PicoHex ecosystem (optional): PicoDI, PicoLog, PicoCfg
 
 ## Lizenz

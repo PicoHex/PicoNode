@@ -30,7 +30,7 @@
 | **AOT対応** | ✅ ネイティブ — 全net10.0ライブラリで対応 | ⚠️ トリミングが必要 |
 | **DI / ログ / 設定** | PicoDI + PicoLog + PicoCfg (PicoHexネイティブ) | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 フレームコーデック + メッセージハンドラ抽象化 | ミドルウェア経由で透過的 |
-| **コード行数** | フルスタックで約15K行 | ASP.NET Coreは約100万行以上 |
+| **コード行数** | フルスタックで約17K行 | ASP.NET Coreは約100万行以上 |
 
 > **設計方針:** PicoNodeはアロケーション効率とAOT互換性を優先します。ホットパスデリゲートでの`ValueTask`、ArrayPoolベースのバッファ管理、オプショナルデリゲート（強制アロケーションなし）は意図的なトレードオフであり、トランスポート層をコンパクトで予測可能な状態に保ちます。
 
@@ -45,7 +45,7 @@ PicoNodeはPicoHexファミリーの一員であり、以下のライブラリ�
 | [PicoCfg](https://github.com/PicoHex/PicoCfg) | ソース生成による設定バインディング | `PicoCfg.Abs` |
 
 ```
-PicoNode.Abs        コアインターフェース                    (netstandard2.0, 依存ゼロ)
+PicoNode.Abs        コアインターフェース                    (net10.0, 依存ゼロ)
     ↓
 PicoNode            TCP & UDP トランスポート + ILogger        (net10.0)
     ↓
@@ -203,7 +203,7 @@ var api = new WebApiBuilder()
     .RegisterScoped<UsersController>()
     .Build();
 
-// Controllers.Gen auto-generates endpoint stubs + [PicoJsonSerializable]
+// Controllers.Gen auto-generates endpoint stubs (DTO serializers: PicoJetson.Gen)
 await api.RunAsync("http://+:8080");
 ```
 ## 設定
@@ -405,10 +405,13 @@ new WebApiBuilder()
     .RunAsync("http://+:5000");
 ```
 
-Controllers.Gen と PicoWeb.Gen ソースジェネレーター：
-- `Controllers/` フォルダと `app.MapGet/MapPost` 呼び出しをスキャン
-- 検出した DTO に対して `[PicoJsonSerializable]` を生成
-- DIからコントローラーを解決するエンドポイントスタブを生成
+Controllers.Gen ソースジェネレーター：
+- `Controllers/` フォルダ（または `[ApiController]` クラス）をスキャン
+- DI からコントローラーを解決するエンドポイントスタブを生成して登録
+
+PicoWeb.Gen は `app.MapGet/MapPost` ハンドラーの戻り値型に対するビルド時診断
+（PWR001）を出力し、ソースコードは生成しません。DTO シリアライザーは、
+明示的な `SerializeToUtf8Bytes<T>()` 呼び出しから PicoJetson.Gen が生成します。
 
 > **注意：** コントローラーベースのパターンでは DTO の自動シリアライゼーション登録に PicoJetson.Gen が必要です。
 > MapXX パターンでは、ハンドラー内で `PicoJetson.JsonSerializer.SerializeToUtf8Bytes<T>()` を明示的に呼び出してください。
@@ -496,7 +499,7 @@ Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
 
 | Project | Target | Description |
 |---------|--------|-------------|
-| **PicoNode.Abs** | netstandard2.0 | コアインターフェース：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、フォルトコード、列挙型 |
+| **PicoNode.Abs** | net10.0 | コアインターフェース：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、フォルトコード、列挙型 |
 | **PicoNode** | net10.0 | `TcpNode` と `UdpNode` — 本番品質の非同期ソケットトランスポート |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
 | **PicoNode.Web** | net10.0 | `WebApp`、`WebRouter`、ミドルウェア、静的ファイル、圧縮、CORS、DI |
@@ -543,7 +546,7 @@ dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmark
 ## 要件
 
 - **.NET 10.0+** (PicoNode, PicoNode.Http, PicoNode.Web, PicoWeb)
-- **.NET Standard 2.0** (PicoNode.Abs — 最大限の互換性)
+- **.NET 10.0** (PicoNode.Abs — 最大限の互換性)
 - PicoHex ecosystem (オプション): PicoDI, PicoLog, PicoCfg
 
 ## ライセンス
