@@ -122,4 +122,46 @@ public sealed class SessionIdDelegateTests
 
         await Assert.That(response.Headers["X-Session-Id"]).IsEqualTo("abc123");
     }
+
+    [Test]
+    public async Task Cookie_options_emit_secure_httponly_strict_cookie()
+    {
+        var (_, set) = SessionCookie.Create(
+            new SessionCookieOptions
+            {
+                CookieName = "mysid",
+                Path = "/app",
+                Secure = true,
+                HttpOnly = true,
+                SameSite = "Strict",
+            }
+        );
+
+        var response = new HttpResponse { StatusCode = 200 };
+        set(response, "abc123");
+
+        var cookie = response.Headers[HttpHeaderNames.SetCookie];
+        await Assert.That(cookie).IsNotNull();
+        await Assert.That(cookie!).StartsWith("mysid=abc123");
+        await Assert.That(cookie).Contains("Path=/app");
+        await Assert.That(cookie).Contains("Secure");
+        await Assert.That(cookie).Contains("HttpOnly");
+        await Assert.That(cookie).Contains("SameSite=Strict");
+    }
+
+    [Test]
+    public async Task Cookie_default_options_omit_secure_and_keep_lax()
+    {
+        var (_, set) = SessionCookie.Create();
+
+        var response = new HttpResponse { StatusCode = 200 };
+        set(response, "abc123");
+
+        var cookie = response.Headers[HttpHeaderNames.SetCookie];
+        await Assert.That(cookie).IsNotNull();
+        // Secure stays opt-in so plain-HTTP local development keeps working.
+        await Assert.That(cookie!).DoesNotContain("Secure");
+        await Assert.That(cookie).Contains("HttpOnly");
+        await Assert.That(cookie).Contains("SameSite=Lax");
+    }
 }

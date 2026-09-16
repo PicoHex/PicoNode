@@ -239,4 +239,47 @@ public sealed class AuthMiddlewareTests
 
         await Assert.That(AuthMiddleware.GetIdentity(context)).IsNull();
     }
+
+    [Test]
+    public async Task Validation_exception_is_logged_and_request_continues()
+    {
+        var logger = new RecordingLogger();
+        var options = new AuthOptions
+        {
+            ValidateToken = static (_, _) =>
+                throw new InvalidOperationException("auth backend down"),
+            Logger = logger,
+        };
+        var middleware = AuthMiddleware.Create(options);
+
+        var request = new HttpRequest
+        {
+            Method = "GET",
+            Target = "/",
+            Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Authorization"] = "Bearer token",
+            },
+        };
+        var context = WebContext.Create(request);
+        var nextCalled = false;
+
+        var response = await middleware(
+            context,
+            (_, _) =>
+            {
+                nextCalled = true;
+                return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+            },
+            CancellationToken.None
+        );
+
+        // Fail-open is preserved, but not silently: downstream can observe the
+        // failure through the log (misconfigured backends were invisible before).
+        await Assert.That(response.StatusCode).IsEqualTo(200);
+        await Assert.That(nextCalled).IsTrue();
+        await Assert.That(AuthMiddleware.GetIdentity(context)).IsNull();
+        await Assert.That(logger.WarningCount).IsEqualTo(1);
+        await Assert.That(logger.LastException).IsTypeOf<InvalidOperationException>();
+    }
 }

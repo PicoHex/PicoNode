@@ -29,6 +29,26 @@ public sealed class InMemorySessionStoreTests
     }
 
     [Test]
+    public async Task CreateAsync_does_not_retain_session_until_saved()
+    {
+        using var store = new InMemorySessionStore(DefaultOptions);
+
+        var created = await store.CreateAsync();
+
+        // An unsaved session must not occupy store memory: SessionMiddleware
+        // creates one for every cookie-less request and only persists it when
+        // the handler actually dirties it (DoS guard).
+        await Assert.That(await store.LoadAsync(created.Id)).IsNull();
+
+        created.SetString("key", "value");
+        await store.SaveAsync(created.Id, created);
+
+        var loaded = await store.LoadAsync(created.Id);
+        await Assert.That(loaded).IsNotNull();
+        await Assert.That(loaded!.GetString("key")).IsEqualTo("value");
+    }
+
+    [Test]
     public async Task LoadAsync_returns_null_for_unknown_id()
     {
         using var store = new InMemorySessionStore(DefaultOptions);
@@ -39,11 +59,12 @@ public sealed class InMemorySessionStoreTests
     }
 
     [Test]
-    public async Task LoadAsync_returns_created_session()
+    public async Task LoadAsync_returns_saved_session()
     {
         using var store = new InMemorySessionStore(DefaultOptions);
 
         var created = await store.CreateAsync();
+        await store.SaveAsync(created.Id, created);
         var loaded = await store.LoadAsync(created.Id);
 
         await Assert.That(loaded).IsNotNull();
@@ -56,6 +77,7 @@ public sealed class InMemorySessionStoreTests
         using var store = new InMemorySessionStore(DefaultOptions);
 
         var created = await store.CreateAsync();
+        await store.SaveAsync(created.Id, created);
         var loaded = await store.LoadAsync(created.Id);
 
         await Assert.That(loaded!.IsNew).IsFalse();
@@ -92,6 +114,7 @@ public sealed class InMemorySessionStoreTests
         using var store = new InMemorySessionStore(DefaultOptions);
 
         var created = await store.CreateAsync();
+        await store.SaveAsync(created.Id, created);
         var loaded1 = await store.LoadAsync(created.Id);
         var loaded2 = await store.LoadAsync(created.Id);
 

@@ -40,10 +40,17 @@ public sealed class AuthMiddleware
                         if (identity is not null)
                             context.Items[WebContextKeys.AuthIdentity] = identity;
                     }
-                    catch
+                    catch (Exception ex)
                     {
                         // Validation failed — identity not injected.
-                        // Downstream decides whether anonymous access is allowed.
+                        // Downstream decides whether anonymous access is allowed;
+                        // log so a broken validator is observable (fail-open).
+                        options.Logger?.Log(
+                            LogLevel.Warning,
+                            new EventId(0),
+                            "Bearer token validation failed; request continues unauthenticated",
+                            ex
+                        );
                     }
                 }
             }

@@ -27,9 +27,11 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
+        // Detached on purpose: session middleware creates a session for every
+        // cookie-less request, so retaining it here would let an unauthenticated
+        // request flood grow the store. SaveAsync upserts on first persistence.
         var id = Guid.NewGuid().ToString("N");
         var session = new InMemorySession(id, isNew: true);
-        _sessions[id] = new Entry { Session = session };
         return ValueTask.FromResult<ISession>(session);
     }
 
@@ -53,10 +55,16 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
-        if (_sessions.TryGetValue(sessionId, out var entry))
-        {
-            Interlocked.Exchange(ref entry.LastAccessedTicks, DateTimeOffset.UtcNow.Ticks);
-        }
+        var inMemory =
+            session as InMemorySession
+            ?? throw new ArgumentException(
+                "Session was not created by this store.",
+                nameof(session)
+            );
+
+        // Upsert: the first save is what actually persists a created session.
+        var entry = _sessions.GetOrAdd(sessionId, _ => new Entry { Session = inMemory });
+        Interlocked.Exchange(ref entry.LastAccessedTicks, DateTimeOffset.UtcNow.Ticks);
 
         return ValueTask.CompletedTask;
     }
