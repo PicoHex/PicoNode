@@ -2,6 +2,7 @@
 
 global using System.Buffers;
 global using System.Collections.Concurrent;
+global using System.Diagnostics.CodeAnalysis;
 global using System.IO.Pipelines;
 global using System.Net;
 global using System.Net.Security;

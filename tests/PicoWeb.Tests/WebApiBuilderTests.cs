@@ -17,13 +17,16 @@ internal sealed class SpyScope : ISvcScope
 
     public IReadOnlyList<object> GetServices(Type serviceType) => [];
 
-    public bool TryGetService(Type serviceType, out object? result)
+    public bool TryGetService(Type serviceType, [NotNullWhen(true)] out object? result)
     {
         result = null;
         return false;
     }
 
-    public bool TryGetServices(Type serviceType, out IReadOnlyList<object>? result)
+    public bool TryGetServices(
+        Type serviceType,
+        [NotNullWhen(true)] out IReadOnlyList<object>? result
+    )
     {
         result = null;
         return false;

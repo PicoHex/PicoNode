@@ -87,13 +87,13 @@ public sealed class SessionIntegrationTests
 
         public IReadOnlyList<object> GetServices(Type t) => Array.Empty<object>();
 
-        public bool TryGetService(Type t, out object? r)
+        public bool TryGetService(Type t, [NotNullWhen(true)] out object? r)
         {
             r = null;
             return false;
         }
 
-        public bool TryGetServices(Type t, out IReadOnlyList<object>? r)
+        public bool TryGetServices(Type t, [NotNullWhen(true)] out IReadOnlyList<object>? r)
         {
             r = null;
             return false;

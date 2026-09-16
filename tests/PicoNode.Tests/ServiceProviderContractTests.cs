@@ -75,13 +75,16 @@ file sealed class MockServiceScope : ISvcScope
         return result is not null ? new[] { result } : Array.Empty<object>();
     }
 
-    public bool TryGetService(Type serviceType, out object? result)
+    public bool TryGetService(Type serviceType, [NotNullWhen(true)] out object? result)
     {
         result = GetService(serviceType);
         return true;
     }
 
-    public bool TryGetServices(Type serviceType, out IReadOnlyList<object>? result)
+    public bool TryGetServices(
+        Type serviceType,
+        [NotNullWhen(true)] out IReadOnlyList<object>? result
+    )
     {
         result = GetServices(serviceType);
         return true;

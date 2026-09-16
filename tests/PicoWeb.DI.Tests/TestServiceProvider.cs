@@ -120,13 +120,16 @@ internal sealed class TestServiceScope : ISvcScope
         return result is not null ? new[] { result } : Array.Empty<object>();
     }
 
-    public bool TryGetService(Type serviceType, out object? result)
+    public bool TryGetService(Type serviceType, [NotNullWhen(true)] out object? result)
     {
         result = _provider.Resolve(serviceType, this);
         return result is not null;
     }
 
-    public bool TryGetServices(Type serviceType, out IReadOnlyList<object>? result)
+    public bool TryGetServices(
+        Type serviceType,
+        [NotNullWhen(true)] out IReadOnlyList<object>? result
+    )
     {
         var r = GetService(serviceType);
         result = r is not null ? new[] { r } : null;
