@@ -69,10 +69,18 @@ jobs:
 
       - name: Test PicoNode.Http
         run: dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj --no-build -c Release
+
+      - name: Test PicoJsonRpc
         run: dotnet test --project tests/PicoJsonRpc.Tests/PicoJsonRpc.Tests.csproj --no-build -c Release
 
       - name: Test PicoNode.Web
         run: dotnet test --project tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj --no-build -c Release
+
+      - name: Test PicoWeb (host + generators)
+        run: dotnet test --project tests/PicoWeb.Tests/PicoWeb.Tests.csproj --no-build -c Release
+
+      - name: Test PicoWeb integration
+        run: dotnet test --project tests/PicoWeb.Integration.Tests/PicoWeb.Integration.Tests.csproj --no-build -c Release
 
       - name: Test PicoWeb.DI
         run: dotnet test --project tests/PicoWeb.DI.Tests/PicoWeb.DI.Tests.csproj --no-build -c Release
@@ -109,6 +117,16 @@ jobs:
         shell: bash
         run: |
           "$GITHUB_WORKSPACE/publish-jsonrpc/linux-x64/PicoJsonRpc.Sample"
+
+      # Full-stack SSE end-to-end harness (TCP -> HTTP -> PicoWeb -> SSE).
+      # The script builds and starts its own test server on port 18789 and
+      # exits non-zero on any failure; the Playwright case self-skips when the
+      # package is absent (the runner has no Playwright).
+      - name: Run SSE E2E harness (linux smoke)
+        if: matrix.rid == 'linux-x64'
+        shell: bash
+        run: |
+          python3 tests/PicoNode.E2E/test_sse_streaming.py
 
 
   # HTTP/2 protocol conformance gate (h2spec v2.6.0, strict suite).
