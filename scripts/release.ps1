@@ -308,9 +308,20 @@ try {
     }
 
     $null = Invoke-Git @("add", "--", $BaselineDir)
-    $null = Invoke-Git @("commit", "-m", "chore(release): v$nextVersion")
+    # An unchanged API (y bump) refreshes the baselines to identical content:
+    # only commit when something is actually staged, otherwise the no-op commit
+    # fails and the tag is never created.
+    $staged = Invoke-GitRaw @("diff", "--cached", "--quiet")
+    if ($staged.ExitCode -ne 0) {
+        $null = Invoke-Git @("commit", "-m", "chore(release): v$nextVersion")
+        Write-Ok "committed baseline refresh"
+    }
+    else {
+        Write-Note "baselines unchanged - tagging the current commit"
+    }
+
     $null = Invoke-Git @("tag", "-a", "v$nextVersion", "-m", "v$nextVersion")
-    Write-Ok "committed baselines and created tag v$nextVersion"
+    Write-Ok "created tag v$nextVersion"
 
     if ($Push) {
         $branchResult = Invoke-GitRaw @("rev-parse", "--abbrev-ref", "HEAD")
