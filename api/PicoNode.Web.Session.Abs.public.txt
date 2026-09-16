@@ -1,0 +1,27 @@
+M:PicoNode.Web.Session.Abs.ISession.Clear() : void abstract
+M:PicoNode.Web.Session.Abs.ISession.Remove(string key) : void abstract
+M:PicoNode.Web.Session.Abs.ISession.SetValue(string key, byte[] value) : void abstract
+M:PicoNode.Web.Session.Abs.ISession.TryGetValue(string key, out byte[] value) : bool abstract
+M:PicoNode.Web.Session.Abs.ISessionStore.CreateAsync(System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<PicoNode.Web.Session.Abs.ISession> abstract
+M:PicoNode.Web.Session.Abs.ISessionStore.DeleteAsync(string sessionId, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask abstract
+M:PicoNode.Web.Session.Abs.ISessionStore.LoadAsync(string sessionId, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<PicoNode.Web.Session.Abs.ISession> abstract
+M:PicoNode.Web.Session.Abs.ISessionStore.SaveAsync(string sessionId, PicoNode.Web.Session.Abs.ISession session, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask abstract
+M:PicoNode.Web.Session.Abs.SessionExtensions.GetBoolean(PicoNode.Web.Session.Abs.ISession session, string key) : bool static
+M:PicoNode.Web.Session.Abs.SessionExtensions.GetInt32(PicoNode.Web.Session.Abs.ISession session, string key) : int static
+M:PicoNode.Web.Session.Abs.SessionExtensions.GetInt64(PicoNode.Web.Session.Abs.ISession session, string key) : long static
+M:PicoNode.Web.Session.Abs.SessionExtensions.GetString(PicoNode.Web.Session.Abs.ISession session, string key) : string static
+M:PicoNode.Web.Session.Abs.SessionExtensions.SetBoolean(PicoNode.Web.Session.Abs.ISession session, string key, bool value) : void static
+M:PicoNode.Web.Session.Abs.SessionExtensions.SetInt32(PicoNode.Web.Session.Abs.ISession session, string key, int value) : void static
+M:PicoNode.Web.Session.Abs.SessionExtensions.SetInt64(PicoNode.Web.Session.Abs.ISession session, string key, long value) : void static
+M:PicoNode.Web.Session.Abs.SessionExtensions.SetString(PicoNode.Web.Session.Abs.ISession session, string key, string value) : void static
+M:PicoNode.Web.Session.Abs.SessionOptions..ctor() : void
+P:PicoNode.Web.Session.Abs.ISession.Id : string { get; }
+P:PicoNode.Web.Session.Abs.ISession.IsDirty : bool { get; }
+P:PicoNode.Web.Session.Abs.ISession.IsNew : bool { get; }
+P:PicoNode.Web.Session.Abs.ISession.Keys : System.Collections.Generic.IEnumerable`1<string> { get; }
+P:PicoNode.Web.Session.Abs.SessionOptions.CleanupInterval : System.TimeSpan { get; init; }
+P:PicoNode.Web.Session.Abs.SessionOptions.IdleTimeout : System.TimeSpan { get; init; }
+T:class PicoNode.Web.Session.Abs.SessionExtensions
+T:class PicoNode.Web.Session.Abs.SessionOptions
+T:interface PicoNode.Web.Session.Abs.ISession
+T:interface PicoNode.Web.Session.Abs.ISessionStore

@@ -1,0 +1,112 @@
+E:PicoNode.TcpNode.OnFault : System.Action`1<PicoNode.Abs.NodeFault>
+E:PicoNode.UdpNode.OnFault : System.Action`1<PicoNode.Abs.NodeFault>
+F:PicoNode.NodeLogCategories.Http : string = "PicoNode.Http" const
+F:PicoNode.NodeLogCategories.Tcp : string = "PicoNode.Tcp" const
+F:PicoNode.NodeLogCategories.Udp : string = "PicoNode.Udp" const
+F:PicoNode.NodeLogCategories.Web : string = "PicoNode.Web" const
+F:PicoNode.UdpNodeOptions.DefaultReceiveDatagramBufferSize : int = 2048 const
+F:PicoNode.UdpNodeOptions.DefaultReceiveFaultBackoff : System.TimeSpan static readonly
+I:PicoNode.TcpConnectionContext : PicoNode.Abs.ITcpConnectionContext
+I:PicoNode.TcpNode : PicoNode.Abs.INode
+I:PicoNode.TcpNode : System.IAsyncDisposable
+I:PicoNode.TcpNodeMetrics : System.IEquatable`1<PicoNode.TcpNodeMetrics>
+I:PicoNode.UdpDatagramContext : PicoNode.Abs.IUdpDatagramContext
+I:PicoNode.UdpNode : PicoNode.Abs.INode
+I:PicoNode.UdpNode : System.IAsyncDisposable
+I:PicoNode.UdpNodeMetrics : System.IEquatable`1<PicoNode.UdpNodeMetrics>
+M:PicoNode.NodeFaultLogLevelMapper.GetLevel(PicoNode.Abs.NodeFaultCode code) : PicoLog.Abs.LogLevel static
+M:PicoNode.NodeFaultLogLevelMapper.Override(PicoNode.Abs.NodeFaultCode code, PicoLog.Abs.LogLevel level) : void static
+M:PicoNode.NodeFaultLogLevelMapper.Reset(PicoNode.Abs.NodeFaultCode code) : void static
+M:PicoNode.NodeFaultLogLevelMapper.ResetAll() : void static
+M:PicoNode.TcpConnectionContext.Close() : void override
+M:PicoNode.TcpConnectionContext.SendAsync(System.Buffers.ReadOnlySequence`1<byte> buffer, System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task override
+M:PicoNode.TcpNode..ctor(PicoNode.TcpNodeOptions options) : void
+M:PicoNode.TcpNode.DisposeAsync() : System.Threading.Tasks.ValueTask override
+M:PicoNode.TcpNode.GetMetrics() : PicoNode.TcpNodeMetrics
+M:PicoNode.TcpNode.StartAsync(System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task override
+M:PicoNode.TcpNode.StopAsync(System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task override
+M:PicoNode.TcpNodeMetrics..ctor(long TotalAccepted, long TotalRejected, long TotalClosed, int ActiveConnections, long TotalBytesSent, long TotalBytesReceived, double AcceptRatePerSecond, double BytesSentPerSecond, double BytesReceivedPerSecond) : void
+M:PicoNode.TcpNodeOptions..ctor() : void
+M:PicoNode.UdpDatagramContext.SendAsync(System.ReadOnlyMemory`1<byte> datagram, System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task override
+M:PicoNode.UdpNode..ctor(PicoNode.UdpNodeOptions options) : void
+M:PicoNode.UdpNode.DisposeAsync() : System.Threading.Tasks.ValueTask override
+M:PicoNode.UdpNode.GetMetrics() : PicoNode.UdpNodeMetrics
+M:PicoNode.UdpNode.JoinMulticastGroup(System.Net.IPAddress groupAddress) : void
+M:PicoNode.UdpNode.LeaveMulticastGroup(System.Net.IPAddress groupAddress) : void
+M:PicoNode.UdpNode.StartAsync(System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task override
+M:PicoNode.UdpNode.StopAsync(System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task override
+M:PicoNode.UdpNodeMetrics..ctor(long TotalDatagramsSent, long TotalDatagramsReceived, long TotalDatagramsDropped, long TotalBytesSent, long TotalBytesReceived) : void
+M:PicoNode.UdpNodeOptions..ctor() : void
+P:PicoNode.TcpConnectionContext.ConnectedAtUtc : System.DateTimeOffset { get; }
+P:PicoNode.TcpConnectionContext.ConnectionId : long { get; }
+P:PicoNode.TcpConnectionContext.LastActivityUtc : System.DateTimeOffset { get; }
+P:PicoNode.TcpConnectionContext.NegotiatedProtocol : string { get; }
+P:PicoNode.TcpConnectionContext.RemoteCloseToken : System.Threading.CancellationToken { get; }
+P:PicoNode.TcpConnectionContext.RemoteEndPoint : System.Net.EndPoint { get; }
+P:PicoNode.TcpConnectionContext.UserState : object { get; set; }
+P:PicoNode.TcpNode.LocalEndPoint : System.Net.EndPoint { get; }
+P:PicoNode.TcpNode.State : PicoNode.Abs.NodeState { get; }
+P:PicoNode.TcpNodeMetrics.AcceptRatePerSecond : double { get; init; }
+P:PicoNode.TcpNodeMetrics.ActiveConnections : int { get; init; }
+P:PicoNode.TcpNodeMetrics.BytesReceivedPerSecond : double { get; init; }
+P:PicoNode.TcpNodeMetrics.BytesSentPerSecond : double { get; init; }
+P:PicoNode.TcpNodeMetrics.TotalAccepted : long { get; init; }
+P:PicoNode.TcpNodeMetrics.TotalBytesReceived : long { get; init; }
+P:PicoNode.TcpNodeMetrics.TotalBytesSent : long { get; init; }
+P:PicoNode.TcpNodeMetrics.TotalClosed : long { get; init; }
+P:PicoNode.TcpNodeMetrics.TotalRejected : long { get; init; }
+P:PicoNode.TcpNodeOptions.AcceptFaultBackoff : System.TimeSpan { get; set; }
+P:PicoNode.TcpNodeOptions.Backlog : int { get; set; }
+P:PicoNode.TcpNodeOptions.Config : PicoCfg.Abs.ICfgRoot { get; init; }
+P:PicoNode.TcpNodeOptions.ConnectionHandler : PicoNode.Abs.ITcpConnectionHandler { get; init; }
+P:PicoNode.TcpNodeOptions.DrainTimeout : System.TimeSpan { get; set; }
+P:PicoNode.TcpNodeOptions.EnableAddressReuse : bool { get; set; }
+P:PicoNode.TcpNodeOptions.EnableDualMode : bool { get; init; }
+P:PicoNode.TcpNodeOptions.EnableKeepAlive : bool { get; set; }
+P:PicoNode.TcpNodeOptions.Endpoint : System.Net.IPEndPoint { get; init; }
+P:PicoNode.TcpNodeOptions.IdleScanInterval : System.TimeSpan { get; set; }
+P:PicoNode.TcpNodeOptions.IdleTimeout : System.TimeSpan { get; set; }
+P:PicoNode.TcpNodeOptions.LingerState : System.Net.Sockets.LingerOption { get; init; }
+P:PicoNode.TcpNodeOptions.Logger : PicoLog.Abs.ILogger { get; init; }
+P:PicoNode.TcpNodeOptions.MaxConnections : int { get; set; }
+P:PicoNode.TcpNodeOptions.NoDelay : bool { get; set; }
+P:PicoNode.TcpNodeOptions.ReceivePipePauseThresholdBytes : System.Nullable`1<int> { get; set; }
+P:PicoNode.TcpNodeOptions.ReceivePipePauseThresholdMultiplier : int { get; set; }
+P:PicoNode.TcpNodeOptions.ReceiveSocketBufferSize : int { get; set; }
+P:PicoNode.TcpNodeOptions.SendSocketBufferSize : int { get; set; }
+P:PicoNode.TcpNodeOptions.SslOptions : System.Net.Security.SslServerAuthenticationOptions { get; init; }
+P:PicoNode.UdpDatagramContext.ConnectionId : long { get; }
+P:PicoNode.UdpDatagramContext.RemoteEndPoint : System.Net.EndPoint { get; }
+P:PicoNode.UdpNode.LocalEndPoint : System.Net.EndPoint { get; }
+P:PicoNode.UdpNode.State : PicoNode.Abs.NodeState { get; }
+P:PicoNode.UdpNodeMetrics.TotalBytesReceived : long { get; init; }
+P:PicoNode.UdpNodeMetrics.TotalBytesSent : long { get; init; }
+P:PicoNode.UdpNodeMetrics.TotalDatagramsDropped : long { get; init; }
+P:PicoNode.UdpNodeMetrics.TotalDatagramsReceived : long { get; init; }
+P:PicoNode.UdpNodeMetrics.TotalDatagramsSent : long { get; init; }
+P:PicoNode.UdpNodeOptions.Config : PicoCfg.Abs.ICfgRoot { get; init; }
+P:PicoNode.UdpNodeOptions.DatagramHandler : PicoNode.Abs.IUdpDatagramHandler { get; init; }
+P:PicoNode.UdpNodeOptions.DatagramQueueCapacity : int { get; init; }
+P:PicoNode.UdpNodeOptions.DispatchWorkerCount : int { get; init; }
+P:PicoNode.UdpNodeOptions.DrainTimeout : System.TimeSpan { get; set; }
+P:PicoNode.UdpNodeOptions.EnableBroadcast : bool { get; set; }
+P:PicoNode.UdpNodeOptions.Endpoint : System.Net.IPEndPoint { get; init; }
+P:PicoNode.UdpNodeOptions.Logger : PicoLog.Abs.ILogger { get; init; }
+P:PicoNode.UdpNodeOptions.MulticastGroup : System.Net.IPAddress { get; init; }
+P:PicoNode.UdpNodeOptions.MulticastLoopback : bool { get; set; }
+P:PicoNode.UdpNodeOptions.MulticastTtl : int { get; set; }
+P:PicoNode.UdpNodeOptions.QueueOverflowMode : PicoNode.Abs.UdpOverflowMode { get; set; }
+P:PicoNode.UdpNodeOptions.ReceiveDatagramBufferSize : int { get; set; }
+P:PicoNode.UdpNodeOptions.ReceiveFaultBackoff : System.TimeSpan { get; set; }
+P:PicoNode.UdpNodeOptions.ReceiveSocketBufferSize : int { get; set; }
+P:PicoNode.UdpNodeOptions.SendSocketBufferSize : int { get; set; }
+T:class PicoNode.NodeFaultLogLevelMapper
+T:class PicoNode.NodeLogCategories
+T:class PicoNode.TcpConnectionContext
+T:class PicoNode.TcpNode
+T:class PicoNode.TcpNodeOptions
+T:class PicoNode.UdpDatagramContext
+T:class PicoNode.UdpNode
+T:class PicoNode.UdpNodeOptions
+T:struct PicoNode.TcpNodeMetrics
+T:struct PicoNode.UdpNodeMetrics

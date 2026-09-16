@@ -1,0 +1,42 @@
+I:PicoWeb.WebApiApp : System.IAsyncDisposable
+I:PicoWeb.WebServer : System.IAsyncDisposable
+M:PicoWeb.ProcessShutdown.WaitAsync(System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task static
+M:PicoWeb.Results.Empty(int statusCode, string reasonPhrase = null) : PicoNode.Http.HttpResponse static
+M:PicoWeb.Results.Json(int statusCode, System.ReadOnlyMemory`1<byte> jsonBody, string reasonPhrase = null) : PicoNode.Http.HttpResponse static
+M:PicoWeb.Results.Redirect(string location, bool permanent = false) : PicoNode.Http.HttpResponse static
+M:PicoWeb.Results.Text(int statusCode, string body, string reasonPhrase = null) : PicoNode.Http.HttpResponse static
+M:PicoWeb.WebApiApp.DisposeAsync() : System.Threading.Tasks.ValueTask override
+M:PicoWeb.WebApiApp.RunAsync(string uri, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.Task
+M:PicoWeb.WebApiBuilder..ctor() : void
+M:PicoWeb.WebApiBuilder..ctor(PicoDI.Abs.ISvcContainer container) : void
+M:PicoWeb.WebApiBuilder.Build() : PicoWeb.WebApiApp
+M:PicoWeb.WebApiBuilder.ConfigureApp(System.Func`2<PicoNode.Web.WebAppOptions, PicoNode.Web.WebAppOptions> configure) : PicoWeb.WebApiBuilder
+M:PicoWeb.WebApiBuilder.ConfigureJson(System.Action`1<PicoJetson.JsonOptions> configure) : PicoWeb.WebApiBuilder
+M:PicoWeb.WebApiBuilder.RegisterScoped``2() : PicoWeb.WebApiBuilder
+M:PicoWeb.WebApiBuilder.RegisterSingleton``2() : PicoWeb.WebApiBuilder
+M:PicoWeb.WebApiBuilder.RegisterTransient``2() : PicoWeb.WebApiBuilder
+M:PicoWeb.WebServer..ctor(PicoNode.Web.WebApp app, PicoWeb.WebServerOptions options) : void
+M:PicoWeb.WebServer.DisposeAsync() : System.Threading.Tasks.ValueTask override
+M:PicoWeb.WebServer.StartAsync(System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task
+M:PicoWeb.WebServer.StopAsync(System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task
+M:PicoWeb.WebServerOptions..ctor() : void
+P:PicoWeb.WebApiApp.App : PicoNode.Web.WebApp { get; }
+P:PicoWeb.WebServer.LocalEndPoint : System.Net.EndPoint { get; }
+P:PicoWeb.WebServer.Options : PicoWeb.WebServerOptions { get; }
+P:PicoWeb.WebServerOptions.AcceptFaultBackoff : System.TimeSpan { get; init; }
+P:PicoWeb.WebServerOptions.DrainTimeout : System.TimeSpan { get; init; }
+P:PicoWeb.WebServerOptions.EnableDualMode : bool { get; init; }
+P:PicoWeb.WebServerOptions.Endpoint : System.Net.IPEndPoint { get; init; }
+P:PicoWeb.WebServerOptions.IdleTimeout : System.TimeSpan { get; init; }
+P:PicoWeb.WebServerOptions.Logger : PicoLog.Abs.ILogger { get; init; }
+P:PicoWeb.WebServerOptions.MaxConnections : int { get; init; }
+P:PicoWeb.WebServerOptions.NoDelay : bool { get; init; }
+P:PicoWeb.WebServerOptions.ReceiveSocketBufferSize : int { get; init; }
+P:PicoWeb.WebServerOptions.SendSocketBufferSize : int { get; init; }
+P:PicoWeb.WebServerOptions.SslOptions : System.Net.Security.SslServerAuthenticationOptions { get; init; }
+T:class PicoWeb.ProcessShutdown
+T:class PicoWeb.Results
+T:class PicoWeb.WebApiApp
+T:class PicoWeb.WebApiBuilder
+T:class PicoWeb.WebServer
+T:class PicoWeb.WebServerOptions

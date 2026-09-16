@@ -1,0 +1,71 @@
+E:PicoNode.Abs.INode.OnFault : System.Action`1<PicoNode.Abs.NodeFault>
+F:PicoNode.Abs.NodeFaultCode.AcceptFailed : PicoNode.Abs.NodeFaultCode = 2 const
+F:PicoNode.Abs.NodeFaultCode.DatagramDropped : PicoNode.Abs.NodeFaultCode = 8 const
+F:PicoNode.Abs.NodeFaultCode.DatagramHandlerFailed : PicoNode.Abs.NodeFaultCode = 9 const
+F:PicoNode.Abs.NodeFaultCode.DatagramReceiveFailed : PicoNode.Abs.NodeFaultCode = 7 const
+F:PicoNode.Abs.NodeFaultCode.HandlerFailed : PicoNode.Abs.NodeFaultCode = 6 const
+F:PicoNode.Abs.NodeFaultCode.ReceiveFailed : PicoNode.Abs.NodeFaultCode = 4 const
+F:PicoNode.Abs.NodeFaultCode.SendFailed : PicoNode.Abs.NodeFaultCode = 5 const
+F:PicoNode.Abs.NodeFaultCode.SessionRejected : PicoNode.Abs.NodeFaultCode = 3 const
+F:PicoNode.Abs.NodeFaultCode.StartFailed : PicoNode.Abs.NodeFaultCode = 0 const
+F:PicoNode.Abs.NodeFaultCode.StopFailed : PicoNode.Abs.NodeFaultCode = 1 const
+F:PicoNode.Abs.NodeFaultCode.TlsFailed : PicoNode.Abs.NodeFaultCode = 10 const
+F:PicoNode.Abs.NodeFaultCode.value__ : int
+F:PicoNode.Abs.NodeState.Created : PicoNode.Abs.NodeState = 0 const
+F:PicoNode.Abs.NodeState.Disposed : PicoNode.Abs.NodeState = 5 const
+F:PicoNode.Abs.NodeState.Running : PicoNode.Abs.NodeState = 2 const
+F:PicoNode.Abs.NodeState.Starting : PicoNode.Abs.NodeState = 1 const
+F:PicoNode.Abs.NodeState.Stopped : PicoNode.Abs.NodeState = 4 const
+F:PicoNode.Abs.NodeState.Stopping : PicoNode.Abs.NodeState = 3 const
+F:PicoNode.Abs.NodeState.value__ : int
+F:PicoNode.Abs.TcpCloseReason.HandlerFailed : PicoNode.Abs.TcpCloseReason = 3 const
+F:PicoNode.Abs.TcpCloseReason.IdleTimeout : PicoNode.Abs.TcpCloseReason = 2 const
+F:PicoNode.Abs.TcpCloseReason.LocalClose : PicoNode.Abs.TcpCloseReason = 0 const
+F:PicoNode.Abs.TcpCloseReason.NodeStopping : PicoNode.Abs.TcpCloseReason = 6 const
+F:PicoNode.Abs.TcpCloseReason.ReceiveFailed : PicoNode.Abs.TcpCloseReason = 4 const
+F:PicoNode.Abs.TcpCloseReason.Rejected : PicoNode.Abs.TcpCloseReason = 7 const
+F:PicoNode.Abs.TcpCloseReason.RemoteClosed : PicoNode.Abs.TcpCloseReason = 1 const
+F:PicoNode.Abs.TcpCloseReason.SendFailed : PicoNode.Abs.TcpCloseReason = 5 const
+F:PicoNode.Abs.TcpCloseReason.value__ : int
+F:PicoNode.Abs.UdpOverflowMode.DropNewest : PicoNode.Abs.UdpOverflowMode = 0 const
+F:PicoNode.Abs.UdpOverflowMode.Wait : PicoNode.Abs.UdpOverflowMode = 1 const
+F:PicoNode.Abs.UdpOverflowMode.value__ : int
+I:PicoNode.Abs.INode : System.IAsyncDisposable
+I:PicoNode.Abs.NodeFault : System.IEquatable`1<PicoNode.Abs.NodeFault>
+M:PicoNode.Abs.INode.StartAsync(System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task abstract
+M:PicoNode.Abs.INode.StopAsync(System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task abstract
+M:PicoNode.Abs.ITcpConnectionContext.Close() : void abstract
+M:PicoNode.Abs.ITcpConnectionContext.SendAsync(System.Buffers.ReadOnlySequence`1<byte> buffer, System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task abstract
+M:PicoNode.Abs.ITcpConnectionHandler.OnClosedAsync(PicoNode.Abs.ITcpConnectionContext connection, PicoNode.Abs.TcpCloseReason reason, System.Exception error, System.Threading.CancellationToken cancellationToken) : System.Threading.Tasks.ValueTask abstract
+M:PicoNode.Abs.ITcpConnectionHandler.OnConnectedAsync(PicoNode.Abs.ITcpConnectionContext connection, System.Threading.CancellationToken cancellationToken) : System.Threading.Tasks.Task abstract
+M:PicoNode.Abs.ITcpConnectionHandler.OnReceivedAsync(PicoNode.Abs.ITcpConnectionContext connection, System.Buffers.ReadOnlySequence`1<byte> buffer, System.Threading.CancellationToken cancellationToken) : System.Threading.Tasks.ValueTask`1<System.SequencePosition> abstract
+M:PicoNode.Abs.IUdpDatagramContext.SendAsync(System.ReadOnlyMemory`1<byte> datagram, System.Threading.CancellationToken cancellationToken = null) : System.Threading.Tasks.Task abstract
+M:PicoNode.Abs.IUdpDatagramHandler.OnDatagramAsync(PicoNode.Abs.IUdpDatagramContext context, System.ReadOnlyMemory`1<byte> datagram, System.Threading.CancellationToken cancellationToken) : System.Threading.Tasks.ValueTask abstract
+M:PicoNode.Abs.NodeFault..ctor(PicoNode.Abs.NodeFaultCode Code, string Operation, System.Exception Exception = null) : void
+M:PicoNode.Abs.TcpConnectionContextExtensions.GetUserState``1(PicoNode.Abs.ITcpConnectionContext ctx) : T static
+M:PicoNode.Abs.TcpConnectionContextExtensions.SetUserState``1(PicoNode.Abs.ITcpConnectionContext ctx, T state) : void static
+P:PicoNode.Abs.INode.LocalEndPoint : System.Net.EndPoint { get; }
+P:PicoNode.Abs.INode.State : PicoNode.Abs.NodeState { get; }
+P:PicoNode.Abs.ITcpConnectionContext.ConnectedAtUtc : System.DateTimeOffset { get; }
+P:PicoNode.Abs.ITcpConnectionContext.ConnectionId : long { get; }
+P:PicoNode.Abs.ITcpConnectionContext.LastActivityUtc : System.DateTimeOffset { get; }
+P:PicoNode.Abs.ITcpConnectionContext.NegotiatedProtocol : string { get; }
+P:PicoNode.Abs.ITcpConnectionContext.RemoteCloseToken : System.Threading.CancellationToken { get; }
+P:PicoNode.Abs.ITcpConnectionContext.RemoteEndPoint : System.Net.EndPoint { get; }
+P:PicoNode.Abs.ITcpConnectionContext.UserState : object { get; set; }
+P:PicoNode.Abs.IUdpDatagramContext.ConnectionId : long { get; }
+P:PicoNode.Abs.IUdpDatagramContext.RemoteEndPoint : System.Net.EndPoint { get; }
+P:PicoNode.Abs.NodeFault.Code : PicoNode.Abs.NodeFaultCode { get; }
+P:PicoNode.Abs.NodeFault.Exception : System.Exception { get; }
+P:PicoNode.Abs.NodeFault.Operation : string { get; }
+T:class PicoNode.Abs.TcpConnectionContextExtensions
+T:enum PicoNode.Abs.NodeFaultCode
+T:enum PicoNode.Abs.NodeState
+T:enum PicoNode.Abs.TcpCloseReason
+T:enum PicoNode.Abs.UdpOverflowMode
+T:interface PicoNode.Abs.INode
+T:interface PicoNode.Abs.ITcpConnectionContext
+T:interface PicoNode.Abs.ITcpConnectionHandler
+T:interface PicoNode.Abs.IUdpDatagramContext
+T:interface PicoNode.Abs.IUdpDatagramHandler
+T:struct PicoNode.Abs.NodeFault

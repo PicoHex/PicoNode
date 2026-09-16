@@ -1,0 +1,224 @@
+F:PicoNode.Http.Http2ErrorCode.Cancel : PicoNode.Http.Http2ErrorCode = 8 const
+F:PicoNode.Http.Http2ErrorCode.CompressionError : PicoNode.Http.Http2ErrorCode = 9 const
+F:PicoNode.Http.Http2ErrorCode.ConnectError : PicoNode.Http.Http2ErrorCode = 10 const
+F:PicoNode.Http.Http2ErrorCode.EnhanceYourCalm : PicoNode.Http.Http2ErrorCode = 11 const
+F:PicoNode.Http.Http2ErrorCode.FlowControlError : PicoNode.Http.Http2ErrorCode = 3 const
+F:PicoNode.Http.Http2ErrorCode.FrameSizeError : PicoNode.Http.Http2ErrorCode = 6 const
+F:PicoNode.Http.Http2ErrorCode.Http11Required : PicoNode.Http.Http2ErrorCode = 13 const
+F:PicoNode.Http.Http2ErrorCode.InadequateSecurity : PicoNode.Http.Http2ErrorCode = 12 const
+F:PicoNode.Http.Http2ErrorCode.InternalError : PicoNode.Http.Http2ErrorCode = 2 const
+F:PicoNode.Http.Http2ErrorCode.NoError : PicoNode.Http.Http2ErrorCode = 0 const
+F:PicoNode.Http.Http2ErrorCode.ProtocolError : PicoNode.Http.Http2ErrorCode = 1 const
+F:PicoNode.Http.Http2ErrorCode.RefusedStream : PicoNode.Http.Http2ErrorCode = 7 const
+F:PicoNode.Http.Http2ErrorCode.SettingsTimeout : PicoNode.Http.Http2ErrorCode = 4 const
+F:PicoNode.Http.Http2ErrorCode.StreamClosed : PicoNode.Http.Http2ErrorCode = 5 const
+F:PicoNode.Http.Http2ErrorCode.value__ : uint
+F:PicoNode.Http.Http2FrameCodec.DefaultMaxFrameSize : int = 16384 const
+F:PicoNode.Http.Http2FrameCodec.FrameHeaderSize : int = 9 const
+F:PicoNode.Http.Http2FrameFlags.Ack : PicoNode.Http.Http2FrameFlags = 1 const
+F:PicoNode.Http.Http2FrameFlags.EndHeaders : PicoNode.Http.Http2FrameFlags = 4 const
+F:PicoNode.Http.Http2FrameFlags.EndStream : PicoNode.Http.Http2FrameFlags = 1 const
+F:PicoNode.Http.Http2FrameFlags.None : PicoNode.Http.Http2FrameFlags = 0 const
+F:PicoNode.Http.Http2FrameFlags.Padded : PicoNode.Http.Http2FrameFlags = 8 const
+F:PicoNode.Http.Http2FrameFlags.Priority : PicoNode.Http.Http2FrameFlags = 32 const
+F:PicoNode.Http.Http2FrameFlags.value__ : byte
+F:PicoNode.Http.Http2FrameType.Continuation : PicoNode.Http.Http2FrameType = 9 const
+F:PicoNode.Http.Http2FrameType.Data : PicoNode.Http.Http2FrameType = 0 const
+F:PicoNode.Http.Http2FrameType.GoAway : PicoNode.Http.Http2FrameType = 7 const
+F:PicoNode.Http.Http2FrameType.Headers : PicoNode.Http.Http2FrameType = 1 const
+F:PicoNode.Http.Http2FrameType.Ping : PicoNode.Http.Http2FrameType = 6 const
+F:PicoNode.Http.Http2FrameType.Priority : PicoNode.Http.Http2FrameType = 2 const
+F:PicoNode.Http.Http2FrameType.PushPromise : PicoNode.Http.Http2FrameType = 5 const
+F:PicoNode.Http.Http2FrameType.RstStream : PicoNode.Http.Http2FrameType = 3 const
+F:PicoNode.Http.Http2FrameType.Settings : PicoNode.Http.Http2FrameType = 4 const
+F:PicoNode.Http.Http2FrameType.WindowUpdate : PicoNode.Http.Http2FrameType = 8 const
+F:PicoNode.Http.Http2FrameType.value__ : byte
+F:PicoNode.Http.Http2SettingId.EnablePush : PicoNode.Http.Http2SettingId = 2 const
+F:PicoNode.Http.Http2SettingId.HeaderTableSize : PicoNode.Http.Http2SettingId = 1 const
+F:PicoNode.Http.Http2SettingId.InitialWindowSize : PicoNode.Http.Http2SettingId = 4 const
+F:PicoNode.Http.Http2SettingId.MaxConcurrentStreams : PicoNode.Http.Http2SettingId = 3 const
+F:PicoNode.Http.Http2SettingId.MaxFrameSize : PicoNode.Http.Http2SettingId = 5 const
+F:PicoNode.Http.Http2SettingId.MaxHeaderListSize : PicoNode.Http.Http2SettingId = 6 const
+F:PicoNode.Http.Http2SettingId.value__ : ushort
+F:PicoNode.Http.HttpConnectionHandlerOptions.DefaultRequestTimeoutSeconds : int = 30 const
+F:PicoNode.Http.HttpConnectionHandlerOptions.DefaultStreamingResponseBufferSize : int = 4096 const
+F:PicoNode.Http.HttpHeaderNames.AcceptEncoding : string = "Accept-Encoding" const
+F:PicoNode.Http.HttpHeaderNames.AccessControlAllowCredentials : string = "Access-Control-Allow-Credentials" const
+F:PicoNode.Http.HttpHeaderNames.AccessControlAllowHeaders : string = "Access-Control-Allow-Headers" const
+F:PicoNode.Http.HttpHeaderNames.AccessControlAllowMethods : string = "Access-Control-Allow-Methods" const
+F:PicoNode.Http.HttpHeaderNames.AccessControlAllowOrigin : string = "Access-Control-Allow-Origin" const
+F:PicoNode.Http.HttpHeaderNames.AccessControlExposeHeaders : string = "Access-Control-Expose-Headers" const
+F:PicoNode.Http.HttpHeaderNames.AccessControlMaxAge : string = "Access-Control-Max-Age" const
+F:PicoNode.Http.HttpHeaderNames.AccessControlRequestMethod : string = "Access-Control-Request-Method" const
+F:PicoNode.Http.HttpHeaderNames.Authorization : string = "Authorization" const
+F:PicoNode.Http.HttpHeaderNames.Connection : string = "Connection" const
+F:PicoNode.Http.HttpHeaderNames.ContentEncoding : string = "Content-Encoding" const
+F:PicoNode.Http.HttpHeaderNames.ContentLength : string = "Content-Length" const
+F:PicoNode.Http.HttpHeaderNames.ContentType : string = "Content-Type" const
+F:PicoNode.Http.HttpHeaderNames.Expect : string = "Expect" const
+F:PicoNode.Http.HttpHeaderNames.Host : string = "Host" const
+F:PicoNode.Http.HttpHeaderNames.Location : string = "Location" const
+F:PicoNode.Http.HttpHeaderNames.Origin : string = "Origin" const
+F:PicoNode.Http.HttpHeaderNames.Server : string = "Server" const
+F:PicoNode.Http.HttpHeaderNames.SetCookie : string = "Set-Cookie" const
+F:PicoNode.Http.HttpHeaderNames.TransferEncoding : string = "Transfer-Encoding" const
+F:PicoNode.Http.HttpHeaderNames.Vary : string = "Vary" const
+F:PicoNode.Http.HttpVersion.Http10 : PicoNode.Http.HttpVersion = 0 const
+F:PicoNode.Http.HttpVersion.Http11 : PicoNode.Http.HttpVersion = 1 const
+F:PicoNode.Http.HttpVersion.Http2 : PicoNode.Http.HttpVersion = 2 const
+F:PicoNode.Http.HttpVersion.value__ : int
+F:PicoNode.Http.Internal.RouteTable`1.NotFoundResponse : PicoNode.Http.HttpResponse static readonly
+F:PicoNode.Http.WebSocketOpCode.Binary : PicoNode.Http.WebSocketOpCode = 2 const
+F:PicoNode.Http.WebSocketOpCode.Close : PicoNode.Http.WebSocketOpCode = 8 const
+F:PicoNode.Http.WebSocketOpCode.Continuation : PicoNode.Http.WebSocketOpCode = 0 const
+F:PicoNode.Http.WebSocketOpCode.Ping : PicoNode.Http.WebSocketOpCode = 9 const
+F:PicoNode.Http.WebSocketOpCode.Pong : PicoNode.Http.WebSocketOpCode = 10 const
+F:PicoNode.Http.WebSocketOpCode.Text : PicoNode.Http.WebSocketOpCode = 1 const
+F:PicoNode.Http.WebSocketOpCode.value__ : byte
+I:PicoNode.Http.Http2Setting : System.IEquatable`1<PicoNode.Http.Http2Setting>
+I:PicoNode.Http.HttpConnectionHandler : PicoNode.Abs.ITcpConnectionHandler
+I:PicoNode.Http.HttpHeaderCollection : System.Collections.Generic.IEnumerable`1<System.Collections.Generic.KeyValuePair`2<string, string>>
+I:PicoNode.Http.HttpHeaderCollection : System.Collections.Generic.IReadOnlyCollection`1<System.Collections.Generic.KeyValuePair`2<string, string>>
+I:PicoNode.Http.HttpHeaderCollection : System.Collections.Generic.IReadOnlyList`1<System.Collections.Generic.KeyValuePair`2<string, string>>
+I:PicoNode.Http.HttpHeaderCollection : System.Collections.IEnumerable
+I:PicoNode.Http.WebSocketMessage : System.IEquatable`1<PicoNode.Http.WebSocketMessage>
+M:PicoNode.Http.Http2Frame..ctor() : void
+M:PicoNode.Http.Http2Frame.HasFlag(PicoNode.Http.Http2FrameFlags flag) : bool
+M:PicoNode.Http.Http2FrameCodec.EncodeFrame(PicoNode.Http.Http2FrameType type, PicoNode.Http.Http2FrameFlags flags, int streamId, System.ReadOnlySpan`1<byte> payload) : byte[] static
+M:PicoNode.Http.Http2FrameCodec.EncodeGoAway(int lastStreamId, PicoNode.Http.Http2ErrorCode errorCode) : byte[] static
+M:PicoNode.Http.Http2FrameCodec.EncodePing(System.ReadOnlySpan`1<byte> opaqueData, bool ack = false) : byte[] static
+M:PicoNode.Http.Http2FrameCodec.EncodeSettings(System.ReadOnlySpan`1<PicoNode.Http.Http2Setting> settings) : byte[] static
+M:PicoNode.Http.Http2FrameCodec.EncodeSettingsAck() : byte[] static
+M:PicoNode.Http.Http2FrameCodec.IsConnectionPreface(System.ReadOnlySpan`1<byte> data) : bool static
+M:PicoNode.Http.Http2FrameCodec.IsFrameTooLarge(System.Buffers.ReadOnlySequence`1<byte> buffer, int maxFrameSize = 16384) : bool static
+M:PicoNode.Http.Http2FrameCodec.ParseSettings(System.ReadOnlySpan`1<byte> payload) : System.Collections.Generic.IReadOnlyList`1<PicoNode.Http.Http2Setting> static
+M:PicoNode.Http.Http2FrameCodec.TryGetStreamDependency(System.ReadOnlySpan`1<byte> payload, out int streamDependency) : bool static
+M:PicoNode.Http.Http2FrameCodec.TryReadFrame(System.Buffers.ReadOnlySequence`1<byte> buffer, out PicoNode.Http.Http2Frame frame, out long consumed, int maxFrameSize = 16384) : bool static
+M:PicoNode.Http.Http2FrameCodec.WriteFrame(System.Span`1<byte> destination, PicoNode.Http.Http2FrameType type, PicoNode.Http.Http2FrameFlags flags, int streamId, System.ReadOnlySpan`1<byte> payload) : int static
+M:PicoNode.Http.Http2FrameCodec.WriteFrameHeader(System.Span`1<byte> destination, int payloadLength, PicoNode.Http.Http2FrameType type, PicoNode.Http.Http2FrameFlags flags, int streamId) : int static
+M:PicoNode.Http.Http2FrameCodec.WriteGoAway(System.Span`1<byte> destination, int lastStreamId, PicoNode.Http.Http2ErrorCode errorCode) : int static
+M:PicoNode.Http.Http2FrameCodec.WritePing(System.Span`1<byte> destination, System.ReadOnlySpan`1<byte> opaqueData, bool ack = false) : int static
+M:PicoNode.Http.Http2FrameCodec.WriteSettings(System.Span`1<byte> destination, System.ReadOnlySpan`1<PicoNode.Http.Http2Setting> settings) : int static
+M:PicoNode.Http.Http2FrameCodec.WriteSettingsAck(System.Span`1<byte> destination) : int static
+M:PicoNode.Http.Http2Setting..ctor(PicoNode.Http.Http2SettingId Id, uint Value) : void
+M:PicoNode.Http.HttpConnectionHandler..ctor(PicoNode.Http.HttpConnectionHandlerOptions options) : void
+M:PicoNode.Http.HttpConnectionHandler.OnClosedAsync(PicoNode.Abs.ITcpConnectionContext connection, PicoNode.Abs.TcpCloseReason reason, System.Exception error, System.Threading.CancellationToken cancellationToken) : System.Threading.Tasks.ValueTask override
+M:PicoNode.Http.HttpConnectionHandler.OnConnectedAsync(PicoNode.Abs.ITcpConnectionContext connection, System.Threading.CancellationToken cancellationToken) : System.Threading.Tasks.Task override
+M:PicoNode.Http.HttpConnectionHandler.OnReceivedAsync(PicoNode.Abs.ITcpConnectionContext connection, System.Buffers.ReadOnlySequence`1<byte> buffer, System.Threading.CancellationToken cancellationToken) : System.Threading.Tasks.ValueTask`1<System.SequencePosition> override
+M:PicoNode.Http.HttpConnectionHandlerOptions..ctor() : void
+M:PicoNode.Http.HttpHeaderCollection..ctor() : void
+M:PicoNode.Http.HttpHeaderCollection..ctor(System.Collections.Generic.IEnumerable`1<System.Collections.Generic.KeyValuePair`2<string, string>> items) : void
+M:PicoNode.Http.HttpHeaderCollection.Add(System.Collections.Generic.KeyValuePair`2<string, string> item) : void
+M:PicoNode.Http.HttpHeaderCollection.Add(string key, string value) : void
+M:PicoNode.Http.HttpHeaderCollection.GetEnumerator() : System.Collections.Generic.IEnumerator`1<System.Collections.Generic.KeyValuePair`2<string, string>> override
+M:PicoNode.Http.HttpHeaderCollection.GetValues(string key) : System.Collections.Generic.IEnumerable`1<string>
+M:PicoNode.Http.HttpHeaderCollection.TryGetValue(string key, out string value) : bool
+M:PicoNode.Http.HttpRequest..ctor() : void
+M:PicoNode.Http.HttpRequest.CreateBodyStream() : System.IO.Stream
+M:PicoNode.Http.HttpRequestHandler..ctor(object object, nint method) : void
+M:PicoNode.Http.HttpRequestHandler.BeginInvoke(PicoNode.Http.HttpRequest request, System.Threading.CancellationToken cancellationToken, System.AsyncCallback callback, object object) : System.IAsyncResult virtual
+M:PicoNode.Http.HttpRequestHandler.EndInvoke(System.IAsyncResult result) : System.Threading.Tasks.ValueTask`1<PicoNode.Http.HttpResponse> virtual
+M:PicoNode.Http.HttpRequestHandler.Invoke(PicoNode.Http.HttpRequest request, System.Threading.CancellationToken cancellationToken) : System.Threading.Tasks.ValueTask`1<PicoNode.Http.HttpResponse> virtual
+M:PicoNode.Http.HttpResponse..ctor() : void
+M:PicoNode.Http.HttpRouter..ctor(PicoNode.Http.HttpRouterOptions options) : void
+M:PicoNode.Http.HttpRouter.HandleAsync(PicoNode.Http.HttpRequest request, System.Threading.CancellationToken cancellationToken) : System.Threading.Tasks.ValueTask`1<PicoNode.Http.HttpResponse>
+M:PicoNode.Http.HttpRouterOptions..ctor() : void
+M:PicoNode.Http.Internal.RouteTable`1..ctor(System.Collections.Generic.IReadOnlyList`1<System.ValueTuple`3<string, string, THandler>> routes, THandler fallback, string paramName) : void
+M:PicoNode.Http.Internal.RouteTable`1.GetMethodsForPath(string path) : System.Collections.Generic.IReadOnlyCollection`1<string>
+M:PicoNode.Http.Internal.RouteTable`1.MethodNotAllowedResponse(string allowHeader) : PicoNode.Http.HttpResponse static
+M:PicoNode.Http.Internal.RouteTable`1.TryMatch(System.ReadOnlySpan`1<char> path, System.ReadOnlySpan`1<char> method, out THandler handler, out string allowHeader) : bool
+M:PicoNode.Http.Internal.RouteTable`1.TryMatch(string path, string method, out THandler handler, out string allowHeader) : bool
+M:PicoNode.Http.Route`1..ctor() : void
+M:PicoNode.Http.Route`1.Map(string method, string path, T handler) : PicoNode.Http.Route`1<T> static
+M:PicoNode.Http.Route`1.MapDelete(string path, T handler) : PicoNode.Http.Route`1<T> static
+M:PicoNode.Http.Route`1.MapGet(string path, T handler) : PicoNode.Http.Route`1<T> static
+M:PicoNode.Http.Route`1.MapPatch(string path, T handler) : PicoNode.Http.Route`1<T> static
+M:PicoNode.Http.Route`1.MapPost(string path, T handler) : PicoNode.Http.Route`1<T> static
+M:PicoNode.Http.Route`1.MapPut(string path, T handler) : PicoNode.Http.Route`1<T> static
+M:PicoNode.Http.WebSocketFrame..ctor() : void
+M:PicoNode.Http.WebSocketFrameCodec.EncodeFrame(PicoNode.Http.WebSocketOpCode opCode, System.ReadOnlySpan`1<byte> payload, bool mask = false, bool rsv1 = false) : byte[] static
+M:PicoNode.Http.WebSocketFrameCodec.MeasureFrameSize(int payloadLength, bool mask = false) : int static
+M:PicoNode.Http.WebSocketFrameCodec.TryReadFrame(System.Buffers.ReadOnlySequence`1<byte> buffer, out PicoNode.Http.WebSocketFrame frame, out long consumed, int maxPayloadLength = 2147483647) : bool static
+M:PicoNode.Http.WebSocketFrameCodec.WriteFrame(System.Span`1<byte> destination, PicoNode.Http.WebSocketOpCode opCode, System.ReadOnlySpan`1<byte> payload, bool mask = false, bool rsv1 = false) : int static
+M:PicoNode.Http.WebSocketMessage..ctor(PicoNode.Http.WebSocketOpCode OpCode, System.ReadOnlyMemory`1<byte> Payload, bool IsEndOfMessage) : void
+M:PicoNode.Http.WebSocketMessageHandler..ctor(object object, nint method) : void
+M:PicoNode.Http.WebSocketMessageHandler.BeginInvoke(PicoNode.Http.WebSocketMessage message, PicoNode.Abs.ITcpConnectionContext connection, System.Threading.CancellationToken ct, System.AsyncCallback callback, object object) : System.IAsyncResult virtual
+M:PicoNode.Http.WebSocketMessageHandler.EndInvoke(System.IAsyncResult result) : System.Threading.Tasks.ValueTask virtual
+M:PicoNode.Http.WebSocketMessageHandler.Invoke(PicoNode.Http.WebSocketMessage message, PicoNode.Abs.ITcpConnectionContext connection, System.Threading.CancellationToken ct) : System.Threading.Tasks.ValueTask virtual
+M:PicoNode.Http.WebSocketUpgrade.TryUpgrade(PicoNode.Http.HttpRequest request, System.Collections.Generic.IReadOnlyList`1<string> supportedSubProtocols = null) : PicoNode.Http.HttpResponse static
+P:PicoNode.Http.Http2Frame.Flags : PicoNode.Http.Http2FrameFlags { get; init; }
+P:PicoNode.Http.Http2Frame.Length : int { get; init; }
+P:PicoNode.Http.Http2Frame.Payload : System.ReadOnlyMemory`1<byte> { get; init; }
+P:PicoNode.Http.Http2Frame.StreamId : int { get; init; }
+P:PicoNode.Http.Http2Frame.Type : PicoNode.Http.Http2FrameType { get; init; }
+P:PicoNode.Http.Http2FrameCodec.ClientPreface : System.ReadOnlySpan`1<byte> { get; }
+P:PicoNode.Http.Http2Setting.Id : PicoNode.Http.Http2SettingId { get; init; }
+P:PicoNode.Http.Http2Setting.Value : uint { get; init; }
+P:PicoNode.Http.HttpConnectionHandlerOptions.Logger : PicoLog.Abs.ILogger { get; init; }
+P:PicoNode.Http.HttpConnectionHandlerOptions.MaxRequestBodySize : int { get; init; }
+P:PicoNode.Http.HttpConnectionHandlerOptions.MaxRequestBytes : int { get; init; }
+P:PicoNode.Http.HttpConnectionHandlerOptions.RequestHandler : PicoNode.Http.HttpRequestHandler { get; init; }
+P:PicoNode.Http.HttpConnectionHandlerOptions.RequestTimeout : System.TimeSpan { get; init; }
+P:PicoNode.Http.HttpConnectionHandlerOptions.ServerHeader : string { get; init; }
+P:PicoNode.Http.HttpConnectionHandlerOptions.StreamingResponseBufferSize : int { get; init; }
+P:PicoNode.Http.HttpConnectionHandlerOptions.WebSocketMessageHandler : PicoNode.Http.WebSocketMessageHandler { get; init; }
+P:PicoNode.Http.HttpHeaderCollection.Count : int { get; }
+P:PicoNode.Http.HttpHeaderCollection.Item[int] : System.Collections.Generic.KeyValuePair`2<string, string> { get; }
+P:PicoNode.Http.HttpHeaderCollection.Item[string] : string { get; }
+P:PicoNode.Http.HttpRequest.Body : System.ReadOnlyMemory`1<byte> { get; init; }
+P:PicoNode.Http.HttpRequest.BodyStream : System.IO.Stream { get; init; }
+P:PicoNode.Http.HttpRequest.HeaderFields : System.Collections.Generic.IReadOnlyList`1<System.Collections.Generic.KeyValuePair`2<string, string>> { get; init; }
+P:PicoNode.Http.HttpRequest.Headers : System.Collections.Generic.IReadOnlyDictionary`2<string, string> { get; init; }
+P:PicoNode.Http.HttpRequest.Method : string { get; init; }
+P:PicoNode.Http.HttpRequest.Path : string { get; init; }
+P:PicoNode.Http.HttpRequest.QueryString : string { get; init; }
+P:PicoNode.Http.HttpRequest.RemoteCloseToken : System.Threading.CancellationToken { get; }
+P:PicoNode.Http.HttpRequest.Target : string { get; init; }
+P:PicoNode.Http.HttpRequest.Version : PicoNode.Http.HttpVersion { get; init; }
+P:PicoNode.Http.HttpResponse.Body : System.ReadOnlyMemory`1<byte> { get; init; }
+P:PicoNode.Http.HttpResponse.BodyStream : System.IO.Stream { get; init; }
+P:PicoNode.Http.HttpResponse.Headers : PicoNode.Http.HttpHeaderCollection { get; init; }
+P:PicoNode.Http.HttpResponse.ReasonPhrase : string { get; init; }
+P:PicoNode.Http.HttpResponse.StatusCode : int { get; init; }
+P:PicoNode.Http.HttpResponse.Version : PicoNode.Http.HttpVersion { get; init; }
+P:PicoNode.Http.HttpRouterOptions.FallbackHandler : PicoNode.Http.HttpRequestHandler { get; init; }
+P:PicoNode.Http.HttpRouterOptions.Routes : System.Collections.Generic.IReadOnlyList`1<PicoNode.Http.Route`1<PicoNode.Http.HttpRequestHandler>> { get; init; }
+P:PicoNode.Http.Internal.RouteTable`1.Fallback : THandler { get; }
+P:PicoNode.Http.Route`1.Handler : T { get; init; }
+P:PicoNode.Http.Route`1.Method : string { get; init; }
+P:PicoNode.Http.Route`1.Path : string { get; init; }
+P:PicoNode.Http.WebSocketFrame.Fin : bool { get; init; }
+P:PicoNode.Http.WebSocketFrame.Masked : bool { get; init; }
+P:PicoNode.Http.WebSocketFrame.OpCode : PicoNode.Http.WebSocketOpCode { get; init; }
+P:PicoNode.Http.WebSocketFrame.Payload : System.ReadOnlyMemory`1<byte> { get; init; }
+P:PicoNode.Http.WebSocketFrame.Rsv1 : bool { get; init; }
+P:PicoNode.Http.WebSocketFrame.Rsv2 : bool { get; init; }
+P:PicoNode.Http.WebSocketFrame.Rsv3 : bool { get; init; }
+P:PicoNode.Http.WebSocketMessage.IsEndOfMessage : bool { get; init; }
+P:PicoNode.Http.WebSocketMessage.OpCode : PicoNode.Http.WebSocketOpCode { get; init; }
+P:PicoNode.Http.WebSocketMessage.Payload : System.ReadOnlyMemory`1<byte> { get; init; }
+T:class PicoNode.Http.Http2Frame
+T:class PicoNode.Http.Http2FrameCodec
+T:class PicoNode.Http.HttpConnectionHandler
+T:class PicoNode.Http.HttpConnectionHandlerOptions
+T:class PicoNode.Http.HttpHeaderCollection
+T:class PicoNode.Http.HttpHeaderNames
+T:class PicoNode.Http.HttpRequest
+T:class PicoNode.Http.HttpResponse
+T:class PicoNode.Http.HttpRouter
+T:class PicoNode.Http.HttpRouterOptions
+T:class PicoNode.Http.Internal.RouteTable`1
+T:class PicoNode.Http.Route`1
+T:class PicoNode.Http.WebSocketFrame
+T:class PicoNode.Http.WebSocketFrameCodec
+T:class PicoNode.Http.WebSocketMessage
+T:class PicoNode.Http.WebSocketUpgrade
+T:delegate PicoNode.Http.HttpRequestHandler
+T:delegate PicoNode.Http.WebSocketMessageHandler
+T:enum PicoNode.Http.Http2ErrorCode
+T:enum PicoNode.Http.Http2FrameFlags
+T:enum PicoNode.Http.Http2FrameType
+T:enum PicoNode.Http.Http2SettingId
+T:enum PicoNode.Http.HttpVersion
+T:enum PicoNode.Http.WebSocketOpCode
+T:struct PicoNode.Http.Http2Setting

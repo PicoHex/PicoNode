@@ -1,0 +1,53 @@
+B:PicoJsonRpc.JsonRpcException : System.Exception
+F:PicoJsonRpc.JsonRpcChannel.RecycleRequested : bool
+F:PicoJsonRpc.JsonRpcCodec.Camel : PicoJetson.JsonOptions static readonly
+F:PicoJsonRpc.NdjsonFramer.MaxFrameBytes : int = 16777216 const
+F:PicoJsonRpc.ProcessLifecycle.BackoffCrashThreshold : int = 3 const
+F:PicoJsonRpc.ProcessLifecycle.BackoffMax : System.TimeSpan static readonly
+F:PicoJsonRpc.ProcessLifecycle.BackoffStart : System.TimeSpan static readonly
+I:PicoJsonRpc.JsonRpcChannel : System.IDisposable
+I:PicoJsonRpc.JsonRpcClient : System.IAsyncDisposable
+M:PicoJsonRpc.JsonRpcChannel..ctor() : void
+M:PicoJsonRpc.JsonRpcChannel.Dispose() : void override
+M:PicoJsonRpc.JsonRpcClient..ctor(PicoJsonRpc.ProcessLifecycle lifecycle, int maxInFlight = 64) : void
+M:PicoJsonRpc.JsonRpcClient.CallAsync(string method, string paramsJson, System.Threading.CancellationToken ct, bool throwOnError = true) : System.Threading.Tasks.Task`1<PicoJsonRpc.JsonRpcFrame>
+M:PicoJsonRpc.JsonRpcClient.DisposeAsync() : System.Threading.Tasks.ValueTask override
+M:PicoJsonRpc.JsonRpcClient.StreamAsync(string method, string paramsJson, System.Threading.CancellationToken ct) : System.Collections.Generic.IAsyncEnumerable`1<PicoJsonRpc.JsonRpcFrame>
+M:PicoJsonRpc.JsonRpcCodec.Deserialize``1(string jsonText) : T static
+M:PicoJsonRpc.JsonRpcCodec.Serialize``1(T value) : string static
+M:PicoJsonRpc.JsonRpcError..ctor() : void
+M:PicoJsonRpc.JsonRpcException..ctor(int code, string message) : void
+M:PicoJsonRpc.JsonRpcFrame..ctor() : void
+M:PicoJsonRpc.JsonRpcFrame.Notification(string method, string paramsJson = null) : PicoJsonRpc.JsonRpcFrame static
+M:PicoJsonRpc.JsonRpcFrame.Request(string id, string method, string paramsJson = null) : PicoJsonRpc.JsonRpcFrame static
+M:PicoJsonRpc.JsonRpcFrame.Response(string id, string resultJson = null, PicoJsonRpc.JsonRpcError error = null) : PicoJsonRpc.JsonRpcFrame static
+M:PicoJsonRpc.NdjsonFramer.Encode``1(T envelope) : byte[] static
+M:PicoJsonRpc.NdjsonFramer.ReadAsync(System.IO.Stream stream, System.Threading.CancellationToken ct) : System.Collections.Generic.IAsyncEnumerable`1<PicoJsonRpc.JsonRpcFrame> static
+M:PicoJsonRpc.ProcessLifecycle..ctor(string name, System.Collections.Generic.IReadOnlyList`1<string> command, System.TimeSpan idleTimeout = null, System.Collections.Generic.IReadOnlyDictionary`2<string, string> env = null) : void
+M:PicoJsonRpc.ProcessLifecycle.AcquireAsync(System.Threading.CancellationToken ct) : System.Threading.Tasks.Task`1<PicoJsonRpc.JsonRpcChannel>
+M:PicoJsonRpc.ProcessLifecycle.RecycleAsync() : System.Threading.Tasks.Task
+M:PicoJsonRpc.ProcessLifecycle.Touch() : void
+P:PicoJsonRpc.JsonRpcChannel.ConsecutiveCrashes : int { get; set; }
+P:PicoJsonRpc.JsonRpcChannel.Name : string { get; init; }
+P:PicoJsonRpc.JsonRpcChannel.NextRetryAtUtc : System.DateTime { get; set; }
+P:PicoJsonRpc.JsonRpcChannel.Process : System.Diagnostics.Process { get; init; }
+P:PicoJsonRpc.JsonRpcChannel.Stdin : System.IO.Stream { get; init; }
+P:PicoJsonRpc.JsonRpcChannel.Stdout : System.IO.Stream { get; init; }
+P:PicoJsonRpc.JsonRpcError.Code : int { get; set; }
+P:PicoJsonRpc.JsonRpcError.Data : string { get; set; }
+P:PicoJsonRpc.JsonRpcError.Message : string { get; set; }
+P:PicoJsonRpc.JsonRpcException.Code : int { get; }
+P:PicoJsonRpc.JsonRpcFrame.Error : PicoJsonRpc.JsonRpcError { get; set; }
+P:PicoJsonRpc.JsonRpcFrame.Id : string { get; set; }
+P:PicoJsonRpc.JsonRpcFrame.Method : string { get; set; }
+P:PicoJsonRpc.JsonRpcFrame.Params : string { get; set; }
+P:PicoJsonRpc.JsonRpcFrame.Result : string { get; set; }
+P:PicoJsonRpc.ProcessLifecycle.IdleTimeout : System.TimeSpan { get; set; }
+T:class PicoJsonRpc.JsonRpcChannel
+T:class PicoJsonRpc.JsonRpcClient
+T:class PicoJsonRpc.JsonRpcCodec
+T:class PicoJsonRpc.JsonRpcError
+T:class PicoJsonRpc.JsonRpcException
+T:class PicoJsonRpc.JsonRpcFrame
+T:class PicoJsonRpc.NdjsonFramer
+T:class PicoJsonRpc.ProcessLifecycle
