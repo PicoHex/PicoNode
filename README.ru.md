@@ -80,8 +80,8 @@ PicoNode поставляется в виде уровневых NuGet-паке�
 | **PicoNode.Abs** | Пишешь обработчик или расширение | INode, ITcpConnectionHandler, базовые контракты |
 
 ```
-PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode  →  PicoNode.Abs
-(хостинг)   (веб/DI)         (HTTP)            (транспорт)   (интерфейсы)
+PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode.Abs
+PicoWeb  →  PicoNode  →  PicoNode.Abs
 ```
 
 ### TCP эхо-сервер

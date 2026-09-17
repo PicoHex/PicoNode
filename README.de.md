@@ -80,8 +80,8 @@ PicoNode wird als geschichtete NuGet-Pakete ausgeliefert. Wähle genau die Abstr
 | **PicoNode.Abs** | Du einen Handler oder eine Erweiterung schreibst | INode, ITcpConnectionHandler, Kernverträge |
 
 ```
-PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode  →  PicoNode.Abs
-(Host)      (Web/DI)         (HTTP)            (Transport)   (Schnittstellen)
+PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode.Abs
+PicoWeb  →  PicoNode  →  PicoNode.Abs
 ```
 
 ### TCP-Echo-Server

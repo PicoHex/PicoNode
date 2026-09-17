@@ -80,8 +80,8 @@ PicoNode는 계층형 NuGet 패키지로 제공됩니다. 필요한 추상화 �
 | **PicoNode.Abs** | 핸들러나 확장을 작성할 때 | INode, ITcpConnectionHandler, 코어 계약 |
 
 ```
-PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode  →  PicoNode.Abs
-(host)      (web/DI)         (HTTP)            (transport)   (interfaces)
+PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode.Abs
+PicoWeb  →  PicoNode  →  PicoNode.Abs
 ```
 
 ### TCP 에코 서버

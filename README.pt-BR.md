@@ -80,8 +80,8 @@ O PicoNode é distribuído como pacotes NuGet em camadas. Escolha exatamente o n
 | **PicoNode.Abs** | Você está escrevendo um handler ou extensão | INode, ITcpConnectionHandler, contratos centrais |
 
 ```
-PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode  →  PicoNode.Abs
-(host)      (web/DI)         (HTTP)            (transporte)  (interfaces)
+PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode.Abs
+PicoWeb  →  PicoNode  →  PicoNode.Abs
 ```
 
 ### Servidor TCP Echo

@@ -80,8 +80,8 @@ PicoNode 以分层 NuGet 包的形式发布。按需选择你需要的抽象层�
 | **PicoNode.Abs** | 你在编写处理器或扩展 | INode、ITcpConnectionHandler、核心契约 |
 
 ```
-PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode  →  PicoNode.Abs
-(宿主)      (Web / DI)       (HTTP)            (传输层)      (接口)
+PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode.Abs
+PicoWeb  →  PicoNode  →  PicoNode.Abs
 ```
 
 ### TCP 回显服务器

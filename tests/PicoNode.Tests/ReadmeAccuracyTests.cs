@@ -70,6 +70,24 @@ public sealed class ReadmeAccuracyTests
     }
 
     [Test]
+    public async Task No_readme_claims_the_http_layer_depends_on_the_transport()
+    {
+        // PicoNode.Http references only PicoNode.Abs — the transport (PicoNode)
+        // is a sibling that PicoWeb references directly. The old chain line
+        // claimed the false edge "PicoNode.Http  →  PicoNode  →  PicoNode.Abs".
+        var pattern = new Regex(@"PicoNode\.Http\s*→\s*PicoNode\s*→");
+        var offenders = Readmes
+            .SelectMany(file =>
+                File.ReadAllLines(file)
+                    .Where(line => pattern.IsMatch(line))
+                    .Select(line => $"{Path.GetFileName(file)}: {line}")
+            )
+            .ToArray();
+
+        await Assert.That(offenders.Length).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task English_readme_documents_picoweb_gen_diagnostics()
     {
         var text = File.ReadAllText(Path.Combine(RepoRoot, "README.md"));

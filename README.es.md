@@ -80,8 +80,8 @@ PicoNode se distribuye como paquetes NuGet por capas. Elige exactamente el nivel
 | **PicoNode.Abs** | Estás escribiendo un manejador o extensión | INode, ITcpConnectionHandler, contratos principales |
 
 ```
-PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode  →  PicoNode.Abs
-(host)      (web/DI)         (HTTP)            (transport)   (interfaces)
+PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode.Abs
+PicoWeb  →  PicoNode  →  PicoNode.Abs
 ```
 
 ### Servidor TCP Echo

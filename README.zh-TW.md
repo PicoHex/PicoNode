@@ -80,8 +80,8 @@ PicoNode 以分層 NuGet 套件形式提供。選擇您需要的抽象層級：
 | **PicoNode.Abs** | 正在撰寫處理器或擴充功能 | INode、ITcpConnectionHandler、核心合約 |
 
 ```
-PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode  →  PicoNode.Abs
-(host)      (web/DI)         (HTTP)            (transport)   (interfaces)
+PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode.Abs
+PicoWeb  →  PicoNode  →  PicoNode.Abs
 ```
 
 ### TCP 回聲伺服器

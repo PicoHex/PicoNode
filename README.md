@@ -80,8 +80,8 @@ PicoNode ships as layered NuGet packages. Pick exactly the abstraction level you
 | **PicoNode.Abs** | You're writing a handler or extension | INode, ITcpConnectionHandler, core contracts |
 
 ```
-PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode  →  PicoNode.Abs
-(host)      (web/DI)         (HTTP)            (transport)   (interfaces)
+PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode.Abs
+PicoWeb  →  PicoNode  →  PicoNode.Abs
 ```
 
 ### TCP Echo Server

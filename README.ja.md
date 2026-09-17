@@ -80,8 +80,8 @@ PicoNodeはレイヤ化されたNuGetパッケージとして提供されます�
 | **PicoNode.Abs** | ハンドラや拡張機能を書く場合 | INode、ITcpConnectionHandler、コアコントラクト |
 
 ```
-PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode  →  PicoNode.Abs
-(ホスト)     (Web/DI)         (HTTP)            (トランスポート)  (インターフェース)
+PicoWeb  →  PicoNode.Web  →  PicoNode.Http  →  PicoNode.Abs
+PicoWeb  →  PicoNode  →  PicoNode.Abs
 ```
 
 ### TCPエコーサーバー
