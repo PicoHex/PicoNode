@@ -8,9 +8,17 @@ public sealed class SseConnection
 {
     private readonly PipeWriter _writer;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
-    private long _lastWriteTickCount64;
+    private long _lastWriteTimestamp;
     private Task? _keepAliveTask;
     private CancellationTokenSource? _keepAliveCts;
+
+    /// <summary>
+    /// Monotonic clock for keep-alive idle measurement and scheduling. Internal
+    /// test seam: tests inject a manual TimeProvider to make busy-stream
+    /// suppression and ping cadence deterministic instead of depending on
+    /// real-time scheduling.
+    /// </summary>
+    internal TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 
     /// <summary>
     /// Connection-level disconnect source (set by SseEndpoint.Create): fires on
@@ -127,9 +135,9 @@ public sealed class SseConnection
     {
         while (!ct.IsCancellationRequested)
         {
-            await Task.Delay(KeepAliveInterval, ct).ConfigureAwait(false);
-            var idle = Environment.TickCount64 - Interlocked.Read(ref _lastWriteTickCount64);
-            if (idle >= (long)KeepAliveInterval.TotalMilliseconds)
+            await Task.Delay(KeepAliveInterval, TimeProvider, ct).ConfigureAwait(false);
+            var idle = TimeProvider.GetElapsedTime(Interlocked.Read(ref _lastWriteTimestamp));
+            if (idle >= KeepAliveInterval)
             {
                 try
                 {
@@ -176,7 +184,7 @@ public sealed class SseConnection
                 _keepAliveTask ??= KeepAliveLoopAsync(_keepAliveCts.Token);
             }
 
-            Interlocked.Exchange(ref _lastWriteTickCount64, Environment.TickCount64);
+            Interlocked.Exchange(ref _lastWriteTimestamp, TimeProvider.GetTimestamp());
             await _writer.WriteAsync(bytes, ct).ConfigureAwait(false);
             await _writer.FlushAsync(ct).ConfigureAwait(false);
         }
@@ -199,12 +207,25 @@ public static class SseEndpoint
     public static WebRequestHandler Create(
         Func<SseConnection, CancellationToken, Task> handler,
         TimeSpan? keepAliveInterval = null
+    ) => Create(handler, keepAliveInterval, TimeProvider.System);
+
+    /// <summary>
+    /// Internal overload used by tests to drive keep-alive deterministically with
+    /// a manual <see cref="TimeProvider"/>.
+    /// </summary>
+    internal static WebRequestHandler Create(
+        Func<SseConnection, CancellationToken, Task> handler,
+        TimeSpan? keepAliveInterval,
+        TimeProvider timeProvider
     )
     {
         return async (context, ct) =>
         {
             var pipe = new Pipe();
-            var sse = new SseConnection(pipe.Writer, keepAliveInterval);
+            var sse = new SseConnection(pipe.Writer, keepAliveInterval)
+            {
+                TimeProvider = timeProvider,
+            };
 
             // Per-stream disconnect source: fires on remote close (transport's
             // RemoteCloseToken) or when keep-alive writes start failing, which

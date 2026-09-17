@@ -10,6 +10,13 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
     private readonly long _cleanupIntervalTicks;
     private int _disposed;
 
+    /// <summary>
+    /// Clock used for refill math. Internal test seam: deterministic tests
+    /// advance a manual clock instead of sleeping across the refill interval
+    /// (a 50 ms window made "immediate retry is denied" load-sensitive).
+    /// </summary>
+    internal TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+
     /// <summary>Retry-After/Reset timestamp when RefillRate=0 (fixed window, 1 year).</summary>
     private const long NoRefillRetryAfterSeconds = 31_536_000;
 
@@ -44,7 +51,7 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         var bucket = _buckets.GetOrAdd(key, _ => new Bucket());
-        var now = DateTimeOffset.UtcNow.Ticks;
+        var now = TimeProvider.GetUtcNow().Ticks;
 
         lock (bucket.Lock)
         {
@@ -85,7 +92,7 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
             bucket.Tokens -= 1.0;
 
         var remaining = (int)Math.Floor(bucket.Tokens);
-        var nowUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var nowUnix = new DateTimeOffset(nowTicks, TimeSpan.Zero).ToUnixTimeSeconds();
 
         // NextAvailableAt
         long nextAvailable;
@@ -134,7 +141,7 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
 
     private void CleanupExpired()
     {
-        var cutoff = DateTimeOffset.UtcNow.Ticks - _cleanupIntervalTicks * 2;
+        var cutoff = TimeProvider.GetUtcNow().Ticks - _cleanupIntervalTicks * 2;
 
         foreach (var (id, bucket) in _buckets)
         {

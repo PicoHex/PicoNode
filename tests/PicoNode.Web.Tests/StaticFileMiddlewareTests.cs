@@ -21,6 +21,80 @@ public sealed class StaticFileMiddlewareTests
     }
 
     [Test]
+    public async Task Serves_file_when_root_path_has_trailing_separator()
+    {
+        // Regression: IsUnderRoot compared fullPath[_rootPath.Length] against a
+        // separator, which is never true when _rootPath itself ends with one —
+        // every file under such a root was treated as outside it (404).
+        File.WriteAllText(Path.Combine(_tempDir, "page.html"), "trailing");
+        var middleware = new StaticFileMiddleware(_tempDir + Path.DirectorySeparatorChar);
+        var context = CreateContext("GET", "/page.html");
+
+        var response = await middleware.InvokeAsync(
+            context,
+            NotFoundHandler,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(response.StatusCode)
+            .IsEqualTo(200)
+            .Because("a root path ending in a directory separator must not disable serving");
+
+        await using var bodyStream = response.BodyStream!;
+    }
+
+    [Test]
+    public async Task IsUnderRoot_accepts_files_directly_under_a_filesystem_root()
+    {
+        // A root that is itself a filesystem root (C:\ on Windows, / on Unix)
+        // ends with a separator; the separator-at-offset check never matched, so
+        // every file under that root was treated as outside it.
+        var root = Path.GetPathRoot(Path.GetTempPath())!;
+        var file = Path.Combine(root, "some-file.txt");
+
+        await Assert
+            .That(StaticFileMiddleware.IsUnderRoot(root, file))
+            .IsTrue()
+            .Because("a filesystem root must not reject the files below it");
+    }
+
+    [Test]
+    public async Task Content_length_header_is_culture_invariant()
+    {
+        // HTTP requires invariant decimal digits; no culture (group separators,
+        // native digits) may leak into the Content-Length header.
+        var previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+            File.WriteAllText(Path.Combine(_tempDir, "page.html"), new string('x', 1234));
+            var middleware = new StaticFileMiddleware(_tempDir);
+            var context = CreateContext("GET", "/page.html");
+
+            var response = await middleware.InvokeAsync(
+                context,
+                NotFoundHandler,
+                CancellationToken.None
+            );
+
+            await Assert
+                .That(response.Headers.TryGetValue("Content-Length", out var value))
+                .IsTrue();
+            await Assert.That(value).IsEqualTo("1234");
+
+            if (response.BodyStream is not null)
+            {
+                await response.BodyStream.DisposeAsync();
+            }
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
+    }
+
+    [Test]
     public async Task Serves_existing_html_file()
     {
         File.WriteAllText(Path.Combine(_tempDir, "page.html"), "<h1>Hello</h1>");

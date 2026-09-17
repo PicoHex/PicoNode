@@ -248,13 +248,25 @@ public sealed class SseEndpointPipeTests
     [Test]
     public async Task SseEndpoint_keep_alive_pings_while_handler_silent()
     {
+        // Deterministic clock: the ping is caused by advancing time, not by hoping
+        // a short real-time interval fires under thread-pool load.
+        var time = new ManualTimeProvider();
+        var handlerStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var handlerGate = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
         var endpoint = SseEndpoint.Create(
             async (sse, ct) =>
             {
                 await sse.WriteAsync("data: start\n\n", ct);
-                await Task.Delay(300, ct);
+                handlerStarted.TrySetResult();
+                await handlerGate.Task.WaitAsync(ct);
             },
-            TimeSpan.FromMilliseconds(50)
+            TimeSpan.FromSeconds(30),
+            time
         );
 
         var app = new WebApp(new TestContainer());
@@ -266,13 +278,18 @@ public sealed class SseEndpointPipeTests
             Encoding.ASCII.GetBytes("GET /events HTTP/1.1\r\nHost: example.com\r\n\r\n")
         );
 
-        await handler.OnReceivedAsync(context, request, CancellationToken.None);
+        var pipeline = handler.OnReceivedAsync(context, request, CancellationToken.None).AsTask();
+        await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
 
-        var allText = string.Concat(context.AllSent.Select(b => Encoding.ASCII.GetString(b)));
+        time.Advance(TimeSpan.FromSeconds(31));
+
         await Assert
-            .That(allText)
-            .Contains(": keepalive")
+            .That(await WaitForSentTextAsync(context, ": keepalive"))
+            .IsTrue()
             .Because("idle SSE connection must emit keep-alive pings through the full pipeline");
+
+        handlerGate.TrySetResult();
+        await pipeline.WaitAsync(TimeSpan.FromSeconds(3));
     }
 
     /// <summary>
@@ -284,14 +301,24 @@ public sealed class SseEndpointPipeTests
     [Test]
     public async Task SseEndpoint_keep_alive_stops_after_handler_completes()
     {
+        var time = new ManualTimeProvider();
+        var handlerStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var handlerGate = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
         var endpoint = SseEndpoint.Create(
             async (sse, ct) =>
             {
                 await sse.WriteAsync("data: start\n\n", ct);
-                await Task.Delay(150, ct);
+                handlerStarted.TrySetResult();
+                await handlerGate.Task.WaitAsync(ct);
                 await sse.WriteAsync("data: end\n\n", ct);
             },
-            TimeSpan.FromMilliseconds(50)
+            TimeSpan.FromSeconds(30),
+            time
         );
 
         var app = new WebApp(new TestContainer());
@@ -303,14 +330,23 @@ public sealed class SseEndpointPipeTests
             Encoding.ASCII.GetBytes("GET /events HTTP/1.1\r\nHost: example.com\r\n\r\n")
         );
 
-        await handler.OnReceivedAsync(context, request, CancellationToken.None);
+        var pipeline = handler.OnReceivedAsync(context, request, CancellationToken.None).AsTask();
+        await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
 
-        var allText = string.Concat(context.AllSent.Select(b => Encoding.ASCII.GetString(b)));
+        time.Advance(TimeSpan.FromSeconds(31));
         await Assert
-            .That(allText)
-            .Contains(": keepalive")
+            .That(await WaitForSentTextAsync(context, ": keepalive"))
+            .IsTrue()
             .Because("idle SSE connection must emit keep-alive pings while handler is silent");
 
+        handlerGate.TrySetResult();
+        await pipeline.WaitAsync(TimeSpan.FromSeconds(3));
+
+        // The loop was stopped with the handler; a further clock advance must not
+        // produce any new frame.
+        time.Advance(TimeSpan.FromSeconds(31));
+
+        var allText = context.SentTextSnapshot();
         var sentinelIndex = allText.LastIndexOf("data: end", StringComparison.Ordinal);
         await Assert
             .That(sentinelIndex)
@@ -320,6 +356,25 @@ public sealed class SseEndpointPipeTests
             .That(allText[(sentinelIndex + "data: end".Length)..].Contains(": keepalive"))
             .IsFalse()
             .Because("keep-alive loop must stop after the handler completes normally");
+    }
+
+    private static async Task<bool> WaitForSentTextAsync(
+        RecordingSseConnectionContext context,
+        string marker
+    )
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (context.SentTextSnapshot().Contains(marker, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            await Task.Delay(10);
+        }
+
+        return context.SentTextSnapshot().Contains(marker, StringComparison.Ordinal);
     }
 
     [Test]
@@ -366,13 +421,27 @@ public sealed class SseEndpointPipeTests
         public int SendCount { get; private set; }
         public int CloseCount { get; private set; }
 
+        /// <summary>Thread-safe snapshot for keep-alive tests that poll while the pump writes.</summary>
+        public string SentTextSnapshot()
+        {
+            lock (AllSent)
+            {
+                return string.Concat(AllSent.Select(static b => Encoding.ASCII.GetString(b)));
+            }
+        }
+
         public Task SendAsync(
             ReadOnlySequence<byte> buffer,
             CancellationToken cancellationToken = default
         )
         {
-            LastSent = buffer.ToArray();
-            AllSent.Add(LastSent);
+            var sent = buffer.ToArray();
+            LastSent = sent;
+            lock (AllSent)
+            {
+                AllSent.Add(sent);
+            }
+
             SendCount++;
             return Task.CompletedTask;
         }

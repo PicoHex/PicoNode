@@ -458,6 +458,78 @@ public sealed class MultipartFormDataParserTests
         await Assert.That(result.Fields[0].Value).IsEqualTo("value1");
     }
 
+    [Test]
+    public async Task InMemory_part_larger_than_MaxPartSizeBytes_throws()
+    {
+        // Regression: ParseBody (the request.Body path) ignored
+        // MaxPartSizeBytes/MaxTotalSizeBytes, while the streaming path enforced
+        // them — the same request succeeded or failed depending on which body
+        // representation it used.
+        var body =
+            "--b\r\n"
+            + "Content-Disposition: form-data; name=\"f\"; filename=\"a.bin\"\r\n"
+            + "Content-Type: application/octet-stream\r\n"
+            + "\r\n"
+            + new string('x', 100)
+            + "\r\n--b--\r\n";
+        var request = CreateMultipartRequest("b", body);
+        var options = new MultipartFormDataParserOptions { MaxPartSizeBytes = 10 };
+
+        await Assert
+            .That(async () => await MultipartFormDataParser.ParseAsync(request, options))
+            .Throws<InvalidDataException>()
+            .Because(
+                "the in-memory path must enforce the same part-size limit as the streaming path"
+            );
+    }
+
+    [Test]
+    public async Task InMemory_total_larger_than_MaxTotalSizeBytes_throws()
+    {
+        var body =
+            "--b\r\n"
+            + "Content-Disposition: form-data; name=\"a\"\r\n"
+            + "\r\n"
+            + new string('x', 20)
+            + "\r\n--b\r\n"
+            + "Content-Disposition: form-data; name=\"b\"\r\n"
+            + "\r\n"
+            + new string('y', 20)
+            + "\r\n--b--\r\n";
+        var request = CreateMultipartRequest("b", body);
+        var options = new MultipartFormDataParserOptions { MaxTotalSizeBytes = 20 };
+
+        await Assert
+            .That(async () => await MultipartFormDataParser.ParseAsync(request, options))
+            .Throws<InvalidDataException>()
+            .Because(
+                "the in-memory path must enforce the same total-size limit as the streaming path"
+            );
+    }
+
+    [Test]
+    public async Task InMemory_part_and_total_exactly_at_limit_are_accepted()
+    {
+        var body =
+            "--b\r\n"
+            + "Content-Disposition: form-data; name=\"a\"\r\n"
+            + "\r\n"
+            + new string('x', 10)
+            + "\r\n--b--\r\n";
+        var request = CreateMultipartRequest("b", body);
+        var options = new MultipartFormDataParserOptions
+        {
+            MaxPartSizeBytes = 10,
+            MaxTotalSizeBytes = 10,
+        };
+
+        var result = await MultipartFormDataParser.ParseAsync(request, options);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Fields.Count).IsEqualTo(1);
+        await Assert.That(result.Fields[0].Value).IsEqualTo(new string('x', 10));
+    }
+
     internal static async Task<byte[]> ReadFileAsync(MultipartFormFile file)
     {
         using var stream = file.OpenReadStream();

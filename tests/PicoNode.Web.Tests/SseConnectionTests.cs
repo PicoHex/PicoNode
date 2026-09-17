@@ -186,11 +186,16 @@ public sealed class SseConnectionTests
     [Test]
     public async Task Idle_connection_emits_keepalive_frames()
     {
+        // Deterministic trigger: the ping is caused by advancing the clock.
+        var time = new ManualTimeProvider();
+        var interval = TimeSpan.FromSeconds(10);
         var pipe = new Pipe();
-        var sse = new SseConnection(pipe.Writer, TimeSpan.FromMilliseconds(50));
+        var sse = new SseConnection(pipe.Writer, interval) { TimeProvider = time };
 
         // One frame starts the lazy loop; then the connection goes silent.
         await sse.WriteAsync("data: hello\n\n", CancellationToken.None);
+
+        time.Advance(interval + TimeSpan.FromSeconds(1));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         var output = await ReadUntilKeepAliveAsync(pipe.Reader, cts.Token);
@@ -201,31 +206,41 @@ public sealed class SseConnectionTests
             .Because("idle SSE connection must emit keep-alive comment frames");
 
         await sse.CompleteAsync(CancellationToken.None);
-        // Loop self-terminates on its next wake (failed write on completed pipe).
+        await sse.StopKeepAliveAsync();
     }
 
     [Test]
-    public async Task Busy_stream_does_not_get_interleaved_pings()
+    public async Task Writes_within_each_interval_suppress_keepalive_pings()
     {
+        // Deterministic replacement for the real-time busy-stream test: the old
+        // version depended on Task.Delay(5) actually keeping up with a 200ms
+        // interval, so thread-pool starvation produced false failures. Idle is a
+        // function of the injected clock — interleaving writes with clock advances
+        // proves "idle-only pinging" without any real-time assumption.
+        var time = new ManualTimeProvider();
+        var interval = TimeSpan.FromSeconds(10);
         var pipe = new Pipe();
-        var sse = new SseConnection(pipe.Writer, TimeSpan.FromMilliseconds(200));
+        var sse = new SseConnection(pipe.Writer, interval) { TimeProvider = time };
 
-        var stopwatch = Stopwatch.StartNew();
-        while (stopwatch.ElapsedMilliseconds < 600)
-        {
-            await sse.WriteAsync(
-                $"data: {stopwatch.ElapsedMilliseconds}\n\n",
-                CancellationToken.None
-            );
-            await Task.Delay(5);
-        }
+        // First write starts the loop; its timer is due one interval from now.
+        await sse.WriteAsync("data: first\n\n", CancellationToken.None);
+        time.Advance(interval / 2);
+        await sse.WriteAsync("data: second\n\n", CancellationToken.None);
+        // The loop wakes here and must see half an interval of idle, not a full one.
+        time.Advance(interval / 2);
+        await sse.WriteAsync("data: third\n\n", CancellationToken.None);
         await sse.CompleteAsync(CancellationToken.None);
+        await sse.StopKeepAliveAsync();
 
         var output = await ReadAllTextAsync(pipe.Reader);
+
         await Assert
             .That(output.Contains(": keepalive"))
             .IsFalse()
-            .Because("writes every 5ms keep the stream busy; idle-only pinging must stay silent");
+            .Because("every keep-alive wake must find the stream written to within the interval");
+        await Assert.That(output).Contains("data: first");
+        await Assert.That(output).Contains("data: second");
+        await Assert.That(output).Contains("data: third");
     }
 
     [Test]
@@ -304,19 +319,22 @@ public sealed class SseConnectionTests
     [Test]
     public async Task StopKeepAliveAsync_stops_further_pings()
     {
+        var time = new ManualTimeProvider();
+        var interval = TimeSpan.FromSeconds(10);
         var pipe = new Pipe();
-        var sse = new SseConnection(pipe.Writer, TimeSpan.FromMilliseconds(200));
+        var sse = new SseConnection(pipe.Writer, interval) { TimeProvider = time };
 
         await sse.WriteAsync("data: first\n\n", CancellationToken.None);
 
-        // Wait for the first automatic ping.
+        // First automatic ping, triggered deterministically.
+        time.Advance(interval + TimeSpan.FromSeconds(1));
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         await ReadUntilKeepAliveAsync(pipe.Reader, cts.Token);
 
         await sse.StopKeepAliveAsync();
 
-        // With the loop stopped, no further pings may appear.
-        await Task.Delay(350);
+        // With the loop stopped, further clock advances must not produce pings.
+        time.Advance(interval * 2);
         await sse.CompleteAsync(CancellationToken.None);
         var output = await ReadAllTextAsync(pipe.Reader);
 

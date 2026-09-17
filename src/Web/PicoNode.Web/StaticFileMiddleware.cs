@@ -18,7 +18,7 @@ public sealed class StaticFileMiddleware
         ValidateRequestPathPrefix(options.RequestPathPrefix);
         ValidateDefaultDocument(options.DefaultDocument);
 
-        _rootPath = Path.GetFullPath(rootPath);
+        _rootPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootPath));
         _requestPathPrefix = options.RequestPathPrefix.TrimEnd('/');
         _defaultDocument = options.DefaultDocument;
 
@@ -71,7 +71,10 @@ public sealed class StaticFileMiddleware
 
         var headers = new HttpHeaderCollection([
             new(HttpHeaderNames.ContentType, contentType),
-            new(HttpHeaderNames.ContentLength, fileInfo.Length.ToString()),
+            new(
+                HttpHeaderNames.ContentLength,
+                fileInfo.Length.ToString(CultureInfo.InvariantCulture)
+            ),
         ]);
 
         var isHead = context.Request.Method.Equals("HEAD", StringComparison.OrdinalIgnoreCase);
@@ -162,15 +165,23 @@ public sealed class StaticFileMiddleware
         }
     }
 
-    private bool IsUnderRoot(string fullPath)
+    private bool IsUnderRoot(string fullPath) => IsUnderRoot(_rootPath, fullPath);
+
+    /// <summary>
+    /// Pure containment check: <paramref name="fullPath"/> must be the root itself
+    /// or sit below it. A root that is itself a filesystem root (e.g. <c>C:\</c> or
+    /// <c>/</c>) ends in a separator, in which case the prefix match is sufficient.
+    /// </summary>
+    internal static bool IsUnderRoot(string rootPath, string fullPath)
     {
-        if (!fullPath.StartsWith(_rootPath, StringComparison.OrdinalIgnoreCase))
+        if (!fullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        return fullPath.Length == _rootPath.Length
-            || fullPath[_rootPath.Length] == Path.DirectorySeparatorChar
-            || fullPath[_rootPath.Length] == Path.AltDirectorySeparatorChar;
+        return fullPath.Length == rootPath.Length
+            || Path.EndsInDirectorySeparator(rootPath)
+            || fullPath[rootPath.Length] == Path.DirectorySeparatorChar
+            || fullPath[rootPath.Length] == Path.AltDirectorySeparatorChar;
     }
 }

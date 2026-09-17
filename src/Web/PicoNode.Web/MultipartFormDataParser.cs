@@ -33,7 +33,13 @@ public static class MultipartFormDataParser
         if (request.Body.Length > 0)
         {
             var boundaryBytes = Encoding.UTF8.GetBytes(boundary);
-            return ParseBody(request.Body, boundaryBytes, logger);
+            return ParseBody(
+                request.Body,
+                boundaryBytes,
+                options.MaxPartSizeBytes,
+                options.MaxTotalSizeBytes,
+                logger
+            );
         }
 
         var bodyStream = request.BodyStream;
@@ -93,12 +99,15 @@ public static class MultipartFormDataParser
     private static MultipartFormData ParseBody(
         ReadOnlyMemory<byte> body,
         byte[] boundary,
+        int maxPartSizeBytes,
+        int maxTotalSizeBytes,
         ILogger? logger = null
     )
     {
         var bodySpan = body.Span;
         var fields = new List<MultipartFormField>();
         var files = new List<MultipartFormFile>();
+        var totalContentLength = 0L;
 
         var delimiter = new byte[boundary.Length + 2];
         DashDash.CopyTo(delimiter.AsSpan());
@@ -142,6 +151,20 @@ public static class MultipartFormDataParser
 
             var content = body[pos..contentEnd];
             pos = nextDelimiter + delimiter.Length;
+
+            // Same limits as the streaming path, in the same order: the per-part
+            // guard fires while a part is assembled, the total is checked after
+            // (StreamingMultipartParser / MultipartBufferedReader semantics).
+            if (content.Length > maxPartSizeBytes)
+            {
+                throw new InvalidDataException("Multipart part exceeds maximum size");
+            }
+
+            totalContentLength += content.Length;
+            if (totalContentLength > maxTotalSizeBytes)
+            {
+                throw new InvalidDataException("Multipart body exceeds maximum total size");
+            }
 
             ParsePart(headerBytes, content, fields, files, logger);
         }

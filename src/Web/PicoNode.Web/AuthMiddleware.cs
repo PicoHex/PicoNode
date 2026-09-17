@@ -10,7 +10,10 @@ namespace PicoNode.Web;
 public sealed class AuthMiddleware
 {
     /// <summary>
-    /// Creates a Bearer token authentication middleware.
+    /// Creates a Bearer token authentication middleware. Token validation
+    /// failures are fail-open: the request continues unauthenticated, and
+    /// downstream code must check <see cref="GetIdentity"/> before granting
+    /// access (the middleware never rejects a request by itself).
     /// </summary>
     public static WebMiddleware Create(AuthOptions options)
     {

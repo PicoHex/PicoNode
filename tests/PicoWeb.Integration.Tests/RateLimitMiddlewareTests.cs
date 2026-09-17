@@ -252,28 +252,39 @@ public sealed class RateLimitMiddlewareTests
     [Test]
     public async Task Store_refills_after_interval()
     {
-        var store = new InMemoryRateLimitStore(
+        // Deterministic clock: the refill is caused by advancing time, so the
+        // "immediate retry is denied" step cannot race a 50 ms real-time window.
+        var clock = new TestClock();
+        using var store = new InMemoryRateLimitStore(
             new RateLimitOptions
             {
                 KeySelector = static ctx => "refill",
                 MaxTokens = 1,
                 RefillRate = 1,
                 RefillInterval = TimeSpan.FromMilliseconds(50),
-                CleanupInterval = TimeSpan.FromMilliseconds(100),
+                // The cleanup timer still fires (its period is min(refill, cleanup)),
+                // but the cutoff it computes becomes `now - 2h`, so a bucket touched
+                // during this test can never be reaped — the assertions are therefore
+                // independent of cleanup-timer scheduling. The store is disposed at
+                // the end so the timer cannot linger into other tests either.
+                CleanupInterval = TimeSpan.FromHours(1),
             }
-        );
+        )
+        {
+            TimeProvider = clock,
+        };
 
         // Consume the only token
         var r1 = await store.TryConsumeTokenAsync("refill");
         await Assert.That(r1.Allowed).IsTrue();
         await Assert.That(r1.Remaining).IsEqualTo(0);
 
-        // Immediate retry → denied
+        // Same instant → denied
         var r2 = await store.TryConsumeTokenAsync("refill");
         await Assert.That(r2.Allowed).IsFalse();
 
-        // Wait for refill
-        await Task.Delay(100);
+        // One refill interval later the bucket is refilled.
+        clock.Advance(TimeSpan.FromMilliseconds(50));
 
         var r3 = await store.TryConsumeTokenAsync("refill");
         await Assert.That(r3.Allowed).IsTrue();
@@ -327,5 +338,15 @@ public sealed class RateLimitMiddlewareTests
         // Should not throw
         var result = await store.TryConsumeTokenAsync(longKey);
         await Assert.That(result.Allowed).IsTrue();
+    }
+
+    /// <summary>Clock that only moves when the test says so.</summary>
+    private sealed class TestClock : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan delta) => _now += delta;
     }
 }
