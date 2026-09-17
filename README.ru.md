@@ -24,13 +24,13 @@
 
 | Возможность | PicoNode | ASP.NET Core |
 |-------------|----------|-------------|
-| **Модель зависимостей** | Ноль обязательных зависимостей; выбирай уровень | Ссылка на `Microsoft.AspNetCore.App` |
+| **Модель зависимостей** | Без зависимостей от фреймворка Microsoft (только нативные библиотеки PicoHex); выбирай уровень | Ссылка на `Microsoft.AspNetCore.App` |
 | **Разбор запросов** | Потоковый на основе Span, zero-copy `System.IO.Pipelines` | Строковый с адаптером `IO.Pipelines` |
 | **HTTP/2** | Встроенный HPACK-декодер, управление на уровне фреймов | Прозрачно через Kestrel; ограниченный низкоуровневый доступ |
 | **AOT-поддержка** | ✅ Нативно — все библиотеки net10.0 | ⚠️ Требует trimming |
 | **DI / Логирование / Конфиг** | PicoDI + PicoLog + PicoCfg (родные PicoHex) | Microsoft.Extensions.* |
 | **WebSocket** | Кодек фреймов RFC 6455 с абстракцией обработчика сообщений | Прозрачно через middleware |
-| **Строк кода** | ~17K на весь стек | ~1M+ для ASP.NET Core |
+| **Строк кода** | ~18K на весь стек | ~1M+ для ASP.NET Core |
 
 > **Приоритет дизайна:** PicoNode ставит во главу угла эффективность выделения памяти и AOT-совместимость. `ValueTask` в горячих делегатах, управление буферами через ArrayPool и опциональные делегаты (без принудительных аллокаций) — это осознанные компромиссы, которые делают транспортный уровень компактным и предсказуемым.
 
@@ -480,11 +480,21 @@ var setCookie = new SetCookieBuilder("session", "abc123")
     .Build();
 
 // Multipart form data
-var form = MultipartFormDataParser.Parse(context.Request);
+// Limits (MaxPartSizeBytes/MaxTotalSizeBytes) are enforced on both the in-memory
+// Body path and the streaming BodyStream path; exceeding one throws InvalidDataException.
+var form = await MultipartFormDataParser.ParseAsync(
+    context.Request,
+    new MultipartFormDataParserOptions
+    {
+        MaxPartSizeBytes = 64 * 1024 * 1024, // per part (default)
+        MaxTotalSizeBytes = 64 * 1024 * 1024, // all parts (default)
+        MaxBoundaryLength = 70, // default
+    }
+);
 foreach (var field in form?.Fields ?? [])
     Console.WriteLine($"{field.Name} = {field.Value}");
 foreach (var file in form?.Files ?? [])
-    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length bytes)");
+    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
 ## Метрики

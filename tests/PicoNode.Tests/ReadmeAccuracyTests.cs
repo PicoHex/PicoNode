@@ -96,6 +96,81 @@ public sealed class ReadmeAccuracyTests
         await Assert.That(text).Contains("PicoJetson.Gen");
     }
 
+    [Test]
+    public async Task No_readme_claims_17K_lines()
+    {
+        var offenders = Readmes
+            .SelectMany(file =>
+                File.ReadAllLines(file)
+                    .Where(line => line.Contains("17K", StringComparison.Ordinal))
+                    .Select(line => $"{Path.GetFileName(file)}: {line}")
+            )
+            .ToArray();
+
+        await Assert.That(offenders.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Every_readme_documents_the_async_multipart_api_and_its_limits()
+    {
+        // The old examples called the nonexistent synchronous Parse(...) and did
+        // not mention the parser limits that are now enforced on both body paths.
+        var offenders = Readmes
+            .SelectMany(file =>
+            {
+                var text = File.ReadAllText(file);
+                var problems = new List<string>();
+                if (!text.Contains("MultipartFormDataParser.ParseAsync", StringComparison.Ordinal))
+                {
+                    problems.Add("missing MultipartFormDataParser.ParseAsync");
+                }
+
+                if (text.Contains("MultipartFormDataParser.Parse(", StringComparison.Ordinal))
+                {
+                    problems.Add("uses the nonexistent synchronous Parse(...) API");
+                }
+
+                if (!text.Contains("MaxPartSizeBytes", StringComparison.Ordinal))
+                {
+                    problems.Add("missing MaxPartSizeBytes");
+                }
+
+                if (!text.Contains("MaxTotalSizeBytes", StringComparison.Ordinal))
+                {
+                    problems.Add("missing MaxTotalSizeBytes");
+                }
+
+                if (!text.Contains("({file.Content.Length} bytes)", StringComparison.Ordinal))
+                {
+                    problems.Add("broken multipart file-size example");
+                }
+
+                return problems.Select(p => $"{Path.GetFileName(file)}: {p}");
+            })
+            .ToArray();
+
+        await Assert.That(offenders.Length).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task No_readme_claims_zero_required_runtime_deps()
+    {
+        // PicoNode packages depend on PicoHex-native libraries (PicoLog.Abs,
+        // PicoCfg.Abs, and PicoDI/PicoJetson for PicoWeb) — the claim is only true
+        // for Microsoft framework references.
+        var offenders = Readmes
+            .SelectMany(file =>
+                File.ReadAllLines(file)
+                    .Where(line =>
+                        line.Contains("Zero required runtime deps", StringComparison.Ordinal)
+                    )
+                    .Select(line => $"{Path.GetFileName(file)}: {line}")
+            )
+            .ToArray();
+
+        await Assert.That(offenders.Length).IsEqualTo(0);
+    }
+
     private static readonly string[] ModuleCsprojs =
     [
         "src/Network/PicoNode.Abs/PicoNode.Abs.csproj",

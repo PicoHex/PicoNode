@@ -24,13 +24,13 @@
 
 | 기능 | PicoNode | ASP.NET Core |
 |---------|----------|-------------|
-| **의존성 모델** | 필수 런타임 의존성 없음; 계층 선택 가능 | `Microsoft.AspNetCore.App` 프레임워크 참조 |
+| **의존성 모델** | Microsoft 프레임워크 의존성 없음(PicoHex 네이티브 라이브러리만 사용); 계층 선택 가능 | `Microsoft.AspNetCore.App` 프레임워크 참조 |
 | **요청 파싱** | Span 기반 스트리밍, 제로 카피 `System.IO.Pipelines` | 문자열 기반 + `IO.Pipelines` 어댑터 |
 | **HTTP/2** | 인라인 HPACK 디코더, 프레임 수준 제어 | Kestrel을 통한 투명 처리; 저수준 접근 제한 |
 | **AOT 지원** | ✅ 네이티브 — 모든 net10.0 라이브러리 | ⚠️ 트리밍 필요 |
 | **DI / 로깅 / 구성** | PicoDI + PicoLog + PicoCfg (PicoHex 네이티브) | Microsoft.Extensions.* |
 | **WebSocket** | 메시지 핸들러 추상화를 갖춘 RFC 6455 프레임 코덱 | 미들웨어를 통한 투명 처리 |
-| **코드 라인 수** | 전체 스택 약 17K | ASP.NET Core 약 1M+ |
+| **코드 라인 수** | 전체 스택 약 18K | ASP.NET Core 약 1M+ |
 
 > **설계 우선순위:** PicoNode는 할당 효율성과 AOT 호환성을 우선합니다. 핫 패스 델리게이트의 `ValueTask`, ArrayPool 기반 버퍼 관리, 선택적 델리게이트(강제 할당 없음)는 의도적인 트레이드오프로, 전송 계층을 작고 예측 가능하게 유지합니다.
 
@@ -490,7 +490,17 @@ var setCookie = new SetCookieBuilder("session", "abc123")
     .Build();
 
 // Multipart form data
-var form = MultipartFormDataParser.Parse(context.Request);
+// Limits (MaxPartSizeBytes/MaxTotalSizeBytes) are enforced on both the in-memory
+// Body path and the streaming BodyStream path; exceeding one throws InvalidDataException.
+var form = await MultipartFormDataParser.ParseAsync(
+    context.Request,
+    new MultipartFormDataParserOptions
+    {
+        MaxPartSizeBytes = 64 * 1024 * 1024, // per part (default)
+        MaxTotalSizeBytes = 64 * 1024 * 1024, // all parts (default)
+        MaxBoundaryLength = 70, // default
+    }
+);
 foreach (var field in form?.Fields ?? [])
     Console.WriteLine($"{field.Name} = {field.Value}");
 foreach (var file in form?.Files ?? [])

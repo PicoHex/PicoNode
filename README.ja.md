@@ -24,13 +24,13 @@
 
 | 機能 | PicoNode | ASP.NET Core |
 |---------|----------|-------------|
-| **依存モデル** | 必須ランタイム依存ゼロ。レイヤを選択して組み合わせ可能 | `Microsoft.AspNetCore.App` フレームワーク参照 |
+| **依存モデル** | Microsoft フレームワーク依存なし（PicoHex ネイティブ ライブラリのみ）。レイヤを選択して組み合わせ可能 | `Microsoft.AspNetCore.App` フレームワーク参照 |
 | **リクエスト解析** | Spanベースのストリーミング、ゼロコピー `System.IO.Pipelines` | 文字列ベース + `IO.Pipelines` アダプタ |
 | **HTTP/2** | インラインHPACKデコーダ、フレームレベル制御 | Kestrel経由で透過的。低レベルアクセスは限定 |
 | **AOT対応** | ✅ ネイティブ — 全net10.0ライブラリで対応 | ⚠️ トリミングが必要 |
 | **DI / ログ / 設定** | PicoDI + PicoLog + PicoCfg (PicoHexネイティブ) | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 フレームコーデック + メッセージハンドラ抽象化 | ミドルウェア経由で透過的 |
-| **コード行数** | フルスタックで約17K行 | ASP.NET Coreは約100万行以上 |
+| **コード行数** | フルスタックで約18K行 | ASP.NET Coreは約100万行以上 |
 
 > **設計方針:** PicoNodeはアロケーション効率とAOT互換性を優先します。ホットパスデリゲートでの`ValueTask`、ArrayPoolベースのバッファ管理、オプショナルデリゲート（強制アロケーションなし）は意図的なトレードオフであり、トランスポート層をコンパクトで予測可能な状態に保ちます。
 
@@ -480,11 +480,21 @@ var setCookie = new SetCookieBuilder("session", "abc123")
     .Build();
 
 // マルチパートフォームデータ
-var form = MultipartFormDataParser.Parse(context.Request);
+// Limits (MaxPartSizeBytes/MaxTotalSizeBytes) are enforced on both the in-memory
+// Body path and the streaming BodyStream path; exceeding one throws InvalidDataException.
+var form = await MultipartFormDataParser.ParseAsync(
+    context.Request,
+    new MultipartFormDataParserOptions
+    {
+        MaxPartSizeBytes = 64 * 1024 * 1024, // per part (default)
+        MaxTotalSizeBytes = 64 * 1024 * 1024, // all parts (default)
+        MaxBoundaryLength = 70, // default
+    }
+);
 foreach (var field in form?.Fields ?? [])
     Console.WriteLine($"{field.Name} = {field.Value}");
 foreach (var file in form?.Files ?? [])
-    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length bytes)");
+    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
 ## メトリクス

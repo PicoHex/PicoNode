@@ -24,13 +24,13 @@
 
 | Feature | PicoNode | ASP.NET Core |
 |---------|----------|-------------|
-| **Dependency model** | Zero required runtime deps; layer pick-and-choose | `Microsoft.AspNetCore.App` framework reference |
+| **Dependency model** | No Microsoft framework deps (PicoHex-native libraries only); layer pick-and-choose | `Microsoft.AspNetCore.App` framework reference |
 | **Request parsing** | Span-based streaming, zero-copy `System.IO.Pipelines` | String-based with `IO.Pipelines` adapter |
 | **HTTP/2** | Inline HPACK decoder, frame-level control | Transparent via Kestrel; limited low-level access |
 | **AOT Support** | ✅ Native — all net10.0 libraries | ⚠️ Requires trimming |
 | **DI / Logging / Config** | PicoDI + PicoLog + PicoCfg (PicoHex native) | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 frame codec with message handler abstraction | Transparent via middleware |
-| **Line count** | ~17K for the full stack | ~1M+ for ASP.NET Core |
+| **Line count** | ~18K for the full stack | ~1M+ for ASP.NET Core |
 
 > **Design priority:** PicoNode prioritizes allocation efficiency and AOT compatibility. `ValueTask` on hot-path delegates, ArrayPool-based buffer management, and optional delegates (no forced allocations) are deliberate trade-offs — they keep the transport layer compact and predictable.
 
@@ -492,7 +492,17 @@ var setCookie = new SetCookieBuilder("session", "abc123")
     .Build();
 
 // Multipart form data
-var form = MultipartFormDataParser.Parse(context.Request);
+// Limits (MaxPartSizeBytes/MaxTotalSizeBytes) are enforced on both the in-memory
+// Body path and the streaming BodyStream path; exceeding one throws InvalidDataException.
+var form = await MultipartFormDataParser.ParseAsync(
+    context.Request,
+    new MultipartFormDataParserOptions
+    {
+        MaxPartSizeBytes = 64 * 1024 * 1024, // per part (default)
+        MaxTotalSizeBytes = 64 * 1024 * 1024, // all parts (default)
+        MaxBoundaryLength = 70, // default
+    }
+);
 foreach (var field in form?.Fields ?? [])
     Console.WriteLine($"{field.Name} = {field.Value}");
 foreach (var file in form?.Files ?? [])

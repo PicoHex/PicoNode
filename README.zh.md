@@ -24,13 +24,13 @@
 
 | 特性 | PicoNode | ASP.NET Core |
 |---------|----------|-------------|
-| **依赖模型** | 零必需运行时依赖；分层按需选用 | `Microsoft.AspNetCore.App` 框架引用 |
+| **依赖模型** | 无 Microsoft 框架依赖（仅 PicoHex 原生库）；分层按需选用 | `Microsoft.AspNetCore.App` 框架引用 |
 | **请求解析** | 基于 Span 的流式解析，`System.IO.Pipelines` 零拷贝 | 基于字符串，`IO.Pipelines` 适配器 |
 | **HTTP/2** | 内联 HPACK 解码器，帧级控制 | 通过 Kestrel 透明处理；底层访问能力有限 |
 | **AOT 支持** | ✅ 原生支持 — 所有 net10.0 库 | ⚠️ 需要裁剪 |
 | **DI / 日志 / 配置** | PicoDI + PicoLog + PicoCfg（PicoHex 原生） | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 帧编码器加消息处理器抽象 | 通过中间件透明处理 |
-| **代码行数** | 全栈约 17K 行 | ASP.NET Core 约 100 万+ 行 |
+| **代码行数** | 全栈约 18K 行 | ASP.NET Core 约 100 万+ 行 |
 
 > **设计原则：** PicoNode 优先考虑分配效率和 AOT 兼容性。热路径委托使用 `ValueTask`，基于 ArrayPool 的缓冲区管理，可选委托（无强制分配）— 这些都是有意为之的权衡，旨在保持传输层紧凑且可预测。
 
@@ -480,11 +480,21 @@ var setCookie = new SetCookieBuilder("session", "abc123")
     .Build();
 
 // Multipart form data
-var form = MultipartFormDataParser.Parse(context.Request);
+// Limits (MaxPartSizeBytes/MaxTotalSizeBytes) are enforced on both the in-memory
+// Body path and the streaming BodyStream path; exceeding one throws InvalidDataException.
+var form = await MultipartFormDataParser.ParseAsync(
+    context.Request,
+    new MultipartFormDataParserOptions
+    {
+        MaxPartSizeBytes = 64 * 1024 * 1024, // per part (default)
+        MaxTotalSizeBytes = 64 * 1024 * 1024, // all parts (default)
+        MaxBoundaryLength = 70, // default
+    }
+);
 foreach (var field in form?.Fields ?? [])
     Console.WriteLine($"{field.Name} = {field.Value}");
 foreach (var file in form?.Files ?? [])
-    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length bytes)");
+    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
 ## 指标

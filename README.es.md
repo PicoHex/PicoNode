@@ -24,13 +24,13 @@
 
 | Característica | PicoNode | ASP.NET Core |
 |---------|----------|-------------|
-| **Modelo de dependencias** | Sin dependencias de ejecución obligatorias; capas seleccionables | Referencia al framework `Microsoft.AspNetCore.App` |
+| **Modelo de dependencias** | Sin dependencias del framework de Microsoft (solo bibliotecas nativas de PicoHex); capas seleccionables | Referencia al framework `Microsoft.AspNetCore.App` |
 | **Análisis de solicitudes** | Streaming basado en Span, `System.IO.Pipelines` zero-copy | Basado en strings con adaptador `IO.Pipelines` |
 | **HTTP/2** | Decodificador HPACK inline, control a nivel de trama | Transparente vía Kestrel; acceso limitado a bajo nivel |
 | **Compatibilidad AOT** | ✅ Nativo — todas las librerías net10.0 | ⚠️ Requiere trimming |
 | **DI / Logging / Config** | PicoDI + PicoLog + PicoCfg (nativos de PicoHex) | Microsoft.Extensions.* |
 | **WebSocket** | Códec de trama RFC 6455 con abstracción de manejador de mensajes | Transparente vía middleware |
-| **Líneas de código** | ~17K para todo el stack | ~1M+ para ASP.NET Core |
+| **Líneas de código** | ~18K para todo el stack | ~1M+ para ASP.NET Core |
 
 > **Prioridad de diseño:** PicoNode prioriza la eficiencia de asignación y la compatibilidad AOT. El uso de `ValueTask` en delegados de ruta crítica, la gestión de búferes basada en ArrayPool y los delegados opcionales (sin asignaciones forzadas) son compensaciones deliberadas — mantienen la capa de transporte compacta y predecible.
 
@@ -480,11 +480,21 @@ var setCookie = new SetCookieBuilder("session", "abc123")
     .Build();
 
 // Multipart form data
-var form = MultipartFormDataParser.Parse(context.Request);
+// Limits (MaxPartSizeBytes/MaxTotalSizeBytes) are enforced on both the in-memory
+// Body path and the streaming BodyStream path; exceeding one throws InvalidDataException.
+var form = await MultipartFormDataParser.ParseAsync(
+    context.Request,
+    new MultipartFormDataParserOptions
+    {
+        MaxPartSizeBytes = 64 * 1024 * 1024, // per part (default)
+        MaxTotalSizeBytes = 64 * 1024 * 1024, // all parts (default)
+        MaxBoundaryLength = 70, // default
+    }
+);
 foreach (var field in form?.Fields ?? [])
     Console.WriteLine($"{field.Name} = {field.Value}");
 foreach (var file in form?.Files ?? [])
-    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length bytes)");
+    Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
 ## Métricas
