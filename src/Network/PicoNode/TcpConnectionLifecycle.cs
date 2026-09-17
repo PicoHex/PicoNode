@@ -152,7 +152,12 @@ internal sealed class TcpConnectionLifecycle
 
         _pipe.Reader.Complete();
         _pipe.Writer.Complete();
-        _sendLock.Dispose();
+        // _sendLock is intentionally NOT disposed: a send queued behind an
+        // in-flight write may hold a CancellationToken.None token and can only
+        // make progress when that write releases the lock. SemaphoreSlim.Dispose
+        // strands pending waiters (and turns the in-flight Release into an
+        // ObjectDisposedException). Without a wait handle the semaphore owns no
+        // unmanaged resource, so leaving it to the GC is safe.
         _cts.Dispose();
         _remoteCloseCts.Dispose();
 

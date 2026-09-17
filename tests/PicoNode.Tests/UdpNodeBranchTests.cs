@@ -144,6 +144,34 @@ public sealed class UdpNodeBranchTests
     }
 
     [Test]
+    public async Task ReportFault_swallows_OnFault_subscriber_exceptions()
+    {
+        await using var node = CreateNode(null);
+        node.OnFault += _ => throw new InvalidOperationException("subscriber boom");
+
+        await Assert
+            .That(() => node.ReportFault(NodeFaultCode.DatagramReceiveFailed, "udp.receive"))
+            .ThrowsNothing()
+            .Because("a fault subscriber must never destabilize the node's loops");
+    }
+
+    [Test]
+    public async Task ReportFault_delivers_to_all_OnFault_subscribers_when_one_throws()
+    {
+        await using var node = CreateNode(null);
+        var secondCalled = false;
+        node.OnFault += _ => throw new InvalidOperationException("first boom");
+        node.OnFault += _ => secondCalled = true;
+
+        node.ReportFault(NodeFaultCode.DatagramReceiveFailed, "udp.receive");
+
+        await Assert
+            .That(secondCalled)
+            .IsTrue()
+            .Because("one misbehaving subscriber must not starve the remaining subscribers");
+    }
+
+    [Test]
     public async Task StartAsync_cannot_be_called_twice()
     {
         await using var node = CreateNode(null);

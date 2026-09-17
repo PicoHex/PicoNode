@@ -462,7 +462,7 @@ public sealed class UdpNode : INode
     {
         var fault = new NodeFault(code, operation, exception);
         NodeHelper.ReportFault(Options.Logger, code, operation, exception);
-        OnFault?.Invoke(fault);
+        NodeHelper.RaiseFault(Options.Logger, OnFault, fault);
     }
 
     /// <summary>

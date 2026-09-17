@@ -608,10 +608,138 @@ public sealed class TcpConnectionBranchTests
         await Assert.That(InvokeShouldReportReceiveFault(TcpCloseReason.LocalClose)).IsFalse();
     }
 
+    [Test]
+    public async Task SendAsync_with_uncancellable_token_does_not_hang_when_connection_is_disposed()
+    {
+        // The caller passed CancellationToken.None, so a send queued on _sendLock
+        // cannot observe connection cancellation. Disposing the connection used to
+        // dispose the semaphore while that send was still queued: SemaphoreSlim.Dispose
+        // does not release pending waiters, and the in-flight send's Release() then
+        // threw ObjectDisposedException — stranding the queued send forever.
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var stream = new BlockingStream();
+            var connection = CreateConnection(pair.Server, stream: stream);
+
+            var first = connection.SendAsync(
+                new ReadOnlySequence<byte>(new byte[] { 1 }),
+                CancellationToken.None
+            );
+            await stream.WriteStarted.WaitAsync(TimeSpan.FromSeconds(3));
+
+            var second = connection.SendAsync(
+                new ReadOnlySequence<byte>(new byte[] { 2 }),
+                CancellationToken.None
+            );
+
+            await connection.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+
+            // Unblock the in-flight write so its finally can release the lock.
+            stream.Release();
+
+            try
+            {
+                await second.WaitAsync(TimeSpan.FromSeconds(3));
+            }
+            catch (TimeoutException) { }
+            catch (Exception)
+            { /* the send may legitimately fail — it just must not hang */
+            }
+
+            await Assert
+                .That(second.IsCompleted)
+                .IsTrue()
+                .Because("a queued send must not be stranded on a disposed semaphore");
+
+            try
+            {
+                await first.WaitAsync(TimeSpan.FromSeconds(3));
+            }
+            catch (Exception) { }
+        }
+        finally
+        {
+            pair.Client.Dispose();
+        }
+    }
+
+    private sealed class BlockingStream : Stream
+    {
+        private readonly TaskCompletionSource _writeStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _release = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public Task WriteStarted => _writeStarted.Task;
+
+        public void Release() => _release.TrySetResult();
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() { }
+
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override async Task WriteAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken
+        )
+        {
+            _writeStarted.TrySetResult();
+            await _release.Task.ConfigureAwait(false);
+        }
+
+        public override async ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _writeStarted.TrySetResult();
+            await _release.Task.ConfigureAwait(false);
+        }
+
+        public override ValueTask DisposeAsync()
+        {
+            Release();
+            return ValueTask.CompletedTask;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            Release();
+            base.Dispose(disposing);
+        }
+    }
+
     private static TcpConnection CreateConnection(
         Socket serverSocket,
         ITcpConnectionHandler? handler = null,
-        ILogger? logger = null
+        ILogger? logger = null,
+        Stream? stream = null
     )
     {
         var node = new TcpNode(
@@ -623,7 +751,7 @@ public sealed class TcpConnectionBranchTests
             }
         );
 
-        return new TcpConnection(node, serverSocket);
+        return new TcpConnection(node, serverSocket, stream);
     }
 
     private static object GetLifecycle(TcpConnection connection)
