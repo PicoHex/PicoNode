@@ -9,7 +9,19 @@ internal sealed class Http2StreamState
     public bool EndStreamReceived { get; set; }
     public bool EndStreamFromHeaders { get; set; } // EndStream flag from the HEADERS frame
     public ArrayBufferWriter<byte>? HeaderBlockBuffer { get; set; }
-    public bool ResponseSent { get; set; }
+
+    private volatile bool _responseSent;
+
+    /// <summary>
+    /// Set from the response pump/background handler task once our END_STREAM is
+    /// sent; read by the frame loop's stream reaper.
+    /// </summary>
+    public bool ResponseSent
+    {
+        get => _responseSent;
+        set => _responseSent = value;
+    }
+
     public Http2StreamStateMachine StateMachine { get; }
 
     public Http2StreamState(int streamId)
@@ -79,6 +91,26 @@ internal sealed class Http2StreamState
     // Never disposed explicitly — the stream state is dropped as a whole when
     // the stream is removed, avoiding dispose/cancel races with the frame loop.
     public CancellationTokenSource? ResponseCts { get; set; }
+
+    private volatile bool _aborted;
+
+    /// <summary>
+    /// Set when the stream is reset (peer RST_STREAM or server-initiated
+    /// <c>SendRstStreamAsync</c>). A handler running on a background task checks
+    /// this before sending its response so a reset stream is never written to.
+    /// </summary>
+    public bool Aborted
+    {
+        get => _aborted;
+        set => _aborted = value;
+    }
+
+    /// <summary>
+    /// Background task running the request handler for this stream when it did
+    /// not complete synchronously. Keeping the reference lets the idle reaper
+    /// skip streams whose handler is still running.
+    /// </summary>
+    public Task? StreamTask { get; set; }
 
     // Released when flow-control windows grow (WINDOW_UPDATE or a SETTINGS
     // initial-window increase) so blocked response pumps wake up.

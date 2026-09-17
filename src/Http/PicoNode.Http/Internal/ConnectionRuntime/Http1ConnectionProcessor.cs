@@ -42,17 +42,30 @@ internal static class Http1ConnectionProcessor
     {
         var state = GetOrCreateConnectionState(connection, ConnectionProtocol.Http1);
         var parseResult = HttpRequestParser.Parse(buffer, options);
+        var http1 = GetHttp1State(state);
+
+        if (parseResult.Status == HttpRequestParseStatus.Incomplete)
+        {
+            // Wall-clock deadline: a client that stops sending after starting a
+            // request is closed when the deadline fires, without needing another
+            // data arrival (and without waiting for TcpNode.IdleTimeout).
+            http1.ArmRequestTimeout(connection, options.RequestTimeout, options.Logger);
+        }
+        else
+        {
+            http1.DisarmRequestTimeout();
+            if (parseResult.Status == HttpRequestParseStatus.Success)
+            {
+                http1.ContinueSent = false;
+            }
+        }
 
         return parseResult switch
         {
             { Status: HttpRequestParseStatus.Incomplete, ExpectsContinue: true } =>
                 SendContinueIfNeededAsync(connection, parseResult.Consumed, cancellationToken),
-            { Status: HttpRequestParseStatus.Incomplete } => CheckRequestTimeoutAsync(
-                connection,
-                state,
-                parseResult.Consumed,
-                options,
-                cancellationToken
+            { Status: HttpRequestParseStatus.Incomplete } => ValueTask.FromResult(
+                parseResult.Consumed
             ),
             { Status: HttpRequestParseStatus.Success, Request: { } request } => HandleRequestAsync(
                 connection,
@@ -93,34 +106,6 @@ internal static class Http1ConnectionProcessor
         return state.Http1State;
     }
 
-    private static ValueTask<SequencePosition> CheckRequestTimeoutAsync(
-        ITcpConnectionContext connection,
-        ConnectionRuntimeState state,
-        SequencePosition consumed,
-        HttpConnectionHandlerOptions options,
-        CancellationToken _
-    )
-    {
-        var http1 = GetHttp1State(state);
-        var now = DateTime.UtcNow;
-        if (http1.RequestParsingStartedAtUtc == default)
-        {
-            http1.RequestParsingStartedAtUtc = now;
-            return ValueTask.FromResult(consumed);
-        }
-
-        if (
-            options.RequestTimeout <= TimeSpan.Zero
-            || now - http1.RequestParsingStartedAtUtc < options.RequestTimeout
-        )
-        {
-            return ValueTask.FromResult(consumed);
-        }
-
-        connection.Close();
-        return ValueTask.FromResult(consumed);
-    }
-
     private static async ValueTask<SequencePosition> SendContinueIfNeededAsync(
         ITcpConnectionContext connection,
         SequencePosition consumed,
@@ -151,9 +136,6 @@ internal static class Http1ConnectionProcessor
     )
     {
         var state = GetOrCreateConnectionState(connection, ConnectionProtocol.Http1);
-        var http1 = GetHttp1State(state);
-        http1.ContinueSent = false;
-        http1.RequestParsingStartedAtUtc = default;
 
         // Check for HTTP/1.1 Upgrade to h2c
         if (IsH2cUpgradeRequest(request))

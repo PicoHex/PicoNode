@@ -38,9 +38,16 @@ internal static partial class Http2StreamHandler
             ArrayPool<byte>.Shared.Return(rented);
         }
 
-        // Remove the stream from tracking
+        // Remove the stream from tracking and stop any response pump that is
+        // still writing to it. Without the cancel, a streaming response keeps
+        // emitting DATA frames on a stream the server just reset, and the
+        // untracked stream turns the peer's next WINDOW_UPDATE into a GOAWAY.
         var state = connection.UserState as ConnectionRuntimeState;
-        state?.Http2Streams?.TryRemove(streamId, out _);
+        if (state?.Http2Streams?.TryRemove(streamId, out var removed) == true)
+        {
+            removed.Aborted = true;
+            removed.ResponseCts?.Cancel();
+        }
     }
 
     private static async ValueTask SendGoAwayAndCloseAsync(

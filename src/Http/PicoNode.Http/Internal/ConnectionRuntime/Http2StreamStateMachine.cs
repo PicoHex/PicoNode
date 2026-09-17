@@ -6,6 +6,13 @@ namespace PicoNode.Http.Internal.ConnectionRuntime;
 /// </summary>
 internal sealed class Http2StreamStateMachine
 {
+    // TryTransition runs on the connection's frame loop AND on background stream
+    // tasks (CompleteResponse from the response pump / async handler), so the
+    // state is guarded rather than relying on single-threaded access.
+    private readonly Lock _gate = new();
+    private StreamState _currentState = StreamState.Idle;
+    private bool _closedByPeerRst;
+
     public enum StreamState
     {
         Idle,
@@ -23,10 +30,28 @@ internal sealed class Http2StreamStateMachine
         RstStream,
     }
 
-    public StreamState CurrentState { get; private set; } = StreamState.Idle;
+    public StreamState CurrentState
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _currentState;
+            }
+        }
+    }
 
     /// <summary>True when the stream was closed by the peer's RST_STREAM.</summary>
-    public bool ClosedByPeerRst { get; private set; }
+    public bool ClosedByPeerRst
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _closedByPeerRst;
+            }
+        }
+    }
 
     public Http2StreamStateMachine(int streamId)
     {
@@ -41,25 +66,33 @@ internal sealed class Http2StreamStateMachine
     /// </summary>
     public bool TryTransition(Trigger trigger, out StreamState previousState)
     {
-        previousState = CurrentState;
+        lock (_gate)
+        {
+            return TryTransitionLocked(trigger, out previousState);
+        }
+    }
+
+    private bool TryTransitionLocked(Trigger trigger, out StreamState previousState)
+    {
+        previousState = _currentState;
 
         if (trigger == Trigger.RstStream)
         {
             // RST_STREAM is valid from any state and is idempotent.
-            if (CurrentState != StreamState.Closed)
+            if (_currentState != StreamState.Closed)
             {
-                CurrentState = StreamState.Closed;
+                _currentState = StreamState.Closed;
             }
 
-            ClosedByPeerRst = true;
+            _closedByPeerRst = true;
             return true;
         }
 
         // Read-only checks are faster than the switch below
-        if (CurrentState == StreamState.Closed)
+        if (_currentState == StreamState.Closed)
             return false;
 
-        switch (CurrentState)
+        switch (_currentState)
         {
             case StreamState.Idle:
                 return trigger == Trigger.Headers ? TransitionTo(StreamState.Open) : false;
@@ -93,7 +126,7 @@ internal sealed class Http2StreamStateMachine
 
     private bool TransitionTo(StreamState newState)
     {
-        CurrentState = newState;
+        _currentState = newState;
         return true;
     }
 }

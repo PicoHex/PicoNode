@@ -26,7 +26,12 @@ internal sealed class ConnectionRuntimeState
 
     // HPACK encoder for OUTGOING response headers. Uses its own dynamic table
     // (independent from HpackTable which tracks incoming request headers).
+    // Guarded by ResponseHpackEncoderLock: stream handlers may run on background
+    // tasks concurrently, and HPACK dynamic-table state is not thread-safe.
     public HpackEncoder ResponseHpackEncoder { get; } = new();
+
+    /// <summary>Serializes HPACK response encoding (and encoder table resizes) across concurrent stream handlers.</summary>
+    public object ResponseHpackEncoderLock { get; } = new();
 
     // Remote (peer) SETTINGS values
     public int RemoteMaxConcurrentStreams { get; set; } = 100;
@@ -107,7 +112,10 @@ internal sealed class ConnectionRuntimeState
                     // it governs our response ENCODER table only. The decoder
                     // table stays bounded by OUR advertised LocalHeaderTableSize
                     // (the peer's encoder must respect it).
-                    ResponseHpackEncoder.DynamicTable.Resize(RemoteHeaderTableSize);
+                    lock (ResponseHpackEncoderLock)
+                    {
+                        ResponseHpackEncoder.DynamicTable.Resize(RemoteHeaderTableSize);
+                    }
                     break;
             }
         }
@@ -169,9 +177,14 @@ internal sealed class ConnectionRuntimeState
         {
             var stream = kvp.Value;
             // Never reap a stream that still has response work in flight: it may be
-            // mid-streaming (ResponseBodyStream) or its pump may still be running
-            // (ResponsePumpTask) and would deadlock on the next WINDOW_UPDATE.
-            if (stream.ResponseBodyStream is not null || stream.ResponsePumpTask is not null)
+            // mid-streaming (ResponseBodyStream), its pump may still be running
+            // (ResponsePumpTask), or its handler may still be executing on a
+            // background task (StreamTask).
+            if (
+                stream.ResponseBodyStream is not null
+                || stream.ResponsePumpTask is not null
+                || stream.StreamTask is { IsCompleted: false }
+            )
                 continue;
 
             if (now - stream.LastActivityUtc >= StreamIdleTimeout)

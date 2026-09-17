@@ -1086,6 +1086,254 @@ public sealed class HttpConnectionHandlerTests
             .Throws<ArgumentOutOfRangeException>();
     }
 
+    [Test]
+    public async Task Expect_continue_request_is_closed_when_RequestTimeout_elapses()
+    {
+        // Regression: the Incomplete+ExpectsContinue branch used to skip the request
+        // deadline, so a client that opened a request with Expect: 100-continue and
+        // then drip-fed its body could hold the connection open indefinitely. The
+        // wall-clock deadline now closes it without needing another data arrival.
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+                RequestTimeout = TimeSpan.FromMilliseconds(50),
+            }
+        );
+        var connection = new RecordingConnectionContext();
+        const string head =
+            "POST /x HTTP/1.1\r\nHost: t\r\nContent-Length: 10\r\nExpect: 100-continue\r\n\r\n";
+
+        await handler.OnReceivedAsync(
+            connection,
+            new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes(head)),
+            CancellationToken.None
+        );
+
+        // The body never arrives; poll instead of asserting after a fixed margin,
+        // because the timer callback can be delayed under load (found flaky in a
+        // solution-level run).
+        await Assert
+            .That(await WaitForCloseAsync(connection))
+            .IsTrue()
+            .Because(
+                "a request that started parsing and exceeded RequestTimeout must close even on the Expect: 100-continue path"
+            );
+    }
+
+    [Test]
+    public async Task Silent_client_is_closed_when_RequestTimeout_elapses()
+    {
+        // Regression: the timeout was only evaluated when the next chunk of data
+        // arrived, so a client that started a request and then went silent was
+        // reaped by TcpNode.IdleTimeout (2 min by default), never by RequestTimeout.
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+                RequestTimeout = TimeSpan.FromMilliseconds(50),
+            }
+        );
+        var connection = new RecordingConnectionContext();
+
+        await handler.OnReceivedAsync(
+            connection,
+            new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes("GET /slow HTT")),
+            CancellationToken.None
+        );
+
+        // No further data ever arrives. The wall-clock deadline must close it.
+        // Poll with a generous deadline instead of a fixed margin: the timer is
+        // thread-pool driven, and a fixed margin is the same load-sensitive
+        // pattern that made the old SSE tests flaky.
+        await Assert
+            .That(await WaitForCloseAsync(connection))
+            .IsTrue()
+            .Because(
+                "RequestTimeout must be a wall-clock deadline, not a check that needs new data to run"
+            );
+    }
+
+    /// <summary>
+    /// Polls until the connection records a close, with a generous deadline. The
+    /// request deadline is enforced by a thread-pool timer, so asserting after a
+    /// fixed delay is inherently load-sensitive.
+    /// </summary>
+    private static async Task<bool> WaitForCloseAsync(RecordingConnectionContext connection)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (connection.CloseCount >= 1)
+            {
+                return true;
+            }
+
+            await Task.Delay(10);
+        }
+
+        return connection.CloseCount >= 1;
+    }
+
+    [Test]
+    public async Task Zero_RequestTimeout_disables_the_wall_clock_deadline()
+    {
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+                RequestTimeout = TimeSpan.Zero,
+            }
+        );
+        var connection = new RecordingConnectionContext();
+
+        await handler.OnReceivedAsync(
+            connection,
+            new ReadOnlySequence<byte>(Encoding.ASCII.GetBytes("GET /slow HTT")),
+            CancellationToken.None
+        );
+
+        await Task.Delay(250);
+
+        await Assert
+            .That(connection.CloseCount)
+            .IsEqualTo(0)
+            .Because(
+                "RequestTimeout <= 0 means no request deadline (TcpNode.IdleTimeout still applies)"
+            );
+    }
+
+    [Test]
+    public async Task Completed_request_disarms_the_timeout_for_keep_alive()
+    {
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = static (_, _) =>
+                    ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+                RequestTimeout = TimeSpan.FromMilliseconds(50),
+            }
+        );
+        var connection = new RecordingConnectionContext();
+
+        await handler.OnReceivedAsync(
+            connection,
+            new ReadOnlySequence<byte>(
+                Encoding.ASCII.GetBytes("GET /a HTTP/1.1\r\nHost: t\r\n\r\n")
+            ),
+            CancellationToken.None
+        );
+        await Assert.That(connection.SendCount).IsGreaterThanOrEqualTo(1);
+
+        // Well past the timeout: the connection is idle between requests and must
+        // not be closed by the previous request's (disarmed) deadline.
+        await Task.Delay(200);
+        await Assert
+            .That(connection.CloseCount)
+            .IsEqualTo(0)
+            .Because("the deadline covers receiving a request, not the keep-alive period after it");
+
+        await handler.OnReceivedAsync(
+            connection,
+            new ReadOnlySequence<byte>(
+                Encoding.ASCII.GetBytes("GET /b HTTP/1.1\r\nHost: t\r\n\r\n")
+            ),
+            CancellationToken.None
+        );
+        await Assert.That(connection.SendCount).IsGreaterThanOrEqualTo(2);
+    }
+
+    [Test]
+    public async Task Streaming_response_is_not_closed_by_the_request_timeout()
+    {
+        var bodyGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = new HttpConnectionHandler(
+            new HttpConnectionHandlerOptions
+            {
+                RequestHandler = (_, _) =>
+                    ValueTask.FromResult(
+                        new HttpResponse
+                        {
+                            StatusCode = 200,
+                            BodyStream = new GateStream(bodyGate.Task),
+                        }
+                    ),
+                RequestTimeout = TimeSpan.FromMilliseconds(50),
+            }
+        );
+
+        var connection = new RecordingConnectionContext();
+        var requestTask = handler
+            .OnReceivedAsync(
+                connection,
+                new ReadOnlySequence<byte>(
+                    Encoding.ASCII.GetBytes("GET /stream HTTP/1.1\r\nHost: t\r\n\r\n")
+                ),
+                CancellationToken.None
+            )
+            .AsTask();
+
+        // The request is fully received; the response stream is still open long
+        // past RequestTimeout. The deadline must have been disarmed.
+        await Task.Delay(200);
+        await Assert
+            .That(connection.CloseCount)
+            .IsEqualTo(0)
+            .Because("a fully received request must not be killed while its response streams");
+
+        bodyGate.SetResult();
+        await requestTask.WaitAsync(TimeSpan.FromSeconds(3));
+        await Assert.That(connection.CloseCount).IsEqualTo(0);
+    }
+
+    private sealed class GateStream(Task gate) : Stream
+    {
+        private int _bytesRemaining = 3;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() { }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (_bytesRemaining == 0)
+            {
+                return 0;
+            }
+
+            var toWrite = Math.Min(_bytesRemaining, buffer.Length);
+            buffer.Span[..toWrite].Fill((byte)'x');
+            _bytesRemaining -= toWrite;
+            return toWrite;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+    }
+
     private static HttpConnectionHandler CreateHandler(HttpRequestHandler requestHandler) =>
         new(new HttpConnectionHandlerOptions { RequestHandler = requestHandler });
 

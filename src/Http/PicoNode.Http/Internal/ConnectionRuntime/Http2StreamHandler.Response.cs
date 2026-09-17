@@ -51,6 +51,11 @@ internal static partial class Http2StreamHandler
             );
         }
 
+        // Encoded exactly once, here: encoding a header block that is never sent
+        // would mutate the shared encoder's dynamic table for a block the peer
+        // never decodes (verified regression: X-Content-Type-Options became
+        // undecodable). Concurrent stream handlers are serialised by the lock
+        // inside EncodeResponseHeadersHpack.
         EncodeResponseHeadersHpack(connection, responseHeaders, headerWriter);
         var headersFlags = Http2FrameFlags.EndHeaders;
         var encodedHeaders = headerWriter.WrittenMemory;
@@ -151,6 +156,183 @@ internal static partial class Http2StreamHandler
             bodyStream,
             linkedCts
         );
+    }
+
+    /// <summary>
+    /// Invokes the request handler for a stream. A handler that completes
+    /// synchronously is answered inline (preserving frame-loop ordering); a
+    /// handler that parks is moved to a background task, because HTTP/2 streams
+    /// are multiplexed and one slow handler must not stall the connection
+    /// (including PING/SETTINGS/WINDOW_UPDATE processing).
+    /// </summary>
+    private static ValueTask<bool> DispatchStreamHandlerAsync(
+        ITcpConnectionContext connection,
+        Http2StreamState state,
+        HttpRequest request,
+        HttpRequestHandler requestHandler,
+        ILogger? logger,
+        CancellationToken ct
+    )
+    {
+        // Created before the handler runs so an RST_STREAM (peer- or
+        // server-initiated) can cancel a handler that observes the token.
+        state.ResponseCts ??= new CancellationTokenSource();
+        var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            ct,
+            state.ResponseCts.Token
+        );
+
+        ValueTask<HttpResponse> handlerTask;
+        try
+        {
+            handlerTask = requestHandler(request, linkedCts.Token);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            linkedCts.Dispose();
+            throw;
+        }
+        catch (Exception ex)
+        {
+            linkedCts.Dispose();
+            SafeLogError(logger, "Unhandled exception processing HTTP/2 stream", ex);
+            return SendStreamResponseAsync(
+                connection,
+                state,
+                InternalServerErrorResponse(),
+                logger,
+                ct
+            );
+        }
+
+        if (handlerTask.IsCompletedSuccessfully)
+        {
+            linkedCts.Dispose();
+            return SendStreamResponseAsync(connection, state, handlerTask.Result, logger, ct);
+        }
+
+        state.StreamTask = RunStreamHandlerSafelyAsync(
+            connection,
+            state,
+            handlerTask,
+            logger,
+            linkedCts,
+            ct
+        );
+        return ValueTask.FromResult(false);
+    }
+
+    /// <summary>
+    /// Last line of defence for the background stream task: it must never fault
+    /// unobserved (the frame loop has already moved on). Handler, send and logger
+    /// failures are handled in the core; this catches anything unforeseen.
+    /// </summary>
+    private static async Task RunStreamHandlerSafelyAsync(
+        ITcpConnectionContext connection,
+        Http2StreamState state,
+        ValueTask<HttpResponse> handlerTask,
+        ILogger? logger,
+        CancellationTokenSource linkedCts,
+        CancellationToken ct
+    )
+    {
+        try
+        {
+            await RunStreamHandlerAsync(connection, state, handlerTask, logger, linkedCts, ct)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Deliberately swallowed: a background task must never fault unobserved.
+        }
+    }
+
+    /// <summary>Logs without letting a throwing user logger escape a background task.</summary>
+    private static void SafeLogError(ILogger? logger, string message, Exception exception)
+    {
+        try
+        {
+            logger?.Log(LogLevel.Error, new EventId(0), message, exception);
+        }
+        catch
+        {
+            // A broken logger must not change the response the client receives.
+        }
+    }
+
+    /// <summary>Logs without letting a throwing user logger escape a background task.</summary>
+    private static void SafeLogDebug(ILogger? logger, string message, Exception exception)
+    {
+        try
+        {
+            logger?.Log(LogLevel.Debug, new EventId(0), message, exception);
+        }
+        catch
+        {
+            // Best-effort diagnostic only.
+        }
+    }
+
+    private static HttpResponse InternalServerErrorResponse() =>
+        new() { StatusCode = 500, ReasonPhrase = "Internal Server Error" };
+
+    private static async Task RunStreamHandlerAsync(
+        ITcpConnectionContext connection,
+        Http2StreamState state,
+        ValueTask<HttpResponse> handlerTask,
+        ILogger? logger,
+        CancellationTokenSource linkedCts,
+        CancellationToken ct
+    )
+    {
+        HttpResponse response;
+        try
+        {
+            response = await handlerTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (linkedCts.IsCancellationRequested)
+        {
+            // Stream reset or connection closing — the EndStream frame must not be sent.
+            return;
+        }
+        catch (Exception ex)
+        {
+            SafeLogError(logger, "Unhandled exception processing HTTP/2 stream", ex);
+            response = InternalServerErrorResponse();
+        }
+        finally
+        {
+            linkedCts.Dispose();
+        }
+
+        if (state.Aborted || ct.IsCancellationRequested)
+        {
+            return;
+        }
+
+        try
+        {
+            await SendStreamResponseAsync(connection, state, response, logger, ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // The connection is going away; the frame loop owns fault reporting.
+            SafeLogDebug(logger, "HTTP/2 response send failed after handler completed", ex);
+        }
+    }
+
+    private static async ValueTask<bool> SendStreamResponseAsync(
+        ITcpConnectionContext connection,
+        Http2StreamState state,
+        HttpResponse response,
+        ILogger? logger,
+        CancellationToken ct
+    )
+    {
+        await SendResponseAsync(connection, state, response, state.StreamId, logger, ct)
+            .ConfigureAwait(false);
+        return false;
     }
 
     private static async Task PumpResponseAsync(

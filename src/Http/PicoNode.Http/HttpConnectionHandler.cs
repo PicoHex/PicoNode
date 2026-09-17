@@ -313,6 +313,11 @@ public sealed class HttpConnectionHandler : ITcpConnectionHandler
         CancellationToken cancellationToken
     )
     {
+        if (connection.UserState is ConnectionRuntimeState state)
+        {
+            state.Http1State?.DisarmRequestTimeout();
+        }
+
         connection.UserState = null;
         return ValueTask.CompletedTask;
     }

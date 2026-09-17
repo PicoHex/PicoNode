@@ -16,6 +16,13 @@ public sealed class HttpConnectionHandlerOptions
 
     public int StreamingResponseBufferSize { get; init; } = DefaultStreamingResponseBufferSize;
 
+    /// <summary>
+    /// Maximum time allowed to receive a complete request, measured from the
+    /// start of request parsing. Enforced as a wall-clock deadline: a client that
+    /// stops sending (including one parked on <c>Expect: 100-continue</c>) is
+    /// closed when this elapses, without depending on a further data arrival or
+    /// on <c>TcpNodeOptions.IdleTimeout</c>.
+    /// </summary>
     public TimeSpan RequestTimeout { get; init; } =
         TimeSpan.FromSeconds(DefaultRequestTimeoutSeconds);
 

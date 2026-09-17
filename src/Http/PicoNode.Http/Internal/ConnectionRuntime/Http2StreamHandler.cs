@@ -370,39 +370,17 @@ internal static partial class Http2StreamHandler
 
         request.RemoteCloseToken = connection.RemoteCloseToken;
 
-        // Invoke request handler
-        HttpResponse response;
-        try
-        {
-            response = await requestHandler(request, ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            logger?.Log(
-                LogLevel.Error,
-                new EventId(0),
-                "Unhandled exception processing HTTP/2 stream",
-                ex
-            );
-
-            response = new HttpResponse
-            {
-                StatusCode = 500,
-                ReasonPhrase = "Internal Server Error",
-            };
-        }
-
-        // Response headers are HPACK-encoded exactly once inside SendResponseAsync.
-        // Encoding here as well would mutate the connection's encoder dynamic table
-        // for a header block that is never sent, desynchronising it from the peer's
-        // decoder (verified regression: body responses carrying a header outside
-        // the HPACK static table became undecodable, e.g. X-Content-Type-Options).
-        await SendResponseAsync(connection, state, response, frame.StreamId, logger, ct);
-        return false;
+        // Handlers that complete synchronously answer inline; parked handlers run
+        // on a background task so they cannot stall the connection's frame loop.
+        return await DispatchStreamHandlerAsync(
+                connection,
+                state,
+                request,
+                requestHandler,
+                logger,
+                ct
+            )
+            .ConfigureAwait(false);
     }
 
     // ── HPACK response encoder (uses the connection's shared HpackEncoder, whose

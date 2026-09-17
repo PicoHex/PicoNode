@@ -143,9 +143,10 @@ internal static partial class Http2StreamHandler
         }
 
         rstState!.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.RstStream, out _);
-        // Stop the response pump if one is streaming — without this, a
-        // stalled body producer would keep the pump (and its task) alive
-        // for the lifetime of the connection.
+        // Stop the response pump (and any background handler) — without this, a
+        // stalled body producer would keep the pump alive for the lifetime of the
+        // connection, and a parked handler would send a response on a reset stream.
+        rstState.Aborted = true;
         rstState.ResponseCts?.Cancel();
 
         return false;
@@ -353,11 +354,16 @@ internal static partial class Http2StreamHandler
 
             request.RemoteCloseToken = connection.RemoteCloseToken;
 
-            // Invoke handler
-            var response = await requestHandler(request, ct).ConfigureAwait(false);
-
-            // Send response
-            await SendResponseAsync(connection, state, response, state.StreamId, logger, ct)
+            // Handlers that complete synchronously answer inline; parked handlers run
+            // on a background task so they cannot stall the connection's frame loop.
+            return await DispatchStreamHandlerAsync(
+                    connection,
+                    state,
+                    request,
+                    requestHandler,
+                    logger,
+                    ct
+                )
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -366,12 +372,7 @@ internal static partial class Http2StreamHandler
         }
         catch (Exception ex)
         {
-            logger?.Log(
-                LogLevel.Error,
-                new EventId(0),
-                "Unhandled exception processing HTTP/2 deferred stream",
-                ex
-            );
+            SafeLogError(logger, "Unhandled exception processing HTTP/2 deferred stream", ex);
 
             var errorResponse = new HttpResponse
             {

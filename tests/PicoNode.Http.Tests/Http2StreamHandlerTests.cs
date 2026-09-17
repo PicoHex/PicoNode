@@ -446,6 +446,366 @@ public sealed class Http2StreamHandlerTests
             .Because("RST_STREAM must keep the exact 9-byte header + 4-byte error code framing");
     }
 
+    [Test]
+    public async Task SendRstStreamAsync_cancels_the_response_pump_and_removes_the_stream()
+    {
+        // Regression: the server-initiated RST removed the stream from tracking
+        // but did not cancel ResponseCts, so a streaming response (SSE) kept
+        // writing DATA frames after the stream was reset, and the untracked
+        // stream turned the peer's next WINDOW_UPDATE into a GOAWAY.
+        var connection = new TestTcpConnectionContext();
+        var runtime = new ConnectionRuntimeState();
+        connection.UserState = runtime;
+        var stream = runtime.GetOrCreateStream(1);
+        stream.ResponseCts = new CancellationTokenSource();
+
+        await Http2StreamHandler.SendRstStreamAsync(
+            connection,
+            1,
+            Http2ErrorCode.Cancel,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(stream.ResponseCts.IsCancellationRequested)
+            .IsTrue()
+            .Because("a server-initiated RST_STREAM must stop the response pump");
+        await Assert.That(runtime.Http2Streams!.ContainsKey(1)).IsFalse();
+    }
+
+    [Test]
+    public async Task Slow_handler_does_not_block_other_streams_or_control_frames()
+    {
+        var connection = new TestTcpConnectionContext();
+        var runtime = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = runtime;
+        runtime.ReceivedPostPrefaceFrame = true; // PING is not the preface's first frame here
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        static async Task<HttpResponse> AwaitGateAsync(Task gateTask, CancellationToken ct)
+        {
+            await gateTask.WaitAsync(ct);
+            return new HttpResponse { StatusCode = 200 };
+        }
+
+        HttpRequestHandler handler = (req, ct) =>
+            req.Target == "/slow"
+                ? new ValueTask<HttpResponse>(AwaitGateAsync(gate.Task, ct))
+                : ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+
+        try
+        {
+            // Stream 1 parks on the gate: ProcessHeadersFrame must return anyway
+            // (currently it awaits the handler inline and wedges the frame loop).
+            var slowTask = Http2StreamHandler
+                .ProcessHeadersFrame(
+                    connection,
+                    BuildHeadersFrameFor(1, "/slow"),
+                    handler,
+                    null,
+                    CancellationToken.None
+                )
+                .AsTask();
+            var finished = await Task.WhenAny(slowTask, Task.Delay(TimeSpan.FromSeconds(1)));
+            await Assert
+                .That(finished)
+                .IsSameReferenceAs(slowTask)
+                .Because(
+                    "a slow handler must not block the connection's frame loop (HTTP/2 head-of-line blocking)"
+                );
+
+            // Stream 3 is answered on the same connection while stream 1 is parked.
+            await Http2StreamHandler.ProcessHeadersFrame(
+                connection,
+                BuildHeadersFrameFor(3, "/fast"),
+                handler,
+                null,
+                CancellationToken.None
+            );
+            await Assert
+                .That(
+                    await WaitUntilAsync(() => HasFrameFor(connection, 3, Http2FrameType.Headers))
+                )
+                .IsTrue()
+                .Because("a fast stream must not wait for an unrelated slow handler");
+
+            // A PING is acknowledged while stream 1 is still parked.
+            var ping = Http2FrameCodec.EncodeFrame(
+                Http2FrameType.Ping,
+                Http2FrameFlags.None,
+                0,
+                new byte[8]
+            );
+            await Http2ConnectionProcessor.ProcessAsync(
+                connection,
+                new ReadOnlySequence<byte>(ping),
+                sendInitialSettings: false,
+                handler,
+                null,
+                CancellationToken.None
+            );
+            await Assert
+                .That(HasPingAck(connection))
+                .IsTrue()
+                .Because("control frames must be serviced while a stream handler is still running");
+        }
+        finally
+        {
+            gate.TrySetResult();
+        }
+
+        await Assert
+            .That(await WaitUntilAsync(() => HasFrameFor(connection, 1, Http2FrameType.Headers)))
+            .IsTrue()
+            .Because("the parked stream's response must still be sent once its handler completes");
+    }
+
+    [Test]
+    public async Task Throwing_logger_does_not_fault_the_background_handler_task_and_500_is_still_sent()
+    {
+        // The handler runs on a background task; a broken user logger must not
+        // fault that task (unobserved) and must not rob the client of its 500.
+        var connection = new TestTcpConnectionContext();
+        var runtime = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = runtime;
+        var logger = new RecordingHttpLogger { ThrowOnLog = true };
+
+        static async ValueTask<HttpResponse> ThrowingHandler(HttpRequest req, CancellationToken ct)
+        {
+            await Task.Yield();
+            throw new InvalidOperationException("handler-boom");
+        }
+
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            BuildHeadersFrameFor(1, "/boom"),
+            ThrowingHandler,
+            logger,
+            CancellationToken.None
+        );
+
+        var state = runtime.GetOrCreateStream(1);
+        await Assert.That(state.StreamTask).IsNotNull();
+
+        await Assert
+            .That(async () => await state.StreamTask!.WaitAsync(TimeSpan.FromSeconds(3)))
+            .ThrowsNothing()
+            .Because("a background stream task must never fault unobserved");
+
+        await Assert
+            .That(await WaitUntilAsync(() => StatusFor(connection, 1) is not null))
+            .IsTrue()
+            .Because("the client must still receive the 500 even though the logger is broken");
+        await Assert.That(StatusFor(connection, 1)).IsEqualTo("500");
+    }
+
+    [Test]
+    public async Task Synchronously_throwing_handler_with_throwing_logger_still_returns_500()
+    {
+        // The synchronous throw is handled on the frame loop: a broken logger must
+        // not escape into it (which would close the connection) and must not rob
+        // the client of its 500.
+        var connection = new TestTcpConnectionContext();
+        var runtime = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = runtime;
+        var logger = new RecordingHttpLogger { ThrowOnLog = true };
+
+        static ValueTask<HttpResponse> ThrowingHandler(HttpRequest req, CancellationToken ct)
+        {
+            throw new InvalidOperationException("sync-boom");
+        }
+
+        await Assert
+            .That(async () =>
+                await Http2StreamHandler.ProcessHeadersFrame(
+                    connection,
+                    BuildHeadersFrameFor(1, "/boom"),
+                    ThrowingHandler,
+                    logger,
+                    CancellationToken.None
+                )
+            )
+            .ThrowsNothing()
+            .Because("a throwing user logger must not escape the frame loop");
+
+        await Assert
+            .That(await WaitUntilAsync(() => StatusFor(connection, 1) is not null))
+            .IsTrue()
+            .Because("the client must still receive the 500 even though the logger is broken");
+        await Assert.That(StatusFor(connection, 1)).IsEqualTo("500");
+    }
+
+    private static string? StatusFor(TestTcpConnectionContext connection, int streamId)
+    {
+        foreach (var sent in connection.SentFrames)
+        {
+            if (
+                TryReadFrame(sent, out var frame)
+                && frame!.Type == Http2FrameType.Headers
+                && frame.StreamId == streamId
+            )
+            {
+                return DecodeHeadersFrame(sent, out var headers, out _) && headers!.Count > 0
+                    ? headers[0].Item2
+                    : null;
+            }
+        }
+
+        return null;
+    }
+
+    [Test]
+    public async Task Rst_while_handler_observes_cancellation_sends_no_response()
+    {
+        var connection = new TestTcpConnectionContext();
+        var runtime = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = runtime;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        HttpRequestHandler handler = async (req, ct) =>
+        {
+            await gate.Task.WaitAsync(ct);
+            return new HttpResponse { StatusCode = 200 };
+        };
+
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            BuildHeadersFrameFor(1, "/parked"),
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        await Http2StreamHandler.ProcessRstStreamFrame(
+            connection,
+            BuildRstStreamFrame(1),
+            CancellationToken.None
+        );
+        gate.TrySetResult();
+
+        var state = runtime.GetOrCreateStream(1);
+        await Assert
+            .That(async () => await state.StreamTask!.WaitAsync(TimeSpan.FromSeconds(3)))
+            .ThrowsNothing();
+
+        await Assert
+            .That(HasFrameFor(connection, 1, Http2FrameType.Headers))
+            .IsFalse()
+            .Because("a reset stream must never receive a response");
+    }
+
+    [Test]
+    public async Task Rst_while_handler_ignores_cancellation_still_suppresses_the_response()
+    {
+        // The handler deliberately ignores the token, so the Aborted flag is the
+        // only thing that can prevent a response on the reset stream.
+        var connection = new TestTcpConnectionContext();
+        var runtime = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = runtime;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        HttpRequestHandler handler = async (req, ct) =>
+        {
+            _ = ct;
+            await gate.Task;
+            return new HttpResponse { StatusCode = 200 };
+        };
+
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            BuildHeadersFrameFor(1, "/parked"),
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        await Http2StreamHandler.ProcessRstStreamFrame(
+            connection,
+            BuildRstStreamFrame(1),
+            CancellationToken.None
+        );
+        gate.TrySetResult();
+
+        var state = runtime.GetOrCreateStream(1);
+        await Assert
+            .That(async () => await state.StreamTask!.WaitAsync(TimeSpan.FromSeconds(3)))
+            .ThrowsNothing();
+
+        await Assert
+            .That(HasFrameFor(connection, 1, Http2FrameType.Headers))
+            .IsFalse()
+            .Because(
+                "the Aborted flag must suppress a response even when the handler ignores cancellation"
+            );
+    }
+
+    private static Http2Frame BuildHeadersFrameFor(int streamId, string path)
+    {
+        var encoded = Http2FrameCodec.EncodeFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+            streamId,
+            BuildMinimalHpack("GET", path)
+        );
+        var buffer = new ReadOnlySequence<byte>(encoded);
+        Http2FrameCodec.TryReadFrame(buffer, out var frame, out _);
+        return frame!;
+    }
+
+    private static bool HasFrameFor(
+        TestTcpConnectionContext connection,
+        int streamId,
+        Http2FrameType type
+    )
+    {
+        foreach (var sent in connection.SentFrames)
+        {
+            if (
+                TryReadFrame(sent, out var frame)
+                && frame!.Type == type
+                && frame.StreamId == streamId
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool HasPingAck(TestTcpConnectionContext connection)
+    {
+        foreach (var sent in connection.SentFrames)
+        {
+            if (
+                TryReadFrame(sent, out var frame)
+                && frame!.Type == Http2FrameType.Ping
+                && frame.HasFlag(Http2FrameFlags.Ack)
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> WaitUntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+            {
+                return true;
+            }
+
+            await Task.Delay(10);
+        }
+
+        return condition();
+    }
+
     private sealed class TestTcpConnectionContext : ITcpConnectionContext
     {
         private readonly object _sendGate = new();

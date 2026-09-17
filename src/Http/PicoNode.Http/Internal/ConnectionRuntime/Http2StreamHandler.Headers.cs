@@ -17,7 +17,12 @@ internal static partial class Http2StreamHandler
             state = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
             connection.UserState = state;
         }
-        state.ResponseHpackEncoder.Encode(writer, headers);
+        // Concurrent stream handlers may encode at the same time; the encoder's
+        // dynamic table is shared per connection, so serialise access.
+        lock (state.ResponseHpackEncoderLock)
+        {
+            state.ResponseHpackEncoder.Encode(writer, headers);
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
