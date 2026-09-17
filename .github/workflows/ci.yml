@@ -98,6 +98,10 @@ jobs:
           -p:PublishAot=true --self-contained
           -o publish/${{ matrix.rid }}
 
+      - name: AOT publish + run verification (PicoWeb)
+        shell: pwsh
+        run: ./scripts/test-aot-publish.ps1 -RuntimeIdentifier ${{ matrix.rid }}
+
       - name: AOT publish (Echo server)
         run: >
           dotnet publish samples/PicoNode.Samples.Echo/PicoNode.Samples.Echo.csproj
