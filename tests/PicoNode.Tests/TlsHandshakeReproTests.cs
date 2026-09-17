@@ -49,11 +49,12 @@ public sealed class TlsHandshakeReproTests
     public async Task RawSslStream_handshake_succeeds_on_dotnet10()
     {
         using var cert = CreateSelfSignedCert();
-        var port = GetAvailablePort();
 
-        // Server: simple TCP listener
-        var listener = new TcpListener(IPAddress.Loopback, port);
+        // Server: simple TCP listener on an OS-assigned port (probe-then-bind
+        // is racy under parallel test load).
+        var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
         // Start server handshake in background
         var serverTask = Task.Run(async () =>
@@ -96,10 +97,10 @@ public sealed class TlsHandshakeReproTests
     public async Task TlsHandshake_via_TaskRun_offload_succeeds()
     {
         using var cert = CreateSelfSignedCert();
-        var port = GetAvailablePort();
 
-        var listener = new TcpListener(IPAddress.Loopback, port);
+        var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
 
         var tcs = new TaskCompletionSource<SslStream>();
         var serverError = (Exception?)null;
@@ -142,17 +143,6 @@ public sealed class TlsHandshakeReproTests
 
         await serverSsl.DisposeAsync();
         listener.Stop();
-    }
-
-    private static int GetAvailablePort()
-    {
-        using var socket = new Socket(
-            AddressFamily.InterNetwork,
-            SocketType.Stream,
-            ProtocolType.Tcp
-        );
-        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-        return ((IPEndPoint)socket.LocalEndPoint!).Port;
     }
 }
 

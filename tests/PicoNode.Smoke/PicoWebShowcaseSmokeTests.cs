@@ -155,7 +155,7 @@ public sealed class PicoWebShowcaseSmokeTests
         DecompressionMethods automaticDecompression = DecompressionMethods.None
     )
     {
-        var port = GetAvailablePort();
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         var sampleRoot = Path.Combine(GetRepositoryRoot(), "samples", "PicoWeb.Samples");
         var server = new WebServer(
             PicoWeb.Samples.Abs.ShowcaseApp.Create(new EmptyServiceProvider(), sampleRoot),
@@ -163,6 +163,7 @@ public sealed class PicoWebShowcaseSmokeTests
         );
 
         await server.StartAsync();
+        port = ((IPEndPoint)server.LocalEndPoint!).Port;
 
         var handler = new HttpClientHandler
         {
@@ -189,15 +190,6 @@ public sealed class PicoWebShowcaseSmokeTests
         await using var gzip = new GZipStream(input, CompressionMode.Decompress);
         using var reader = new StreamReader(gzip);
         return await reader.ReadToEndAsync();
-    }
-
-    private static int GetAvailablePort()
-    {
-        using var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
     }
 
     private static string GetRepositoryRoot()

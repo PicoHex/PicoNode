@@ -5,7 +5,7 @@ public sealed class SmokeTests
     [Test]
     public async Task RunTcpSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
 
         await using var node = new TcpNode(
             new TcpNodeOptions
@@ -17,6 +17,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -33,10 +34,9 @@ public sealed class SmokeTests
     [Test]
     public async Task RunHttpGetSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
 
         await using var node = CreateHttpNode(
-            port,
             static (request, _) =>
                 ValueTask.FromResult(
                     request.Method == "GET" && request.Target == "/hello"
@@ -46,6 +46,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -62,10 +63,9 @@ public sealed class SmokeTests
     [Test]
     public async Task RunHttpPostWithContentLengthSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
 
         await using var node = CreateHttpNode(
-            port,
             static (request, _) =>
             {
                 if (request.Method == "POST" && request.Target == "/submit")
@@ -84,6 +84,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -104,11 +105,10 @@ public sealed class SmokeTests
     [Test]
     public async Task RunHttpSequentialReuseSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         var requests = new ConcurrentQueue<string>();
 
         await using var node = CreateHttpNode(
-            port,
             (request, _) =>
             {
                 requests.Enqueue($"{request.Method} {request.Target}");
@@ -129,6 +129,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -154,11 +155,10 @@ public sealed class SmokeTests
     [Test]
     public async Task RunHttpUnsupportedFramingSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         var requestHandlerCalled = false;
 
         await using var node = CreateHttpNode(
-            port,
             (_, _) =>
             {
                 requestHandlerCalled = true;
@@ -167,6 +167,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -191,14 +192,14 @@ public sealed class SmokeTests
     [Test]
     public async Task RunHttpHandlerFailureSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
 
         await using var node = CreateHttpNode(
-            port,
             static (_, _) => throw new InvalidOperationException("boom")
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -218,10 +219,9 @@ public sealed class SmokeTests
     [Test]
     public async Task RunHttpRouterMethodNotAllowedSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
 
         await using var node = CreateHttpNode(
-            port,
             new HttpRouter(
                 new HttpRouterOptions
                 {
@@ -238,6 +238,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -255,10 +256,9 @@ public sealed class SmokeTests
     [Test]
     public async Task RunHttpRouterFallbackSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
 
         await using var node = CreateHttpNode(
-            port,
             new HttpRouter(
                 new HttpRouterOptions
                 {
@@ -279,6 +279,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -295,10 +296,9 @@ public sealed class SmokeTests
     [Test]
     public async Task RunHttpMissingHostSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
 
         await using var node = CreateHttpNode(
-            port,
             new HttpRouter(
                 new HttpRouterOptions
                 {
@@ -315,6 +315,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -334,10 +335,9 @@ public sealed class SmokeTests
     [Test]
     public async Task RunHttpRouterPutDeleteSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
 
         await using var node = CreateHttpNode(
-            port,
             new HttpRouter(
                 new HttpRouterOptions
                 {
@@ -365,6 +365,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -388,10 +389,9 @@ public sealed class SmokeTests
     [Test]
     public async Task RunHttpInvalidRequestTargetSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
 
         await using var node = CreateHttpNode(
-            port,
             new HttpRouter(
                 new HttpRouterOptions
                 {
@@ -408,6 +408,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -427,10 +428,9 @@ public sealed class SmokeTests
     [Test]
     public async Task RunHttpInvalidHostFormatSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
 
         await using var node = CreateHttpNode(
-            port,
             new HttpRouter(
                 new HttpRouterOptions
                 {
@@ -447,6 +447,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -466,7 +467,7 @@ public sealed class SmokeTests
     [Test]
     public async Task RunUdpSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Dgram, ProtocolType.Udp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
 
         await using var node = new UdpNode(
             new UdpNodeOptions
@@ -477,6 +478,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new UdpClient();
         var payload = new byte[] { 9, 8, 7, 6 };
@@ -489,7 +491,7 @@ public sealed class SmokeTests
     [Test]
     public async Task StopAsync_waits_for_connection_close_completion()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         var handler = new BlockingCloseHandler();
 
         await using var node = new TcpNode(
@@ -502,6 +504,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -531,7 +534,7 @@ public sealed class SmokeTests
     [Test]
     public async Task StopAsync_rejects_new_connections_while_stopping()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         var handler = new BlockingCloseHandler();
 
         await using var node = new TcpNode(
@@ -544,6 +547,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var firstClient = new TcpClient();
         await firstClient.ConnectAsync(IPAddress.Loopback, port);
@@ -573,7 +577,7 @@ public sealed class SmokeTests
     [Test]
     public async Task StopAsync_waits_for_inflight_udp_handler_completion()
     {
-        var port = GetAvailablePort(SocketType.Dgram, ProtocolType.Udp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         var handler = new BlockingUdpHandler();
 
         await using var node = new UdpNode(
@@ -585,6 +589,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new UdpClient();
         await client.SendAsync(new byte[] { 1, 2, 3 }, 3, new IPEndPoint(IPAddress.Loopback, port));
@@ -614,7 +619,7 @@ public sealed class SmokeTests
     [Test]
     public async Task Udp_handler_fault_reports_fault_and_subsequent_datagram_still_processes()
     {
-        var port = GetAvailablePort(SocketType.Dgram, ProtocolType.Udp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         var logger = new SmokeTestLogger();
 
         await using var node = new UdpNode(
@@ -627,6 +632,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new UdpClient();
         var remote = new IPEndPoint(IPAddress.Loopback, port);
@@ -644,7 +650,7 @@ public sealed class SmokeTests
     [Test]
     public async Task Udp_drop_newest_reports_fault_when_dispatch_queue_is_saturated()
     {
-        var port = GetAvailablePort(SocketType.Dgram, ProtocolType.Udp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         var handler = new BlockingUdpHandler();
         var logger = new SmokeTestLogger();
 
@@ -661,6 +667,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new UdpClient();
         var remote = new IPEndPoint(IPAddress.Loopback, port);
@@ -686,7 +693,7 @@ public sealed class SmokeTests
     [Test]
     public async Task Udp_stop_cancellation_leaves_state_as_stopping_until_drain_finishes()
     {
-        var port = GetAvailablePort(SocketType.Dgram, ProtocolType.Udp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         var handler = new BlockingUdpHandler();
 
         await using var node = new UdpNode(
@@ -698,6 +705,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new UdpClient();
         await client.SendAsync(new byte[] { 0x33 }, 1, new IPEndPoint(IPAddress.Loopback, port));
@@ -717,7 +725,7 @@ public sealed class SmokeTests
     [Test]
     public async Task Tcp_stop_cancellation_leaves_state_as_stopping_until_drain_finishes()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         var handler = new BlockingCloseHandler();
 
         await using var node = new TcpNode(
@@ -730,6 +738,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -751,7 +760,7 @@ public sealed class SmokeTests
     [Test]
     public async Task RunTlsTcpEchoSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         using var cert = CreateSelfSignedCertificate();
 
         await using var node = new TcpNode(
@@ -765,6 +774,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var tcpClient = new TcpClient();
         await tcpClient.ConnectAsync(IPAddress.Loopback, port);
@@ -787,7 +797,7 @@ public sealed class SmokeTests
     [Test]
     public async Task RunTlsHttpGetSmokeAsync()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         using var cert = CreateSelfSignedCertificate();
 
         await using var node = new TcpNode(
@@ -811,6 +821,7 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         using var tcpClient = new TcpClient();
         await tcpClient.ConnectAsync(IPAddress.Loopback, port);
@@ -835,7 +846,7 @@ public sealed class SmokeTests
     [Test]
     public async Task TlsHandshakeFailure_reports_fault_and_does_not_crash()
     {
-        var port = GetAvailablePort(SocketType.Stream, ProtocolType.Tcp);
+        var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         using var cert = CreateSelfSignedCertificate();
         var logger = new SmokeTestLogger();
 
@@ -851,6 +862,8 @@ public sealed class SmokeTests
         );
 
         await node.StartAsync();
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
+        port = ((IPEndPoint)node.LocalEndPoint!).Port;
 
         // Connect with raw TCP (no TLS) — handshake will fail
         using var client = new TcpClient();
@@ -868,23 +881,13 @@ public sealed class SmokeTests
         await Assert.That(node.State).IsEqualTo(NodeState.Running);
     }
 
-    private static int GetAvailablePort(SocketType socketType, ProtocolType protocolType)
-    {
-        using var socket = new Socket(AddressFamily.InterNetwork, socketType, protocolType);
-        socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-        if (socket.LocalEndPoint is not IPEndPoint localEndPoint)
-        {
-            throw new InvalidOperationException("Socket endpoint should be available after bind.");
-        }
-
-        return localEndPoint.Port;
-    }
-
-    private static TcpNode CreateHttpNode(int port, HttpRequestHandler requestHandler) =>
+    private static TcpNode CreateHttpNode(HttpRequestHandler requestHandler) =>
         new(
             new TcpNodeOptions
             {
-                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                // Port 0: the OS assigns a free port; the test reads it back from
+                // node.LocalEndPoint after StartAsync (probe-then-bind is racy).
+                Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
                 ConnectionHandler = new HttpConnectionHandler(
                     new HttpConnectionHandlerOptions { RequestHandler = requestHandler }
                 ),
