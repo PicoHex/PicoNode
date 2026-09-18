@@ -6,13 +6,13 @@
 
   <ItemGroup>
     <!-- PicoHex ecosystem -->
-    <PackageVersion Include="PicoCfg" Version="2026.9.3" />
-    <PackageVersion Include="PicoCfg.Abs" Version="2026.9.3" />
-    <PackageVersion Include="PicoDI" Version="2026.9.3" />
-    <PackageVersion Include="PicoDI.Abs" Version="2026.9.3" />
-    <PackageVersion Include="PicoJetson" Version="2026.9.14" />
-    <PackageVersion Include="PicoLog" Version="2026.9.3" />
-    <PackageVersion Include="PicoLog.Abs" Version="2026.9.3" />
+    <PackageVersion Include="PicoCfg" Version="2026.10.0" />
+    <PackageVersion Include="PicoCfg.Abs" Version="2026.10.0" />
+    <PackageVersion Include="PicoDI" Version="2026.10.0" />
+    <PackageVersion Include="PicoDI.Abs" Version="2026.10.0" />
+    <PackageVersion Include="PicoJetson" Version="2026.10.0" />
+    <PackageVersion Include="PicoLog" Version="2026.10.0" />
+    <PackageVersion Include="PicoLog.Abs" Version="2026.10.0" />
 
     <!-- PicoNode internal (conditional package refs for NuGet publish) -->
     <PackageVersion Include="PicoNode" Version="$(Version)" />
@@ -29,6 +29,6 @@
 
     <!-- Testing -->
     <PackageVersion Include="PicoBench" Version="2026.3.0" />
-    <PackageVersion Include="TUnit" Version="1.68.0" />
+    <PackageVersion Include="TUnit" Version="1.68.4" />
   </ItemGroup>
 </Project>
