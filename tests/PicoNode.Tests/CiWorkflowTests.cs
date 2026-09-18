@@ -205,6 +205,13 @@ public sealed class CiWorkflowTests
             .IsFalse();
         await Assert.That(script).Contains("[System.IO.Path]::GetTempPath()");
         await Assert.That(script.Contains("\\..\\src\\", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(script).Contains("Resolve-Path");
+        await Assert
+            .That(script.Contains("$PSScriptRoot/../src", StringComparison.Ordinal))
+            .IsFalse()
+            .Because(
+                "a `..` ProjectReference is not normalised on macOS/Linux (MSBuild MSB3202), so the path must be canonical before it is written into the generated csproj"
+            );
     }
 
     [Test]

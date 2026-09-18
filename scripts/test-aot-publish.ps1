@@ -11,6 +11,13 @@ $ErrorActionPreference = "Stop"
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) "PicoWebAotTest_$(Get-Random)"
 $isWindowsHost = $env:OS -eq 'Windows_NT'
 
+# Canonical absolute path: a `..` inside a ProjectReference is not normalised on
+# macOS/Linux, which makes MSBuild resolve the referenced project's own relative
+# references against the temp directory (MSB3202: project file not found).
+$picoWebProject = (
+    Resolve-Path (Join-Path $PSScriptRoot "../src/Web/PicoWeb/PicoWeb.csproj")
+).Path
+
 if (-not $RuntimeIdentifier) {
     $osName = if (
         [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
@@ -61,7 +68,7 @@ try {
     <StripSymbols>true</StripSymbols>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="$PSScriptRoot/../src/Web/PicoWeb/PicoWeb.csproj" />
+    <ProjectReference Include="$picoWebProject" />
   </ItemGroup>
 </Project>
 "@ | Set-Content (Join-Path $tempDir "AotTest.csproj")
