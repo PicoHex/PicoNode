@@ -488,7 +488,12 @@ public sealed class TcpNodeBranchTests
         await node.StartAsync();
         await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
 
-        var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        // The monitor wakes at min(IdleTimeout, IdleScanInterval) = 150 ms, so the
+        // close is expected well before the 5 s scan interval. Wait with a generous
+        // margin (still below that interval, so a regression to using the scan
+        // interval would time out): the previous fixed 1 s margin was flaky on
+        // loaded CI runners.
+        var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(4));
 
         await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.IdleTimeout);
         await Assert.That(closed.Error).IsNull();
