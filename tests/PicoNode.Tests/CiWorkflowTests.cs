@@ -51,6 +51,9 @@ public sealed class CiWorkflowTests
     private static string AotScriptPath =>
         Path.Combine(RepoRoot, "scripts", "test-aot-publish.ps1");
 
+    private static string AotVerifierProgramPath =>
+        Path.Combine(RepoRoot, "tests", "PicoWeb.AotVerify", "Program.cs");
+
     [Test]
     public async Task Contains_call_with_string_argument_requires_an_argument_not_a_mention()
     {
@@ -85,37 +88,30 @@ public sealed class CiWorkflowTests
     }
 
     [Test]
-    public async Task Aot_script_exercises_the_runasync_entry_point()
+    public async Task Aot_verifier_exercises_the_runasync_entry_point()
     {
         // WebApiApp.RunAsync (and its ProcessShutdown platform events) must stay in
-        // the ILC reachable set and actually run under AOT — otherwise a trim/AOT
-        // regression in the documented entry point would ship unnoticed. Requirement:
-        // a code line that invokes RunAsync with a string argument, so neither a
-        // PowerShell comment nor a C# comment inside the here-string can satisfy it.
-        // Matching over the joined code lines keeps a multi-line call working too.
-        var codeLines = CodeLines(File.ReadAllText(AotScriptPath)).ToArray();
-        var code = string.Join('\n', codeLines);
+        // the ILC reachable set and actually run under AOT. The committed verifier
+        // project publishes on every CI runner; requirement: a real call carrying a
+        // string argument (a mere mention in a comment must not satisfy it).
+        var program = File.ReadAllText(AotVerifierProgramPath);
 
-        await Assert.That(ContainsCallWithStringArgument(code, "api.RunAsync")).IsTrue();
+        await Assert.That(ContainsCallWithStringArgument(program, "api.RunAsync")).IsTrue();
     }
 
     [Test]
-    public async Task Aot_script_binds_an_ephemeral_port()
+    public async Task Aot_verifier_binds_an_ephemeral_port()
     {
         // A fixed port makes the gate fail when anything else holds it (notably a
-        // second local run); the verification program binds port 0 and reads the
-        // assigned port back from WebServer.LocalEndPoint. The endpoint assertions
-        // match the actual call shapes (multi-line bind + ranged read-back).
-        var script = File.ReadAllText(AotScriptPath);
-        var codeLines = CodeLines(script).ToArray();
+        // second local run); the verifier binds port 0 and reads the assigned port
+        // back from WebServer.LocalEndPoint (multi-line bind + ranged read-back).
+        var program = File.ReadAllText(AotVerifierProgramPath);
 
+        await Assert.That(program.Contains("9876", StringComparison.Ordinal)).IsFalse();
         await Assert
-            .That(codeLines.Any(static line => line.Contains("9876", StringComparison.Ordinal)))
-            .IsFalse();
-        await Assert
-            .That(Regex.IsMatch(script, @"IPEndPoint\(\s*System\.Net\.IPAddress\.Loopback"))
+            .That(Regex.IsMatch(program, @"IPEndPoint\(\s*System\.Net\.IPAddress\.Loopback"))
             .IsTrue();
-        await Assert.That(Regex.IsMatch(script, @"\.LocalEndPoint!\)\.Port")).IsTrue();
+        await Assert.That(Regex.IsMatch(program, @"\.LocalEndPoint!\)\.Port")).IsTrue();
     }
 
     [Test]
@@ -189,12 +185,12 @@ public sealed class CiWorkflowTests
     }
 
     [Test]
-    public async Task Aot_script_is_portable_across_ci_runners()
+    public async Task Aot_script_publishes_the_committed_verifier_project()
     {
-        // The AOT gate runs on linux/macOS runners too, where $env:TEMP is unset
-        // (verified on a Linux environment) and backslash path separators are not
-        // separators. Comments are excluded: mentioning the variable in an
-        // explanation is fine, using it is not.
+        // The gate publishes a committed project inside the repository. A generated
+        // temp project outside the tree made MSBuild resolve the referenced
+        // projects' own relative references against the wrong base on macOS/Linux
+        // (MSBuild MSB3202), and $env:TEMP is unset on those runners anyway.
         var script = File.ReadAllText(AotScriptPath);
         var codeLines = CodeLines(script);
 
@@ -203,15 +199,11 @@ public sealed class CiWorkflowTests
                 codeLines.Any(static line => line.Contains("$env:TEMP", StringComparison.Ordinal))
             )
             .IsFalse();
-        await Assert.That(script).Contains("[System.IO.Path]::GetTempPath()");
-        await Assert.That(script.Contains("\\..\\src\\", StringComparison.Ordinal)).IsFalse();
-        await Assert.That(script).Contains("Resolve-Path");
+        await Assert.That(script).Contains("tests/PicoWeb.AotVerify");
         await Assert
-            .That(script.Contains("$PSScriptRoot/../src", StringComparison.Ordinal))
+            .That(script.Contains("Set-Content", StringComparison.Ordinal))
             .IsFalse()
-            .Because(
-                "a `..` ProjectReference is not normalised on macOS/Linux (MSBuild MSB3202), so the path must be canonical before it is written into the generated csproj"
-            );
+            .Because("the gate must publish the committed project, not generate one");
     }
 
     [Test]

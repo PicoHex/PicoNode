@@ -13,3 +13,4 @@ PicoNode test projects:
 | `PicoNode.Smoke` | Smoke tests (TCP echo, TLS, HTTP GET) | 33 |
 | `PicoNode.PerfHarness` | Performance regression tests | 6 |
 | `PicoNode.E2E` | End-to-end tests (SSE streaming) | Python |
+| `PicoWeb.AotVerify` | AOT publish + run verifier (native binary, ephemeral port) | n/a (exe) |
