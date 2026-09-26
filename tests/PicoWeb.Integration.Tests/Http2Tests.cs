@@ -86,6 +86,61 @@ public sealed class Http2Tests
     }
 
     [Test]
+    public async Task Http2_multipart_body_parses_from_the_buffered_body()
+    {
+        var port = TestSupport.GetRandomPort();
+        var app = new WebApp(new DummyContainer());
+        app.MapPost(
+            "/api/upload",
+            async (WebContext ctx, CancellationToken ct) =>
+            {
+                // The h2 transport must buffer the request body into Request.Body.
+                // The parser would silently fall back to BodyStream, so guard the
+                // carrier explicitly: an empty buffered body is a regression.
+                if (ctx.Request.Body.Length == 0)
+                    return WebResults.Text(400, "empty-body", "Bad Request");
+
+                var form = await MultipartFormDataParser.ParseAsync(ctx.Request, ct: ct);
+                return WebResults.Text(
+                    200,
+                    form?.Fields.FirstOrDefault()?.Value ?? "missing",
+                    "OK"
+                );
+            }
+        );
+
+        await using var server = new WebServer(
+            app,
+            new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+        );
+        await server.StartAsync();
+
+        using var handler = new SocketsHttpHandler { EnableMultipleHttp2Connections = true };
+        using var client = new HttpClient(handler)
+        {
+            BaseAddress = new Uri($"http://127.0.0.1:{port}"),
+            DefaultRequestVersion = System.Net.HttpVersion.Version20,
+            DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact,
+        };
+
+        using var content = new MultipartFormDataContent();
+        content.Add(new StringContent("alice"), "username");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/upload")
+        {
+            Content = content,
+            Version = System.Net.HttpVersion.Version20,
+            VersionPolicy = HttpVersionPolicy.RequestVersionExact,
+        };
+
+        using var response = await client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+
+        await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
+        await Assert.That(response.Version).IsEqualTo(System.Net.HttpVersion.Version20);
+        await Assert.That(body).IsEqualTo("alice");
+    }
+
+    [Test]
     public async Task Http2_tls_alpn_works()
     {
         var cert = LoadDevCert();

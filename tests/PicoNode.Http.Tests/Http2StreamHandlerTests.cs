@@ -999,11 +999,20 @@ public sealed class Http2StreamHandlerTests
             CancellationToken.None
         );
 
-        // Send final DATA with EndStream
-        var dataFrame = BuildDataFrame(1, "Hello World"u8.ToArray(), endStream: true);
+        // Send two DATA frames (the buffered body must span frame boundaries)
+        var dataFrame1 = BuildDataFrame(1, "Hello "u8.ToArray(), endStream: false);
         await Http2StreamHandler.ProcessDataFrame(
             connection,
-            dataFrame,
+            dataFrame1,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        var dataFrame2 = BuildDataFrame(1, "World"u8.ToArray(), endStream: true);
+        await Http2StreamHandler.ProcessDataFrame(
+            connection,
+            dataFrame2,
             handler,
             null,
             CancellationToken.None

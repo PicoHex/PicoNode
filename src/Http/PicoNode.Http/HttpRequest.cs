@@ -34,7 +34,7 @@ public sealed class HttpRequest
     /// In-memory request body. For large payloads, use <see cref="BodyStream"/> instead
     /// to avoid buffering the entire body.
     /// Lazily materialized on first access from the transport's buffered body sequence —
-    /// never by reading <see cref="BodyStream"/>, which is a single-read stream.
+    /// never by reading <see cref="BodyStream"/>; treat the stream as single-read.
     /// </summary>
     public ReadOnlyMemory<byte> Body
     {
