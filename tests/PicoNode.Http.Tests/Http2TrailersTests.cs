@@ -14,22 +14,26 @@ public sealed class Http2TrailersTests
     [Test]
     public async Task Trailers_with_content_length_deliver_body()
     {
-        var (connection, received) = await RunTrailerFlowAsync(withContentLength: true);
+        var (connection, received, buffered) = await RunTrailerFlowAsync(withContentLength: true);
 
         await Assert.That(connection.LastRstStreamCode).IsNull();
         await Assert.That(received).IsEqualTo("test");
+        await Assert.That(Encoding.UTF8.GetString(buffered.Span)).IsEqualTo("test");
     }
 
     [Test]
     public async Task Trailers_without_content_length_deliver_body()
     {
-        var (connection, received) = await RunTrailerFlowAsync(withContentLength: false);
+        var (connection, received, buffered) = await RunTrailerFlowAsync(withContentLength: false);
 
         await Assert.That(connection.LastRstStreamCode).IsNull();
         await Assert.That(received).IsEqualTo("test");
+        await Assert.That(Encoding.UTF8.GetString(buffered.Span)).IsEqualTo("test");
     }
 
-    private static async Task<(CaptureContext, string?)> RunTrailerFlowAsync(bool withContentLength)
+    private static async Task<(CaptureContext, string?, ReadOnlyMemory<byte>)> RunTrailerFlowAsync(
+        bool withContentLength
+    )
     {
         var connection = new CaptureContext();
         connection.UserState = new ConnectionRuntimeState
@@ -39,6 +43,7 @@ public sealed class Http2TrailersTests
         };
 
         string? received = null;
+        ReadOnlyMemory<byte> buffered = default;
         HttpRequestHandler handler = async (req, ct) =>
         {
             if (req.BodyStream is not null)
@@ -46,6 +51,7 @@ public sealed class Http2TrailersTests
                 using var reader = new StreamReader(req.BodyStream);
                 received = await reader.ReadToEndAsync(ct);
             }
+            buffered = req.Body;
             return new HttpResponse { StatusCode = 200 };
         };
 
@@ -85,7 +91,7 @@ public sealed class Http2TrailersTests
         );
         await ProcessAsync(connection, trailerFrame, handler);
 
-        return (connection, received);
+        return (connection, received, buffered);
     }
 
     private static Task ProcessAsync(

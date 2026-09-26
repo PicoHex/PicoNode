@@ -973,6 +973,85 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
+    public async Task HeadersWithoutEndStream_ThenDataWithEndStream_BodyReturnsBufferedPayload()
+    {
+        var connection = new TestTcpConnectionContext();
+        var hpackData = BuildMinimalHpack("POST", "/upload");
+
+        ReadOnlyMemory<byte> capturedBody = default;
+        var streamBody = new MemoryStream();
+        HttpRequestHandler handler = async (req, ct) =>
+        {
+            // Body and BodyStream are independent views over the buffered
+            // payload — reading Body must not consume the stream.
+            capturedBody = req.Body;
+            await req.BodyStream.CopyToAsync(streamBody, ct);
+            return new HttpResponse { StatusCode = 200 };
+        };
+
+        // Send HEADERS without EndStream
+        var headersFrame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.None, 1, hpackData);
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        // Send final DATA with EndStream
+        var dataFrame = BuildDataFrame(1, "Hello World"u8.ToArray(), endStream: true);
+        await Http2StreamHandler.ProcessDataFrame(
+            connection,
+            dataFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(Encoding.UTF8.GetString(capturedBody.Span)).IsEqualTo("Hello World");
+        await Assert.That(Encoding.UTF8.GetString(streamBody.ToArray())).IsEqualTo("Hello World");
+    }
+
+    [Test]
+    public async Task HeadersWithoutEndStream_ThenDataWithEndStream_BodyAvailableAfterBodyStreamRead()
+    {
+        var connection = new TestTcpConnectionContext();
+        var hpackData = BuildMinimalHpack("POST", "/upload");
+
+        ReadOnlyMemory<byte> capturedBody = default;
+        HttpRequestHandler handler = async (req, ct) =>
+        {
+            // Body must remain available after BodyStream has been drained —
+            // a lazy Body getter that read BodyStream would return nothing here.
+            using var streamBody = new MemoryStream();
+            await req.BodyStream.CopyToAsync(streamBody, ct);
+            capturedBody = req.Body;
+            return new HttpResponse { StatusCode = 200 };
+        };
+
+        var headersFrame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.None, 1, hpackData);
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            headersFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        var dataFrame = BuildDataFrame(1, "Hello World"u8.ToArray(), endStream: true);
+        await Http2StreamHandler.ProcessDataFrame(
+            connection,
+            dataFrame,
+            handler,
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(Encoding.UTF8.GetString(capturedBody.Span)).IsEqualTo("Hello World");
+    }
+
+    [Test]
     public async Task DataFrame_decrements_receive_window_and_sends_WINDOW_UPDATE()
     {
         var connection = new TestTcpConnectionContext();

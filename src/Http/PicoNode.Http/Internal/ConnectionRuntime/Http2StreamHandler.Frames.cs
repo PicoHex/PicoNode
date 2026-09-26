@@ -339,6 +339,13 @@ internal static partial class Http2StreamHandler
                 BodyStream = bodyStream,
             };
 
+            // HttpRequest.Body is lazily allocated from _bodySequence; the getter
+            // never reads BodyStream (single-read view). Without this, HTTP/2
+            // requests report an empty Body while HTTP/1.1 sees the payload.
+            // Mirrors the _bodySequence assignment in HttpBodyParser.ParseBody.
+            if (bodyBytes.Length > 0)
+                request._bodySequence = new ReadOnlySequence<byte>(bodyBytes);
+
             // RFC 7540 §8.1.2.6: content-length must match the request body.
             if (
                 !await ValidateContentLengthAsync(
