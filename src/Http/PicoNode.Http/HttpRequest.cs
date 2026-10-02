@@ -17,6 +17,13 @@ public sealed class HttpRequest
     /// </summary>
     public CancellationToken RemoteCloseToken { get; internal set; }
 
+    /// <summary>
+    /// The connected peer's endpoint, stamped by the HTTP layer at dispatch time.
+    /// Null for in-process test requests; the transport always knows it for real
+    /// sockets (<c>ITcpConnectionContext.RemoteEndPoint</c>).
+    /// </summary>
+    public IPEndPoint? RemoteEndPoint { get; internal set; }
+
     public HttpVersion Version { get; init; } = HttpVersion.Http11;
 
     public IReadOnlyList<KeyValuePair<string, string>> HeaderFields { get; init; } = [];

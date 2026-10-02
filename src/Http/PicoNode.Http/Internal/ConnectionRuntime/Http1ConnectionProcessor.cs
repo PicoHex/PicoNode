@@ -151,6 +151,7 @@ internal static class Http1ConnectionProcessor
         }
 
         request.RemoteCloseToken = connection.RemoteCloseToken;
+        request.RemoteEndPoint = connection.RemoteEndPoint as IPEndPoint;
 
         var isHead = request.Method.Equals("HEAD", StringComparison.OrdinalIgnoreCase);
 

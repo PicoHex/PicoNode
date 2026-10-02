@@ -31,6 +31,12 @@ public sealed class WebContext
     /// </summary>
     internal ReadOnlyMemory<char> PathMemory { get; }
 
+    /// <summary>The connected peer's endpoint, or null for in-process requests.</summary>
+    public IPEndPoint? RemoteEndPoint => Request.RemoteEndPoint;
+
+    /// <summary>The connected peer's address (no port), or null when unknown.</summary>
+    public IPAddress? RemoteAddress => Request.RemoteEndPoint?.Address;
+
     public string QueryString { get; }
 
     public IReadOnlyDictionary<string, string> RouteValues => _routeValues;

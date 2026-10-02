@@ -369,6 +369,7 @@ internal static partial class Http2StreamHandler
         };
 
         request.RemoteCloseToken = connection.RemoteCloseToken;
+        request.RemoteEndPoint = connection.RemoteEndPoint as IPEndPoint;
 
         // Handlers that complete synchronously answer inline; parked handlers run
         // on a background task so they cannot stall the connection's frame loop.

@@ -3,6 +3,7 @@ global using System.Collections.Concurrent;
 global using System.Globalization;
 global using System.IO.Compression;
 global using System.IO.Pipelines;
+global using System.Net;
 global using System.Security.Cryptography;
 global using System.Text;
 global using PicoDI.Abs;
