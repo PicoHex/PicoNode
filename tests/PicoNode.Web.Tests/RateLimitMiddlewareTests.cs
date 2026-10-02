@@ -241,6 +241,89 @@ public sealed class RateLimitMiddlewareTests
         await Assert.That(callCount).IsEqualTo(2);
     }
 
+    [Test]
+    public async Task Downstream_Limit_Headers_Are_Not_Duplicated()
+    {
+        // The downstream handler already wrote X-RateLimit-Limit; the middleware
+        // must not append a second one. Group-level "first writer wins": the
+        // handler's value (7) survives, the middleware's limit is dropped.
+        var store = new InMemoryRateLimitStore(FixedKeyOptions);
+        var middleware = RateLimitMiddleware.Create(store, FixedKeyOptions);
+
+        var request = new HttpRequest { Method = "GET", Target = "/" };
+        var context = WebContext.Create(request);
+
+        var response = await middleware(
+            context,
+            (_, _) =>
+            {
+                var downstream = new HttpResponse { StatusCode = 200 };
+                downstream.Headers.Add("X-RateLimit-Limit", "7");
+                return ValueTask.FromResult(downstream);
+            },
+            CancellationToken.None
+        );
+
+        var limitValues = new List<string>();
+        foreach (var value in response.Headers.GetValues("X-RateLimit-Limit"))
+            limitValues.Add(value);
+
+        await Assert.That(limitValues.Count).IsEqualTo(1);
+        await Assert.That(limitValues[0]).IsEqualTo("7");
+    }
+
+    [Test]
+    public async Task Rejected_Body_Keeps_The_Legacy_Shape()
+    {
+        // Characterization test for the extraction: the 429 body/headers must stay
+        // byte-for-byte identical to the legacy middleware's. RefillRate=0 (fixed
+        // window) makes NextAvailableAt stable instead of racing a 1 s refill.
+        var options = new RateLimitOptions
+        {
+            MaxTokens = 1,
+            RefillRate = 0,
+            RefillInterval = TimeSpan.FromSeconds(1),
+            KeySelector = static _ => "test-key",
+        };
+        var store = new InMemoryRateLimitStore(options);
+        var middleware = RateLimitMiddleware.Create(store, options);
+
+        var request = new HttpRequest { Method = "GET", Target = "/" };
+
+        // Consume the only token.
+        await middleware(
+            WebContext.Create(request),
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
+
+        // The rejected result the middleware will build its body from.
+        var denied = await store.TryConsumeTokenAsync("test-key");
+        await Assert.That(denied.Allowed).IsFalse();
+
+        var expectedRetryAfter = Math.Max(
+            denied.NextAvailableAt - DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            1
+        );
+
+        // Next request is rate limited.
+        var response = await middleware(
+            WebContext.Create(request),
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
+
+        await Assert.That(response.StatusCode).IsEqualTo(429);
+        await Assert
+            .That(response.Headers["Retry-After"])
+            .IsEqualTo(expectedRetryAfter.ToString());
+        await Assert.That(response.Headers["X-RateLimit-Limit"]).IsEqualTo("1");
+        await Assert.That(response.Headers["Content-Type"]).IsEqualTo("application/json");
+        await Assert
+            .That(Encoding.UTF8.GetString(response.Body.Span))
+            .IsEqualTo($$"""{"error":"rate-limited","retryAfter":{{expectedRetryAfter}}}""");
+    }
+
     private sealed class ThrowingRateLimitStore : IRateLimitStore
     {
         public ValueTask<RateLimitResult> TryConsumeTokenAsync(string key, CancellationToken ct) =>
