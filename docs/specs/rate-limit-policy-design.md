@@ -1,7 +1,7 @@
 # PicoNode Rate Limit Policy — 分层限流组件设计
 
-> 状态：待 spec review（设计已逐节确认：① 数据模型 ② 求值语义 ③ 分类器与 peer ④ 命名策略 ⑤ 测试与迁移）
-> 日期：2026-10-02
+> 状态：spec review 已处理（B1–B5 阻塞项与次要项已修入本文；待复核后进入 writing-plans）
+> 日期：2026-10-02（rev2：评审修复）
 > 修订：扩展 `docs/superpowers/specs/2026-06-22-ratelimit-middleware-design.md`（令牌桶/store/头/边界仍是基线；本文新增**策略、分类、组合、声明**层，并纠正两处 spec↔实现偏差）
 > 原则：PicoHex 零外部依赖、AOT-first、**机制在框架 / 策略在应用**
 
@@ -11,14 +11,14 @@
 
 ### 1.1 现场（2026-10-02 实测，PicoAgent :8080 部署）
 
+> **测量基线**：以下数据来自 **`a94103c8` 之前**的部署。该提交已把 tokenless 预算临时调为 300/30（见 §5 过渡），所以现在复测 100 并发会得到 `100×200`——要复现 §1.1 需回到旧配置或临时把预算改回 60/1。
+
 删除 workspace 时前端日志出现连续的
 
 ```
 ERROR [web] Unhandled exception: GET /fragments/workspaces/{id}/row?confirm=1
 EXCEPTION: PicoAgent.Client.AcpClientException: HTTP 429 (rate-limited) (code 429)
 ```
-
-测量（对运行中的实例）：
 
 | 测量 | 结果 |
 |---|---|
@@ -78,6 +78,8 @@ EXCEPTION: PicoAgent.Client.AcpClientException: HTTP 429 (rate-limited) (code 42
 namespace PicoNode.Web;
 
 /// <summary>一个令牌桶的参数（构造期映射到 InMemoryRateLimitStore）。</summary>
+/// <remarks>回填是"按经过时间比例"的平滑回填（见 2026-06-22 spec §5.1）：
+/// PerMinute(120, 60) 是"60 burst + 约 1/s"，不是"每分钟一次性补 60"。</remarks>
 public readonly struct RateLimitBudget
 {
     public int MaxTokens { get; }
@@ -93,7 +95,7 @@ public sealed class RateLimitTier
     public string Name { get; }
     public RateLimitBudget Budget { get; }
     public Func<WebContext, string?> Key { get; }
-    public Predicate<WebContext>? Applies { get; }   // 档级路径限定，可空
+    public Predicate<WebContext>? Applies { get; }   // 档级限定，可空
 }
 
 public sealed class RateLimitPolicy : IDisposable
@@ -101,30 +103,45 @@ public sealed class RateLimitPolicy : IDisposable
     public string Name { get; }
     public bool FailOpen { get; }                    // 默认 false（盾语义；见 §3.2.6）
     public Predicate<WebContext>? Applies { get; }   // false = 整策略豁免
-    public RateLimitTier[] Tiers { get; }            // 构建后冻结为数组
+    public IReadOnlyList<RateLimitTier> Tiers { get; }   // 数组私有，构建后冻结
     public Action<RateLimitRejection>? OnRejected { get; }
     public static RateLimitPolicyBuilder Create(string name);
-    public void Dispose();                           // 释放各档的 store（宿主负责）
+    public void Dispose();                           // 释放各档的 store（宿主负责，见 §3.1.1）
 }
 
-public readonly struct RateLimitRejection             // string Policy; string Tier; RateLimitResult Result; WebContext Context
+public enum RateLimitRejectionReason { LimitReached, StoreError }
+
+public readonly struct RateLimitRejection
+{
+    public string Policy { get; }
+    public string Tier { get; }
+    public RateLimitRejectionReason Reason { get; }
+    public RateLimitResult Result { get; }           // StoreError 时为零值
+    public WebContext Context { get; }
+}
 
 public sealed class RateLimitPolicyBuilder
 {
     public RateLimitPolicyBuilder Tier(string name, RateLimitBudget budget, Func<WebContext, string?> key, Predicate<WebContext>? applies = null);
-    public RateLimitPolicyBuilder Exempt(string pathPrefix);
+    public RateLimitPolicyBuilder Exempt(string pathPrefix);            // 段边界前缀，见 §3.4
+    public RateLimitPolicyBuilder Applies(Predicate<WebContext> predicate);  // 与 RateLimitPolicy.Applies 对称
     public RateLimitPolicyBuilder OnRejected(Action<RateLimitRejection> handler);
-    public RateLimitPolicyBuilder FailOpen();          // 默认 false（盾）；显式开启才 fail-open
-    public RateLimitPolicy Build();                    // 零档 → throw
+    public RateLimitPolicyBuilder FailOpen();                           // 默认 false（盾）；显式开启才 fail-open
+    public RateLimitPolicy Build();                                     // 零档/重名档 → throw（重名策略由 UseRateLimit 的注册表检测，见 §3.4）
 }
 ```
 
 要点：
 
-- 预算与档是**值类型/不可变对象**，委托在构造期创建一次；`Tiers` 冻结为数组，请求路径 `for` 遍历（无 LINQ、无枚举器、无每请求闭包）。
+- 预算与档是**值类型/不可变对象**，委托在构造期创建一次；`Tiers` 对外 `IReadOnlyList`、内部数组，请求路径 `for` 遍历（无 LINQ、无枚举器、无每请求闭包）。
 - 每档一个 `InMemoryRateLimitStore`（**现有类型零改动**，一预算一 store）：新增构造重载
   `InMemoryRateLimitStore(in RateLimitBudget budget, TimeSpan? cleanupInterval = null)`，避免给 store 传假的 `KeySelector`；`CleanupInterval` 取策略级默认 5 分钟。
-- 策略 `Dispose()` 释放全部 store（`Timer`）；宿主在应用生命周期内持有（与今天 `using var rateStore = …` 同模式）。
+- **测试缝**：`RateLimitPolicyBuilder` 提供一个 **internal** `TimeProvider` 属性（测试用，非公开 API），让政策级测试注入 `ManualTimeProvider`——store 的 `internal TimeProvider` 已有，但 store 由 `Build()` 内部创建，没有这个缝就只能做时间依赖测试。`PicoNode.Web.Tests` 对 `PicoNode.Web` 已有 IVT。
+
+#### 3.1.1 Dispose 归属
+
+- **宿主负责**：`UseRateLimit` 不接管所有权；宿主以 `using var policy = …`（或宿主服务的 `Dispose`）释放，与今天 daemon 的 `using var rateStore = …` 同模式。理由：`WebApp` 目前没有 dispose 语义（`WebServer.DisposeAsync` 只关节点），给 `WebApp` 加 `IDisposable` 是比本组件更大的改动。
+- 释放后 `TryConsumeTokenAsync` 抛 `ObjectDisposedException`：`FailOpen=false` 时按 store 异常路径变成 429——这是"宿主忘记释放前就 shut down"的正常终态，写进 §4 测试。
 
 ### 3.2 求值语义（②）
 
@@ -132,30 +149,34 @@ public sealed class RateLimitPolicyBuilder
 
 ```
 if (policy.Applies is { } applies && !applies(ctx)) return await next(ctx, ct);   // 策略豁免
-RateLimitResult? winner = null;
+RateLimitResult? winner = null;  RateLimitTier? winnerTier = null;
 for i in policy.Tiers:
     if (tier[i].Applies is { } t && !t(ctx)) continue;
     key = tier[i].Key(ctx);            if (key is null) continue;      // 档不适用
     key = SanitizeKey(key);            // span：256 截断 + CR/LF→'_'（兼容旧行为）
     try    { result = await store[i].TryConsumeTokenAsync(key, ct); }
     catch when (policy.FailOpen) { continue; }
-    catch  { return RateLimitResponses.RejectedOnStoreError(tier[i].Budget.MaxTokens); }
-    if (!result.Allowed) return RateLimitResponses.Rejected(result, tier[i]);   // 拒绝者胜，停止后续消耗
-    if (winner is null || result.Remaining < winner.Remaining) winner = result;  // 最紧者胜；并列取先声明
+    catch  { return RateLimitResponses.RejectedOnStoreError(tier[i], policy, ctx); }   // OnRejected(StoreError)
+    if (!result.Allowed) return RateLimitResponses.Rejected(result, tier[i], policy, ctx);  // OnRejected(LimitReached)
+    if (winner is null) { winner = result; winnerTier = tier[i]; }     // 先声明者胜（见 §3.2.4）
 if (winner is not null) ctx.Items[WebContextKeys.RateLimitState] = new RateLimitState { Limit, Remaining, NextAvailableAt, Policy, Tier };
 var response = await next(ctx, ct);
-if (winner is not null) RateLimitResponses.AddHeaders(response, winner);        // 首写者赢
+if (winner is not null) RateLimitResponses.AddHeaders(response, winner);  // 组级判空 + 429 不加（见 §3.2.5）
 return response;
 ```
 
 1. **链式**：所有匹配档都要放行；任一拒绝即返回，后续档不再消耗。
-2. **令牌不退**：先放行、后被更后面的档拒绝时，前面已消耗的令牌**不退还**（令牌桶无 refund；.NET `CreateChained` 对令牌桶同理）。互斥档（trusted/anonymous 按 token 二选一）不触发；仅叠加兜底档时出现，文档与测试都固定该契约。
-3. **无档匹配** → 直接 `next`，不写 state/headers（档级豁免）。
-4. **头与 state**：成功取所有匹配档中 `Remaining` 最小者（并列取先声明），拒绝取拒绝档；头名与 2026-06-22 spec 完全一致（`X-RateLimit-Limit/Remaining/Reset`，拒绝加 `Retry-After` + JSON body）。`Items` 只在放行路径写。
-5. **叠加规则 = 首写者赢**：`HttpHeaderCollection` 只有 `Add`/`TryGetValue`（无 Remove/覆盖写，`src/Http/PicoNode.Http/HttpHeaderCollection.cs`），所以写头前先 `TryGetValue`，已存在则跳过 → 多条策略并存时内层头优先。文档写明：**不要**把旧的单桶 `RateLimitMiddleware` 与新策略中间件同时装在一条管线上（旧中间件不认识该规则）；多条**策略**之间可以并存（注册顺序 = 外层到内层）。
-6. **`FailOpen` 默认 false**（与旧单桶中间件的默认 true 刻意不同）：策略是盾，失败即拒绝；应用可显式开启。store 异常路径复用旧行为（`Retry-After: 60` + `X-RateLimit-Limit`）。
-7. **共用 helper**：抽出 `RateLimitResponses.Rejected / RejectedOnStoreError / AddHeaders`（internal），旧中间件改为调用它——429/头行为单一来源、零行为变化。
-8. **`RateLimitResult` 改为 `readonly record struct`**（纯 DTO、无身份语义）：消除每档求值的小分配；对 NuGet 上的 `PicoWeb` 属破坏性变更，按发布纪律记入版本说明。`RateLimitState` 保持 class（`Items` 为 `IDictionary<string, object?>`）。
+2. **档的互斥靠键表达，不靠假设**：需要"非此即彼"时用 `RateLimitKeys.Not(...)`（§3.3）。**默认要求**：声明互斥档时，后一档的键必须显式排除前一档的命中集——`Constant("instance")` 永不返回 null，单独使用会让**每个请求同时命中所有档**（B1 修复点；§4 有专门测试）。
+3. **令牌不退**：先放行、后被更后面的档拒绝时，前面已消耗的令牌**不退还**（令牌桶无 refund；.NET `CreateChained` 对令牌桶同理）。含 `FailOpen` 跳档（`catch when` → `continue`）时同样成立：**被跳过的档不退前面已耗的令牌**——两条都要契约测试。
+4. **头与 state**：**先声明者胜**（第一个匹配且放行的档），拒绝取拒绝档。**上报的档不保证是 binding 档**（不同档的 Limit 不可比，取"Remaining 最小"没有意义）；要精确观测就把最紧的档声明在前，或用 `OnRejected` 拿拒绝档。头名与 2026-06-22 spec 完全一致。`Items` 只在放行路径写。
+5. **头写入规则**：`HttpHeaderCollection` 只有 `Add`/`TryGetValue`（无 Remove/覆盖写，`src/Http/PicoNode.Http/HttpHeaderCollection.cs`）。
+   - `AddHeaders` 做**组级判空**：响应已存在任一 `X-RateLimit-*` → 三个头**整体跳过**（避免"内层 429 的 Limit + 外层策略的 Remaining/Reset"串档）；
+   - **429 响应绝不补 allow-headers**（拒绝档的 429 已自带自己的 `X-RateLimit-Limit`）；
+   - 多条**策略**可以并存（注册顺序 = 外层到内层）；**不要**把旧的单桶 `RateLimitMiddleware` 与新策略中间件同装——旧中间件不认识这套规则。注：`WebMiddleware` 是裸委托、`WebApp._middlewares` 只是 `List<WebMiddleware>`，**无法在启动期识别"链上已有旧中间件"**，因此这一条只能是文档纪律（评审建议的启动期 throw 在现有管线下不可实现）。
+6. **`FailOpen` 默认 false**（与旧单桶中间件的默认 true 刻意不同）：策略是盾，失败即拒绝；应用可显式开启。store 异常路径复用旧行为（`Retry-After: 60` + `X-RateLimit-Limit`），并触发 `OnRejected(StoreError)`。
+7. **`OnRejected` 触发面**：`LimitReached` 与 `StoreError` 两条 429 路径**都调用且各恰好一次**；放行/豁免/直通路径不调用。`RateLimitRejection.Reason` 区分两种 429。
+8. **共用 helper**：抽出 `RateLimitResponses.Rejected / RejectedOnStoreError / AddHeaders`（internal），旧中间件改为调用它——429/头行为单一来源、零行为变化。
+9. **`RateLimitResult` 改为 `readonly record struct`**（纯 DTO、无身份语义）：消除每档求值的小分配。该类型在 **`PicoNode.Web`**（`PackageId=PicoNode.Web`；`PicoWeb` 只是依赖者），破坏性变更记在 `PicoNode.Web` 名下，并按 §5 刷新公共 API 基线。`RateLimitState` 保持 class（`Items` 为 `IDictionary<string, object?>`）。
 
 ### 3.3 分类器与 peer（③）
 
@@ -163,9 +184,10 @@ return response;
 
 | 位置 | 改动 |
 |---|---|
-| `HttpRequest`（`src/Http/PicoNode.Http/HttpRequest.cs`） | 新增 `public IPEndPoint? RemoteEndPoint { get; internal set; }`（与 `RemoteCloseToken` 同款 `internal set` 先例） |
+| `HttpRequest`（`src/Http/PicoNode.Http/HttpRequest.cs`） | 新增 `public IPEndPoint? RemoteEndPoint { get; internal set; }`（与 `RemoteCloseToken` 同款 `internal set` 先例，`HttpRequest.cs:18`） |
 | `WebContext` | 新增计算属性 `RemoteEndPoint => Request.RemoteEndPoint`、`RemoteAddress => Request.RemoteEndPoint?.Address`（零分配） |
-| 赋值点（3 处） | `Http1ConnectionProcessor`（`HttpRequestParser.Parse` 成功后）、`Http2StreamHandler.cs:361`、`Http2StreamHandler.Frames.cs:329`，统一 `request.RemoteEndPoint = connection.RemoteEndPoint as IPEndPoint;`（接口静态类型是抽象 `EndPoint`；HTTP 走 TCP，cast 必成功） |
+| 赋值点（3 处，`RemoteCloseToken` 赋值行） | `Http1ConnectionProcessor.cs:153`、`Http2StreamHandler.cs:371`、`Http2StreamHandler.Frames.cs:362`，统一 `request.RemoteEndPoint = connection.RemoteEndPoint as IPEndPoint;`（接口静态类型是抽象 `EndPoint`；HTTP 走 TCP，cast 必成功） |
+| **测试可见性（B3，写死）** | `src/Http/PicoNode.Http/PicoNode.Http.csproj` 增加 `InternalsVisibleTo Include="PicoNode.Web.Tests"`——分类器测试在 `PicoNode.Web.Tests`，而 `internal set` 只对 `PicoNode.Http.Tests` 开放；不采用 `init`-only（那要改 `HttpRequestParser`/`HttpBodyParser` 的构造签名，成本更大） |
 
 默认 null，现有测试构造 `HttpRequest` 不受影响。**边界**：反代场景 peer 是代理地址（转发头为独立后续项）。
 
@@ -175,39 +197,43 @@ return response;
 |---|---|---|---|
 | `Constant(key)` | 固定键 | 0 | 构造期预计算 |
 | `TokenMatch(expected, key = "trusted")` | 匹配 → `key`；否则 `null` | 0 | 复用 `AuthMiddleware` 的 Bearer 解析（抽 `internal TryGetBearerToken`，与认证同源）；**常量时间逐字符比较**（长度不等→不等；相等时 XOR 累积） |
-| `RemoteAddress(fallback = "unknown")` | `RemoteAddress?.ToString() ?? fallback` | 每请求 1 小串（opt-in） | 无 peer 时共用 fallback 桶（fail-closed），不是跳过 |
+| `Not(inner, fallback)` | `inner` 命中 → `null`；否则 `fallback` | 0 | **互斥组合器**（B1）：`Not(TokenMatch(token), "instance")` = "非 token 请求"档 |
+| `RemoteAddress(fallback = "unknown")` | `ip?.ToString() ?? fallback`，其中 `ip = ctx.RemoteAddress` 且 **IPv4-mapped IPv6 先归一化**（`IsIPv4MappedToIPv6 → MapToIPv4`） | 每请求 1 小串（opt-in） | **键是地址、不是 `IPEndPoint`**（B4）：绝不能用 `IPEndPoint.ToString()`（含端口 → 每连接一个桶）。无 peer 时共用 fallback 桶（fail-closed），不是跳过 |
 | `Identity(fallback = "anonymous")` | `AuthMiddleware.GetIdentity(ctx)?.UserId ?? fallback` | 0 | **只能 post-auth**；pre-auth 误放时落 fallback 桶（全局限流、可见），不是静默不限 |
-| `Header(name, fallback = null)` | 头值或 fallback | 0 | fallback=null 表示"无此头则档不适用" |
-| `Path()` | `ctx.Path` | 0 | 应急/调试；**不推荐**做预算键（路径维度分桶爆炸） |
+| `Header(name, fallback = null)` | 头值或 fallback | 0 | `fallback=null` 表示"无此头则档不适用"（显式 opt-out） |
+| `Path()` | `ctx.Path`（首次物化 1 次分配，`WebContext.Path => _pathString ??= PathMemory.ToString()`） | 1（首次） | 分类器与 `RateLimitPath` 统一走 `PathMemory.Span`（同程序集 internal）以避免物化；**不推荐**做预算键（路径维度分桶爆炸） |
 
-pre/post-auth 矩阵：`Constant / TokenMatch / RemoteAddress / Header / Path` 可 pre-auth；`Identity` 必须 post-auth。所有"可能取不到值"的分类器都带 fallback，默认让档保持生效。
+pre/post-auth 矩阵：`Constant / TokenMatch / Not / RemoteAddress / Header / Path` 可 pre-auth；`Identity` 必须 post-auth。fallback 规则：凡"取不到值"是**常态**的分类器（`RemoteAddress`/`Identity`/`Header`）都带 fallback；`fallback=null` 是显式的"档不适用"。
 
 ### 3.4 命名策略、挂载与观测（④）
 
 **现实**：`WebApp.Build()` 把中间件链包在 router（terminal）之外，**中间件先于路由**，拿不到"已匹配路由"的 metadata。因此本期挂载 = **按策略谓词挂载**；名字用于声明、复用、观测与将来的挂载句柄。
 
 ```csharp
+var token = options.Token;   // 明文 owner token；null/空 = 无 token 模式
 var web = RateLimitPolicy.Create("web")
     .Exempt("/api/health")
-    .Tier("trusted",   RateLimitBudget.PerSecond(300, 30), RateLimitKeys.TokenMatch(token), RateLimitPath.Prefix("/api/"))
-    .Tier("anonymous", RateLimitBudget.PerSecond(60, 1),   RateLimitKeys.Constant("instance"), RateLimitPath.Prefix("/api/"))
-    .OnRejected(rejection => logger.Warning($"[rate-limit] {rejection.Policy}/{rejection.Tier} rejected {rejection.Context.Path}"))
+    // 盾档：路径范围 = AuthMiddleware 的路径范围（全局，见下），不得按 /api/ 收窄
+    .Tier("trusted",   RateLimitBudget.PerSecond(300, 30), RateLimitKeys.TokenMatch(token))
+    .Tier("anonymous", RateLimitBudget.PerSecond(60, 1),   RateLimitKeys.Not(RateLimitKeys.TokenMatch(token), "instance"))
+    .OnRejected(r => logger.Warning($"[rate-limit] {r.Policy}/{r.Tier} {r.Reason} {r.Context.Path}"))
     .Build();
 
-app.UseRateLimit(web);
+app.UseRateLimit(web);      // 必须注册在 AuthMiddleware 之前（W-04 的 pre-auth 盾）
 ```
 
-- `WebAppRateLimitExtensions.UseRateLimit(this WebApp, RateLimitPolicy)`：每策略一层（沿用 `WebApp.Use` 合成语义），注册顺序 = 外层到内层；`WebApp` 内加内部注册表（name→policy）用于**重名检测**（启动期 throw）与将来的路由挂载。
-- **零档策略** `Build()` 时 throw（响亮，不静默）。
-- `RateLimitPath.Prefix/Exact/Any`：span 匹配（Ordinal），无正则、AOT-safe。`Prefix` 按**路径段边界**匹配（前缀末尾是 `/`，或其后紧跟 `/` 或路径结束）——`/api` 不匹配 `/apix`；单端点用 `Exact`。
-- 两层"适用"分清：`policy.Applies/Exempt` = 整策略是否参与；`tier.Key == null` = 该档不适用。
-- **`OnRejected`**：`Action<RateLimitRejection>`，在返回 429 前调用（429 路径不经过 `next`，应用无法在别处观测"哪个桶拒的"）；同步、AOT-safe、未设置时零开销。
+- **盾档的路径范围 = `AuthMiddleware` 的路径范围（B2）**：`AuthMiddleware` 是无路径范围的全局中间件，任何带 `Authorization: Bearer x` 的请求——包括 `/acp*` 与未知路径——都会先跑 PBKDF2。因此盾档**不得**按 `/api/` 收窄；只允许 `Exempt(...)` 这类显式豁免。若确实要按路径分档，**每一档必须显式包含 `/acp*` 与未知路径**。
+- `WebAppRateLimitExtensions.UseRateLimit(this WebApp, RateLimitPolicy)` → 返回 `WebApp`（与 `Use` 一致的链式）；每策略一层（注册顺序 = 外层到内层）；`WebApp` 内加内部注册表（name→policy）用于**重名检测**（启动期 throw）与将来的路由挂载。
+- **`Build()` 校验**：零档、**重名档**（档名进观测与 `RateLimitRejection.Tier`）→ throw；**重名策略**由 `UseRateLimit` 的注册表在启动期 throw（`Build()` 看不到其它策略）。
+- `RateLimitPath.Prefix/Exact/Any`：span 匹配（Ordinal），无正则、AOT-safe。`Prefix` 按**路径段边界**匹配（前缀末尾是 `/`，或其后紧跟 `/` 或路径结束）——`/api` 不匹配 `/apix`；`Exempt` 同语义；单端点用 `Exact`。
+- 两层"适用"分清：`policy.Applies/Exempt` = 整策略是否参与；`tier.Applies` / `tier.Key == null` = 该档不适用。
+- **`OnRejected`**：见 §3.2.7；同步、AOT-safe、未设置时零开销。
 - **观测**：`RateLimitState` 增加可空 `Policy`/`Tier`；放行请求在下游也能看到命中桶名。
 
 ### 3.5 AOT-first 合规
 
 - 无反射、无 `dynamic`、无运行时属性消费（未来 `[RateLimit]` 必须由源生成器编译期消费）。
-- 热路径：`for` 遍历冻结数组；键清理用 span（无变化不新建字符串）；`TokenMatch` 零分配常量时间比较（不用 `Encoding.GetBytes`/`FixedTimeEquals`）。
+- 热路径：`for` 遍历冻结数组；键清理与路径匹配用 span；`TokenMatch` 零分配常量时间比较（不用 `Encoding.GetBytes`/`FixedTimeEquals`）。
 - 不用异常做控制流（取代旧的"`KeySelector` 抛异常 bypass"）。
 - 验证：`tests/PicoWeb.AotVerify` + `scripts/test-aot-publish.ps1`（CI `ci.yml:101` 的 native publish+run）；分配数据进 `tests/PicoNode.PerfHarness`（不做跨运行时脆断言）。
 
@@ -217,7 +243,7 @@ app.UseRateLimit(web);
 |---|---|
 | `RateLimitMiddleware.Create(store, options)` | 保留（sample 与旧接线可用）；改为调用抽出的 `RateLimitResponses` helper |
 | `RateLimitOptions` / `InMemoryRateLimitStore` | 保留；store 新增 budget 构造重载 |
-| `RateLimitResult` | class → `readonly record struct`（破坏性，见 §3.2.8） |
+| `RateLimitResult` | class → `readonly record struct`（`PicoNode.Web` 的破坏性变更，见 §3.2.9 与 §5） |
 | `RateLimitState` | 增加可空 `Policy`/`Tier` |
 | `IRateLimitStore` | 不变（仍单方法） |
 
@@ -225,12 +251,15 @@ app.UseRateLimit(web);
 
 ## 4. Testing
 
-**单测（`tests/PicoNode.Web.Tests/`，沿用 store 的 `TimeProvider` 测试缝）**
+**单测（`tests/PicoNode.Web.Tests/`，用 §3.1 的 `internal TimeProvider` 缝做确定性回填）**
 
-- 策略构建：重名策略 throw、零档 throw、`Exempt/Prefix/Exact` 语义、档 `Applies` 与 `Key=null` 的组合；
-- 求值：单档放行（头/state 含 Policy/Tier）/拒绝（429+Retry-After+body、不写 state）；链式（A 放行 B 拒绝→报 B，且 **A 的令牌已耗**）；无档匹配直通；策略豁免直通；`OnRejected` 恰好一次；多策略按注册顺序；`X-RateLimit-*` 取最紧；与旧中间件同装首写者赢；`FailOpen` true/false 的 store 抛错路径与旧行为一致；每档 store 并发小测；
-- 分类器：`TokenMatch`（正确/错/长短/缺头/非 Bearer/逗号后缀/大小写）、`RemoteAddress`（有/无 peer→fallback）、`Identity`（pre-auth→fallback、post-auth→UserId）、`Header`、`Path`、`Constant`；`Prefix` 段边界（`/api` 不匹配 `/apix`、不匹配 `/api2`）；
-- `TryGetBearerToken` 与 `AuthMiddleware` 同源：改后原有认证测试必须全绿。
+- 策略构建：零档 throw、重名策略 throw、**重名档 throw**、`Exempt/Prefix/Exact` 语义（段边界：`/api` 不匹配 `/apix`、不匹配 `/api2`；`Exempt("/api/health")` 不匹配 `/api/healthz`）、档 `Applies` 与 `Key=null` 的组合；
+- 求值：单档放行（头/state 含 Policy/Tier）/拒绝（429+Retry-After+body、不写 state）；链式（A 放行 B 拒绝→报 B，且 **A 的令牌已耗**）；**`FailOpen` 跳档时前面档的令牌同样不退**；无档匹配直通；策略豁免直通；`OnRejected` 恰好一次（`LimitReached` 与 `StoreError` 各一条用例，并断言 `Reason`）；多策略按注册顺序；**先声明者胜**的头/state；`FailOpen` true/false 的 store 抛错路径与旧行为一致；每档 store 并发小测；**Dispose 后按 store 异常路径处理**（FailOpen=false → 429）；
+- **B1**：合法 token 的请求**不得扣减 anonymous 档**（`Not` 组合器语义）；`Not` 的三种输入（命中/未命中/空 token）各一条；
+- **B2**：`/acp` 与未知路径**与 `/api/...` 落在同一盾档内**（不得绕过）；
+- **B5**：**内层策略 429 上不出现外层策略的 `Remaining`/`Reset`**（组级判空 + 429 不加头）；与旧中间件同装时首写者赢（组级）；
+- 分类器：`TokenMatch`（正确/错/长短/缺头/非 Bearer/逗号后缀/大小写）、`RemoteAddress`（有/无 peer→fallback；**IPv4-mapped IPv6 归一化**；键不含端口）、`Identity`（pre-auth→fallback、post-auth→UserId）、`Header`、`Path`、`Constant`；
+- `TryGetBearerToken` 与 `AuthMiddleware` 同源：改后原有认证测试必须**保持全绿**。
 
 **AOT**：`tests/PicoWeb.AotVerify/Program.cs` 增注册策略 + 豁免路径，跑"允许/拒绝(429)/豁免(200)"三请求。
 
@@ -242,13 +271,16 @@ app.UseRateLimit(web);
 
 **PicoAgent 是本组件的第一个消费者**（跨仓库永远走 NuGet：PicoAgent `Directory.Build.props:27-29`；当前 pin `PicoWeb 2026.4.6`）。顺序：
 
-1. PicoNode 实现 + 测试 + AotVerify → `scripts/release.ps1` 发版（工作流发布 NuGet）；
-2. PicoAgent 升 `Directory.Packages.props` 的 `PicoWeb` pin；
-3. `DaemonHostSvc` 接入（取代当前临时预算，见下）：
+1. PicoNode 实现 + 测试 + AotVerify → **刷新公共 API 基线**：`api/PicoNode.Web.public.txt`（新类型 + `RateLimitResult` 的 class→struct 会以 removed/added 出现）与 `api/PicoNode.Http.public.txt`（`HttpRequest.RemoteEndPoint`）；`scripts/release.ps1:250+` 会自动 diff 并按 x+1 推出新版本；
+2. `scripts/release.ps1` 发版（工作流发布 NuGet）；
+3. PicoAgent 升 `Directory.Packages.props` 的 `PicoWeb` pin；
+4. `DaemonHostSvc` 接入（取代当前临时预算）：
+   - **注册位置钉死**：`app.UseRateLimit(policy)` 必须在 `AuthMiddleware` **之前**（pre-auth 分类 + 屏蔽 PBKDF2）——这是本设计成立的前提；
    - 无 token：策略 `web`，档 `instance`（`Constant("instance")`，300/30）+ `Exempt("/api/health")` + `OnRejected`→logger；
-   - 有 token：档 `trusted`（`TokenMatch(options.Token)`，300/30）+ `anonymous`（`Constant("instance")`，60/1）+ `Exempt("/api/health")` + `OnRejected`；
-   - `FailOpen=false` 保持；
-4. 回归：daemon 套件 + `AotSmokeTests` + AOT 重发布 + 部署 + 重跑 §1.1 复现（tokenless 下 100 并发 `/row`、批量删除不得 429；token 模式 61 并发匿名仍 429；桶耗尽时 `/api/health` 不 429）。
+   - 有 token：档 `trusted`（`TokenMatch(options.Token)`，300/30）+ `anonymous`（`Not(TokenMatch(options.Token), "instance")`，60/1）+ `Exempt("/api/health")` + `OnRejected`；
+   - **设备凭据（`deviceId:secret`）落在 anonymous 档**：`TokenMatch` 只比 owner token（明文），设备凭据由 `DeviceCredentials.Verify` 单独校验（`DeviceCredentials.cs:101`）——若配对设备的预算不够，要么把设备档显式加进策略，要么按设备流量调 anonymous 预算。**限流的"可信"= 明文比对；认证的"可信"= PBKDF2 哈希校验：两套实现**（写进 §6）；
+   - `FailOpen=false` 保持；策略由宿主 `using` 释放（§3.1.1）；
+5. 回归：daemon 套件 + `AotSmokeTests` + AOT 重发布 + 部署 + 重跑 §1.1 复现（tokenless 下 100 并发 `/row`、批量删除不得 429；token 模式 61 并发匿名仍 429；桶耗尽时 `/api/health` 不 429）。
 
 > 过渡：PicoAgent 当前已把 tokenless 预算临时调为 300/30（commit `a94103c8`）以解线上 429；组件发版后由上面的策略声明取代。
 
@@ -258,13 +290,15 @@ app.UseRateLimit(web);
 
 | 风险 | 处置 |
 |---|---|
-| 链式拒绝时令牌不退 | 契约测试固定；档顺序建议"从粗到细"；PicoAgent 的档互斥，不触发 |
-| per-IP 键每请求 1 小串 | 文档明示；仅 per-IP 档 opt-in；必要时后续给 store 加 `IPAddress` 键重载 |
+| 链式/`FailOpen` 跳档时令牌不退 | 契约测试固定；档顺序建议"从粗到细"；PicoAgent 的 trusted/anonymous 用 `Not` 互斥，不触发 |
+| 上报的桶不保证 binding | 文档明示；要精确就声明在最前或用 `OnRejected` |
+| per-IP 键每请求 1 小串；双栈可能产生 `::ffff:1.2.3.4`/`1.2.3.4` 两键 | 文档明示；分类器做 IPv4-mapped 归一化；仅 per-IP 档 opt-in |
 | 反代下 peer=代理 | 转发头为独立后续项；文档写明 |
 | 无路由 metadata | 谓词挂载；`RequireRateLimit(name)` 列为后续（§7） |
-| `RateLimitResult` class→struct | 破坏性；发布说明记录 |
+| `RateLimitResult` class→struct | `PicoNode.Web` 破坏性变更；发布说明 + API 基线刷新（§5） |
 | `FailOpen` 默认差异（策略 false / 旧中间件 true） | 文档与测试固定；应用显式选择 |
 | `TokenMatch` 闭包持有明文 token | 与 daemon 自身持有 `options.Token` 同等级；策略生命周期 = 应用生命周期，不额外扩散 |
+| 限流"可信"与认证"可信"是两套判定 | §5.4 明示；设备凭据走 anonymous 档，预算按需调整 |
 
 ---
 
@@ -280,8 +314,9 @@ app.UseRateLimit(web);
 ## 8. Acceptance
 
 - [ ] `RateLimitPolicy/Tier/Budget/Keys/Path` + `RateLimitMiddleware.Create(policy)` + `UseRateLimit` 落地，公共 API 与本文一致；
-- [ ] §4 单测全绿；原有 `RateLimitMiddlewareTests`/`AuthMiddleware` 测试不变绿；
+- [ ] §4 单测全绿（含 B1/B2/B5 专项）；原有 `RateLimitMiddlewareTests`/`AuthMiddleware` 测试**保持全绿**；
+- [ ] `api/PicoNode.Web.public.txt` 与 `api/PicoNode.Http.public.txt` 基线刷新，`scripts/release.ps1` 的 diff 通过；
 - [ ] `scripts/test-aot-publish.ps1`（AotVerify）在 CI 通过；
 - [ ] `PerfHarness` 记录常量键单档路径分配（数值入档，不做脆断言）；
 - [ ] 既有 sample（`ShowcaseApp`）不改一行仍编译通过；
-- [ ] PicoAgent 接入后：§5 第 4 步的实机复现全过。
+- [ ] PicoAgent 接入后：§5 第 5 步的实机复现全过。
