@@ -20,27 +20,36 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
     /// <summary>Retry-After/Reset timestamp when RefillRate=0 (fixed window, 1 year).</summary>
     private const long NoRefillRetryAfterSeconds = 31_536_000;
 
-    public InMemoryRateLimitStore(RateLimitOptions options)
+    /// <summary>Builds a store from a budget. <paramref name="cleanupInterval"/> defaults to 5 minutes.</summary>
+    public InMemoryRateLimitStore(in RateLimitBudget budget, TimeSpan? cleanupInterval = null)
     {
-        ArgumentNullException.ThrowIfNull(options);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.MaxTokens, 0);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.RefillInterval, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(budget.MaxTokens, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(budget.RefillInterval, TimeSpan.Zero);
         // RefillRate=0 is legal (fixed window, never refills) — the refill math
-        // below guards against it explicitly.
+        // below guards against it explicitly. A negative rate is equally "no
+        // refill" on the legacy path, so it must not be rejected here.
         // CleanupInterval=0 makes Timer fire exactly once — buckets would
         // never be reclaimed (unbounded growth under key-spray attacks).
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.CleanupInterval, TimeSpan.Zero);
+        var cleanup = cleanupInterval ?? TimeSpan.FromMinutes(5);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(cleanup, TimeSpan.Zero);
 
-        _maxTokens = options.MaxTokens;
-        _refillRate = options.RefillRate;
-        _refillIntervalTicks = options.RefillInterval.Ticks;
-        _cleanupIntervalTicks = options.CleanupInterval.Ticks;
+        _maxTokens = budget.MaxTokens;
+        _refillRate = budget.RefillRate;
+        _refillIntervalTicks = budget.RefillInterval.Ticks;
+        _cleanupIntervalTicks = cleanup.Ticks;
 
-        var cleanupInterval = options.CleanupInterval;
-        var interval =
-            options.RefillInterval < cleanupInterval ? options.RefillInterval : cleanupInterval;
+        var interval = budget.RefillInterval < cleanup ? budget.RefillInterval : cleanup;
 
         _cleanupTimer = new Timer(_ => CleanupExpired(), null, interval, interval);
+    }
+
+    public InMemoryRateLimitStore(RateLimitOptions options)
+        : this(BudgetFrom(options), options?.CleanupInterval) { }
+
+    private static RateLimitBudget BudgetFrom(RateLimitOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options); // preserves the old exception
+        return new RateLimitBudget(options.MaxTokens, options.RefillRate, options.RefillInterval);
     }
 
     public ValueTask<RateLimitResult> TryConsumeTokenAsync(
