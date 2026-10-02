@@ -23,10 +23,10 @@ public sealed class RateLimitBudgetTests
     [Test]
     public async Task Store_From_Budget_Enforces_It()
     {
-        // The store reads TimeProvider.GetUtcNow() (InMemoryRateLimitStore.cs:54), so the clock must
+        // The store reads TimeProvider.GetUtcNow() (InMemoryRateLimitStore.TryConsumeTokenAsync), so the clock must
         // override GetUtcNow — ManualTimeProvider overrides only GetTimestamp/CreateTimer/
         // TimestampFrequency (it drives keep-alive timers), never GetUtcNow. Its epoch must be
-        // non-zero: TryConsume treats LastAccessTicks == 0 as "first access, start full" (:75),
+        // non-zero: TryConsume treats LastAccessTicks == 0 as "first access, start full" (TryConsume's first-access branch),
         // which would allow every call on a clock starting at 0.
         var clock = new StoreClock();
         using var store = new InMemoryRateLimitStore(RateLimitBudget.PerSecond(1, 1))
