@@ -181,7 +181,7 @@ internal static class Program
                 };
                 probe.SawReadOnly = false;
                 var signature = method.DecodeSignature(provider, methodCtx);
-                var sawReadOnly = probe.SawReadOnly;
+                var readonlyReturn = probe.SawReadOnly;
                 // Parameter rows are keyed by sequence number (0 = return value).
                 var parameterBySequence = new Dictionary<int, Parameter>();
                 foreach (var parameterHandle in method.GetParameters())
@@ -193,9 +193,7 @@ internal static class Program
                 for (var i = 0; i < signature.ParameterTypes.Length; i++)
                 {
                     parameterBySequence.TryGetValue(i + 1, out var parameter);
-                    parameters.Add(
-                        ParameterText(md, parameter, signature.ParameterTypes[i], sawReadOnly, i)
-                    );
+                    parameters.Add(ParameterText(md, parameter, signature.ParameterTypes[i], i));
                 }
                 var arity =
                     signature.GenericParameterCount > 0
@@ -203,7 +201,7 @@ internal static class Program
                         : "";
                 lines.Add(
                     $"M:{typeName}.{methodName}{arity}({string.Join(", ", parameters)})"
-                        + $" : {signature.ReturnType}{MethodModifiers(method)}"
+                        + $" : {ReadonlyReturnText(signature.ReturnType, readonlyReturn)}{MethodModifiers(method)}"
                 );
             }
 
@@ -212,7 +210,9 @@ internal static class Program
                 var property = md.GetPropertyDefinition(propertyHandle);
                 if (IsCompilerGenerated(md, property.GetCustomAttributes()))
                     continue;
+                probe.SawReadOnly = false;
                 var signature = property.DecodeSignature(provider, ctx);
+                var readonlyReturn = probe.SawReadOnly;
                 var accessors = property.GetAccessors();
                 var hasGetter = IsVisibleAccessor(md, accessors.Getter);
                 var hasSetter = IsVisibleAccessor(md, accessors.Setter);
@@ -230,11 +230,11 @@ internal static class Program
                 }
                 var indexer =
                     signature.ParameterTypes.Length > 0
-                        ? $"[{string.Join(", ", signature.ParameterTypes)}]"
+                        ? $"[{string.Join(", ", IndexerParameters(md, accessors, signature.ParameterTypes))}]"
                         : "";
                 lines.Add(
                     $"P:{typeName}.{md.GetString(property.Name)}{indexer}"
-                        + $" : {signature.ReturnType} {{ {string.Join(" ", parts)} }}"
+                        + $" : {ReadonlyReturnText(signature.ReturnType, readonlyReturn)} {{ {string.Join(" ", parts)} }}"
                 );
             }
 
@@ -502,53 +502,109 @@ internal static class Program
         MetadataReader md,
         Parameter parameter,
         string type,
-        bool sawReadOnly,
         int index
     )
     {
-        var prefix = "";
-        if (type.StartsWith("ref ", StringComparison.Ordinal))
-        {
-            type = type[4..];
-            prefix =
-                parameter.Attributes.HasFlag(ParameterAttributes.Out) ? "out "
-                : sawReadOnly || IsReadOnlyParameter(md, parameter) ? "in "
-                : "ref ";
-        }
+        var rendered = RefKindText(md, parameter, type);
         if (!parameter.Name.IsNil && IsParams(md, parameter))
-            prefix = "params " + prefix;
+            rendered = "params " + rendered;
         var name = parameter.Name.IsNil ? $"arg{index}" : md.GetString(parameter.Name);
-        return $"{prefix}{type} {name}{DefaultValueText(md, parameter)}";
+        return $"{rendered} {name}{DefaultValueText(md, parameter)}";
     }
 
     /// <summary>
-    /// A C# <c>in</c> parameter carries <em>no</em> <c>modreq</c>: Roslyn marks it with the
-    /// <c>In</c> flag plus a <c>[System.Runtime.CompilerServices.IsReadOnlyAttribute]</c>
-    /// custom attribute on its own metadata row (verified against a probe assembly), so that
-    /// row is the only place the modifier appears. Checking it is what keeps <c>M:(in T x)</c>
-    /// from being reported as <c>ref</c>.
+    /// Renders "<c>&lt;ref kind&gt; &lt;type&gt;</c>" for a by-ref parameter, from the
+    /// parameter's own row: a plain type is returned untouched.
     /// </summary>
     /// <remarks>
-    /// Deliberately narrower than "readonly refs" in general, because the compiler marks the
-    /// other two shapes differently: a C# 12 <c>ref readonly</c> parameter gets
-    /// <c>[RequiresLocationAttribute]</c> instead, and a <c>ref readonly</c> return carries
-    /// <c>modreq(System.Runtime.InteropServices.InAttribute)</c> — note that
-    /// <c>SignatureProbe.SawReadOnly</c> matches on <c>IsReadOnlyAttribute</c> and therefore
-    /// never fires for one. Both still render as plain <c>ref</c> here; no member of the
-    /// shipped baselines uses either shape.
+    /// Never decided from a signature-wide flag — a readonly ref <em>return</em> must not turn a
+    /// sibling plain <c>ref</c> parameter into <c>in</c> (each parameter's own row carries the
+    /// answer: <c>Out</c> for <c>out</c>, and see <see cref="HasAttribute"/> for the two
+    /// readonly shapes).
     /// </remarks>
-    private static bool IsReadOnlyParameter(MetadataReader md, Parameter parameter)
+    private static string RefKindText(MetadataReader md, Parameter parameter, string type)
+    {
+        if (!type.StartsWith("ref ", StringComparison.Ordinal))
+            return type;
+        var bare = type[4..];
+        return parameter.Attributes.HasFlag(ParameterAttributes.Out) ? "out " + bare
+            : HasAttribute(md, parameter, IsReadOnlyAttributeName) ? "in " + bare
+            : HasAttribute(md, parameter, RequiresLocationAttributeName) ? "ref readonly " + bare
+            : "ref " + bare;
+    }
+
+    /// <summary>
+    /// Indexer parameters in the baseline's short form (types, no names), but with their ref-kind
+    /// modifiers: a property's parameter rows live on its accessors, so without this an
+    /// <c>in</c>/<c>ref</c> indexer parameter reads as a bare by-ref type.
+    /// </summary>
+    private static List<string> IndexerParameters(
+        MetadataReader md,
+        PropertyAccessors accessors,
+        ImmutableArray<string> parameterTypes
+    )
+    {
+        // A getter's rows are exactly the indexer's parameters; a set-only indexer's rows are
+        // its parameters followed by the value, which the loop below never reaches.
+        var accessor = !accessors.Getter.IsNil ? accessors.Getter : accessors.Setter;
+        var rows = new Dictionary<int, Parameter>();
+        if (!accessor.IsNil)
+        {
+            foreach (var handle in md.GetMethodDefinition(accessor).GetParameters())
+            {
+                var parameter = md.GetParameter(handle);
+                rows[parameter.SequenceNumber] = parameter;
+            }
+        }
+
+        var rendered = new List<string>(parameterTypes.Length);
+        for (var i = 0; i < parameterTypes.Length; i++)
+        {
+            rows.TryGetValue(i + 1, out var parameter);
+            rendered.Add(RefKindText(md, parameter, parameterTypes[i]));
+        }
+
+        return rendered;
+    }
+
+    private const string IsReadOnlyAttributeName =
+        "System.Runtime.CompilerServices.IsReadOnlyAttribute";
+    private const string RequiresLocationAttributeName =
+        "System.Runtime.CompilerServices.RequiresLocationAttribute";
+
+    /// <summary>
+    /// Whether the parameter's own metadata row carries <paramref name="attributeName"/>.
+    /// </summary>
+    /// <remarks>
+    /// The compiler marks the readonly-ref shapes with custom attributes rather than modifiers —
+    /// an <c>in</c> parameter gets <c>[IsReadOnlyAttribute]</c> plus the <c>In</c> flag, and a
+    /// C# 12 <c>ref readonly</c> parameter gets <c>[RequiresLocationAttribute]</c>; neither emits
+    /// a <c>modreq</c> (verified against a probe assembly). This row is therefore the only place
+    /// the two differ from a plain <c>ref</c>.
+    /// </remarks>
+    private static bool HasAttribute(
+        MetadataReader md,
+        Parameter parameter,
+        string attributeName
+    )
     {
         foreach (var handle in parameter.GetCustomAttributes())
         {
-            if (
-                AttributeTypeName(md, md.GetCustomAttribute(handle))
-                == "System.Runtime.CompilerServices.IsReadOnlyAttribute"
-            )
+            if (AttributeTypeName(md, md.GetCustomAttribute(handle)) == attributeName)
                 return true;
         }
         return false;
     }
+
+    /// <summary>
+    /// Renders a readonly-ref return: the signature decoder reports the readonly-ness as a
+    /// required modifier on the type rather than in the type itself, so a plain <c>ref</c> return
+    /// is passed through and a readonly one gains the keyword.
+    /// </summary>
+    private static string ReadonlyReturnText(string returnType, bool sawReadOnlyModReq) =>
+        sawReadOnlyModReq && returnType.StartsWith("ref ", StringComparison.Ordinal)
+            ? "ref readonly " + returnType[4..]
+            : returnType;
 
     private static bool IsParams(MetadataReader md, Parameter parameter)
     {
@@ -752,6 +808,12 @@ internal static class Program
     internal sealed class SignatureProbe
     {
         public bool SawInit { get; set; }
+
+        /// <summary>
+        /// A readonly-ref modifier was seen while decoding this signature. Only the return type
+        /// is rendered from it (parameters consult their own metadata row), so the resolver of
+        /// <c>ref readonly</c> returns lives here.
+        /// </summary>
         public bool SawReadOnly { get; set; }
     }
 
@@ -840,7 +902,12 @@ internal static class Program
         {
             if (modifier.EndsWith("IsExternalInit", StringComparison.Ordinal))
                 probe.SawInit = true;
-            else if (modifier.EndsWith("IsReadOnlyAttribute", StringComparison.Ordinal))
+            else if (
+                modifier.EndsWith("IsReadOnlyAttribute", StringComparison.Ordinal)
+                // A `ref readonly` return is modreq'd with InAttribute, not IsReadOnlyAttribute;
+                // no `in` parameter carries either (they use custom attributes instead).
+                || modifier.EndsWith("InAttribute", StringComparison.Ordinal)
+            )
                 probe.SawReadOnly = true;
             return unmodifiedType;
         }
