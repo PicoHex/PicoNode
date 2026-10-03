@@ -32,6 +32,7 @@ internal static class RateLimitPolicyEvaluator
         var stores = policy.Stores;
         var policyName = policy.Name;
         var failOpen = policy.FailOpen;
+        var onRejected = policy.OnRejected;
 
         return async (ctx, next, ct) =>
         {
@@ -72,12 +73,33 @@ internal static class RateLimitPolicyEvaluator
                 catch
                 {
                     // Fail-closed (the default): an unreachable store is a rejection.
-                    // OnRejected wiring for this path lands in Task 6.
+                    // There is no token-bucket result for a failing store, hence the
+                    // default result in the notification.
+                    NotifyRejected(
+                        onRejected,
+                        policyName,
+                        tier,
+                        RateLimitRejectionReason.StoreError,
+                        default,
+                        ctx
+                    );
                     return RateLimitResponses.RejectedOnStoreError(tier.Budget.MaxTokens);
                 }
 
                 if (!result.Allowed)
+                {
+                    // The rejecting tier's real result travels with the rejection and
+                    // drives the response.
+                    NotifyRejected(
+                        onRejected,
+                        policyName,
+                        tier,
+                        RateLimitRejectionReason.LimitReached,
+                        result,
+                        ctx
+                    );
                     return RateLimitResponses.Rejected(result);
+                }
 
                 if (winner is null)
                 {
@@ -107,6 +129,35 @@ internal static class RateLimitPolicyEvaluator
 
             return response;
         };
+    }
+
+    /// <summary>
+    /// Reports a rejection to the policy's <see cref="RateLimitPolicy.OnRejected"/> — exactly
+    /// once, on the two 429 paths only (spec §3.2.7). A <c>null</c> handler returns before the
+    /// <see cref="RateLimitRejection"/> is constructed, so the unset case costs a null check.
+    /// </summary>
+    /// <param name="onRejected">The handler, read out of the policy once in <see cref="Create"/>.</param>
+    /// <param name="policyName">The frozen <see cref="RateLimitPolicy.Name"/>, for the same reason.</param>
+    /// <param name="tier">The rejecting (winning) tier.</param>
+    /// <param name="reason">Which 429 path this is.</param>
+    /// <param name="result">
+    /// The tier's real result on <see cref="RateLimitRejectionReason.LimitReached"/>;
+    /// <c>default</c> on <see cref="RateLimitRejectionReason.StoreError"/>.
+    /// </param>
+    /// <param name="ctx">The rejected request's context.</param>
+    private static void NotifyRejected(
+        Action<RateLimitRejection>? onRejected,
+        string policyName,
+        RateLimitTier tier,
+        RateLimitRejectionReason reason,
+        RateLimitResult result,
+        WebContext ctx
+    )
+    {
+        if (onRejected is null)
+            return;
+
+        onRejected(new RateLimitRejection(policyName, tier.Name, reason, result, ctx));
     }
 
     /// <summary>
