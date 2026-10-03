@@ -45,18 +45,27 @@ public sealed class RateLimitPolicyAllocationTests
         // otherwise measure garbage. The response is built once and reused: a fresh
         // HttpResponse per call would put the harness's own header-collection growth
         // (hundreds of bytes) into the number, not the middleware's. The preset
-        // X-RateLimit-Limit trips the middleware's group-level guard, so the measured
-        // delta is the evaluator's own allow-path allocation — the RateLimitState it
-        // injects for downstream handlers (~48 B).
+        // X-RateLimit-Limit makes the guard true from the first call: the group-level
+        // guard suppresses the header writes (reuse alone would trip it after the
+        // first iteration), so the measured delta is the evaluator's own allow-path
+        // allocation — the RateLimitState it injects for downstream handlers (~48 B).
         var response = new HttpResponse { StatusCode = 200 };
         response.Headers.Add("X-RateLimit-Limit", "sentinel");
-        WebRequestHandler next = (_, _) => ValueTask.FromResult(response);
+        var allowCalls = 0;
+        WebRequestHandler next = (_, _) =>
+        {
+            allowCalls++;
+            return ValueTask.FromResult(response);
+        };
 
         // Warm-up outside the measured window (JIT, static init, the first dictionary
         // insert into WebContext.Items).
         for (var i = 0; i < WarmupInvocations; i++)
             await middleware(context, next, CancellationToken.None);
 
+        // The counter must be read as a delta: the warm-up above already spent
+        // invocations through the same stub.
+        var allowCallsBefore = allowCalls;
         var before = GC.GetAllocatedBytesForCurrentThread();
         for (var i = 0; i < MeasuredInvocations; i++)
             await middleware(context, next, CancellationToken.None);
@@ -68,13 +77,17 @@ public sealed class RateLimitPolicyAllocationTests
                 + $"bytes={bytes} bytesPerRequest={bytesPerRequest:F1}"
         );
 
-        // The loop must have stayed on the allow path for the number to mean anything.
+        // The loop must have stayed on the allow path for the number to mean anything:
+        // the reject path returns without calling next, so the counter is the real
+        // proof (the Items key alone is vacuous — the warm-up already wrote it).
+        await Assert.That(allowCalls - allowCallsBefore).IsEqualTo(MeasuredInvocations);
         await Assert.That(context.Items.ContainsKey(WebContextKeys.RateLimitState)).IsTrue();
 
         // Regression tripwire, NOT a promise about the number: the allow path is
-        // expected to allocate one RateLimitState and nothing else, so ~1 KiB leaves
-        // room for runtime noise while still catching a per-request closure, LINQ,
-        // response rebuild or extra boxing.
+        // Regression tripwire, NOT a promise about the number: the allow path is
+        // expected to allocate one RateLimitState and nothing else. ~1 KiB only
+        // catches pathological (>= 1 KiB/request) regressions — a per-request
+        // closure is ~96 B and a rebuilt response ~480 B, both under it by design.
         await Assert.That(bytesPerRequest).IsLessThan(1024d);
     }
 }
