@@ -94,6 +94,13 @@ public sealed class RateLimitPolicyBuilder
     /// (<see cref="RateLimitPolicy.FailOpen"/> <c>false</c>) is the shield semantics — a broken
     /// store rejects rather than opens the gate.
     /// </summary>
+    /// <remarks>
+    /// "Store failure" includes the post-<see cref="System.IDisposable.Dispose"/>
+    /// <see cref="ObjectDisposedException"/> (spec §3.1.1): this tier is then skipped and the
+    /// request counts as allowed, and <see cref="OnRejected"/> is <em>not</em> invoked (it
+    /// reports rejections, and fail-open produces none). Disposing a policy that is still
+    /// serving traffic therefore silently disables its tiers.
+    /// </remarks>
     public RateLimitPolicyBuilder FailOpen()
     {
         _failOpen = true;

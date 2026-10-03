@@ -71,7 +71,9 @@ internal static class RateLimitPolicyEvaluator
                 catch when (failOpen)
                 {
                     // Fail-open skips this tier only; tokens spent by earlier tiers are
-                    // deliberately not refunded (token buckets have no refund).
+                    // deliberately not refunded (token buckets have no refund). A disposed
+                    // store (ObjectDisposedException) lands here too, with no OnRejected:
+                    // spec §3.1.1 only defines the fail-closed terminal state.
                     continue;
                 }
                 catch

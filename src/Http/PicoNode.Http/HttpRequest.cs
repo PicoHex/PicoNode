@@ -22,6 +22,12 @@ public sealed class HttpRequest
     /// Null for in-process test requests; the transport always knows it for real
     /// sockets (<c>ITcpConnectionContext.RemoteEndPoint</c>).
     /// </summary>
+    /// <remarks>
+    /// Stamped as <c>connection.RemoteEndPoint as IPEndPoint</c>: it is therefore also null
+    /// for a transport whose peer endpoint is not an <see cref="IPEndPoint"/> (none today —
+    /// HTTP runs over TCP). Consumers must read null as "peer unknown", never as loopback;
+    /// <c>RateLimitKeys.RemoteAddress</c> fails closed into a shared bucket when it sees one.
+    /// </remarks>
     public IPEndPoint? RemoteEndPoint { get; internal set; }
 
     public HttpVersion Version { get; init; } = HttpVersion.Http11;
