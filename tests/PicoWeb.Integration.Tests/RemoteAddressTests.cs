@@ -113,6 +113,77 @@ public sealed class RemoteAddressTests
         await AssertLoopbackPeerAsync(captured);
     }
 
+    [Test]
+    public async Task Http1_Second_Request_On_The_Same_KeepAlive_Connection_Is_Stamped_Too()
+    {
+        // Keep-alive: the endpoint is stamped per dispatch, so the *second* request on a
+        // reused connection must carry this connection's peer as well — a stamp that were
+        // once-per-connection, cached, or dropped with the first HttpResponse would show up
+        // here. The port is compared against the client's own local endpoint, which also
+        // pins that the value is that peer rather than any default.
+        var port = TestSupport.GetRandomPort();
+        var (app, captured) = BuildApp();
+        await using var server = new WebServer(
+            app,
+            new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+        );
+        await server.StartAsync();
+
+        using var tcp = new TcpClient();
+        await tcp.ConnectAsync(IPAddress.Loopback, port);
+        var localPort = ((IPEndPoint)tcp.Client.LocalEndPoint!).Port;
+        var stream = tcp.GetStream();
+
+        var first = await SendAndReadOneResponseAsync(stream).WaitAsync(TimeSpan.FromSeconds(10));
+        var second = await SendAndReadOneResponseAsync(stream).WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Both responses arrived on the SAME socket: the server kept the connection open
+        // (Content-Length framing, no Connection: close).
+        await Assert.That(first).Contains(" 200 ");
+        await Assert.That(second).Contains(" 200 ");
+        await Assert.That(captured.Count).IsEqualTo(2);
+        await Assert.That(captured[0]).IsNotNull();
+        await Assert.That(captured[1]).IsNotNull();
+        await Assert.That(captured[0]!.Address).IsEqualTo(captured[1]!.Address);
+        await Assert.That(captured[0]!.Port).IsEqualTo(localPort);
+        await Assert.That(captured[1]!.Port).IsEqualTo(localPort);
+    }
+
+    /// <summary>
+    /// Writes one keep-alive GET and reads exactly one Content-Length-framed response, so the
+    /// next write cannot be mis-parsed as part of the previous response.
+    /// </summary>
+    private static async Task<string> SendAndReadOneResponseAsync(NetworkStream stream)
+    {
+        await stream.WriteAsync(
+            Encoding.ASCII.GetBytes("GET /peer HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        );
+        var text = new StringBuilder();
+        var buffer = new byte[1024];
+        var headerEnd = -1;
+        var contentLength = 0;
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer);
+            if (read == 0)
+                throw new InvalidOperationException($"connection closed early; got: {text}");
+            text.Append(Encoding.ASCII.GetString(buffer, 0, read));
+            if (headerEnd < 0)
+            {
+                headerEnd = text.ToString().IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                if (headerEnd < 0)
+                    continue;
+                foreach (var line in text.ToString(0, headerEnd).Split("\r\n"))
+                {
+                    if (line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+                        contentLength = int.Parse(line.AsSpan("Content-Length:".Length).Trim());
+                }
+            }
+            if (text.Length >= headerEnd + 4 + contentLength)
+                return text.ToString();
+        }
+    }
+
     private sealed class DummyContainer : PicoDI.Abs.ISvcContainer
     {
         public PicoDI.Abs.ISvcContainer Register(PicoDI.Abs.SvcDescriptor descriptor) => this;
