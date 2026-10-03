@@ -16,10 +16,11 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
     /// (a 50 ms window made "immediate retry is denied" load-sensitive).
     /// </summary>
     /// <remarks>
-    /// Called while the per-bucket lock is held, so a custom provider must be cheap and must
-    /// not re-enter this store or wait on anything an in-flight consume could hold — a test
-    /// clock that blocks is deliberately used to probe that lock
-    /// (InMemoryRateLimitStoreConcurrencyTests). Production uses TimeProvider.System.
+    /// The consume path reads it while holding that bucket's lock, so a custom provider must be
+    /// cheap and must not re-enter this store or wait on anything an in-flight consume could
+    /// hold — a test clock that blocks is deliberately used to probe that lock
+    /// (InMemoryRateLimitStoreConcurrencyTests). The cleanup sweep reads it once per pass,
+    /// outside any bucket lock. Production uses TimeProvider.System.
     /// </remarks>
     internal TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 
