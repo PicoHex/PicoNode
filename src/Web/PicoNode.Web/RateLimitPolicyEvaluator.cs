@@ -5,10 +5,11 @@ namespace PicoNode.Web;
 /// single-bucket <see cref="RateLimitMiddleware"/> (spec §3.2).
 /// </summary>
 /// <remarks>
-/// The returned <see cref="WebMiddleware"/> is the only per-request allocation: every
-/// delegate, array and scalar it needs is read out of the policy once, in
-/// <see cref="Create"/>, and the tier list is walked with a <c>for</c> loop (no LINQ, no
-/// enumerator, no closure over per-request state).
+/// <see cref="Create"/>'s only allocation is the returned <see cref="WebMiddleware"/>:
+/// every delegate, array and scalar it needs is read out of the policy once, and the tier
+/// list is walked with a <c>for</c> loop (no LINQ, no enumerator, no closure over
+/// per-request state). The allowed path then allocates one <see cref="RateLimitState"/> per
+/// request (measured 48 B) — nothing else.
 /// <para>
 /// Ordering contract (spec §3.2.4/§3.2.5): the <see cref="WebContextKeys.RateLimitState"/>
 /// entry is written <em>before</em> <c>await next</c> so downstream handlers can read it,
@@ -145,6 +146,12 @@ internal static class RateLimitPolicyEvaluator
     /// <c>default</c> on <see cref="RateLimitRejectionReason.StoreError"/>.
     /// </param>
     /// <param name="ctx">The rejected request's context.</param>
+    /// <remarks>
+    /// The handler runs synchronously on the 429 path. Spec §3.2.7 does not define a
+    /// throwing handler: an exception escapes the middleware (and becomes a 500 under an
+    /// exception handler) instead of the 429 being returned — it is deliberately not
+    /// swallowed here.
+    /// </remarks>
     private static void NotifyRejected(
         Action<RateLimitRejection>? onRejected,
         string policyName,
