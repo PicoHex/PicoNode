@@ -1,34 +1,38 @@
 namespace PicoNode.Web.Tests;
 
 /// <summary>
-/// Makes the store's per-bucket lock observable, which no sequential test can do: dropping
-/// <c>lock (bucket.Lock)</c> leaves every other store test green.
+/// Makes the store's per-bucket lock observable. Dropping <c>lock (bucket.Lock)</c> leaves every
+/// other store test green, and a pure race wins only on roomy machines: threads must hit a
+/// few-nanosecond read-modify-write window before the scheduler spreads them out, so a
+/// core-count-derived racer count silently stops working on a 2-4 vCPU CI runner.
 /// <para>
-/// The clock is manual and advances only <em>between</em> rounds, never while the racers run (a
-/// <see cref="Barrier"/> fences both transitions), so the expected grant count is exact and is a
-/// fact about the clock rather than about machine load: each round refills exactly <see
-/// cref="Tokens"/> tokens into an empty bucket, so <see cref="Racers"/> threads released at the
-/// same instant must still produce exactly <see cref="Tokens"/> grants. Unlocked, the refill
-/// read-modify-write lets two racers both see the same pre-round bucket (and both grant), and two
-/// granters can both read <c>Tokens</c> before either subtracts — either way the round overshoots.
-/// Oversubscribing the cores and racing more than one token per round keep that window wide.
+/// This test does not rely on that window. The store reads <c>TimeProvider.GetUtcNow()</c>
+/// <em>inside</em> the critical section, so a clock implementation that yields while it runs is a
+/// direct probe for the lock: with mutual exclusion no two callers can be inside at once, and
+/// without it the racers cannot help but overlap — the first one to enter hands the CPU to the
+/// next, which works on any core count, down to a single core. <see cref="LockProbeClock"/>
+/// reports such an overlap, and the round structure adds an exact behavioural invariant on top.
 /// </para>
 /// </summary>
 public sealed class InMemoryRateLimitStoreConcurrencyTests
 {
-    private const int Tokens = 8;
-    private const int Rounds = 500;
-    private static readonly TimeSpan Refill = TimeSpan.FromSeconds(1);
+    private const int Tokens = 4;
+    private const int Racers = Tokens; // every racer must be on the grant path each round
+    private const int Rounds = 25;
+
+    /// <summary>
+    /// Large enough that the store's cleanup timer (real time, `min(refill, cleanup)`) never fires
+    /// during the test: its clock is the manual one below, and a cleanup running beside the racers
+    /// would enter the probe clock outside the bucket lock and report a false overlap.
+    /// </summary>
+    private static readonly TimeSpan Refill = TimeSpan.FromHours(1);
 
     [Test]
-    public async Task Racers_On_One_Bucket_Take_Exactly_The_Refilled_Tokens()
+    public async Task Racers_On_One_Bucket_Are_Served_One_At_A_Time()
     {
-        // Two threads per core: a thread preempted inside the critical section is what a missing
-        // lock turns into an overshoot, so oversubscription is the point.
-        var racers = Math.Clamp(2 * Environment.ProcessorCount, 8, 32);
-        var clock = new StoreClock();
+        var clock = new LockProbeClock();
         using var store = new InMemoryRateLimitStore(
-            RateLimitBudget.PerSecond(Tokens, 1),
+            new RateLimitBudget(Tokens, 1, Refill),
             TimeSpan.FromHours(1)
         )
         {
@@ -36,11 +40,11 @@ public sealed class InMemoryRateLimitStoreConcurrencyTests
         };
 
         // +1: this thread conducts the rounds, so it releases the racers and waits for them.
-        using var gate = new Barrier(racers + 1);
-        var grants = new int[racers];
-        var failures = new Exception?[racers];
-        var workers = new Task[racers];
-        for (var i = 0; i < racers; i++)
+        using var gate = new Barrier(Racers + 1);
+        var grants = new int[Racers];
+        var failures = new Exception?[Racers];
+        var workers = new Task[Racers];
+        for (var i = 0; i < Racers; i++)
         {
             var slot = i;
             workers[i] = Task.Factory.StartNew(
@@ -82,8 +86,16 @@ public sealed class InMemoryRateLimitStoreConcurrencyTests
 
         await Task.WhenAll(workers.Append(conductor)).WaitAsync(TimeSpan.FromSeconds(120));
 
-        for (var i = 0; i < racers; i++)
+        for (var i = 0; i < Racers; i++)
             await Assert.That(failures[i]).IsNull().Because($"racer {i} threw");
+
+        await Assert
+            .That(clock.Overlaps)
+            .IsZero()
+            .Because(
+                "the critical section reads the clock while holding the bucket lock, so two "
+                    + "racers inside it at once means the lock is not doing its job"
+            );
 
         var total = 0;
         foreach (var grant in grants)
@@ -93,24 +105,46 @@ public sealed class InMemoryRateLimitStoreConcurrencyTests
             .That(total)
             .IsEqualTo(Rounds * Tokens)
             .Because(
-                $"every round refills exactly {Tokens} tokens into an empty bucket, so "
-                    + $"{racers} simultaneous racers must produce exactly {Tokens} grants per "
-                    + "round; more means two racers read the bucket at once"
+                $"every round refills exactly {Tokens} tokens into an empty bucket and every one "
+                    + $"of the {Racers} racers takes one, so any other total means two of them saw "
+                    + "the same bucket state"
             );
     }
 
     /// <summary>
-    /// Must override <c>GetUtcNow</c> (the store reads it; the keep-alive
-    /// <see cref="ManualTimeProvider"/> only drives timers) and start at a non-zero epoch:
-    /// <c>TryConsume</c> treats <c>LastAccessTicks == 0</c> as a first access that starts the
-    /// bucket full, which would hand out a free round.
+    /// The store's clock, doubling as a lock probe: it yields (2 ms) while it runs, so a second
+    /// caller arriving without mutual exclusion is not a matter of luck. Must override
+    /// <c>GetUtcNow</c> (the store reads it; the keep-alive <see cref="ManualTimeProvider"/> only
+    /// drives timers) and start at a non-zero epoch, because <c>TryConsume</c> treats
+    /// <c>LastAccessTicks == 0</c> as a first access that starts the bucket full.
     /// </summary>
-    private sealed class StoreClock : TimeProvider
+    private sealed class LockProbeClock : TimeProvider
     {
+        private const int YieldMs = 2;
+
         private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        private int _inside;
 
-        public override DateTimeOffset GetUtcNow() => _now;
+        /// <summary>How often two callers were inside <see cref="GetUtcNow"/> at the same time.</summary>
+        public int Overlaps;
 
+        public override DateTimeOffset GetUtcNow()
+        {
+            if (Interlocked.Increment(ref _inside) > 1)
+                Interlocked.Increment(ref Overlaps);
+
+            try
+            {
+                Thread.Sleep(YieldMs);
+                return _now;
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _inside);
+            }
+        }
+
+        /// <summary>Called by the conductor between rounds, never while the racers run.</summary>
         public void Advance(TimeSpan delta) => _now += delta;
     }
 }
