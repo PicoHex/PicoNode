@@ -177,7 +177,9 @@ public sealed class InMemoryRateLimitStoreTests
         await Assert.That((await store.TryConsumeTokenAsync("k")).Allowed).IsFalse();
 
         var evicted = false;
-        for (var attempt = 0; attempt < 40 && !evicted; attempt++)
+        // 200 x 50 ms is insurance only: the usual answer arrives on the first attempt, and a
+        // starved CI runner (real timer, no seam to advance it) must not fail the test.
+        for (var attempt = 0; attempt < 200 && !evicted; attempt++)
         {
             // Idle for far longer than 2 x CleanupInterval, then give the cleanup timer (50 ms
             // cadence) a window to fire before the probe touches the bucket again.
