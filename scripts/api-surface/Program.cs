@@ -522,13 +522,21 @@ internal static class Program
     }
 
     /// <summary>
-    /// A C# <c>in</c> parameter carries <em>no</em> <c>modreq(IsReadOnlyAttribute)</c>: unlike a
-    /// readonly ref return (which the signature-decode probe sees through
-    /// <c>GetModifiedType</c>), Roslyn marks an <c>in</c> parameter with the <c>In</c> flag plus a
-    /// <c>[System.Runtime.CompilerServices.IsReadOnlyAttribute]</c> custom attribute, so the
-    /// parameter's own metadata row is the only place that modifier appears. Checking it is what
-    /// keeps <c>M:(in T x)</c> from being reported as <c>ref</c>.
+    /// A C# <c>in</c> parameter carries <em>no</em> <c>modreq</c>: Roslyn marks it with the
+    /// <c>In</c> flag plus a <c>[System.Runtime.CompilerServices.IsReadOnlyAttribute]</c>
+    /// custom attribute on its own metadata row (verified against a probe assembly), so that
+    /// row is the only place the modifier appears. Checking it is what keeps <c>M:(in T x)</c>
+    /// from being reported as <c>ref</c>.
     /// </summary>
+    /// <remarks>
+    /// Deliberately narrower than "readonly refs" in general, because the compiler marks the
+    /// other two shapes differently: a C# 12 <c>ref readonly</c> parameter gets
+    /// <c>[RequiresLocationAttribute]</c> instead, and a <c>ref readonly</c> return carries
+    /// <c>modreq(System.Runtime.InteropServices.InAttribute)</c> — note that
+    /// <c>SignatureProbe.SawReadOnly</c> matches on <c>IsReadOnlyAttribute</c> and therefore
+    /// never fires for one. Both still render as plain <c>ref</c> here; no member of the
+    /// shipped baselines uses either shape.
+    /// </remarks>
     private static bool IsReadOnlyParameter(MetadataReader md, Parameter parameter)
     {
         foreach (var handle in parameter.GetCustomAttributes())
