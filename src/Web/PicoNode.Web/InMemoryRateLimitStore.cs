@@ -60,10 +60,15 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         var bucket = _buckets.GetOrAdd(key, _ => new Bucket());
-        var now = TimeProvider.GetUtcNow().Ticks;
 
         lock (bucket.Lock)
         {
+            // Read the clock while holding the lock, so the timestamp the refill math uses
+            // is the one the bucket is updated with: read outside, a thread can arrive
+            // late holding an older `now` and move LastAccessTicks backwards. (It also
+            // makes the internal TimeProvider seam a probe for this lock — a clock that
+            // blocks is only ever entered by one thread at a time.)
+            var now = TimeProvider.GetUtcNow().Ticks;
             var result = TryConsume(bucket, now);
             return ValueTask.FromResult(result);
         }
