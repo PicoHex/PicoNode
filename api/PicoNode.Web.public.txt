@@ -7,6 +7,10 @@ B:PicoNode.Web.RouteAttribute : System.Attribute
 F:PicoNode.Web.MultipartFormDataParserOptions.DefaultMaxBoundaryLength : int = 70 const
 F:PicoNode.Web.MultipartFormDataParserOptions.DefaultMaxPartSizeBytes : int = 67108864 const
 F:PicoNode.Web.MultipartFormDataParserOptions.DefaultMaxTotalSizeBytes : int = 67108864 const
+F:PicoNode.Web.RateLimitPath.Any : System.Predicate`1<PicoNode.Web.WebContext> static readonly
+F:PicoNode.Web.RateLimitRejectionReason.LimitReached : PicoNode.Web.RateLimitRejectionReason = 0 const
+F:PicoNode.Web.RateLimitRejectionReason.StoreError : PicoNode.Web.RateLimitRejectionReason = 1 const
+F:PicoNode.Web.RateLimitRejectionReason.value__ : int
 F:PicoNode.Web.UiEventHub.ChannelCapacity : int = 64 const
 F:PicoNode.Web.WebContextKeys.AuthIdentity : string = "AuthIdentity" const
 F:PicoNode.Web.WebContextKeys.RateLimitState : string = "RateLimitState" const
@@ -16,6 +20,8 @@ I:PicoNode.Web.InMemoryRateLimitStore : PicoNode.Web.IRateLimitStore
 I:PicoNode.Web.InMemoryRateLimitStore : System.IDisposable
 I:PicoNode.Web.InMemorySessionStore : PicoNode.Web.Session.Abs.ISessionStore
 I:PicoNode.Web.InMemorySessionStore : System.IDisposable
+I:PicoNode.Web.RateLimitPolicy : System.IDisposable
+I:PicoNode.Web.RateLimitResult : System.IEquatable`1<PicoNode.Web.RateLimitResult>
 I:PicoNode.Web.RedirectResult : PicoNode.Web.IWebResult
 I:PicoNode.Web.TextResult : PicoNode.Web.IWebResult
 I:PicoNode.Web.UiEvent : System.IEquatable`1<PicoNode.Web.UiEvent>
@@ -50,6 +56,7 @@ M:PicoNode.Web.HttpPutAttribute..ctor(string path = "") : void
 M:PicoNode.Web.IRateLimitStore.TryConsumeTokenAsync(string key, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<PicoNode.Web.RateLimitResult> abstract
 M:PicoNode.Web.IWebResult.Execute(PicoNode.Web.WebContext ctx) : PicoNode.Http.HttpResponse abstract
 M:PicoNode.Web.InMemoryRateLimitStore..ctor(PicoNode.Web.RateLimitOptions options) : void
+M:PicoNode.Web.InMemoryRateLimitStore..ctor(ref PicoNode.Web.RateLimitBudget budget, System.Nullable`1<System.TimeSpan> cleanupInterval = null) : void
 M:PicoNode.Web.InMemoryRateLimitStore.Dispose() : void override
 M:PicoNode.Web.InMemoryRateLimitStore.TryConsumeTokenAsync(string key, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<PicoNode.Web.RateLimitResult> override
 M:PicoNode.Web.InMemorySessionStore..ctor(PicoNode.Web.Session.Abs.SessionOptions options) : void
@@ -61,11 +68,30 @@ M:PicoNode.Web.InMemorySessionStore.SaveAsync(string sessionId, PicoNode.Web.Ses
 M:PicoNode.Web.MultipartFormDataParser.ParseAsync(PicoNode.Http.HttpRequest request, PicoNode.Web.MultipartFormDataParserOptions options = null, PicoLog.Abs.ILogger logger = null, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<PicoNode.Web.MultipartFormData> static
 M:PicoNode.Web.MultipartFormDataParserOptions..ctor() : void
 M:PicoNode.Web.MultipartFormFile.OpenReadStream() : System.IO.Stream
+M:PicoNode.Web.RateLimitBudget.PerMinute(int burst, int perMinute) : PicoNode.Web.RateLimitBudget static
+M:PicoNode.Web.RateLimitBudget.PerSecond(int burst, int perSecond) : PicoNode.Web.RateLimitBudget static
+M:PicoNode.Web.RateLimitKeys.Constant(string key) : System.Func`2<PicoNode.Web.WebContext, string> static
+M:PicoNode.Web.RateLimitKeys.Header(string name, string fallback = null) : System.Func`2<PicoNode.Web.WebContext, string> static
+M:PicoNode.Web.RateLimitKeys.Identity(string fallback = "anonymous") : System.Func`2<PicoNode.Web.WebContext, string> static
+M:PicoNode.Web.RateLimitKeys.Not(System.Func`2<PicoNode.Web.WebContext, string> inner, string fallback) : System.Func`2<PicoNode.Web.WebContext, string> static
+M:PicoNode.Web.RateLimitKeys.Path() : System.Func`2<PicoNode.Web.WebContext, string> static
+M:PicoNode.Web.RateLimitKeys.RemoteAddress(string fallback = "unknown") : System.Func`2<PicoNode.Web.WebContext, string> static
+M:PicoNode.Web.RateLimitKeys.TokenMatch(string expected, string key = "trusted") : System.Func`2<PicoNode.Web.WebContext, string> static
 M:PicoNode.Web.RateLimitMiddleware..ctor() : void
 M:PicoNode.Web.RateLimitMiddleware.Create(PicoNode.Web.IRateLimitStore store, PicoNode.Web.RateLimitOptions options) : PicoNode.Web.WebMiddleware static
 M:PicoNode.Web.RateLimitMiddleware.Create(PicoNode.Web.RateLimitOptions options) : PicoNode.Web.WebMiddleware static
+M:PicoNode.Web.RateLimitMiddleware.Create(PicoNode.Web.RateLimitPolicy policy) : PicoNode.Web.WebMiddleware static
 M:PicoNode.Web.RateLimitOptions..ctor() : void
-M:PicoNode.Web.RateLimitResult..ctor() : void
+M:PicoNode.Web.RateLimitPath.Exact(string path) : System.Predicate`1<PicoNode.Web.WebContext> static
+M:PicoNode.Web.RateLimitPath.Prefix(string prefix) : System.Predicate`1<PicoNode.Web.WebContext> static
+M:PicoNode.Web.RateLimitPolicy.Create(string name) : PicoNode.Web.RateLimitPolicyBuilder static
+M:PicoNode.Web.RateLimitPolicy.Dispose() : void override
+M:PicoNode.Web.RateLimitPolicyBuilder.Applies(System.Predicate`1<PicoNode.Web.WebContext> predicate) : PicoNode.Web.RateLimitPolicyBuilder
+M:PicoNode.Web.RateLimitPolicyBuilder.Build() : PicoNode.Web.RateLimitPolicy
+M:PicoNode.Web.RateLimitPolicyBuilder.Exempt(string pathPrefix) : PicoNode.Web.RateLimitPolicyBuilder
+M:PicoNode.Web.RateLimitPolicyBuilder.FailOpen() : PicoNode.Web.RateLimitPolicyBuilder
+M:PicoNode.Web.RateLimitPolicyBuilder.OnRejected(System.Action`1<PicoNode.Web.RateLimitRejection> handler) : PicoNode.Web.RateLimitPolicyBuilder
+M:PicoNode.Web.RateLimitPolicyBuilder.Tier(string name, PicoNode.Web.RateLimitBudget budget, System.Func`2<PicoNode.Web.WebContext, string> key, System.Predicate`1<PicoNode.Web.WebContext> applies = null) : PicoNode.Web.RateLimitPolicyBuilder
 M:PicoNode.Web.RateLimitState..ctor() : void
 M:PicoNode.Web.RedirectResult..ctor(string location, bool permanent = false) : void
 M:PicoNode.Web.RedirectResult.Execute(PicoNode.Web.WebContext ctx) : PicoNode.Http.HttpResponse override
@@ -130,6 +156,7 @@ M:PicoNode.Web.WebApp.MapPost(string pattern, PicoNode.Web.WebRequestHandler han
 M:PicoNode.Web.WebApp.MapPut(string pattern, PicoNode.Web.WebRequestHandler handler) : PicoNode.Web.WebApp
 M:PicoNode.Web.WebApp.Use(PicoNode.Web.WebMiddleware middleware) : PicoNode.Web.WebApp
 M:PicoNode.Web.WebAppOptions..ctor() : void
+M:PicoNode.Web.WebAppRateLimitExtensions.UseRateLimit(PicoNode.Web.WebApp app, PicoNode.Web.RateLimitPolicy policy) : PicoNode.Web.WebApp static
 M:PicoNode.Web.WebContext.Create(PicoNode.Http.HttpRequest request) : PicoNode.Web.WebContext static
 M:PicoNode.Web.WebMiddleware..ctor(object object, nint method) : void
 M:PicoNode.Web.WebMiddleware.BeginInvoke(PicoNode.Web.WebContext context, PicoNode.Web.WebRequestHandler next, System.Threading.CancellationToken cancellationToken, System.AsyncCallback callback, object object) : System.IAsyncResult virtual
@@ -174,12 +201,25 @@ P:PicoNode.Web.MultipartFormFile.ContentType : string { get; }
 P:PicoNode.Web.MultipartFormFile.FileName : string { get; }
 P:PicoNode.Web.MultipartFormFile.Length : long { get; }
 P:PicoNode.Web.MultipartFormFile.Name : string { get; }
+P:PicoNode.Web.RateLimitBudget.MaxTokens : int { get; }
+P:PicoNode.Web.RateLimitBudget.RefillInterval : System.TimeSpan { get; }
+P:PicoNode.Web.RateLimitBudget.RefillRate : int { get; }
 P:PicoNode.Web.RateLimitOptions.CleanupInterval : System.TimeSpan { get; init; }
 P:PicoNode.Web.RateLimitOptions.FailOpen : bool { get; init; }
 P:PicoNode.Web.RateLimitOptions.KeySelector : System.Func`2<PicoNode.Web.WebContext, string> { get; init; }
 P:PicoNode.Web.RateLimitOptions.MaxTokens : int { get; init; }
 P:PicoNode.Web.RateLimitOptions.RefillInterval : System.TimeSpan { get; init; }
 P:PicoNode.Web.RateLimitOptions.RefillRate : int { get; init; }
+P:PicoNode.Web.RateLimitPolicy.Applies : System.Predicate`1<PicoNode.Web.WebContext> { get; }
+P:PicoNode.Web.RateLimitPolicy.FailOpen : bool { get; }
+P:PicoNode.Web.RateLimitPolicy.Name : string { get; }
+P:PicoNode.Web.RateLimitPolicy.OnRejected : System.Action`1<PicoNode.Web.RateLimitRejection> { get; }
+P:PicoNode.Web.RateLimitPolicy.Tiers : System.Collections.Generic.IReadOnlyList`1<PicoNode.Web.RateLimitTier> { get; }
+P:PicoNode.Web.RateLimitRejection.Context : PicoNode.Web.WebContext { get; }
+P:PicoNode.Web.RateLimitRejection.Policy : string { get; }
+P:PicoNode.Web.RateLimitRejection.Reason : PicoNode.Web.RateLimitRejectionReason { get; }
+P:PicoNode.Web.RateLimitRejection.Result : PicoNode.Web.RateLimitResult { get; }
+P:PicoNode.Web.RateLimitRejection.Tier : string { get; }
 P:PicoNode.Web.RateLimitResult.Allowed : bool { get; init; }
 P:PicoNode.Web.RateLimitResult.Limit : int { get; init; }
 P:PicoNode.Web.RateLimitResult.NextAvailableAt : long { get; init; }
@@ -187,7 +227,13 @@ P:PicoNode.Web.RateLimitResult.Remaining : int { get; init; }
 P:PicoNode.Web.RateLimitResult.ResetAt : long { get; init; }
 P:PicoNode.Web.RateLimitState.Limit : int { get; init; }
 P:PicoNode.Web.RateLimitState.NextAvailableAt : long { get; init; }
+P:PicoNode.Web.RateLimitState.Policy : string { get; init; }
 P:PicoNode.Web.RateLimitState.Remaining : int { get; init; }
+P:PicoNode.Web.RateLimitState.Tier : string { get; init; }
+P:PicoNode.Web.RateLimitTier.Applies : System.Predicate`1<PicoNode.Web.WebContext> { get; }
+P:PicoNode.Web.RateLimitTier.Budget : PicoNode.Web.RateLimitBudget { get; }
+P:PicoNode.Web.RateLimitTier.Key : System.Func`2<PicoNode.Web.WebContext, string> { get; }
+P:PicoNode.Web.RateLimitTier.Name : string { get; }
 P:PicoNode.Web.RouteAttribute.Path : string { get; }
 P:PicoNode.Web.SessionCookieOptions.CookieName : string { get; init; }
 P:PicoNode.Web.SessionCookieOptions.HttpOnly : bool { get; init; }
@@ -210,6 +256,8 @@ P:PicoNode.Web.WebContext.Items : System.Collections.Generic.IDictionary`2<strin
 P:PicoNode.Web.WebContext.Path : string { get; }
 P:PicoNode.Web.WebContext.Query : System.Collections.Generic.IReadOnlyDictionary`2<string, string> { get; }
 P:PicoNode.Web.WebContext.QueryString : string { get; }
+P:PicoNode.Web.WebContext.RemoteAddress : System.Net.IPAddress { get; }
+P:PicoNode.Web.WebContext.RemoteEndPoint : System.Net.IPEndPoint { get; }
 P:PicoNode.Web.WebContext.Request : PicoNode.Http.HttpRequest { get; }
 P:PicoNode.Web.WebContext.RouteValues : System.Collections.Generic.IReadOnlyDictionary`2<string, string> { get; }
 P:PicoNode.Web.WebContext.Services : PicoDI.Abs.ISvcScope { get; }
@@ -238,10 +286,14 @@ T:class PicoNode.Web.MultipartFormDataParser
 T:class PicoNode.Web.MultipartFormDataParserOptions
 T:class PicoNode.Web.MultipartFormField
 T:class PicoNode.Web.MultipartFormFile
+T:class PicoNode.Web.RateLimitKeys
 T:class PicoNode.Web.RateLimitMiddleware
 T:class PicoNode.Web.RateLimitOptions
-T:class PicoNode.Web.RateLimitResult
+T:class PicoNode.Web.RateLimitPath
+T:class PicoNode.Web.RateLimitPolicy
+T:class PicoNode.Web.RateLimitPolicyBuilder
 T:class PicoNode.Web.RateLimitState
+T:class PicoNode.Web.RateLimitTier
 T:class PicoNode.Web.RedirectResult
 T:class PicoNode.Web.RouteAttribute
 T:class PicoNode.Web.SecurityHeadersMiddleware
@@ -259,6 +311,7 @@ T:class PicoNode.Web.UiEvent
 T:class PicoNode.Web.UiEventHub
 T:class PicoNode.Web.WebApp
 T:class PicoNode.Web.WebAppOptions
+T:class PicoNode.Web.WebAppRateLimitExtensions
 T:class PicoNode.Web.WebContext
 T:class PicoNode.Web.WebContextKeys
 T:class PicoNode.Web.WebResults
@@ -266,5 +319,9 @@ T:delegate PicoNode.Web.SessionIdExtractor
 T:delegate PicoNode.Web.SessionIdSetter
 T:delegate PicoNode.Web.WebMiddleware
 T:delegate PicoNode.Web.WebRequestHandler
+T:enum PicoNode.Web.RateLimitRejectionReason
 T:interface PicoNode.Web.IRateLimitStore
 T:interface PicoNode.Web.IWebResult
+T:struct PicoNode.Web.RateLimitBudget
+T:struct PicoNode.Web.RateLimitRejection
+T:struct PicoNode.Web.RateLimitResult
