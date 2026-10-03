@@ -129,6 +129,8 @@ public sealed class RateLimitPolicy : IDisposable
         (Applies is null || Applies(ctx)) && !IsExempt(ctx);
 
     /// <summary>Starts building a policy with the given name.</summary>
+    /// <param name="name">Policy name; unique (Ordinal) within a <c>WebApp</c>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <c>null</c>.</exception>
     public static RateLimitPolicyBuilder Create(string name) => new(name);
 
     /// <summary>

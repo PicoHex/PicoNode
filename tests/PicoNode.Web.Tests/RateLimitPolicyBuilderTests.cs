@@ -39,6 +39,16 @@ public sealed class RateLimitPolicyBuilderTests
     }
 
     [Test]
+    public async Task Null_Policy_Name_Is_Rejected_At_Create()
+    {
+        // Without an eager guard the null only surfaces at UseRateLimit time, as the
+        // registry dictionary's own ArgumentNullException ("key") — half-way through
+        // building the pipeline, with a message that names no parameter of ours.
+        var ex = Assert.Throws<ArgumentNullException>(() => RateLimitPolicy.Create(null!));
+        await Assert.That(ex.ParamName).IsEqualTo("name");
+    }
+
+    [Test]
     public async Task Duplicate_Tier_Names_Throw()
     {
         // Tier names feed observation and RateLimitRejection.Tier, so a duplicate

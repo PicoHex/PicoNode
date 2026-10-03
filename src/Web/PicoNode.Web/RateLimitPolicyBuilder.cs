@@ -21,6 +21,10 @@ public sealed class RateLimitPolicyBuilder
 
     internal RateLimitPolicyBuilder(string name)
     {
+        // Fail here, not at UseRateLimit: the registry's dictionary would otherwise
+        // throw its own ArgumentNullException with no parameter name of ours, after
+        // the caller has already started composing the pipeline.
+        ArgumentNullException.ThrowIfNull(name);
         _name = name;
     }
 
