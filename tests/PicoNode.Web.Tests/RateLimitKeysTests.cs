@@ -254,6 +254,7 @@ public sealed class RateLimitKeysTests
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["X-Api-Key"] = "k1",
+            ["X-Empty"] = "",
         };
         var context = WebContext.Create(
             new HttpRequest
@@ -268,6 +269,11 @@ public sealed class RateLimitKeysTests
         await Assert.That(RateLimitKeys.Header("X-Api-Key")(context)).IsEqualTo("k1");
         // The lookup follows the request dictionary's comparer (OrdinalIgnoreCase here).
         await Assert.That(RateLimitKeys.Header("x-api-key")(context)).IsEqualTo("k1");
+        // A present-but-empty value is a value: it keys an empty-string bucket rather than
+        // falling back (spec §3.3 — the fallback covers "no such header"; only a null
+        // fallback skips the tier).
+        await Assert.That(RateLimitKeys.Header("X-Empty")(context)).IsEqualTo("");
+        await Assert.That(RateLimitKeys.Header("X-Empty", "none")(context)).IsEqualTo("");
     }
 
     [Test]

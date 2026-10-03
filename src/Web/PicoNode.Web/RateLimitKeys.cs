@@ -117,7 +117,8 @@ public static class RateLimitKeys
     /// <summary>
     /// Classifies by a request header's value. The lookup uses the request header
     /// dictionary's comparer. A <c>null</c> <paramref name="fallback"/> (the default) means
-    /// "no such header ⇒ the tier is not applicable".
+    /// "no such header ⇒ the tier is not applicable". A present-but-empty value is still a
+    /// value: it keys an empty-string bucket instead of falling back.
     /// </summary>
     /// <param name="name">The header name to read.</param>
     /// <param name="fallback">The bucket key used when the header is absent; <c>null</c> skips the tier.</param>
