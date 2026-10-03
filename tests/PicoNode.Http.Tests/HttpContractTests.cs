@@ -101,6 +101,7 @@ public sealed class HttpContractTests
                 nameof(HttpRequest.Path),
                 nameof(HttpRequest.QueryString),
                 nameof(HttpRequest.RemoteCloseToken),
+                nameof(HttpRequest.RemoteEndPoint),
                 nameof(HttpRequest.Target),
                 nameof(HttpRequest.Version),
             ]);
