@@ -8,8 +8,11 @@ namespace PicoNode.Web;
 /// <see cref="Create"/>'s only allocation is the returned <see cref="WebMiddleware"/>:
 /// every delegate, array and scalar it needs is read out of the policy once, and the tier
 /// list is walked with a <c>for</c> loop (no LINQ, no enumerator, no closure over
-/// per-request state). The allowed path then allocates one <see cref="RateLimitState"/> per
-/// request (measured 48 B) — nothing else.
+/// per-request state). The evaluator's own allow path then allocates one
+/// <see cref="RateLimitState"/> per request (measured 48 B) and nothing else; the
+/// <c>X-RateLimit-*</c> values <see cref="RateLimitResponses.AddHeaders"/> writes after
+/// <c>next</c> returns are three short numeric strings of their own, and they are
+/// skipped entirely when the caller already set one of the group's headers.
 /// <para>
 /// Ordering contract (spec §3.2.4/§3.2.5): the <see cref="WebContextKeys.RateLimitState"/>
 /// entry is written <em>before</em> <c>await next</c> so downstream handlers can read it,
