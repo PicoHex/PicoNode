@@ -24,6 +24,14 @@ public sealed class RateLimitMiddleware
         };
     }
 
+    /// <summary>
+    /// Creates the middleware that evaluates <paramref name="policy"/>: every matching
+    /// tier in declaration order, first declarer wins (spec §3.2). The policy's stores are
+    /// used directly, so there is no <see cref="IRateLimitStore"/> service lookup here.
+    /// </summary>
+    public static WebMiddleware Create(RateLimitPolicy policy) =>
+        RateLimitPolicyEvaluator.Create(policy);
+
     public static WebMiddleware Create(IRateLimitStore store, RateLimitOptions options)
     {
         ArgumentNullException.ThrowIfNull(store);
