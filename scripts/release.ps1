@@ -19,6 +19,10 @@ surface of the LAST RELEASE, so it is refreshed as part of the release commit.
 The tag is the release trigger: the release workflow runs the tests, packs every
 package at the tag version, and publishes to NuGet.
 
+Releases are cut from the mainline (main): check it out, let its CI finish green, then
+tag there. The script refuses to tag any other branch unless -AllowBranch is passed,
+because a tag publishes whatever commit it points at - including a feature branch.
+
 .PARAMETER RepoRoot
 Repository to release. Defaults to the current directory.
 
@@ -41,6 +45,11 @@ Baseline directory relative to RepoRoot. Default: api
 .PARAMETER Push
 After tagging, push the branch and the tag (this triggers the release workflow).
 
+.PARAMETER AllowBranch
+Release the current branch even though it is not the release mainline. A deliberate
+override (e.g. re-tagging a historical commit): the tag still publishes whatever
+commit it points at.
+
 .PARAMETER ResetOnYearChange
 Reset x and y when the year changes instead of carrying them forward.
 
@@ -53,7 +62,8 @@ Reset x and y when the year changes instead of carrying them forward.
 ./scripts/release.ps1 -DryRun
 
 .EXAMPLE
-# cut the release: refresh baselines, commit, tag, push
+# cut the release from the mainline: refresh baselines, commit, tag, push
+git switch main
 ./scripts/release.ps1 -Push
 #>
 
@@ -66,10 +76,14 @@ param(
     [switch]$AssumeCurrent,
     [string]$BaselineDir = "api",
     [switch]$Push,
+    [switch]$AllowBranch,
     [switch]$ResetOnYearChange
 )
 
 $ErrorActionPreference = "Stop"
+
+# Releases are cut from the mainline; -AllowBranch overrides this deliberately.
+$script:ReleaseBranch = "main"
 
 function Write-Step([string]$message) { Write-Host "== $message" -ForegroundColor Cyan }
 function Write-Ok([string]$message) { Write-Host "   $message" -ForegroundColor Green }
@@ -287,10 +301,27 @@ try {
     Write-Host "   API changed  : $apiChanged"
     Write-Host "   next version : v$nextVersion" -ForegroundColor Green
 
+    $branchName = @((Invoke-GitRaw @("rev-parse", "--abbrev-ref", "HEAD")).Output)[0].Trim()
+    $onReleaseBranch = $branchName -eq $script:ReleaseBranch
+
     if ($DryRun) {
+        if (-not $onReleaseBranch) {
+            Write-Note "HEAD is on '$branchName', not '$($script:ReleaseBranch)': a real run would refuse (pass -AllowBranch to override)"
+        }
         Write-Host ""
         Write-Ok "Dry run - nothing written, no tag created."
         exit 0
+    }
+
+    Write-Step "Branch guard"
+    if (-not $onReleaseBranch -and -not $AllowBranch) {
+        Fail "releases are cut from '$($script:ReleaseBranch)', but HEAD is on '$branchName'. Merge into $($script:ReleaseBranch) and release there, or pass -AllowBranch to release this branch deliberately. (A tag publishes whatever commit it points at.)"
+    }
+    if ($onReleaseBranch) {
+        Write-Ok "on $($script:ReleaseBranch)"
+    }
+    else {
+        Write-Note "overriding the branch guard (-AllowBranch): tagging '$branchName'"
     }
 
     Write-Step "Refreshing baselines and tagging"
@@ -324,11 +355,9 @@ try {
     Write-Ok "created tag v$nextVersion"
 
     if ($Push) {
-        $branchResult = Invoke-GitRaw @("rev-parse", "--abbrev-ref", "HEAD")
-        $branch = @($branchResult.Output)[0].Trim()
-        $null = Invoke-Git @("push", "origin", $branch)
+        $null = Invoke-Git @("push", "origin", $branchName)
         $null = Invoke-Git @("push", "origin", "v$nextVersion")
-        Write-Ok "pushed $branch and v$nextVersion - the release workflow will publish"
+        Write-Ok "pushed $branchName and v$nextVersion - the release workflow will publish"
     }
     else {
         Write-Host ""
