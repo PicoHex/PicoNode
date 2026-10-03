@@ -156,6 +156,60 @@ public sealed class InMemoryRateLimitStoreTests
     }
 
     [Test]
+    public async Task Idle_bucket_is_evicted_and_starts_full_again()
+    {
+        // The cleanup timer is a real timer whose period is min(RefillInterval, CleanupInterval);
+        // the clock it measures idleness with is the manual one, so advancing the clock is what
+        // makes a bucket look abandoned. RefillRate=0 is what makes this observation meaningful:
+        // a bucket that never refills can only allow a request again if it was reclaimed and
+        // recreated (a fresh bucket starts full: MaxTokens=2, so one consume leaves 1).
+        var clock = new StoreClock();
+        using var store = new InMemoryRateLimitStore(
+            RateLimitBudget.PerSecond(2, 0),
+            TimeSpan.FromMilliseconds(50)
+        )
+        {
+            TimeProvider = clock,
+        };
+
+        await Assert.That((await store.TryConsumeTokenAsync("k")).Remaining).IsEqualTo(1);
+        await Assert.That((await store.TryConsumeTokenAsync("k")).Remaining).IsEqualTo(0);
+        await Assert.That((await store.TryConsumeTokenAsync("k")).Allowed).IsFalse();
+
+        var evicted = false;
+        for (var attempt = 0; attempt < 40 && !evicted; attempt++)
+        {
+            // Idle for far longer than 2 x CleanupInterval, then give the cleanup timer (50 ms
+            // cadence) a window to fire before the probe touches the bucket again.
+            clock.Advance(TimeSpan.FromMinutes(1));
+            await Task.Delay(50);
+            evicted = (await store.TryConsumeTokenAsync("k")).Remaining == 1;
+        }
+
+        await Assert
+            .That(evicted)
+            .IsTrue()
+            .Because(
+                "an idle bucket must be reclaimed (and a recreated one starts full), "
+                    + "otherwise key-spraying grows the dictionary without bound"
+            );
+    }
+
+    /// <summary>
+    /// Manual clock for the eviction test. Must override <c>GetUtcNow</c> (the store reads it; the
+    /// keep-alive <see cref="ManualTimeProvider"/> only drives timers) and start at a non-zero
+    /// epoch, because <c>TryConsume</c> treats <c>LastAccessTicks == 0</c> as a first access.
+    /// </summary>
+    private sealed class StoreClock : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan delta) => _now += delta;
+    }
+
+    [Test]
     public async Task Dispose_throws_on_subsequent_calls()
     {
         var store = new InMemoryRateLimitStore(DefaultOptions);
