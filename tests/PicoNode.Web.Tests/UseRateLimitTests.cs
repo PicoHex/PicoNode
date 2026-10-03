@@ -20,6 +20,13 @@ public sealed class UseRateLimitTests
         await Assert.That(ReferenceEquals(returned, app)).IsTrue();
         await Assert.That(app.RateLimits.Contains("web")).IsTrue();
         await Assert.That(app.RateLimits.Count).IsEqualTo(1);
+
+        // Null guards are eager (startup-time), not deferred to the first request.
+        await Assert
+            .That(() => WebAppRateLimitExtensions.UseRateLimit(null!, policy))
+            .Throws<ArgumentNullException>();
+        await Assert.That(() => app.UseRateLimit(null!)).Throws<ArgumentNullException>();
+        await Assert.That(app.RateLimits.Count).IsEqualTo(1);
     }
 
     [Test]
@@ -42,6 +49,13 @@ public sealed class UseRateLimitTests
         app.UseRateLimit(third);
         await Assert.That(app.RateLimits.Count).IsEqualTo(2);
         await Assert.That(app.RateLimits.Contains("api")).IsTrue();
+
+        // ...and Ordinal means case-sensitive: "WEB" is a different policy name than
+        // "web", so it is accepted (an OrdinalIgnoreCase registry would reject it).
+        using var caseVariant = P("WEB", RateLimitBudget.PerMinute(5, 5));
+        app.UseRateLimit(caseVariant);
+        await Assert.That(app.RateLimits.Count).IsEqualTo(3);
+        await Assert.That(app.RateLimits.Contains("WEB")).IsTrue();
     }
 
     [Test]

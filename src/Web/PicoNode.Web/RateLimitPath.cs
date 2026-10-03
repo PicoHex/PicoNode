@@ -26,7 +26,7 @@ public static class RateLimitPath
     /// <see cref="RateLimitPolicyBuilder.Exempt"/> compiles its whitelist with, so the two
     /// segment-boundary semantics can never drift apart.
     /// </remarks>
-    /// <param name="prefix">The literal path prefix; must not be null (an empty prefix follows the literal rule and matches rooted paths, like <c>Exempt("")</c>).</param>
+    /// <param name="prefix">The literal path prefix; must not be null. An empty prefix follows the literal rule strictly: it matches the empty path and every rooted path (exactly like <c>Exempt("")</c>).</param>
     public static Predicate<WebContext> Prefix(string prefix)
     {
         ArgumentNullException.ThrowIfNull(prefix);

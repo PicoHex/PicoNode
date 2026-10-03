@@ -37,6 +37,10 @@ public sealed class RateLimitPathTests
         // ...while still requiring the literal prefix.
         await Assert.That(trailingSlash(Context("/api"))).IsFalse();
         await Assert.That(trailingSlash(Context("/apix"))).IsFalse();
+
+        // Null arguments are rejected eagerly, not deferred to match time.
+        await Assert.That(() => RateLimitPath.Prefix(null!)).Throws<ArgumentNullException>();
+        await Assert.That(() => RateLimitPath.Exact(null!)).Throws<ArgumentNullException>();
     }
 
     [Test]
