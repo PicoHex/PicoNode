@@ -24,6 +24,8 @@ public sealed class WebApp
 
     internal WebAppOptions Options => _options;
 
+    internal RateLimitPolicyRegistry RateLimits { get; } = new();
+
     /// <summary>Registers middleware in the pipeline. Middleware are composed in reverse registration order (last added runs closest to the handler).</summary>
     public WebApp Use(WebMiddleware middleware)
     {
