@@ -11,7 +11,13 @@ namespace PicoNode.Web.Tests;
 /// direct probe for the lock: with mutual exclusion no two callers can be inside at once, and
 /// without it the racers cannot help but overlap — the first one to enter hands the CPU to the
 /// next, which works on any core count, down to a single core. <see cref="LockProbeClock"/>
-/// reports such an overlap, and the round structure adds an exact behavioural invariant on top.
+/// reports such an overlap, and the round structure adds a behavioural invariant on top.</para>
+/// <para>
+/// The two assertions catch different mistakes, which is why both are here. The overlap count is
+/// what detects a missing lock: a lost update cannot be relied on to show up as *extra* grants,
+/// because each racer consumes at most once per round (Racers == Tokens is the ceiling, not just
+/// the expectation). The exact total therefore detects the opposite failure — a racer that was
+/// refused a token every other racer got — e.g. a stubbed-out or over-eager short-circuit.
 /// </para>
 /// </summary>
 public sealed class InMemoryRateLimitStoreConcurrencyTests
@@ -106,8 +112,8 @@ public sealed class InMemoryRateLimitStoreConcurrencyTests
             .IsEqualTo(Rounds * Tokens)
             .Because(
                 $"every round refills exactly {Tokens} tokens into an empty bucket and every one "
-                    + $"of the {Racers} racers takes one, so any other total means two of them saw "
-                    + "the same bucket state"
+                    + $"of the {Racers} racers must take one: a lower total means a racer was "
+                    + "refused a token another racer was given"
             );
     }
 

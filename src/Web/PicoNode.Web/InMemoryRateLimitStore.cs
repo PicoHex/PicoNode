@@ -15,6 +15,12 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
     /// advance a manual clock instead of sleeping across the refill interval
     /// (a 50 ms window made "immediate retry is denied" load-sensitive).
     /// </summary>
+    /// <remarks>
+    /// Called while the per-bucket lock is held, so a custom provider must be cheap and must
+    /// not re-enter this store or wait on anything an in-flight consume could hold — a test
+    /// clock that blocks is deliberately used to probe that lock
+    /// (InMemoryRateLimitStoreConcurrencyTests). Production uses TimeProvider.System.
+    /// </remarks>
     internal TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 
     /// <summary>Retry-After/Reset timestamp when RefillRate=0 (fixed window, 1 year).</summary>
