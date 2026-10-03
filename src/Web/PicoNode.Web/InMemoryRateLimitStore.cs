@@ -154,7 +154,18 @@ public sealed class InMemoryRateLimitStore : IRateLimitStore, IDisposable
 
         foreach (var (id, bucket) in _buckets)
         {
-            if (bucket.LastAccessTicks < cutoff)
+            // Read under the bucket lock: LastAccessTicks is a plain long written by the
+            // consume path (TryConsume), so an unsynchronised read can tear on 32-bit
+            // targets and evict a live bucket. The remove stays outside the lock — a
+            // consumer that grabs the bucket in between simply gets a fresh allowance,
+            // exactly as it would a moment later.
+            bool expired;
+            lock (bucket.Lock)
+            {
+                expired = bucket.LastAccessTicks < cutoff;
+            }
+
+            if (expired)
                 _buckets.TryRemove(id, out _);
         }
     }
