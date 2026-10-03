@@ -64,20 +64,25 @@ public sealed class RateLimitPolicyBuilderTests
         // default(RateLimitBudget) is the shape a caller gets from an uninitialized
         // field: MaxTokens=0 and RefillInterval=TimeSpan.Zero. It cannot be hidden by
         // an internal ctor, so Build() must reject it (spec §3.1).
+        // ParamName is asserted, not just the exception type: the store ctor throws the
+        // same type for the same values, so a type-only assertion would stay green if
+        // Build()'s own validation disappeared and the failure merely surfaced one frame
+        // deeper (ParamName "budget.MaxTokens" instead of "tiers[0].Budget.MaxTokens").
         var uninitialized = default(RateLimitBudget);
-        await Assert
-            .That(() => OneTier(uninitialized).Build())
-            .Throws<ArgumentOutOfRangeException>();
+        var zeroTokens = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            OneTier(uninitialized).Build()
+        );
+        await Assert.That(zeroTokens.ParamName).IsEqualTo("tiers[0].Budget.MaxTokens");
 
-        await Assert
-            .That(() => OneTier(new RateLimitBudget(0, 1, TimeSpan.FromSeconds(1))).Build())
-            .Throws<ArgumentOutOfRangeException>()
-            .Because("MaxTokens must be positive");
+        var negativeTokens = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            OneTier(new RateLimitBudget(0, 1, TimeSpan.FromSeconds(1))).Build()
+        );
+        await Assert.That(negativeTokens.ParamName).IsEqualTo("tiers[0].Budget.MaxTokens");
 
-        await Assert
-            .That(() => OneTier(new RateLimitBudget(5, 1, TimeSpan.Zero)).Build())
-            .Throws<ArgumentOutOfRangeException>()
-            .Because("RefillInterval must be positive");
+        var zeroInterval = Assert.Throws<ArgumentOutOfRangeException>(() =>
+            OneTier(new RateLimitBudget(5, 1, TimeSpan.Zero)).Build()
+        );
+        await Assert.That(zeroInterval.ParamName).IsEqualTo("tiers[0].Budget.RefillInterval");
     }
 
     [Test]
