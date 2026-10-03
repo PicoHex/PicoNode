@@ -512,13 +512,34 @@ internal static class Program
             type = type[4..];
             prefix =
                 parameter.Attributes.HasFlag(ParameterAttributes.Out) ? "out "
-                : sawReadOnly ? "in "
+                : sawReadOnly || IsReadOnlyParameter(md, parameter) ? "in "
                 : "ref ";
         }
         if (!parameter.Name.IsNil && IsParams(md, parameter))
             prefix = "params " + prefix;
         var name = parameter.Name.IsNil ? $"arg{index}" : md.GetString(parameter.Name);
         return $"{prefix}{type} {name}{DefaultValueText(md, parameter)}";
+    }
+
+    /// <summary>
+    /// A C# <c>in</c> parameter carries <em>no</em> <c>modreq(IsReadOnlyAttribute)</c>: unlike a
+    /// readonly ref return (which the signature-decode probe sees through
+    /// <c>GetModifiedType</c>), Roslyn marks an <c>in</c> parameter with the <c>In</c> flag plus a
+    /// <c>[System.Runtime.CompilerServices.IsReadOnlyAttribute]</c> custom attribute, so the
+    /// parameter's own metadata row is the only place that modifier appears. Checking it is what
+    /// keeps <c>M:(in T x)</c> from being reported as <c>ref</c>.
+    /// </summary>
+    private static bool IsReadOnlyParameter(MetadataReader md, Parameter parameter)
+    {
+        foreach (var handle in parameter.GetCustomAttributes())
+        {
+            if (
+                AttributeTypeName(md, md.GetCustomAttribute(handle))
+                == "System.Runtime.CompilerServices.IsReadOnlyAttribute"
+            )
+                return true;
+        }
+        return false;
     }
 
     private static bool IsParams(MetadataReader md, Parameter parameter)

@@ -56,7 +56,7 @@ M:PicoNode.Web.HttpPutAttribute..ctor(string path = "") : void
 M:PicoNode.Web.IRateLimitStore.TryConsumeTokenAsync(string key, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<PicoNode.Web.RateLimitResult> abstract
 M:PicoNode.Web.IWebResult.Execute(PicoNode.Web.WebContext ctx) : PicoNode.Http.HttpResponse abstract
 M:PicoNode.Web.InMemoryRateLimitStore..ctor(PicoNode.Web.RateLimitOptions options) : void
-M:PicoNode.Web.InMemoryRateLimitStore..ctor(ref PicoNode.Web.RateLimitBudget budget, System.Nullable`1<System.TimeSpan> cleanupInterval = null) : void
+M:PicoNode.Web.InMemoryRateLimitStore..ctor(in PicoNode.Web.RateLimitBudget budget, System.Nullable`1<System.TimeSpan> cleanupInterval = null) : void
 M:PicoNode.Web.InMemoryRateLimitStore.Dispose() : void override
 M:PicoNode.Web.InMemoryRateLimitStore.TryConsumeTokenAsync(string key, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<PicoNode.Web.RateLimitResult> override
 M:PicoNode.Web.InMemorySessionStore..ctor(PicoNode.Web.Session.Abs.SessionOptions options) : void
