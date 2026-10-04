@@ -14,6 +14,9 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 - Runner arguments go **after** `--` (TUnit), e.g. `dotnet test tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj -c Release -- --treenode-filter '/*/*/Name'`.
 - TUnit exits **2** (not 1) on failure and colourises its output: strip ANSI before matching.
 - NativeAOT check: `scripts/test-aot-publish.ps1 -RuntimeIdentifier linux-x64` (CI runs it for the linux RIDs).
+- README samples: `dotnet test tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj` compiles the README's
+  rate-limiting samples and fails when a README drifts from the marked region in `ReadmeSamples.cs` —
+  change a sample in both places, in all ten READMEs.
 - Zero external dependencies and AOT-first: no reflection, no `dynamic`, no runtime attribute consumption,
   no per-request LINQ or closures on hot paths. A new dependency or a trim-unsafe construct is a design
   change, not a detail.
@@ -38,6 +41,14 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
   annotated tag and pushes branch + tag.
 - **The tag is the release trigger**: `.github/workflows/release.yml` runs the tests, packs every package at
   the tag version and publishes to NuGet. Never tag by hand.
+- A baseline holds the **last release's** surface and the script enforces it: when the committed baselines
+  match the worktree but differ from the last tag (someone refreshed them mid-cycle), it explains the drift,
+  warns on `-DryRun` and refuses to release - that is exactly how the API delta stayed invisible and
+  v2026.4.7 shipped wrongly. Restore first: `git checkout <last-tag> -- api/`.
+- Already published the wrong version? Unlisting (never deleting) is the remedy - NuGet versions cannot be
+  reused: `gh workflow run unlist.yml -f version=X.Y.Z -f confirm=unlist`. That workflow needs the API key to
+  carry the **Unlist** permission as well as push (the release key currently only pushes, so unlisting is a
+  manual step on nuget.org), and the GitHub Release should get a "Superseded: use <version>" note.
 - **Releases are cut from `main`** — CI on `main` green first. The script refuses to tag any other branch
   (`-AllowBranch` is the deliberate override for re-tagging cases).
 - Version rule: `<four-digit year>.<x>.<y>` — `x` bumps (and `y` resets to 0) when the public API changed;
@@ -59,9 +70,12 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 
 ## Environment quirks (this developer machine)
 
-- Git egress to github.com needs `-c http.https://github.com.proxy=` because `~/.gitconfig` carries a dead
-  `http.https://github.com.proxy = socks5h://127.0.0.1:10808` entry. Permanent fix:
-  `git config --global --unset http.https://github.com.proxy`.
+- - Small, focused, conventional commits: `fix(web):`, `test(http):`, `docs(spec):`, `build(api):`, `chore(release):`.
+- Commit before you use a throwaway branch for a probe. `git checkout -B probe && git add -A && git commit`
+  sweeps uncommitted work into the probe commit, and deleting the branch deletes that work (recoverable via
+  `git reflog` + `git fsck` while the commit is unreferenced, but not worth the scare).fig` (`http.https://github.com.proxy`) and a direct connection. Sometimes only one works, and the
+  symptom is `Failed to connect to github.com port 443`. Start with `git ls-remote origin main`; if that
+  fails, retry with `-c http.https://github.com.proxy=` (and vice versa) before blaming credentials.
 - NuGet reads are served by a lagging mirror, so a version can be missing from the flat container minutes
   after a successful publish. Confirm publications through the search index instead:
   `https://azuresearch-usnc.nuget.org/query?q=packageid:<Id>&prerelease=true`.

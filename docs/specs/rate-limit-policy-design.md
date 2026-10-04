@@ -343,3 +343,13 @@ app.UseRateLimit(web);      // 必须注册在 AuthMiddleware 之前（W-04 的 
 **发布偏差记录**：本特性给 `PicoNode.Web` 增加 10 个公开类型，并在同一 store 契约上留下破坏性变更（`RateLimitResult` class→`readonly record struct`），`PicoNode.Http` 增加 `HttpRequest.RemoteEndPoint`；相对 v2026.4.6 的基线差异共 61 行。因此 §5 与实现计划 Task 10 Step 1 都要求 **x+1**。但基线在发布前已被刷新（`db07d38`），发布门禁据此报 `API changed : false`，包先以 **v2026.4.7（y 位）** 发出，属版本误标。纠正做法：把 `api/` 恢复为上一发布的公开面后重跑发布流程，让门禁重新看到 x 跳；`v2026.4.7` 建议在 NuGet 上 unlist，避免消费方把它当补丁级更新接受该破坏性变更。
 
 **纠正结果（2026-10-03）**：恢复上一发布基线后，发布门禁如实报出 `API changed : true`，纠正版本 **v2026.5.0** 已发布——release run `37165734340` 全绿（7/7 打包成功 → Publish to NuGet → Create GitHub Release），7 个包均已在 nuget.org 上可查；`api/` 基线随该发布提交刷新回当前实现，因此此后又回到"基线 = 最近发布公开面"的不变式。
+
+
+**补记（2026-10-04：文档 + 加固轮）**
+
+- 文档：10 个语言的 README 都补了"限流"小节（代码块逐字节一致，正文翻译）；`tests/README.md` 清单补上缺失的 `PicoJsonRpc.Tests` 行并刷新计数（1206）。
+- 新增 `tests/PicoNode.Docs.Tests`：把 README 示例原文放进 `#region readme:*`（因此**参与编译**），并逐语言比对 README 里对应的 `csharp` 块——文档漂移即失败，示例编译不过即构建失败。已接入解决方案与 `ci.yml`，5 条矩阵腿全绿。
+- `RateLimitOptions.KeySelector` 注解放宽为 `Func<WebContext, string?>`：实现本来就是 `raw ?? "anonymous"`，旧注解（`Func<WebContext, string>`）让所有 `RateLimitKeys.*` 分类器无法直接赋值（CS8619），也就是 README 示例必然带告警。RED-first：新测试把分类器赋给 `KeySelector`，`-p:WarningsAsErrors=CS8619` 下构建立即失败；放宽后通过；变异体 `raw ?? Guid.NewGuid()` 被新旧两条测试同时杀掉。注解不进 API 基线（dumper 剥掉 nullability），故不影响版本判定。
+- `scripts/release.ps1` 增加"基线超前于最近发布"的检查：当已提交基线与本工作树一致、但与最近 tag 不一致时，说明基线在发布前被刷新过——dry-run 告警、真实发布**拒绝**（exit 2），并提示 `git checkout <last-tag> -- api/`。已用临时分支端到端验证（探针公开类型 + bootstrap 刷新 → 告警且门禁仍报 `API changed : false`；真实运行拒绝且不产生 tag/提交；恢复基线后门禁如实报 x 跳）。
+- PicoAgent pin 升到 **2026.5.0**（其 daemon 仍走旧中间件接线，不直接使用 `RateLimitResult`，升级无破坏：Daemon 121 / Acp 24 / Host 374 全绿）。§5.4 的策略层接入仍是独立任务。
+- **NuGet unlist 2026.4.7 未完成**：release workflow 的 `NUGET_API_KEY` 只能推送，unlist 返回 403（缺 Unlist 权限）。已新增 dispatch-only 的 `.github/workflows/unlist.yml`（并入 AGENTS.md），并在 v2026.4.7 的 GitHub Release 页加了 "Superseded: use v2026.5.0" 提示；unlist 待手动执行或用具备该权限的 key 重跑。
