@@ -183,11 +183,11 @@ public sealed class RateLimitMiddlewareTests
     public async Task KeySelector_null_falls_back_to_anonymous()
     {
         var store = new InMemoryRateLimitStore(
-            new RateLimitOptions { MaxTokens = 1, KeySelector = static _ => null! }
+            new RateLimitOptions { MaxTokens = 1, KeySelector = static _ => null }
         );
         var middleware = RateLimitMiddleware.Create(
             store,
-            new RateLimitOptions { MaxTokens = 1, KeySelector = static _ => null! }
+            new RateLimitOptions { MaxTokens = 1, KeySelector = static _ => null }
         );
 
         var request = new HttpRequest { Method = "GET", Target = "/" };
@@ -207,6 +207,54 @@ public sealed class RateLimitMiddlewareTests
         );
 
         await Assert.That(response.StatusCode).IsEqualTo(429);
+    }
+
+    [Test]
+    public async Task KeySelector_accepts_a_classifier_and_a_null_key_shares_anonymous()
+    {
+        // The RateLimitKeys classifiers return Func<WebContext, string?>, so the legacy
+        // selector has to accept a nullable key (a null key lands in the shared "anonymous"
+        // bucket, see the test above). This pins the nullable annotation: with a non-nullable
+        // KeySelector the assignment below warns CS8619.
+        var options = new RateLimitOptions
+        {
+            MaxTokens = 1,
+            KeySelector = RateLimitKeys.Header("X-Actor"),
+        };
+        var store = new InMemoryRateLimitStore(options);
+        var middleware = RateLimitMiddleware.Create(store, options);
+
+        static WebContext Request(string? actor)
+        {
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (actor is not null)
+                headers["X-Actor"] = actor;
+
+            return WebContext.Create(
+                new HttpRequest
+                {
+                    Method = "GET",
+                    Target = "/",
+                    Headers = headers,
+                }
+            );
+        }
+
+        static ValueTask<HttpResponse> Next(WebContext context, CancellationToken ct) =>
+            ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+
+        // Neither request carries the header: both derive no key, so they share one bucket.
+        await Assert
+            .That((await middleware(Request(null), Next, CancellationToken.None)).StatusCode)
+            .IsEqualTo(200);
+        await Assert
+            .That((await middleware(Request(null), Next, CancellationToken.None)).StatusCode)
+            .IsEqualTo(429);
+
+        // A distinct actor gets its own bucket, so it is still allowed.
+        await Assert
+            .That((await middleware(Request("bob"), Next, CancellationToken.None)).StatusCode)
+            .IsEqualTo(200);
     }
 
     [Test]

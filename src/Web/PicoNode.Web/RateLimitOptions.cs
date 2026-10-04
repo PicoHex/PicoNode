@@ -5,7 +5,12 @@ namespace PicoNode.Web;
 /// </summary>
 public sealed class RateLimitOptions
 {
-    public required Func<WebContext, string> KeySelector { get; init; }
+    /// <summary>
+    /// Derives the bucket key for a request. A <see langword="null"/> key lands in the shared
+    /// <c>"anonymous"</c> bucket, so this accepts the nullable keys that <see cref="RateLimitKeys"/>
+    /// classifiers produce (the policy layer reads null as "this tier does not apply" instead).
+    /// </summary>
+    public required Func<WebContext, string?> KeySelector { get; init; }
 
     public int MaxTokens { get; init; } = 10;
 
