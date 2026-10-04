@@ -1,14 +1,19 @@
 # src
 
-PicoNode source code, organized by module:
+Package sources, grouped by area. `PackageId` is what `api/<PackageId>.public.txt` tracks and what the
+release workflow packs.
 
-| Directory | NuGet Package | Description |
-|---|---|---|
-| `Network/PicoNode.Abs` | `PicoNode.Abs` | Core abstractions: INode, ITcpConnectionHandler, ITcpConnectionContext, IUdpDatagramHandler |
-| `Network/PicoNode` | `PicoNode` | TCP/UDP node implementation: TcpNode, UdpNode, TLS, metrics, connection pooling |
-| `Http/PicoNode.Http` | `PicoNode.Http` | HTTP/1.1, HTTP/2 (h2c), WebSocket (RFC 6455), HPACK (RFC 7541) |
-| `Web/PicoNode.Web.Session.Abs` | `PicoNode.Web.Session.Abs` | Session abstractions: ISession, ISessionStore |
-| `Web/PicoNode.Web` | `PicoNode.Web` | Web middleware framework: routing, CORS, compression, caching, SSE, multipart |
-| `Web/PicoWeb` | `PicoWeb` | Web hosting: WebServer = WebApp + TcpNode + DI |
-| `Web/Controllers.Gen` | (embedded in PicoWeb) | Source generator: controller method binding |
-| `Web/PicoWeb.Gen` | (embedded in PicoWeb) | Build-time diagnostics (PWR001) for handler return types — emits no source |
+| Area | Project | PackageId | Contents |
+|---|---|---|---|
+| `Network/` | `PicoNode.Abs` | `PicoNode.Abs` | Core interfaces: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, fault codes, enums |
+| `Network/` | `PicoNode` | `PicoNode` | `TcpNode` / `UdpNode` — async socket transports |
+| `Http/` | `PicoNode.Http` | `PicoNode.Http` | `HttpConnectionHandler`, `HttpRouter`, HTTP/1.1 + HTTP/2 + WebSocket, HPACK |
+| `Web/` | `PicoNode.Web` | `PicoNode.Web` | `WebApp`, `WebRouter`, middleware (compression, CORS, cookies, session, auth, rate limiting), static files, DI |
+| `Web/` | `PicoNode.Web.Session.Abs` | `PicoNode.Web.Session.Abs` | Session store abstractions |
+| `Web/` | `PicoWeb` | `PicoWeb` | `WebServer` — hosts `WebApp` on `TcpNode` |
+| `Web/` | `Controllers.Gen`, `PicoWeb.Gen` | (source generators) | Compile-time endpoint/controller generation (not packed) |
+| `Rpc/` | `PicoJsonRpc` | `PicoJsonRpc` | JSON-RPC 2.0 envelopes, framing and lifecycle |
+
+Layout rules: one directory per package, `PackageId` set in the csproj, `IsPackable` decides what the
+release workflow packs, and each package's public surface lands in `api/<PackageId>.public.txt` (see
+`AGENTS.md`).
