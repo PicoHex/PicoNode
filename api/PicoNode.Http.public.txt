@@ -175,7 +175,6 @@ P:PicoNode.Http.HttpRequest.Method : string { get; init; }
 P:PicoNode.Http.HttpRequest.Path : string { get; init; }
 P:PicoNode.Http.HttpRequest.QueryString : string { get; init; }
 P:PicoNode.Http.HttpRequest.RemoteCloseToken : System.Threading.CancellationToken { get; }
-P:PicoNode.Http.HttpRequest.RemoteEndPoint : System.Net.IPEndPoint { get; }
 P:PicoNode.Http.HttpRequest.Target : string { get; init; }
 P:PicoNode.Http.HttpRequest.Version : PicoNode.Http.HttpVersion { get; init; }
 P:PicoNode.Http.HttpResponse.Body : System.ReadOnlyMemory`1<byte> { get; init; }
