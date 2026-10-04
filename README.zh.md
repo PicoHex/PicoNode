@@ -497,6 +497,38 @@ foreach (var file in form?.Files ?? [])
     Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
+### 限流
+
+两层：有序的**策略档**（每档一个令牌桶 store）与传统的单桶中间件。
+
+```csharp
+using var policy = RateLimitPolicy.Create("web")
+    .Exempt("/api/health")                                  // OR-accumulating path whitelist (segment-boundary prefix)
+    .Applies(RateLimitPath.Prefix("/api"))                  // policy scope: must pass this AND not be exempt
+    .Tier("trusted",   RateLimitBudget.PerSecond(300, 30), RateLimitKeys.TokenMatch(ownerToken))
+    .Tier("anonymous", RateLimitBudget.PerSecond(60, 1),   RateLimitKeys.Not(RateLimitKeys.TokenMatch(ownerToken), "instance"))
+    .OnRejected(r => metrics.CountRejection(r.Policy, r.Tier, r.Reason))   // LimitReached | StoreError
+    .Build();
+
+app.UseRateLimit(policy);   // register before AuthMiddleware (the pre-auth shield); the host owns disposal
+```
+
+档按声明顺序求值；某档在其 `Key` 返回键（且 `Applies` 若存在则为真）时生效，任何档都不匹配的请求原样放行。键选择器：`Identity`（已认证用户，否则用回退值）、`RemoteAddress`（对端 IP —— 不含端口，IPv4-mapped IPv6 归一化）、`Header`、`Path`、`Constant`、`TokenMatch`（常量时间比较，与认证侧同一套 bearer 解析）以及 `Not(inner, fallback)`。预算按经过时间平滑回填，所以 `PerMinute(60, 60)` 是「突发 60 + 约 1/s」，不是每分钟一次性给 60。
+
+放行的请求带上 `X-RateLimit-Limit`/`-Remaining`/`-Reset`，并在 `context.Items` 里放入 `RateLimitState`（含命中的 `Policy`/`Tier`）；被拒绝的请求返回 `429` + `Retry-After`。store 抛异常时按拒绝处理（`RateLimitRejectionReason.StoreError`），除非策略显式开启 `FailOpen()`。策略名在每个应用内唯一——重名会在启动期抛异常。
+
+```csharp
+// Single bucket: the original middleware (one store, one key selector)
+var bucket = RateLimitMiddleware.Create(new RateLimitOptions
+{
+    MaxTokens = 60,
+    RefillRate = 1,
+    RefillInterval = TimeSpan.FromSeconds(1),   // ~1 token/s, burst 60
+    KeySelector = RateLimitKeys.RemoteAddress(),
+});
+app.Use(bucket);
+```
+
 ## 指标
 
 `TcpNode` 和 `UdpNode` 都暴露实时计数器：

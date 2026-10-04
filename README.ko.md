@@ -507,6 +507,38 @@ foreach (var file in form?.Files ?? [])
     Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
+### 속도 제한
+
+두 계층입니다. 정렬된 **정책 티어**(티어마다 토큰 버킷 store 하나)와 기존의 단일 버킷 미들웨어입니다.
+
+```csharp
+using var policy = RateLimitPolicy.Create("web")
+    .Exempt("/api/health")                                  // OR-accumulating path whitelist (segment-boundary prefix)
+    .Applies(RateLimitPath.Prefix("/api"))                  // policy scope: must pass this AND not be exempt
+    .Tier("trusted",   RateLimitBudget.PerSecond(300, 30), RateLimitKeys.TokenMatch(ownerToken))
+    .Tier("anonymous", RateLimitBudget.PerSecond(60, 1),   RateLimitKeys.Not(RateLimitKeys.TokenMatch(ownerToken), "instance"))
+    .OnRejected(r => metrics.CountRejection(r.Policy, r.Tier, r.Reason))   // LimitReached | StoreError
+    .Build();
+
+app.UseRateLimit(policy);   // register before AuthMiddleware (the pre-auth shield); the host owns disposal
+```
+
+티어는 선언 순서대로 평가되며, `Key`가 키를 반환하고(`Applies`가 있으면 그것도 참이어야 함) 어떤 티어에도 해당하지 않는 요청은 그대로 통과합니다. 키: `Identity`(인증된 사용자, 없으면 대체값), `RemoteAddress`(피어 IP - 포트 없음, IPv4-mapped IPv6 정규화), `Header`, `Path`, `Constant`, `TokenMatch`(상수 시간 비교, 인증 측과 같은 bearer 파싱), `Not(inner, fallback)`. 버킷은 경과 시간에 비례해 보충되므로 `PerMinute(60, 60)`은 "버스트 60 + 약 1/s"이며, 1분에 한 번 60을 채우는 것이 아닙니다.
+
+허용된 요청에는 `X-RateLimit-Limit`/`-Remaining`/`-Reset`이 붙고 `context.Items`에 `RateLimitState`(선택된 `Policy`/`Tier` 포함)가 들어갑니다. 거부된 요청은 `429` + `Retry-After`입니다. store가 예외를 던지면 정책이 `FailOpen()`을 켜지 않은 한 거부로 처리됩니다(`RateLimitRejectionReason.StoreError`). 정책 이름은 앱마다 고유하며 중복은 시작 시 예외가 됩니다.
+
+```csharp
+// Single bucket: the original middleware (one store, one key selector)
+var bucket = RateLimitMiddleware.Create(new RateLimitOptions
+{
+    MaxTokens = 60,
+    RefillRate = 1,
+    RefillInterval = TimeSpan.FromSeconds(1),   // ~1 token/s, burst 60
+    KeySelector = RateLimitKeys.RemoteAddress(),
+});
+app.Use(bucket);
+```
+
 ## 메트릭
 
 `TcpNode`와 `UdpNode` 모두 실시간 카운터를 노출합니다:

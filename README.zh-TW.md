@@ -497,6 +497,38 @@ foreach (var file in form?.Files ?? [])
     Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
+### 限流
+
+兩層：有序的**策略檔**（每檔一個權杖桶 store）與傳統的單桶中介軟體。
+
+```csharp
+using var policy = RateLimitPolicy.Create("web")
+    .Exempt("/api/health")                                  // OR-accumulating path whitelist (segment-boundary prefix)
+    .Applies(RateLimitPath.Prefix("/api"))                  // policy scope: must pass this AND not be exempt
+    .Tier("trusted",   RateLimitBudget.PerSecond(300, 30), RateLimitKeys.TokenMatch(ownerToken))
+    .Tier("anonymous", RateLimitBudget.PerSecond(60, 1),   RateLimitKeys.Not(RateLimitKeys.TokenMatch(ownerToken), "instance"))
+    .OnRejected(r => metrics.CountRejection(r.Policy, r.Tier, r.Reason))   // LimitReached | StoreError
+    .Build();
+
+app.UseRateLimit(policy);   // register before AuthMiddleware (the pre-auth shield); the host owns disposal
+```
+
+檔依宣告順序求值；某檔在其 `Key` 回傳鍵（且 `Applies` 若存在則為真）時生效，任何檔都不匹配的請求原樣放行。鍵選擇器：`Identity`（已驗證使用者，否則用回退值）、`RemoteAddress`（對端 IP —— 不含埠，IPv4-mapped IPv6 正規化）、`Header`、`Path`、`Constant`、`TokenMatch`（常量時間比較，與驗證側同一套 bearer 解析）以及 `Not(inner, fallback)`。預算依經過時間平滑回填，所以 `PerMinute(60, 60)` 是「突發 60 + 約 1/s」，不是每分鐘一次性給 60。
+
+放行的請求帶上 `X-RateLimit-Limit`/`-Remaining`/`-Reset`，並在 `context.Items` 裡放入 `RateLimitState`（含命中的 `Policy`/`Tier`）；被拒絕的請求回傳 `429` + `Retry-After`。store 拋例外時按拒絕處理（`RateLimitRejectionReason.StoreError`），除非策略明確開啟 `FailOpen()`。策略名在每個應用內唯一——重名會在啟動期拋例外。
+
+```csharp
+// Single bucket: the original middleware (one store, one key selector)
+var bucket = RateLimitMiddleware.Create(new RateLimitOptions
+{
+    MaxTokens = 60,
+    RefillRate = 1,
+    RefillInterval = TimeSpan.FromSeconds(1),   // ~1 token/s, burst 60
+    KeySelector = RateLimitKeys.RemoteAddress(),
+});
+app.Use(bucket);
+```
+
 ## 度量
 
 `TcpNode` 和 `UdpNode` 都公開即時計數器：

@@ -497,6 +497,38 @@ foreach (var file in form?.Files ?? [])
     Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
+### Limitación de tasa
+
+Dos capas: **niveles de política** ordenados (un almacén de tokens por nivel) y el middleware clásico de un solo bucket.
+
+```csharp
+using var policy = RateLimitPolicy.Create("web")
+    .Exempt("/api/health")                                  // OR-accumulating path whitelist (segment-boundary prefix)
+    .Applies(RateLimitPath.Prefix("/api"))                  // policy scope: must pass this AND not be exempt
+    .Tier("trusted",   RateLimitBudget.PerSecond(300, 30), RateLimitKeys.TokenMatch(ownerToken))
+    .Tier("anonymous", RateLimitBudget.PerSecond(60, 1),   RateLimitKeys.Not(RateLimitKeys.TokenMatch(ownerToken), "instance"))
+    .OnRejected(r => metrics.CountRejection(r.Policy, r.Tier, r.Reason))   // LimitReached | StoreError
+    .Build();
+
+app.UseRateLimit(policy);   // register before AuthMiddleware (the pre-auth shield); the host owns disposal
+```
+
+Los niveles se evalúan en orden de declaración; un nivel se aplica cuando su `Key` devuelve una clave (y su `Applies`, si existe, se cumple), y una petición que no coincide con ningún nivel pasa sin cambios. Claves: `Identity` (usuario autenticado, o el valor de reserva), `RemoteAddress` (IP del par - sin puerto, IPv6 mapeada a IPv4 normalizada), `Header`, `Path`, `Constant`, `TokenMatch` (comparación en tiempo constante, mismo análisis de bearer que el lado de autenticación) y `Not(inner, fallback)`. Los presupuestos se rellenan según el tiempo transcurrido, así que `PerMinute(60, 60)` son "60 de ráfaga + ~1/s", no 60 de golpe por minuto.
+
+Una petición permitida recibe `X-RateLimit-Limit`/`-Remaining`/`-Reset` y un `RateLimitState` (con el `Policy`/`Tier` ganador) en `context.Items`; una rechazada recibe `429` + `Retry-After`. Si el almacén lanza una excepción cuenta como rechazo (`RateLimitRejectionReason.StoreError`), salvo que la política active `FailOpen()`. Los nombres de política son únicos por aplicación: un duplicado lanza al arrancar.
+
+```csharp
+// Single bucket: the original middleware (one store, one key selector)
+var bucket = RateLimitMiddleware.Create(new RateLimitOptions
+{
+    MaxTokens = 60,
+    RefillRate = 1,
+    RefillInterval = TimeSpan.FromSeconds(1),   // ~1 token/s, burst 60
+    KeySelector = RateLimitKeys.RemoteAddress(),
+});
+app.Use(bucket);
+```
+
 ## Métricas
 
 Tanto `TcpNode` como `UdpNode` exponen contadores en tiempo real:

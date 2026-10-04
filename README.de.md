@@ -497,6 +497,38 @@ foreach (var file in form?.Files ?? [])
     Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
+### Rate Limiting
+
+Zwei Ebenen: geordnete **Policy-Tiers** (ein Token-Bucket-Store pro Tier) und die klassische Middleware mit einem einzigen Bucket.
+
+```csharp
+using var policy = RateLimitPolicy.Create("web")
+    .Exempt("/api/health")                                  // OR-accumulating path whitelist (segment-boundary prefix)
+    .Applies(RateLimitPath.Prefix("/api"))                  // policy scope: must pass this AND not be exempt
+    .Tier("trusted",   RateLimitBudget.PerSecond(300, 30), RateLimitKeys.TokenMatch(ownerToken))
+    .Tier("anonymous", RateLimitBudget.PerSecond(60, 1),   RateLimitKeys.Not(RateLimitKeys.TokenMatch(ownerToken), "instance"))
+    .OnRejected(r => metrics.CountRejection(r.Policy, r.Tier, r.Reason))   // LimitReached | StoreError
+    .Build();
+
+app.UseRateLimit(policy);   // register before AuthMiddleware (the pre-auth shield); the host owns disposal
+```
+
+Tiers werden in Deklarationsreihenfolge ausgewertet; ein Tier greift, wenn sein `Key` einen Schlüssel liefert (und sein `Applies`, falls gesetzt, zutrifft), und eine Anfrage, auf die kein Tier passt, läuft unverändert durch. Schlüssel: `Identity` (authentifizierter Benutzer, sonst der Fallback), `RemoteAddress` (Peer-IP - ohne Port, IPv4-gemappte IPv6-Adressen normalisiert), `Header`, `Path`, `Constant`, `TokenMatch` (konstantzeitlicher Vergleich, dieselbe Bearer-Analyse wie auf der Auth-Seite) und `Not(inner, fallback)`. Budgets füllen sich zeitanteilig auf, `PerMinute(60, 60)` heißt also „60 Burst + etwa 1/s", nicht 60 auf einmal pro Minute.
+
+Eine erlaubte Anfrage bekommt `X-RateLimit-Limit`/`-Remaining`/`-Reset` und einen `RateLimitState` (mit dem gewinnenden `Policy`/`Tier`) in `context.Items`; eine abgelehnte `429` + `Retry-After`. Wirft der Store, gilt das als Ablehnung (`RateLimitRejectionReason.StoreError`), außer die Policy aktiviert `FailOpen()`. Policy-Namen sind pro App eindeutig - ein Duplikat wirft beim Start.
+
+```csharp
+// Single bucket: the original middleware (one store, one key selector)
+var bucket = RateLimitMiddleware.Create(new RateLimitOptions
+{
+    MaxTokens = 60,
+    RefillRate = 1,
+    RefillInterval = TimeSpan.FromSeconds(1),   // ~1 token/s, burst 60
+    KeySelector = RateLimitKeys.RemoteAddress(),
+});
+app.Use(bucket);
+```
+
 ## Metriken
 
 Sowohl `TcpNode` als auch `UdpNode` stellen Echtzeit-Zähler bereit:

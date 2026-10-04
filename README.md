@@ -509,6 +509,38 @@ foreach (var file in form?.Files ?? [])
     Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
+### Rate Limiting
+
+Two layers: ordered **policy tiers** (one token-bucket store per tier) and the single-bucket middleware.
+
+```csharp
+using var policy = RateLimitPolicy.Create("web")
+    .Exempt("/api/health")                                  // OR-accumulating path whitelist (segment-boundary prefix)
+    .Applies(RateLimitPath.Prefix("/api"))                  // policy scope: must pass this AND not be exempt
+    .Tier("trusted",   RateLimitBudget.PerSecond(300, 30), RateLimitKeys.TokenMatch(ownerToken))
+    .Tier("anonymous", RateLimitBudget.PerSecond(60, 1),   RateLimitKeys.Not(RateLimitKeys.TokenMatch(ownerToken), "instance"))
+    .OnRejected(r => metrics.CountRejection(r.Policy, r.Tier, r.Reason))   // LimitReached | StoreError
+    .Build();
+
+app.UseRateLimit(policy);   // register before AuthMiddleware (the pre-auth shield); the host owns disposal
+```
+
+Tiers are evaluated in declaration order; a tier applies when its `Key` returns a key (and its `Applies`, if given, passes), and a request that matches no tier passes through untouched. Keys: `Identity` (authenticated user, else the fallback), `RemoteAddress` (peer IP - no port, IPv4-mapped IPv6 normalized), `Header`, `Path`, `Constant`, `TokenMatch` (constant-time, same bearer parsing as the auth side) and `Not(inner, fallback)`. Budgets refill by elapsed time, so `PerMinute(60, 60)` means "60 burst + about 1/s", not 60 at once per minute.
+
+An allowed request gets `X-RateLimit-Limit`/`-Remaining`/`-Reset` and a `RateLimitState` (with the winning `Policy`/`Tier`) in `context.Items`; a rejected one gets `429` + `Retry-After`. A store that throws counts as a rejection (`RateLimitRejectionReason.StoreError`) unless the policy opts in with `FailOpen()`. Policy names are unique per app - a duplicate throws at startup.
+
+```csharp
+// Single bucket: the original middleware (one store, one key selector)
+var bucket = RateLimitMiddleware.Create(new RateLimitOptions
+{
+    MaxTokens = 60,
+    RefillRate = 1,
+    RefillInterval = TimeSpan.FromSeconds(1),   // ~1 token/s, burst 60
+    KeySelector = RateLimitKeys.RemoteAddress(),
+});
+app.Use(bucket);
+```
+
 ## Metrics
 
 Both `TcpNode` and `UdpNode` expose real-time counters:

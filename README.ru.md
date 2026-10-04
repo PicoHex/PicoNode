@@ -497,6 +497,38 @@ foreach (var file in form?.Files ?? [])
     Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
+### Ограничение скорости
+
+Два слоя: упорядоченные **уровни политики** (по одному хранилищу токенов на уровень) и классический middleware с одним бакетом.
+
+```csharp
+using var policy = RateLimitPolicy.Create("web")
+    .Exempt("/api/health")                                  // OR-accumulating path whitelist (segment-boundary prefix)
+    .Applies(RateLimitPath.Prefix("/api"))                  // policy scope: must pass this AND not be exempt
+    .Tier("trusted",   RateLimitBudget.PerSecond(300, 30), RateLimitKeys.TokenMatch(ownerToken))
+    .Tier("anonymous", RateLimitBudget.PerSecond(60, 1),   RateLimitKeys.Not(RateLimitKeys.TokenMatch(ownerToken), "instance"))
+    .OnRejected(r => metrics.CountRejection(r.Policy, r.Tier, r.Reason))   // LimitReached | StoreError
+    .Build();
+
+app.UseRateLimit(policy);   // register before AuthMiddleware (the pre-auth shield); the host owns disposal
+```
+
+Уровни вычисляются в порядке объявления; уровень применяется, когда его `Key` возвращает ключ (и его `Applies`, если задан, истинен), а запрос, не совпавший ни с одним уровнем, проходит без изменений. Ключи: `Identity` (аутентифицированный пользователь, иначе запасное значение), `RemoteAddress` (IP пира - без порта, IPv4-mapped IPv6 нормализуется), `Header`, `Path`, `Constant`, `TokenMatch` (сравнение за постоянное время, тот же разбор bearer, что и на стороне аутентификации) и `Not(inner, fallback)`. Бакеты пополняются пропорционально прошедшему времени, поэтому `PerMinute(60, 60)` - это «всплеск 60 + примерно 1/с», а не 60 раз в минуту единовременно.
+
+Разрешённый запрос получает `X-RateLimit-Limit`/`-Remaining`/`-Reset` и `RateLimitState` (с победившими `Policy`/`Tier`) в `context.Items`; отклонённый - `429` + `Retry-After`. Если хранилище бросает исключение, это считается отклонением (`RateLimitRejectionReason.StoreError`), если только политика не включает `FailOpen()`. Имена политик уникальны в пределах приложения - дубликат приводит к исключению при запуске.
+
+```csharp
+// Single bucket: the original middleware (one store, one key selector)
+var bucket = RateLimitMiddleware.Create(new RateLimitOptions
+{
+    MaxTokens = 60,
+    RefillRate = 1,
+    RefillInterval = TimeSpan.FromSeconds(1),   // ~1 token/s, burst 60
+    KeySelector = RateLimitKeys.RemoteAddress(),
+});
+app.Use(bucket);
+```
+
 ## Метрики
 
 `TcpNode` и `UdpNode` предоставляют счётчики в реальном времени:

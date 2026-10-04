@@ -497,6 +497,38 @@ foreach (var file in form?.Files ?? [])
     Console.WriteLine($"{file.FileName}: {file.ContentType} ({file.Content.Length} bytes)");
 ```
 
+### レート制限
+
+2 つの層があります。順序付きの**ポリシー階層**（階層ごとに 1 つのトークンバケット store）と、従来の単一バケットのミドルウェアです。
+
+```csharp
+using var policy = RateLimitPolicy.Create("web")
+    .Exempt("/api/health")                                  // OR-accumulating path whitelist (segment-boundary prefix)
+    .Applies(RateLimitPath.Prefix("/api"))                  // policy scope: must pass this AND not be exempt
+    .Tier("trusted",   RateLimitBudget.PerSecond(300, 30), RateLimitKeys.TokenMatch(ownerToken))
+    .Tier("anonymous", RateLimitBudget.PerSecond(60, 1),   RateLimitKeys.Not(RateLimitKeys.TokenMatch(ownerToken), "instance"))
+    .OnRejected(r => metrics.CountRejection(r.Policy, r.Tier, r.Reason))   // LimitReached | StoreError
+    .Build();
+
+app.UseRateLimit(policy);   // register before AuthMiddleware (the pre-auth shield); the host owns disposal
+```
+
+階層は宣言順に評価されます。その `Key` がキーを返し（`Applies` があればそれが真で）ある階層に一致し、どの階層にも一致しないリクエストはそのまま通ります。キー: `Identity`（認証済みユーザー、なければフォールバック）、`RemoteAddress`（ピア IP - ポートを含まず、IPv4-mapped IPv6 は正規化）、`Header`、`Path`、`Constant`、`TokenMatch`（定数時間比較、認証側と同じ bearer 解析）、`Not(inner, fallback)`。バケットは経過時間に比例して補充されるため、`PerMinute(60, 60)` は「バースト 60 + 約 1/s」であり、1 分ごとに 60 を一度に補給する意味ではありません。
+
+許可されたリクエストには `X-RateLimit-Limit`/`-Remaining`/`-Reset` が付き、`context.Items` に `RateLimitState`（命中した `Policy`/`Tier` を含む）が入ります。拒否された場合は `429` + `Retry-After` です。store が例外を投げた場合は拒否として扱われ（`RateLimitRejectionReason.StoreError`）、ポリシーが `FailOpen()` を明示しない限りそうなります。ポリシー名はアプリごとに一意で、重複は起動時に例外になります。
+
+```csharp
+// Single bucket: the original middleware (one store, one key selector)
+var bucket = RateLimitMiddleware.Create(new RateLimitOptions
+{
+    MaxTokens = 60,
+    RefillRate = 1,
+    RefillInterval = TimeSpan.FromSeconds(1),   // ~1 token/s, burst 60
+    KeySelector = RateLimitKeys.RemoteAddress(),
+});
+app.Use(bucket);
+```
+
 ## メトリクス
 
 `TcpNode` と `UdpNode` はどちらもリアルタイムカウンターを公開します:
