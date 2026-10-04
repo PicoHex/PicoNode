@@ -16,6 +16,11 @@ The public API of every packable project is compared against the committed
 baseline in <RepoRoot>/api/<PackageId>.public.txt. A baseline always holds the
 surface of the LAST RELEASE, so it is refreshed as part of the release commit.
 
+A release warns when the committed baselines match this worktree but differ from the
+last tag: they were then refreshed before the release, which hides the API delta since
+that tag and would ship a y bump where an x bump is due. Restore them first
+(git checkout <last-tag> -- api/) so the comparison sees the real delta.
+
 The tag is the release trigger: the release workflow runs the tests, packs every
 package at the tag version, and publishes to NuGet.
 
@@ -195,6 +200,13 @@ function Get-LastTag {
     return @($result.Output)[0].Trim()
 }
 
+function Get-ReleasedBaseline([string]$tag, [string]$relativePath) {
+    # The baseline as of $tag, or $null when the file did not exist then (new package).
+    $result = Invoke-GitRaw @("show", "${tag}:$relativePath")
+    if ($result.ExitCode -ne 0) { return $null }
+    return (@($result.Output) | ForEach-Object { $_.TrimEnd() }) -join "`n"
+}
+
 # -- locate and build the api-surface tool ------------------------------------
 
 $toolDirectory = Join-Path $PSScriptRoot "api-surface"
@@ -287,6 +299,36 @@ try {
     }
 
     $lastTag = Get-LastTag
+
+    # -- a baseline holds the LAST RELEASE's surface --------------------------
+    # Baselines that match this worktree but not the last tag were refreshed for unreleased
+    # work: the comparison above then reports only what changed since that refresh, so a
+    # public-API change slips through as a y bump. v2026.4.7 was mislabelled exactly this
+    # way (see docs/specs/rate-limit-policy-design.md, section 8).
+    if ($lastTag -and -not $changed -and $baselineRoot.StartsWith($RepoRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        $refreshed = @()
+        foreach ($packageId in ($currentSurfaces.Keys | Sort-Object)) {
+            $baseline = Join-Path $baselineRoot "$packageId.public.txt"
+            if (-not (Test-Path $baseline)) { continue }
+
+            $relative = ($baseline.Substring($RepoRoot.Length).TrimStart('\', '/')) -replace '\\', '/'
+            $released = Get-ReleasedBaseline -tag $lastTag -relativePath $relative
+            if ($null -eq $released) { $refreshed += "$packageId (absent at $lastTag)"; continue }
+
+            $current = (@(Get-Content -LiteralPath $baseline) | ForEach-Object { $_.TrimEnd() }) -join "`n"
+            if ($current -ne $released) { $refreshed += "$packageId (differs from $lastTag)" }
+        }
+        if ($refreshed.Count -gt 0) {
+            Write-Note "baselines already match this worktree, but not $lastTag ($($refreshed -join '; '))"
+            Write-Note "  they were refreshed before this run, so 'API changed : false' understates the delta since"
+            Write-Note "  $lastTag and the packages would ship with a y bump where an x bump is due."
+            Write-Note "  Restore them first: git checkout $lastTag -- $BaselineDir"
+            if (-not $DryRun) {
+                Fail "baselines are ahead of $lastTag; restore them before releasing (see the notes above)"
+            }
+        }
+    }
+
     $apiChanged = "false"
     if ($changed) { $apiChanged = "true" }
     $versionArgs = @("next-version", "--api-changed", $apiChanged, "--year", (Get-Date).Year)
