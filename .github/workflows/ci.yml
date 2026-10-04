@@ -91,6 +91,9 @@ jobs:
       - name: Test PicoNode.PerfHarness
         run: dotnet test --project tests/PicoNode.PerfHarness/PicoNode.PerfHarness.csproj --no-build -c Release
 
+      - name: Test README samples
+        run: dotnet test --project tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj --no-build -c Release
+
       - name: AOT publish (sample HTTP server)
         run: >
           dotnet publish samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj

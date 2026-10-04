@@ -41,6 +41,8 @@
     <Project Path="tests/PicoWeb.Integration.Tests/PicoWeb.Integration.Tests.csproj" />
     <Project Path="tests/PicoNode.E2E/SseTestServer/SseTestServer.csproj" />
     <Project Path="tests/PicoWeb.AotVerify/PicoWeb.AotVerify.csproj" />
+    <Project Path="tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj" />
+    <File Path="tests\PicoNode.Docs.Tests\README.md" />
   </Folder>
   <Folder Name="/benchmarks/">
     <File Path="benchmarks\README.md" />
