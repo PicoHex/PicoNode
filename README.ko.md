@@ -534,7 +534,9 @@ var bucket = RateLimitMiddleware.Create(new RateLimitOptions
     MaxTokens = 60,
     RefillRate = 1,
     RefillInterval = TimeSpan.FromSeconds(1),   // ~1 token/s, burst 60
-    KeySelector = RateLimitKeys.RemoteAddress(),
+    // The legacy delegate is declared non-nullable, so reach a classifier through a lambda
+    // (the policy layer's Tier(...) takes the classifiers directly).
+    KeySelector = static ctx => RateLimitKeys.RemoteAddress()(ctx)!,
 });
 app.Use(bucket);
 ```
