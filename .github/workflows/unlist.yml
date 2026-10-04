@@ -1,0 +1,82 @@
+# Unlist (never delete) a published version from NuGet.org.
+#
+# NuGet versions cannot be reused, so this is the remedy for a release that shipped under the
+# wrong version: unlisting hides it from search and from resolution while consumers that pin it
+# keep restoring. Dispatch-only - it never runs on push, and it requires `confirm: unlist`.
+#
+# Example: gh workflow run unlist.yml -f version=2026.4.7 -f confirm=unlist
+
+name: unlist
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to unlist, without the leading v (e.g. 2026.4.7)'
+        required: true
+      packages:
+        description: 'Package ids, space separated (default: every packaged project)'
+        required: false
+        default: ''
+      confirm:
+        description: 'Type unlist to confirm'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  unlist:
+    if: "inputs.confirm == 'unlist' && inputs.version != ''"
+    runs-on: ubuntu-latest
+    name: unlist ${{ inputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve the package ids
+        id: ids
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.packages }}" ]; then
+            list="${{ inputs.packages }}"
+          else
+            # Every packaged project pins its id; the source generators and the samples have none.
+            list=$(grep -rhoE '<PackageId>[^<]+' src --include='*.csproj' | sed 's/<PackageId>//' | sort -u | tr '\n' ' ')
+          fi
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          echo "unlisting ${{ inputs.version }}: $list"
+
+      - name: Unlist ${{ inputs.version }}
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          failed=0
+          for id in ${{ steps.ids.outputs.list }}; do
+            echo "::group::$id ${{ inputs.version }}"
+            if dotnet nuget delete "$id" "${{ inputs.version }}" \
+                 --api-key "$NUGET_API_KEY" \
+                 --source https://api.nuget.org/v3/index.json \
+                 --non-interactive; then
+              echo "$id: unlisted"
+            else
+              # Already unlisted (or never published) is not a failure of this workflow.
+              echo "::warning::$id ${{ inputs.version }} was not unlisted (already unlisted, never published, or the key lacks permission)"
+              failed=$((failed + 1))
+            fi
+            echo "::endgroup::"
+          done
+          echo "### Unlisted \`${{ inputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          for id in ${{ steps.ids.outputs.list }}; do
+            echo "- $id" >> "$GITHUB_STEP_SUMMARY"
+          done
+          if [ "$failed" -gt 0 ]; then
+            echo "::warning::$failed package(s) reported an error above"
+          fi
