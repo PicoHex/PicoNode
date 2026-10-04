@@ -330,10 +330,14 @@ app.UseRateLimit(web);      // 必须注册在 AuthMiddleware 之前（W-04 的 
 
 ## 8. Acceptance
 
-- [ ] `RateLimitPolicy/Tier/Budget/Keys/Path` + `RateLimitMiddleware.Create(policy)` + `UseRateLimit` 落地，公共 API 与本文一致；
-- [ ] §4 单测全绿（含 B1/B2/B5 专项）；原有 `RateLimitMiddlewareTests`/`AuthMiddleware` 测试**保持全绿**；
-- [ ] `api/PicoNode.Web.public.txt` 与 `api/PicoNode.Http.public.txt` 基线刷新，`scripts/release.ps1` 的 diff 通过；
-- [ ] `scripts/test-aot-publish.ps1`（AotVerify）在 CI 通过；
-- [ ] `PerfHarness` 记录常量键单档路径分配（数值入档，不做脆断言）；
-- [ ] 既有 sample（`ShowcaseApp`）不改一行仍编译通过；
+- [x] `RateLimitPolicy/Tier/Budget/Keys/Path` + `RateLimitMiddleware.Create(policy)` + `UseRateLimit` 落地，公共 API 与本文一致；
+- [x] §4 单测全绿（含 B1/B2/B5 专项）；原有 `RateLimitMiddlewareTests`/`AuthMiddleware` 测试**保持全绿**；
+- [x] `api/PicoNode.Web.public.txt` 与 `api/PicoNode.Http.public.txt` 基线刷新，`scripts/release.ps1` 的 diff 通过；
+- [x] `scripts/test-aot-publish.ps1`（AotVerify）在 CI 通过；
+- [x] `PerfHarness` 记录常量键单档路径分配（数值入档，不做脆断言）；
+- [x] 既有 sample（`ShowcaseApp`）不改一行仍编译通过；
 - [ ] PicoAgent 接入后：§5 第 5 步的实机复现全过。
+
+**验收记录（2026-10-03）**：前六项通过——1203 个测试全绿（`PicoNode.Web.Tests` 379 项含限流全量用例）；`ShowcaseApp` 未改动仍随解决方案编译通过（`dotnet build PicoNode.slnx -c Release`，0 warning / 0 error）；`ci.yml` 的 AOT publish+run（`scripts/test-aot-publish.ps1`）在 main 上通过；`PerfHarness` 的 `RateLimitPolicyAllocationTests` 已记录常量键单档分配。第 7 项依赖 PicoAgent 侧接入（§5.3–5.5），属独立后续计划，保持未勾。
+
+**发布偏差记录**：本特性给 `PicoNode.Web` 增加 10 个公开类型，并在同一 store 契约上留下破坏性变更（`RateLimitResult` class→`readonly record struct`），`PicoNode.Http` 增加 `HttpRequest.RemoteEndPoint`；相对 v2026.4.6 的基线差异共 61 行。因此 §5 与实现计划 Task 10 Step 1 都要求 **x+1**。但基线在发布前已被刷新（`db07d38`），发布门禁据此报 `API changed : false`，包先以 **v2026.4.7（y 位）** 发出，属版本误标。纠正做法：把 `api/` 恢复为上一发布的公开面后重跑发布流程，让门禁重新看到 x 跳；`v2026.4.7` 建议在 NuGet 上 unlist，避免消费方把它当补丁级更新接受该破坏性变更。
