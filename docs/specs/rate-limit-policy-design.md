@@ -341,3 +341,5 @@ app.UseRateLimit(web);      // 必须注册在 AuthMiddleware 之前（W-04 的 
 **验收记录（2026-10-03）**：前六项通过——1203 个测试全绿（`PicoNode.Web.Tests` 379 项含限流全量用例）；`ShowcaseApp` 未改动仍随解决方案编译通过（`dotnet build PicoNode.slnx -c Release`，0 warning / 0 error）；`ci.yml` 的 AOT publish+run（`scripts/test-aot-publish.ps1`）在 main 上通过；`PerfHarness` 的 `RateLimitPolicyAllocationTests` 已记录常量键单档分配。第 7 项依赖 PicoAgent 侧接入（§5.3–5.5），属独立后续计划，保持未勾。
 
 **发布偏差记录**：本特性给 `PicoNode.Web` 增加 10 个公开类型，并在同一 store 契约上留下破坏性变更（`RateLimitResult` class→`readonly record struct`），`PicoNode.Http` 增加 `HttpRequest.RemoteEndPoint`；相对 v2026.4.6 的基线差异共 61 行。因此 §5 与实现计划 Task 10 Step 1 都要求 **x+1**。但基线在发布前已被刷新（`db07d38`），发布门禁据此报 `API changed : false`，包先以 **v2026.4.7（y 位）** 发出，属版本误标。纠正做法：把 `api/` 恢复为上一发布的公开面后重跑发布流程，让门禁重新看到 x 跳；`v2026.4.7` 建议在 NuGet 上 unlist，避免消费方把它当补丁级更新接受该破坏性变更。
+
+**纠正结果（2026-10-03）**：恢复上一发布基线后，发布门禁如实报出 `API changed : true`，纠正版本 **v2026.5.0** 已发布——release run `37165734340` 全绿（7/7 打包成功 → Publish to NuGet → Create GitHub Release），7 个包均已在 nuget.org 上可查；`api/` 基线随该发布提交刷新回当前实现，因此此后又回到"基线 = 最近发布公开面"的不变式。
