@@ -8,8 +8,8 @@
     <!-- PicoHex ecosystem -->
     <PackageVersion Include="PicoCfg" Version="2026.10.0" />
     <PackageVersion Include="PicoCfg.Abs" Version="2026.10.0" />
-    <PackageVersion Include="PicoDI" Version="2026.10.0" />
-    <PackageVersion Include="PicoDI.Abs" Version="2026.10.0" />
+    <PackageVersion Include="PicoDI" Version="2026.10.1" />
+    <PackageVersion Include="PicoDI.Abs" Version="2026.10.1" />
     <PackageVersion Include="PicoJetson" Version="2026.10.0" />
     <PackageVersion Include="PicoLog" Version="2026.10.0" />
     <PackageVersion Include="PicoLog.Abs" Version="2026.10.0" />
