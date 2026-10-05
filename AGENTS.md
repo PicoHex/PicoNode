@@ -76,6 +76,10 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
   `git reflog` + `git fsck` while the commit is unreferenced, but not worth the scare).fig` (`http.https://github.com.proxy`) and a direct connection. Sometimes only one works, and the
   symptom is `Failed to connect to github.com port 443`. Start with `git ls-remote origin main`; if that
   fails, retry with `-c http.https://github.com.proxy=` (and vice versa) before blaming credentials.
+- `curl` does not read git's proxy setting, so `curl https://api.nuget.org/...` returns an empty response while
+  `dotnet restore` works: add `-x socks5h://127.0.0.1:10808`. After a fresh publish, `dotnet restore` can still
+  report NU1102 for the new version until `dotnet nuget locals http-cache --clear` - the version list is cached
+  locally, and the CDN's index lags a push by minutes even after the nuspec is served.
 - NuGet reads are served by a lagging mirror, so a version can be missing from the flat container minutes
   after a successful publish. Confirm publications through the search index instead:
   `https://azuresearch-usnc.nuget.org/query?q=packageid:<Id>&prerelease=true`.
