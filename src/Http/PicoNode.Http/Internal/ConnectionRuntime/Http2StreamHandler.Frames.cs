@@ -17,6 +17,21 @@ internal static partial class Http2StreamHandler
             return true;
         }
 
+        // RFC 9113 §5.1: a stream we reset is "closed", and a WINDOW_UPDATE for
+        // a closed stream MUST be ignored (it is not an idle stream, and the credit
+        // it offers is credit we can no longer use). Matching the tombstone keeps
+        // the frame from ending the connection.
+        if (
+            frame.StreamId != 0
+            && connection.UserState is ConnectionRuntimeState closedStreamState
+            && closedStreamState.Http2Streams?.TryGetValue(frame.StreamId, out var closedStream)
+                == true
+            && closedStream?.Aborted == true
+        )
+        {
+            return false;
+        }
+
         // Parse window size increment (4 bytes, reserved bit ignored)
         var increment =
             (frame.Payload.Span[0] << 24)
@@ -142,7 +157,12 @@ internal static partial class Http2StreamHandler
             return true;
         }
 
-        rstState!.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.RstStream, out _);
+        // RFC 9113 §5.1: the stream is already "closed" by our own reset, so a
+        // second RST_STREAM for it MUST be ignored.
+        if (rstState!.Aborted)
+            return false;
+
+        rstState.StateMachine.TryTransition(Http2StreamStateMachine.Trigger.RstStream, out _);
         // Stop the response pump (and any background handler) — without this, a
         // stalled body producer would keep the pump alive for the lifetime of the
         // connection, and a parked handler would send a response on a reset stream.
@@ -199,6 +219,10 @@ internal static partial class Http2StreamHandler
             return false;
         }
 
+        // RFC 9113 §6.9.1: flow control covers the whole DATA payload - Pad
+        // Length and Padding included - so measure it before stripping padding.
+        var flowControlled = frame.Payload.Length;
+
         // RFC 7540 §6.1: DATA with PADDED flag has a 1-byte Pad Length field
         // at the start. The padding octets are not part of the body.
         var dataPayload = frame.Payload;
@@ -225,12 +249,16 @@ internal static partial class Http2StreamHandler
             dataPayload = dataPayload.Slice(0, dataPayload.Length - padLength);
         }
 
-        // Buffer the data
-        if (dataPayload.Length > 0)
+        // RFC 9113 §6.9.1: the whole frame payload is flow-controlled, padding
+        // included, and it is charged whether or not any body octets are left
+        // after stripping. Charging only the body octets lets both windows drift
+        // upward: the peer exhausts its send window while we still believe we
+        // have credit, so no WINDOW_UPDATE is ever written and the upload stalls.
+        if (flowControlled > 0)
         {
             // RFC 7540 §6.9: an endpoint MUST treat a DATA frame exceeding a receive
             // window as a flow-control error.
-            if (dataPayload.Length > state.ReceiveWindow)
+            if (flowControlled > state.ReceiveWindow)
             {
                 await SendRstStreamAsync(
                         connection,
@@ -242,10 +270,7 @@ internal static partial class Http2StreamHandler
                 return false;
             }
 
-            if (
-                runtimeState is not null
-                && dataPayload.Length > runtimeState.ConnectionReceiveWindow
-            )
+            if (runtimeState is not null && flowControlled > runtimeState.ConnectionReceiveWindow)
             {
                 // Connection-level window exceeded — connection error per RFC 7540 §6.9.1.
                 await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.FlowControlError, ct)
@@ -253,31 +278,16 @@ internal static partial class Http2StreamHandler
                 return true;
             }
 
-            // Check request body size limit (protects against OOM from large or multi-stream bodies)
-            var maxBody = runtimeState?.MaxRequestBodyBytes ?? 64 * 1024 * 1024;
-            if (state.DataBuffer.WrittenCount > maxBody - dataPayload.Length)
-            {
-                await SendRstStreamAsync(
-                        connection,
-                        frame.StreamId,
-                        Http2ErrorCode.EnhanceYourCalm,
-                        ct
-                    )
-                    .ConfigureAwait(false);
-                return false;
-            }
-            state.DataBuffer.Write(dataPayload.Span);
-
             // Flow control: decrement receive windows and send WINDOW_UPDATE
             // when they drop below half the initial window size.
             const int initialWindow = 65535;
             const int windowThreshold = initialWindow / 2;
 
-            state.ReceiveWindow -= dataPayload.Length;
+            state.ReceiveWindow -= flowControlled;
 
             if (runtimeState is not null)
             {
-                runtimeState.AddConnectionReceiveWindow(-dataPayload.Length);
+                runtimeState.AddConnectionReceiveWindow(-flowControlled);
 
                 if (runtimeState.ConnectionReceiveWindow <= windowThreshold)
                 {
@@ -295,6 +305,25 @@ internal static partial class Http2StreamHandler
                 await WriteWindowUpdateFrameAsync(connection, frame.StreamId, streamIncrement, ct)
                     .ConfigureAwait(false);
             }
+        }
+
+        // Buffer the body octets.
+        if (dataPayload.Length > 0)
+        {
+            // Check request body size limit (protects against OOM from large or multi-stream bodies)
+            var maxBody = runtimeState?.MaxRequestBodyBytes ?? 64 * 1024 * 1024;
+            if (state.DataBuffer.WrittenCount > maxBody - dataPayload.Length)
+            {
+                await SendRstStreamAsync(
+                        connection,
+                        frame.StreamId,
+                        Http2ErrorCode.EnhanceYourCalm,
+                        ct
+                    )
+                    .ConfigureAwait(false);
+                return false;
+            }
+            state.DataBuffer.Write(dataPayload.Span);
         }
 
         // If END_STREAM, complete the request and invoke the handler

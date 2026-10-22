@@ -463,12 +463,14 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
-    public async Task SendRstStreamAsync_cancels_the_response_pump_and_removes_the_stream()
+    public async Task SendRstStreamAsync_cancels_the_response_pump_and_keeps_a_tombstone()
     {
         // Regression: the server-initiated RST removed the stream from tracking
         // but did not cancel ResponseCts, so a streaming response (SSE) kept
-        // writing DATA frames after the stream was reset, and the untracked
-        // stream turned the peer's next WINDOW_UPDATE into a GOAWAY.
+        // writing DATA frames after the stream was reset. The entry now stays
+        // behind as a tombstone (RFC 9113 §5.1: frames for a closed stream are
+        // ignored, not diagnosed as an idle stream), so no untracked id can turn
+        // the peer's next WINDOW_UPDATE into a GOAWAY.
         var connection = new TestTcpConnectionContext();
         var runtime = new ConnectionRuntimeState();
         connection.UserState = runtime;
@@ -486,7 +488,11 @@ public sealed class Http2StreamHandlerTests
             .That(stream.ResponseCts.IsCancellationRequested)
             .IsTrue()
             .Because("a server-initiated RST_STREAM must stop the response pump");
-        await Assert.That(runtime.Http2Streams!.ContainsKey(1)).IsFalse();
+        await Assert
+            .That(runtime.Http2Streams!.ContainsKey(1))
+            .IsTrue()
+            .Because("the reset stream must stay tracked as a closed-stream tombstone");
+        await Assert.That(runtime.Http2Streams[1].Aborted).IsTrue();
     }
 
     [Test]
@@ -1587,9 +1593,12 @@ public sealed class Http2StreamHandlerTests
             | rstFrame.Payload.Span[3];
         await Assert.That(errorCode).IsEqualTo((int)Http2ErrorCode.EnhanceYourCalm);
 
-        // Verify the stream was removed from tracking
+        // Verify the stream stays tracked as a closed-stream tombstone: the RST
+        // closes the stream, and RFC 9113 §5.1 requires later frames for it to be
+        // ignored rather than answered with a connection error.
         var state = (ConnectionRuntimeState)connection.UserState!;
-        await Assert.That(state.Http2Streams?.ContainsKey(1)).IsFalse();
+        await Assert.That(state.Http2Streams?.ContainsKey(1)).IsTrue();
+        await Assert.That(state.Http2Streams![1].Aborted).IsTrue();
     }
 
     [Test]

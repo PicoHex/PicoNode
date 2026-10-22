@@ -1056,6 +1056,94 @@ public sealed class Http2ProtocolComplianceTests
         await Assert.That(connection.LastGoAwayErrorCode).IsEqualTo(Http2ErrorCode.ProtocolError);
     }
 
+    // ── 6.9.1 Flow control of padded DATA ──────────────────────────
+
+    [Test]
+    public async Task Padded_data_frame_charges_the_full_payload()
+    {
+        // RFC 9113 §6.9.1: the flow-controlled length of a padded DATA frame is
+        // the whole payload — Pad Length and Padding included. Charging only the
+        // unpadded octets lets both windows drift upward: the peer exhausts its
+        // send window while the server still believes it has credit, so no
+        // WINDOW_UPDATE is ever written and the upload stalls for good.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await OpenRequestBodyStreamAsync(connection, 1);
+        var state = runtimeState.Http2Streams![1];
+
+        // 100 octets on the wire: 1 Pad Length octet + 59 body octets + 40 padding.
+        await SendPaddedDataFrameAsync(connection, 1, payloadLength: 100, padLength: 40);
+
+        await Assert.That(state.ReceiveWindow).IsEqualTo(65535 - 100);
+        await Assert.That(runtimeState.ConnectionReceiveWindow).IsEqualTo(65535 - 100);
+
+        // Two more padded frames — each at the advertised 16384-octet maximum
+        // frame size — push both windows past their half-window mark, so the
+        // WINDOW_UPDATE the last one triggers proves the credit is computed from
+        // padded octets: it must grant back every octet charged
+        // (100 + 2 × 16384), not the octets per frame the unpadded accounting
+        // skipped. Under the old accounting the windows would still sit above the
+        // threshold and no WINDOW_UPDATE at all would be written.
+        await SendPaddedDataFrameAsync(connection, 1, payloadLength: 16384, padLength: 40);
+        await SendPaddedDataFrameAsync(connection, 1, payloadLength: 16384, padLength: 40);
+
+        const int chargedOctets = 100 + 16384 + 16384;
+        await Assert.That(state.ReceiveWindow).IsEqualTo(65535);
+        await Assert.That(runtimeState.ConnectionReceiveWindow).IsEqualTo(65535);
+        await Assert.That(GetWindowUpdateIncrements(connection, 1)).IsEquivalentTo([chargedOctets]);
+        await Assert.That(GetWindowUpdateIncrements(connection, 0)).IsEquivalentTo([chargedOctets]);
+    }
+
+    // ── 5.1 Stream States: closed after a local reset ──────────────
+
+    [Test]
+    public async Task Window_update_after_local_rst_is_ignored()
+    {
+        // RFC 9113 §5.1: a stream the server has reset is in the "closed" state,
+        // and WINDOW_UPDATE / RST_STREAM received in that state MUST be ignored.
+        // Forgetting the stream on reset makes the peer's next WINDOW_UPDATE look
+        // like an "idle stream" and escalates it to a connection-level GOAWAY.
+        var connection = NewConnection();
+        await SendCompleteGetAsync(connection, 1);
+
+        await Http2StreamHandler.SendRstStreamAsync(
+            connection,
+            1,
+            Http2ErrorCode.Cancel,
+            CancellationToken.None
+        );
+
+        // The reset stream is kept as a tombstone so later frames match it…
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await Assert.That(runtimeState.Http2Streams!.ContainsKey(1)).IsTrue();
+        await Assert.That(runtimeState.Http2Streams![1].Aborted).IsTrue();
+
+        // …and both closed-state frames are ignored instead of ending the connection.
+        await Http2StreamHandler.ProcessWindowUpdateFrame(
+            connection,
+            BuildFrame(
+                Http2FrameType.WindowUpdate,
+                Http2FrameFlags.None,
+                1,
+                BuildWindowUpdatePayload(1024)
+            ),
+            CancellationToken.None
+        );
+        await Http2StreamHandler.ProcessRstStreamFrame(
+            connection,
+            BuildFrame(
+                Http2FrameType.RstStream,
+                Http2FrameFlags.None,
+                1,
+                BuildWindowUpdatePayload((int)Http2ErrorCode.Cancel)
+            ),
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.LastGoAwayErrorCode).IsNull();
+        await Assert.That(connection.IsClosed).IsFalse();
+    }
+
     // ── HPACK 5.2 String Literal: Huffman padding ──────────────────
 
     [Test]
@@ -1366,6 +1454,81 @@ public sealed class Http2ProtocolComplianceTests
 
     private static byte[] BuildWindowUpdatePayload(int increment) =>
         [(byte)(increment >> 24), (byte)(increment >> 16), (byte)(increment >> 8), (byte)increment];
+
+    /// <summary>
+    /// Increments of every WINDOW_UPDATE frame written for <paramref name="streamId"/>.
+    /// </summary>
+    private static List<int> GetWindowUpdateIncrements(
+        ComplianceTestContext connection,
+        int streamId
+    )
+    {
+        var increments = new List<int>();
+        foreach (var frameBytes in connection.SentFrames)
+        {
+            if (!TryReadFrame(frameBytes, out var frame) || frame is null)
+                continue;
+            if (frame.Type != Http2FrameType.WindowUpdate || frame.StreamId != streamId)
+                continue;
+
+            increments.Add(
+                ((frame.Payload.Span[0] & 0x7F) << 24)
+                    | (frame.Payload.Span[1] << 16)
+                    | (frame.Payload.Span[2] << 8)
+                    | frame.Payload.Span[3]
+            );
+        }
+
+        return increments;
+    }
+
+    /// <summary>
+    /// Opens <paramref name="streamId"/> with a HEADERS frame that does not carry
+    /// END_STREAM, leaving the stream open for the DATA frames that follow.
+    /// </summary>
+    private static async Task OpenRequestBodyStreamAsync(
+        ComplianceTestContext connection,
+        int streamId
+    )
+    {
+        var headers = BuildHeadersFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders,
+            streamId,
+            BuildMinimalHpack("POST", "/upload")
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(headers),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+    }
+
+    /// <summary>
+    /// Feeds one PADDED DATA frame whose payload is <paramref name="payloadLength"/>
+    /// octets: the Pad Length octet, then the body octets, then
+    /// <paramref name="padLength"/> padding octets (zero, which is valid padding).
+    /// </summary>
+    private static async ValueTask SendPaddedDataFrameAsync(
+        ComplianceTestContext connection,
+        int streamId,
+        int payloadLength,
+        byte padLength
+    )
+    {
+        var payload = new byte[payloadLength];
+        payload[0] = padLength;
+        await Http2StreamHandler.ProcessDataFrame(
+            connection,
+            BuildFrame(Http2FrameType.Data, Http2FrameFlags.Padded, streamId, payload),
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+    }
 
     private static byte[] BuildMinimalHpack(string method, string path)
     {

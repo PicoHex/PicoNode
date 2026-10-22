@@ -38,15 +38,21 @@ internal static partial class Http2StreamHandler
             ArrayPool<byte>.Shared.Return(rented);
         }
 
-        // Remove the stream from tracking and stop any response pump that is
-        // still writing to it. Without the cancel, a streaming response keeps
-        // emitting DATA frames on a stream the server just reset, and the
-        // untracked stream turns the peer's next WINDOW_UPDATE into a GOAWAY.
+        // Stop any response pump still writing to the stream: without the
+        // cancel, a streaming response keeps emitting DATA frames on a stream the
+        // server just reset.
+        //
+        // The entry stays behind as a tombstone rather than being removed.
+        // RFC 9113 §5.1: a stream we reset is "closed", and the peer's next
+        // WINDOW_UPDATE / RST_STREAM for it MUST be ignored. An untracked id
+        // reads as an idle stream instead and escalates to a connection-level
+        // GOAWAY — exactly what a peer that resets and then drains does.
+        // Reclamation stays with ConnectionRuntimeState.RemoveIdleStreams.
         var state = connection.UserState as ConnectionRuntimeState;
-        if (state?.Http2Streams?.TryRemove(streamId, out var removed) == true)
+        if (state?.Http2Streams?.TryGetValue(streamId, out var resetStream) == true)
         {
-            removed.Aborted = true;
-            removed.ResponseCts?.Cancel();
+            resetStream.Aborted = true;
+            resetStream.ResponseCts?.Cancel();
         }
     }
 
