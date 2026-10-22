@@ -4,8 +4,24 @@ public sealed class SessionMiddleware
 {
     public static WebMiddleware Create()
     {
+        return Create(logger: null);
+    }
+
+    /// <summary>
+    /// Creates the session middleware, resolving the store from the request's services and
+    /// reporting rotation failures to <paramref name="logger"/>.
+    /// </summary>
+    /// <param name="logger">
+    /// Receives a warning when a requested session-id rotation fails. Pass one: without a sink a
+    /// failed rotation is invisible, and a failed rotation means the response carries the
+    /// pre-rotation id, i.e. the session-fixation protection did not happen. This overload exists
+    /// so the wiring a host copies (<c>app.Use(SessionMiddleware.Create(logger))</c>) is the
+    /// observable one — <see cref="Create()"/> has no sink.
+    /// </param>
+    public static WebMiddleware Create(ILogger? logger)
+    {
         var cookie = SessionCookie.Create();
-        return Create(cookie.Extract, cookie.Set);
+        return Create(cookie.Extract, cookie.Set, logger);
     }
 
     public static WebMiddleware Create(SessionIdExtractor extractor, SessionIdSetter setter)

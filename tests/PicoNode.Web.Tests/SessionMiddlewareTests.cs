@@ -426,4 +426,89 @@ public sealed class SessionMiddlewareTests
             .Throws<OperationCanceledException>();
         await Assert.That(logger.WarningCount).IsEqualTo(0);
     }
+
+    [Test]
+    public async Task Create_logger_overload_forwards_the_sink_for_rotation_failures()
+    {
+        // The wiring a host copies was `SessionMiddleware.Create()` with no sink, so the default
+        // path was exactly the silent case finding F-1 was about: a refused rotation left the
+        // pre-rotation id in the response with no trace anywhere. `Create(logger)` must hand that
+        // logger to the rotation failure path (store still resolved from services, no extractor).
+        using var inner = new InMemorySessionStore(DefaultOptions);
+        var existing = await inner.CreateAsync();
+        existing.SetString("user", "alice");
+        await inner.SaveAsync(existing.Id, existing);
+
+        var store = new FaultingSessionStore(inner)
+        {
+            RegenerateFault = new InvalidOperationException("rotation refused"),
+        };
+        var logger = new RecordingLogger();
+
+        var context = WebContext.Create(
+            new HttpRequest
+            {
+                Method = "POST",
+                Target = "/login",
+                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Cookie"] = $"sid={existing.Id}",
+                },
+            }
+        );
+        context.Services = new SingleServiceScope(typeof(ISessionStore), store);
+
+        var middleware = SessionMiddleware.Create(logger);
+
+        WebRequestHandler handler = (ctx, ct) =>
+        {
+            SessionRotation.Regenerate(ctx);
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        };
+
+        var response = await middleware(context, handler, CancellationToken.None);
+
+        // The forwarding is the whole point: the warning must reach the sink the caller passed.
+        await Assert.That(logger.WarningCount).IsEqualTo(1);
+        await Assert.That(logger.Entries[^1].Level).IsEqualTo(LogLevel.Warning);
+        await Assert.That(logger.Entries[^1].Message).Contains(existing.Id);
+        await Assert.That(logger.LastException).IsTypeOf<InvalidOperationException>();
+
+        // Behaviour otherwise unchanged: fail-open, no Set-Cookie, old id still usable.
+        await Assert.That(response.StatusCode).IsEqualTo(200);
+        await Assert.That(response.Headers.TryGetValue(HttpHeaderNames.SetCookie, out _)).IsFalse();
+        await Assert.That(await inner.LoadAsync(existing.Id)).IsNotNull();
+    }
+
+    /// <summary>
+    /// Minimal scope resolving one instance, so the middleware can take its store from
+    /// "services" the way a host wiring does.
+    /// </summary>
+    private sealed class SingleServiceScope(Type serviceType, object instance) : ISvcScope
+    {
+        public object GetService(Type t) =>
+            t == serviceType
+                ? instance
+                : throw new InvalidOperationException($"{t} is not registered");
+
+        public IReadOnlyList<object> GetServices(Type t) => t == serviceType ? [instance] : [];
+
+        public bool TryGetService(Type t, [NotNullWhen(true)] out object? r)
+        {
+            r = t == serviceType ? instance : null;
+            return r is not null;
+        }
+
+        public bool TryGetServices(Type t, [NotNullWhen(true)] out IReadOnlyList<object>? r)
+        {
+            r = t == serviceType ? [instance] : null;
+            return r is not null;
+        }
+
+        public ISvcScope CreateScope() => new SingleServiceScope(serviceType, instance);
+
+        public void Dispose() { }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
 }
