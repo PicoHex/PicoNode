@@ -587,10 +587,14 @@ public sealed class CiWorkflowTests
             .IsTrue()
             .Because("publish must be gated on verify, otherwise the test run is advisory");
 
+        // `Matches(release, "dotnet test") >= 1` was satisfied by a comment, or by
+        // a `dotnet test` sitting in `publish`: the call has to be inside the gate.
         await Assert
-            .That(Regex.Matches(release, "dotnet test").Count >= 1)
+            .That(Regex.Matches(WithoutComments(verify ?? string.Empty), "dotnet test").Count >= 1)
             .IsTrue()
-            .Because("the release workflow must actually run the test suites");
+            .Because(
+                "the verify job itself must run the test suites — a `dotnet test` anywhere else in the file proves nothing"
+            );
 
         // Prose may name the flag — the workflow explains why it is gone — but a
         // line that actually runs must not still carry it.
@@ -611,8 +615,9 @@ public sealed class CiWorkflowTests
         // A gate that runs "the tests" in prose is worth nothing: the verify job
         // must execute all ten suites and reject a ref that is not a release
         // version (a dispatch used to resolve PACKAGE_VERSION to the branch name).
+        // Comments are stripped first: a commented-out `grep -Eq` is not a check.
         var release = File.ReadAllText(ReleasePath);
-        var verify = TopLevelBlock(release, "verify") ?? string.Empty;
+        var verify = WithoutComments(TopLevelBlock(release, "verify") ?? string.Empty);
 
         var missing = ReleaseTestProjects
             .Where(p => !verify.Contains(p, StringComparison.Ordinal))
@@ -662,6 +667,147 @@ public sealed class CiWorkflowTests
             .Because("the unguarded tag-only expression is what produced PACKAGE_VERSION=main");
     }
 
+    [Test]
+    public async Task Release_verify_job_cannot_swallow_a_failure()
+    {
+        // The original gate defect was a test step that did not run at all. The
+        // other way to lose the gate is subtler: `continue-on-error: true` on the
+        // test step, or a `|| true` on any command, keeps every other assertion
+        // here green while the job can no longer fail.
+        var release = File.ReadAllText(ReleasePath);
+        var verify = WithoutComments(TopLevelBlock(release, "verify") ?? string.Empty);
+
+        await Assert
+            .That(verify.Contains("continue-on-error", StringComparison.Ordinal))
+            .IsFalse()
+            .Because("a gate step allowed to fail without failing the job is not a gate");
+
+        await Assert
+            .That(Regex.IsMatch(verify, @"\|\|\s*true\b"))
+            .IsFalse()
+            .Because(
+                "`|| true` on a command in the gate hides the failure the gate exists to report"
+            );
+    }
+
+    [Test]
+    public async Task Release_api_surface_step_fails_when_it_compares_nothing()
+    {
+        // Drift stays a ::warning:: (bumping x is a human decision), but the step
+        // used to find no DLL, iterate zero times and report success having
+        // compared no assembly at all.
+        var release = File.ReadAllText(ReleasePath);
+        var verify = TopLevelBlock(release, "verify") ?? string.Empty;
+        var step = WithoutComments(
+            StepBlock(verify, "Assert the API surface still bumps x") ?? string.Empty
+        );
+
+        await Assert
+            .That(step.Contains("scripts/api-surface", StringComparison.Ordinal))
+            .IsTrue()
+            .Because("the step must still dump the public surface");
+
+        await Assert
+            .That(step.Contains("-eq 0", StringComparison.Ordinal))
+            .IsTrue()
+            .Because("comparing zero assemblies must be a hard failure, not a silent pass");
+
+        await Assert
+            .That(step.Contains("exit 1", StringComparison.Ordinal))
+            .IsTrue()
+            .Because("a zero-assembly check that exits 0 is still advisory");
+    }
+
+    [Test]
+    public async Task Release_env_writes_are_read_by_the_same_job()
+    {
+        // Jobs do not share $GITHUB_ENV: the version written in `verify` never
+        // reached `publish`. A write nothing in the same job reads is dead code
+        // that reads like a handover.
+        var release = File.ReadAllText(ReleasePath);
+        var write = new Regex(@"([A-Z_][A-Z0-9_]*)=[^\n]*>>\s*""?\$GITHUB_ENV");
+        var dead = new List<string>();
+        var writes = 0;
+
+        foreach (var job in new[] { "verify", "publish" })
+        {
+            var lines = WithoutCommentLines(TopLevelBlock(release, job) ?? string.Empty).ToArray();
+            var reads = lines.Where(line => !write.IsMatch(line)).ToArray();
+
+            foreach (var line in lines.Where(line => write.IsMatch(line)))
+            {
+                writes++;
+                var name = write.Match(line).Groups[1].Value;
+
+                if (
+                    !reads.Any(r => r.Contains($"env.{name}", StringComparison.Ordinal))
+                    && !reads.Any(r => r.Contains($"${{{name}}}", StringComparison.Ordinal))
+                )
+                {
+                    dead.Add($"{job}: {name}");
+                }
+            }
+        }
+
+        await Assert
+            .That(writes >= 1)
+            .IsTrue()
+            .Because(
+                "non-vacuity: `publish` writes PACKAGE_VERSION and its pack steps read it back"
+            );
+
+        await Assert
+            .That(dead.Count)
+            .IsEqualTo(0)
+            .Because(
+                $"a $GITHUB_ENV write no step in the same job reads is dead code — {string.Join(", ", dead)}"
+            );
+    }
+
+    [Test]
+    public async Task Release_package_assertion_derives_its_count_from_the_workflow()
+    {
+        // `ls packages/*.nupkg | wc -l | grep -qx 7` pinned the count to a literal
+        // kept in step with the seven `dotnet pack` steps by hand; and
+        // `unzip -p … | grep -q …` fails a *correct* package under `pipefail`:
+        // grep -q exits at the first match, unzip takes SIGPIPE (141).
+        var release = File.ReadAllText(ReleasePath);
+        var publish = TopLevelBlock(release, "publish") ?? string.Empty;
+        var step = WithoutComments(
+            StepBlock(publish, "Assert every package was published") ?? string.Empty
+        );
+
+        await Assert
+            .That(step.Contains(".github/workflows/release.yml", StringComparison.Ordinal))
+            .IsTrue()
+            .Because("the expected count must be derived from this workflow file, not a literal");
+
+        await Assert
+            .That(Regex.IsMatch(step, @"grep\s+-[a-zA-Z]*x[a-zA-Z]*\s+[0-9]+"))
+            .IsFalse()
+            .Because("a hard-coded count silently disagrees with the number of `dotnet pack` steps");
+
+        await Assert
+            .That(Regex.IsMatch(step, @"\|\s*grep\s+-q"))
+            .IsFalse()
+            .Because(
+                "grep -q exits early, the writer dies of SIGPIPE (141) under pipefail, and a correct release goes red"
+            );
+
+        await Assert
+            .That(Regex.IsMatch(step, @"unzip[^\n]*\|"))
+            .IsFalse()
+            .Because("the nuspec text must be captured before it is matched, never piped");
+
+        await Assert
+            .That(
+                step.Contains("$actual", StringComparison.Ordinal)
+                    && step.Contains("$expected", StringComparison.Ordinal)
+            )
+            .IsTrue()
+            .Because("a count mismatch must name both numbers");
+    }
+
     /// <summary>
     /// The lines of <paramref name="yaml"/> that are not full-line <c>#</c>
     /// comments: a comment may explain why a construct was removed, a command must
@@ -694,6 +840,38 @@ public sealed class CiWorkflowTests
             end < lines.Length
             && (lines[end].StartsWith("    ", StringComparison.Ordinal) || lines[end].Length == 0)
         )
+        {
+            end++;
+        }
+
+        return string.Join('\n', lines[start..end]).TrimEnd();
+    }
+
+    /// <summary>
+    /// <paramref name="yaml"/> with its full-line <c>#</c> comments dropped: a
+    /// commented-out command must not satisfy a shape assertion.
+    /// </summary>
+    private static string WithoutComments(string yaml) =>
+        string.Join('\n', WithoutCommentLines(yaml));
+
+    /// <summary>
+    /// The block of the step named <paramref name="stepName"/> inside a job block
+    /// — its <c>- name:</c> line plus every following line up to the next step —
+    /// or <c>null</c> when the job declares no such step, so an assertion about a
+    /// missing step fails loudly instead of matching an empty string.
+    /// </summary>
+    private static string? StepBlock(string job, string stepName)
+    {
+        var lines = job.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var start = Array.FindIndex(lines, line => line == $"      - name: {stepName}");
+
+        if (start < 0)
+        {
+            return null;
+        }
+
+        var end = start + 1;
+        while (end < lines.Length && !lines[end].StartsWith("      - ", StringComparison.Ordinal))
         {
             end++;
         }

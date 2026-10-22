@@ -39,6 +39,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: 10.0.x }
 
+      # No PACKAGE_VERSION write here: jobs do not share $GITHUB_ENV, so a write in
+      # `verify` is dead code in `publish` — `publish` resolves the version itself.
       - name: Assert the release version shape
         env:
           INPUT_VERSION: ${{ inputs.version }}
@@ -47,7 +49,7 @@ jobs:
           version="${INPUT_VERSION:-$GITHUB_REF_NAME}"
           version="${version#v}"
           echo "$version" | grep -Eq '^[0-9]{4}\.[0-9]+\.[0-9]+$'
-          echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "Release version: $version"
 
       - name: Restore
         run: dotnet restore PicoNode.slnx
@@ -71,19 +73,29 @@ jobs:
             dotnet test --project "$p" --no-build -c Release
           done
 
+      # Drift is only a warning (the x bump is a human decision), but comparing
+      # *nothing* is a failure: a `find` matching no DLL iterates zero times, so
+      # the step used to report success having checked no assembly at all.
       - name: Assert the API surface still bumps x
         run: |
           set -euo pipefail
+          compared=0
           for dll in $(find src -path '*/bin/Release/net10.0/*.dll' \
                        \( -name 'PicoNode*.dll' -o -name 'PicoWeb.dll' -o -name 'PicoJsonRpc.dll' \) \
                        -not -path '*/ref/*'); do
             id=$(basename "$dll" .dll)
             [ -f "api/$id.public.txt" ] || continue
             dotnet run --project scripts/api-surface -c Release -- dump "$dll" --out "/tmp/$id.public.txt"
+            compared=$((compared + 1))
             if ! diff -q "api/$id.public.txt" "/tmp/$id.public.txt" >/dev/null; then
               echo "::warning::$id public surface differs from the last release — confirm an x bump"
             fi
           done
+          if [ "$compared" -eq 0 ]; then
+            echo "::error::the API-surface check compared no assemblies — the build wrote no package DLL under src/**/bin/Release/net10.0, so this gate proved nothing"
+            exit 1
+          fi
+          echo "API surface compared for $compared assemblies"
 
   publish:
     needs: verify
@@ -179,10 +191,20 @@ jobs:
       - name: Assert every package was published
         run: |
           set -euo pipefail
-          ls packages/*.nupkg | wc -l | grep -qx 7
+          actual=$(find packages -maxdepth 1 -name '*.nupkg' | wc -l)
+          expected=$(grep -cE '^[[:space:]]*dotnet pack ' .github/workflows/release.yml)
+          if [ "$actual" -ne "$expected" ]; then
+            echo "::error::packed $actual .nupkg files but this workflow declares $expected dotnet pack steps"
+            exit 1
+          fi
           for p in packages/*.nupkg; do
-            unzip -p "$p" '*.nuspec' | grep -q "<version>${PACKAGE_VERSION}</version>"
+            nuspec=$(unzip -p "$p" '*.nuspec')
+            if [[ "$nuspec" != *"<version>${PACKAGE_VERSION}</version>"* ]]; then
+              echo "::error::$p does not declare <version>${PACKAGE_VERSION}</version>"
+              exit 1
+            fi
           done
+          echo "All $actual packages declare version $PACKAGE_VERSION"
 
       # A dispatch has no tag to attach a Release to; the packages are published,
       # the Release is what a tag push adds.
