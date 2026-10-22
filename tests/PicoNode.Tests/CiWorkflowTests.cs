@@ -366,6 +366,8 @@ public sealed class CiWorkflowTests
         // still in the tree must be wired into something that actually runs — a CI
         // workflow, a repository script or AGENTS.md — because a file nobody
         // references is exactly the kind of dead weight that hid the key.
+        // Scope note: only *.py is walked, exactly as the brief scopes this task;
+        // other languages are not covered by this contract test.
         string[] oneShot =
         [
             "scripts/test_compaction.py",
@@ -380,14 +382,36 @@ public sealed class CiWorkflowTests
             .IsEmpty()
             .Because("the one-shot scripts (and the committed key inside one) stay deleted");
 
+        var pythonFiles = PythonFiles().ToArray();
+
+        // Non-vacuity guard: if RepoRoot misresolved or the walk regressed, the
+        // unreferenced list below would simply be empty and this test would pass
+        // while proving nothing. Both paths are tracked today, so the walk must see
+        // them.
+        string[] mustBeVisible =
+        [
+            Path.Combine(RepoRoot, "scripts", "check-autobahn-report.py"),
+            Path.Combine(RepoRoot, "tests", "PicoNode.E2E", "test_sse_streaming.py"),
+        ];
+
+        var notWalked = mustBeVisible
+            .Where(path => !pythonFiles.Contains(path, StringComparer.Ordinal))
+            .Select(path => Path.GetRelativePath(RepoRoot, path))
+            .ToArray();
+
+        await Assert
+            .That(notWalked)
+            .IsEmpty()
+            .Because($"the Python walk must see every known script under '{RepoRoot}'");
+
         var corpus = string.Join(
             '\n',
             ReferenceCorpus().Select(static path => File.ReadAllText(path))
         );
 
-        var unreferenced = PythonFiles()
+        var unreferenced = pythonFiles
             .Where(static path => !IsTestFixture(path))
-            .Where(path => !corpus.Contains(Path.GetFileName(path), StringComparison.Ordinal))
+            .Where(path => !IsReferenced(corpus, Path.GetFileName(path)))
             .Select(path => Path.GetRelativePath(RepoRoot, path))
             .Order(StringComparer.Ordinal)
             .ToArray();
@@ -399,22 +423,55 @@ public sealed class CiWorkflowTests
     }
 
     /// <summary>
+    /// True when <paramref name="fileName"/> appears in <paramref name="corpus"/> as
+    /// a whole name, not glued to name characters (<c>[A-Za-z0-9_.-]</c>) on either
+    /// side. An ordinal substring match is not enough: <c>report.py</c> occurs inside
+    /// <c>check-autobahn-report.py</c> and <c>streaming.py</c> inside
+    /// <c>test_sse_streaming.py</c>, so a dead script whose name happens to be a
+    /// suffix of a wired one would look referenced.
+    /// </summary>
+    private static bool IsReferenced(string corpus, string fileName) =>
+        Regex.IsMatch(
+            corpus,
+            $@"(?<![\w.-]){Regex.Escape(fileName)}(?![\w.-])",
+            RegexOptions.CultureInvariant
+        );
+
+    /// <summary>
     /// Live wiring a Python script may legitimately be named in: the CI workflows,
     /// the repository's PowerShell entry points and <c>AGENTS.md</c>. Plan and audit
     /// prose is deliberately out of scope — naming a file in a document does not
     /// make it live (the plans still mention the three deleted scripts).
     /// </summary>
-    private static IEnumerable<string> ReferenceCorpus() =>
-        Directory
-            .EnumerateFiles(Path.Combine(RepoRoot, ".github", "workflows"), "*.yml")
-            .Concat(Directory.EnumerateFiles(Path.Combine(RepoRoot, "scripts"), "*.ps1"))
+    /// <exception cref="InvalidOperationException">
+    /// The repository layout is missing under <see cref="RepoRoot"/>. Filtering with
+    /// <see cref="File.Exists"/> alone would silently shrink the corpus until the
+    /// contract checked nothing at all.
+    /// </exception>
+    private static IEnumerable<string> ReferenceCorpus()
+    {
+        var workflows = Path.Combine(RepoRoot, ".github", "workflows");
+        var scripts = Path.Combine(RepoRoot, "scripts");
+
+        if (!Directory.Exists(workflows) || !Directory.Exists(scripts))
+        {
+            throw new InvalidOperationException(
+                $"Repository layout not found under '{RepoRoot}': expected '.github/workflows' and 'scripts'."
+            );
+        }
+
+        return Directory
+            .EnumerateFiles(workflows, "*.yml")
+            .Concat(Directory.EnumerateFiles(scripts, "*.ps1"))
             .Append(Path.Combine(RepoRoot, "AGENTS.md"))
-            .Append(Path.Combine(RepoRoot, "scripts", "README.md"))
+            .Append(Path.Combine(scripts, "README.md"))
             .Where(File.Exists);
+    }
 
     /// <summary>
-    /// Every <c>*.py</c> file in the working tree, skipping build output and VCS
-    /// metadata (the checkout keeps copies of the fixtures under <c>bin/</c>).
+    /// Every <c>*.py</c> file in the working tree, skipping the directories listed in
+    /// <see cref="SkippedDirectories"/> (build output, VCS/harness state, installed
+    /// toolchains — the checkout also keeps copies of the fixtures under <c>bin/</c>).
     /// </summary>
     private static IEnumerable<string> PythonFiles()
     {
@@ -425,12 +482,7 @@ public sealed class CiWorkflowTests
         {
             var directory = pending.Pop();
 
-            // Hidden directories are VCS/harness state (.git, .venv, .tools), never
-            // repository source.
-            if (
-                directory.Name.StartsWith('.')
-                || SkippedDirectories.Contains(directory.Name, StringComparer.Ordinal)
-            )
+            if (SkippedDirectories.Contains(directory.Name, StringComparer.Ordinal))
             {
                 continue;
             }
@@ -451,16 +503,40 @@ public sealed class CiWorkflowTests
     /// Python fixtures are wired by the owning test project's
     /// <c>&lt;None Include="Fixtures\**"&gt;</c> glob rather than by name, so they
     /// cannot be matched against the corpus (the last one, <c>echo_server.py</c>, is
-    /// scheduled for deletion by the JSON-RPC conformance plan).
+    /// scheduled for deletion by the JSON-RPC conformance plan). Scoped to
+    /// <c>tests/</c>: a <c>Fixtures</c> directory anywhere else is ordinary source
+    /// and must still be referenced by name.
     /// </summary>
-    private static bool IsTestFixture(string path) =>
-        path.Contains(
-            $"{Path.DirectorySeparatorChar}Fixtures{Path.DirectorySeparatorChar}",
-            StringComparison.Ordinal
-        );
+    private static bool IsTestFixture(string path)
+    {
+        var relative = Path.GetRelativePath(RepoRoot, path);
+        var separator = Path.DirectorySeparatorChar;
 
+        return relative.StartsWith($"tests{separator}", StringComparison.Ordinal)
+            && relative.Contains($"{separator}Fixtures{separator}", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Directories that never hold repository source and would only produce
+    /// unsatisfiable matches: VCS metadata (<c>.git</c>), harness/session state
+    /// (<c>.superpowers</c>), locally installed toolchains and virtualenvs
+    /// (<c>.venv</c>, <c>venv</c>, <c>.tools</c>, <c>node_modules</c>), editor state
+    /// (<c>.idea</c>, <c>.vscode</c>, <c>.vs</c>) and build output (<c>bin</c>,
+    /// <c>obj</c>, <c>TestResults</c>, <c>artifacts</c>). Matched by name, not by a
+    /// leading dot: <c>.github</c> (and <c>.devcontainer</c>, <c>.config</c>) do hold
+    /// repository source and must be walked.
+    /// </summary>
     private static readonly string[] SkippedDirectories =
     [
+        ".git",
+        ".superpowers",
+        ".tools",
+        ".venv",
+        ".idea",
+        ".vscode",
+        ".vs",
+        "venv",
+        "node_modules",
         "bin",
         "obj",
         "TestResults",
