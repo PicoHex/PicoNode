@@ -12,6 +12,14 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
     private int _disposed;
 
     /// <summary>
+    /// Live entry count, maintained by <see cref="Interlocked"/> on every add and remove.
+    /// <see cref="ConcurrentDictionary{TKey,TValue}.Count"/> is O(n) and takes every bucket lock,
+    /// and the cap check runs on the save path — i.e. on every request that dirties a session —
+    /// so a session flood would serialise there. This counter is what the cap reads instead.
+    /// </summary>
+    private int _liveCount;
+
+    /// <summary>
     /// Clock for the idle deadline. Internal test seam: deterministic tests advance a manual
     /// clock instead of sleeping for 20 minutes.
     /// </summary>
@@ -45,6 +53,12 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
 
         _cleanupTimer = new Timer(_ => CleanupExpired(), null, interval, interval);
     }
+
+    /// <summary>
+    /// Entries currently held by the store. Internal so tests can pin it against the table: the
+    /// cap reads this counter, so drift would silently move the eviction ceiling.
+    /// </summary>
+    internal int LiveSessionCount => Volatile.Read(ref _liveCount);
 
     public ValueTask<ISession> CreateAsync(CancellationToken ct = default)
     {
@@ -86,7 +100,7 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
-        _sessions.TryRemove(sessionId, out _);
+        Remove(sessionId);
         return ValueTask.CompletedTask;
     }
 
@@ -106,7 +120,7 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
 
         // Remove exactly the entry that was read: a concurrent rotation of the same id must
         // lose here rather than leave the payload duplicated under two ids.
-        if (!_sessions.TryRemove(KeyValuePair.Create(oldId, old)))
+        if (!TryRemoveExact(oldId, old))
         {
             throw new InvalidOperationException(
                 $"Session '{oldId}' was rotated or deleted by a concurrent request."
@@ -130,6 +144,9 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
 
         _cleanupTimer.Dispose();
         _sessions.Clear();
+        // Nothing may outlive the table; a save that raced the dispose can only leave the
+        // counter at 0 or 1 behind a store that now throws on use.
+        Interlocked.Exchange(ref _liveCount, 0);
     }
 
     private void SaveCore(string sessionId, ISession session)
@@ -146,9 +163,62 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
         EnsureWithinByteCap(sessionId, inMemory);
 
         // Upsert: the first save is what actually persists a created session.
-        var entry = _sessions.GetOrAdd(sessionId, _ => new Entry { Session = inMemory });
+        var entry = Upsert(sessionId, inMemory);
         Touch(entry);
         EvictOverflow(sessionId);
+    }
+
+    /// <summary>
+    /// Stores <paramref name="session"/> under <paramref name="sessionId"/> and returns the entry
+    /// that now represents it, counting a first-time add.
+    /// </summary>
+    /// <remarks>
+    /// Hand-rolled instead of <c>GetOrAdd</c>, which cannot report whether it inserted — and the
+    /// live-entry counter has to know, or an upsert of a live id would inflate it.
+    /// </remarks>
+    private Entry Upsert(string sessionId, InMemorySession session)
+    {
+        while (true)
+        {
+            if (_sessions.TryGetValue(sessionId, out var existing))
+            {
+                return existing;
+            }
+
+            var added = new Entry { Session = session };
+            if (_sessions.TryAdd(sessionId, added))
+            {
+                Interlocked.Increment(ref _liveCount);
+                return added;
+            }
+
+            // Lost the race to a concurrent first save: read the winner's entry instead.
+        }
+    }
+
+    /// <summary>Removes <paramref name="sessionId"/>, keeping the counter in step.</summary>
+    private void Remove(string sessionId)
+    {
+        if (_sessions.TryRemove(sessionId, out _))
+        {
+            Interlocked.Decrement(ref _liveCount);
+        }
+    }
+
+    /// <summary>
+    /// Removes <paramref name="sessionId"/> only while it still maps to <paramref name="entry"/>,
+    /// keeping the counter in step. Returns <see langword="false"/> when another request already
+    /// replaced or removed it.
+    /// </summary>
+    private bool TryRemoveExact(string sessionId, Entry entry)
+    {
+        if (!_sessions.TryRemove(KeyValuePair.Create(sessionId, entry)))
+        {
+            return false;
+        }
+
+        Interlocked.Decrement(ref _liveCount);
+        return true;
     }
 
     private void EnsureWithinByteCap(string sessionId, InMemorySession session)
@@ -176,7 +246,7 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
             // Enforce the idle deadline on the read path, not only in the cleanup sweep:
             // between sweeps (up to a full CleanupInterval) an expired session stayed loadable.
             // Remove the exact entry — a concurrent save may have replaced the id already.
-            _sessions.TryRemove(KeyValuePair.Create(sessionId, entry));
+            TryRemoveExact(sessionId, entry);
             return false;
         }
 
@@ -197,7 +267,8 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
 
     private void EvictOverflow(string keepId)
     {
-        if (_sessions.Count <= _maxSessions)
+        // Counted, not enumerated: this runs on every save that overflows the cap.
+        if (Volatile.Read(ref _liveCount) <= _maxSessions)
         {
             return;
         }
@@ -210,7 +281,8 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
 
         try
         {
-            var overflow = _sessions.Count - _maxSessions;
+            var live = Volatile.Read(ref _liveCount);
+            var overflow = live - _maxSessions;
             if (overflow <= 0)
             {
                 return;
@@ -221,7 +293,7 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
             // the default ceiling that is one O(n log n) sweep per ~1250 saves.
             var target = Math.Max(overflow, _maxSessions / 8);
 
-            var candidates = new List<KeyValuePair<string, Entry>>(_sessions.Count);
+            var candidates = new List<KeyValuePair<string, Entry>>(live);
             foreach (var pair in _sessions)
             {
                 if (!string.Equals(pair.Key, keepId, StringComparison.Ordinal))
@@ -242,7 +314,7 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
             var limit = Math.Min(target, candidates.Count);
             for (var i = 0; i < limit; i++)
             {
-                _sessions.TryRemove(candidates[i].Key, out _);
+                Remove(candidates[i].Key);
             }
         }
         finally
@@ -259,7 +331,7 @@ public sealed class InMemorySessionStore : ISessionStore, IDisposable
         {
             if (Interlocked.Read(ref entry.LastAccessedTicks) < cutoff)
             {
-                _sessions.TryRemove(id, out _);
+                Remove(id);
             }
         }
     }

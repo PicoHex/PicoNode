@@ -368,4 +368,141 @@ public sealed class InMemorySessionStoreTests
             .IsEqualTo(8 * 200)
             .Because("no writes may be lost to dictionary corruption");
     }
+
+    [Test]
+    public async Task Live_count_tracks_adds_upserts_and_deletes()
+    {
+        using var store = new InMemorySessionStore(new SessionOptions { MaxSessions = 100 });
+
+        var ids = new List<string>();
+        for (var i = 0; i < 30; i++)
+        {
+            var created = await store.CreateAsync();
+            await store.SaveAsync(created.Id, created);
+            ids.Add(created.Id);
+        }
+
+        // A second save of a live id is an upsert, not a second entry.
+        var reloaded = await store.LoadAsync(ids[0]);
+        await store.SaveAsync(ids[0], reloaded!);
+
+        await Assert.That(store.LiveSessionCount).IsEqualTo(30);
+
+        for (var i = 0; i < 10; i++)
+        {
+            await store.DeleteAsync(ids[i]);
+        }
+
+        // The counter is what the cap check reads, so it must agree with the table after every
+        // mutation path: drift here is silent and it moves the eviction ceiling.
+        await Assert.That(store.LiveSessionCount).IsEqualTo(20);
+        await Assert.That(await CountLoadableAsync(store, ids)).IsEqualTo(20);
+    }
+
+    [Test]
+    public async Task Live_count_drops_when_a_load_removes_an_expired_entry()
+    {
+        var clock = new StoreClock();
+        using var store = new InMemorySessionStore(
+            new SessionOptions
+            {
+                IdleTimeout = TimeSpan.FromMinutes(20),
+                CleanupInterval = TimeSpan.FromMinutes(5),
+            }
+        )
+        {
+            TimeProvider = clock,
+        };
+
+        var ids = new List<string>();
+        for (var i = 0; i < 4; i++)
+        {
+            var created = await store.CreateAsync();
+            await store.SaveAsync(created.Id, created);
+            ids.Add(created.Id);
+        }
+
+        clock.Advance(TimeSpan.FromMinutes(21));
+        await Assert.That(await store.LoadAsync(ids[0])).IsNull();
+        await Assert.That(await store.LoadAsync(ids[1])).IsNull();
+
+        // Only those two failed loads removed anything: the cleanup timer never fires here.
+        await Assert.That(store.LiveSessionCount).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Live_count_stays_at_the_cap_after_eviction()
+    {
+        using var store = new InMemorySessionStore(new SessionOptions { MaxSessions = 5 });
+
+        var ids = new List<string>();
+        for (var i = 0; i < 20; i++)
+        {
+            var created = await store.CreateAsync();
+            created.SetString("n", i.ToString(CultureInfo.InvariantCulture));
+            await store.SaveAsync(created.Id, created);
+            ids.Add(created.Id);
+        }
+
+        await Assert.That(store.LiveSessionCount).IsLessThanOrEqualTo(5);
+        await Assert.That(await CountLoadableAsync(store, ids)).IsEqualTo(store.LiveSessionCount);
+    }
+
+    [Test]
+    public async Task Live_count_is_unchanged_by_regenerate()
+    {
+        using var store = new InMemorySessionStore(DefaultOptions);
+
+        var ids = new List<string>();
+        for (var i = 0; i < 3; i++)
+        {
+            var created = await store.CreateAsync();
+            await store.SaveAsync(created.Id, created);
+            ids.Add(created.Id);
+        }
+
+        var newId = await store.RegenerateAsync(ids[0]);
+
+        // One removal plus one re-add: a rotation must not leak or double-count an entry.
+        await Assert.That(store.LiveSessionCount).IsEqualTo(3);
+        await Assert.That(await CountLoadableAsync(store, ids)).IsEqualTo(2);
+        await Assert.That(await store.LoadAsync(newId)).IsNotNull();
+    }
+
+    [Test]
+    public async Task Live_count_survives_concurrent_first_saves()
+    {
+        using var store = new InMemorySessionStore(new SessionOptions { MaxSessions = 10_000 });
+
+        var created = new List<ISession>();
+        for (var i = 0; i < 400; i++)
+        {
+            created.Add(await store.CreateAsync());
+        }
+
+        // The upsert is a lock-free TryAdd loop; two racers on one id must not both count it.
+        await Task.WhenAll(created.Select(s => Task.Run(() => store.SaveAsync(s.Id, s).AsTask())));
+
+        await Assert.That(store.LiveSessionCount).IsEqualTo(400);
+        await Assert
+            .That(await CountLoadableAsync(store, created.Select(s => s.Id)))
+            .IsEqualTo(400);
+    }
+
+    private static async Task<int> CountLoadableAsync(
+        InMemorySessionStore store,
+        IEnumerable<string> ids
+    )
+    {
+        var loadable = 0;
+        foreach (var id in ids)
+        {
+            if (await store.LoadAsync(id) is not null)
+            {
+                loadable++;
+            }
+        }
+
+        return loadable;
+    }
 }

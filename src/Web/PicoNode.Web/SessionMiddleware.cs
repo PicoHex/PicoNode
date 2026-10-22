@@ -10,6 +10,25 @@ public sealed class SessionMiddleware
 
     public static WebMiddleware Create(SessionIdExtractor extractor, SessionIdSetter setter)
     {
+        return Create(extractor, setter, logger: null);
+    }
+
+    /// <summary>
+    /// Creates the session middleware, resolving the store from the request's services.
+    /// </summary>
+    /// <param name="extractor">Reads the session id off the request.</param>
+    /// <param name="setter">Writes a session id onto the response.</param>
+    /// <param name="logger">
+    /// Receives a warning when a requested session-id rotation fails. Pass one: without a sink a
+    /// failed rotation is invisible, and a failed rotation means the response carries the
+    /// pre-rotation id, i.e. the session-fixation protection did not happen.
+    /// </param>
+    public static WebMiddleware Create(
+        SessionIdExtractor extractor,
+        SessionIdSetter setter,
+        ILogger? logger
+    )
+    {
         return async (context, next, ct) =>
         {
             if (
@@ -20,7 +39,7 @@ public sealed class SessionMiddleware
                 return await next(context, ct);
             }
 
-            return await InvokeCoreAsync(context, next, ct, store, extractor, setter);
+            return await InvokeCoreAsync(context, next, ct, store, extractor, setter, logger);
         };
     }
 
@@ -30,7 +49,29 @@ public sealed class SessionMiddleware
         SessionIdSetter setter
     )
     {
-        return (context, next, ct) => InvokeCoreAsync(context, next, ct, store, extractor, setter);
+        return Create(store, extractor, setter, logger: null);
+    }
+
+    /// <summary>
+    /// Creates the session middleware over an explicit store.
+    /// </summary>
+    /// <param name="store">Where sessions are loaded from and persisted to.</param>
+    /// <param name="extractor">Reads the session id off the request.</param>
+    /// <param name="setter">Writes a session id onto the response.</param>
+    /// <param name="logger">
+    /// Receives a warning when a requested session-id rotation fails. Pass one: without a sink a
+    /// failed rotation is invisible, and a failed rotation means the response carries the
+    /// pre-rotation id, i.e. the session-fixation protection did not happen.
+    /// </param>
+    public static WebMiddleware Create(
+        ISessionStore store,
+        SessionIdExtractor extractor,
+        SessionIdSetter setter,
+        ILogger? logger
+    )
+    {
+        return (context, next, ct) =>
+            InvokeCoreAsync(context, next, ct, store, extractor, setter, logger);
     }
 
     private static async ValueTask<HttpResponse> InvokeCoreAsync(
@@ -39,7 +80,8 @@ public sealed class SessionMiddleware
         CancellationToken ct,
         ISessionStore store,
         SessionIdExtractor extractor,
-        SessionIdSetter setter
+        SessionIdSetter setter,
+        ILogger? logger
     )
     {
         // 1. Extract session ID
@@ -112,11 +154,29 @@ public sealed class SessionMiddleware
                 // reads it after an await does not see the dead id.
                 context.Session = await store.LoadAsync(idToEmit, ct) ?? session;
             }
-            catch
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                // Best-effort rotation — fall back to the id the client already has
+                // The caller went away: genuine cancellation is not a rotation *failure*.
+                // Turning it into "rotated = false" would swallow it and hand the pipeline a
+                // successful response for a request nobody is waiting for.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Best-effort rotation — fall back to the id the client already has. This is the
+                // case the warning exists for: the response keeps the pre-rotation id, so the
+                // fixation protection silently did not happen. The response is already built, so
+                // the request is not failed over it (that would be a semantics change); it is
+                // only made observable. Covers the pre-rotation save as well as the rotation.
                 idToEmit = session.Id;
                 rotated = false;
+                logger?.Log(
+                    LogLevel.Warning,
+                    new EventId(0),
+                    $"Session id rotation failed for '{session.Id}'; the response keeps the "
+                        + "pre-rotation id, so the session-fixation protection did not happen",
+                    ex
+                );
             }
         }
 

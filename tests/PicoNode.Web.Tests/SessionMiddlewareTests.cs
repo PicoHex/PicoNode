@@ -291,4 +291,139 @@ public sealed class SessionMiddlewareTests
         await Assert.That(moved!.GetString("user")).IsEqualTo("bob");
         await Assert.That(await store.LoadAsync(mintedId!)).IsNull();
     }
+
+    [Test]
+    public async Task Rotation_failure_logs_warning_on_the_pre_rotation_id()
+    {
+        using var inner = new InMemorySessionStore(DefaultOptions);
+        var existing = await inner.CreateAsync();
+        existing.SetString("user", "alice");
+        await inner.SaveAsync(existing.Id, existing);
+
+        // The store refuses the rotation. Silence here is the worst case: no Set-Cookie goes
+        // out, the pre-auth id stays live, and session-fixation protection is simply absent
+        // with no trace anywhere. A warning is the only thing that makes that visible.
+        var store = new FaultingSessionStore(inner)
+        {
+            RegenerateFault = new InvalidOperationException("rotation refused"),
+        };
+        var logger = new RecordingLogger();
+
+        var context = WebContext.Create(
+            new HttpRequest
+            {
+                Method = "POST",
+                Target = "/login",
+                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Cookie"] = $"sid={existing.Id}",
+                },
+            }
+        );
+
+        var (extract, set) = SessionCookie.Create();
+        var middleware = SessionMiddleware.Create(store, extract, set, logger);
+
+        WebRequestHandler handler = (ctx, ct) =>
+        {
+            SessionRotation.Regenerate(ctx);
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        };
+
+        var response = await middleware(context, handler, CancellationToken.None);
+
+        // Observable: one Warning naming the id that failed to rotate, with the exception.
+        await Assert.That(logger.WarningCount).IsEqualTo(1);
+        await Assert.That(logger.Entries[^1].Message).Contains(existing.Id);
+        await Assert.That(logger.LastException).IsTypeOf<InvalidOperationException>();
+
+        // Semantics unchanged (not made fail-closed): the request still succeeds on the id the
+        // client already holds, and no Set-Cookie is emitted — the fallout the warning reports.
+        await Assert.That(response.StatusCode).IsEqualTo(200);
+        await Assert.That(response.Headers.TryGetValue(HttpHeaderNames.SetCookie, out _)).IsFalse();
+        await Assert.That(await inner.LoadAsync(existing.Id)).IsNotNull();
+    }
+
+    [Test]
+    public async Task Pre_rotation_save_failure_is_logged_instead_of_vanishing()
+    {
+        using var inner = new InMemorySessionStore(DefaultOptions);
+        // The save that must land before the rotation fails: the login state is then unmoved and
+        // the id unrotated. Today that branch is one of the silent ones.
+        var store = new FaultingSessionStore(inner)
+        {
+            SaveFault = new InvalidOperationException("store unreachable"),
+        };
+        var logger = new RecordingLogger();
+
+        var context = WebContext.Create(
+            new HttpRequest
+            {
+                Method = "POST",
+                Target = "/login",
+                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+            }
+        );
+
+        var (extract, set) = SessionCookie.Create();
+        var middleware = SessionMiddleware.Create(store, extract, set, logger);
+
+        WebRequestHandler handler = (ctx, ct) =>
+        {
+            ctx.Session!.SetString("user", "bob");
+            SessionRotation.Regenerate(ctx);
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        };
+
+        var response = await middleware(context, handler, CancellationToken.None);
+
+        await Assert.That(logger.WarningCount).IsEqualTo(1);
+        await Assert.That(logger.LastException).IsTypeOf<InvalidOperationException>();
+        await Assert.That(response.StatusCode).IsEqualTo(200);
+    }
+
+    [Test]
+    public async Task Rotation_cancellation_propagates_and_is_not_logged_as_failure()
+    {
+        using var inner = new InMemorySessionStore(DefaultOptions);
+        var existing = await inner.CreateAsync();
+        await inner.SaveAsync(existing.Id, existing);
+
+        using var cts = new CancellationTokenSource();
+        var store = new FaultingSessionStore(inner)
+        {
+            RegenerateFault = new OperationCanceledException(cts.Token),
+        };
+        var logger = new RecordingLogger();
+
+        var context = WebContext.Create(
+            new HttpRequest
+            {
+                Method = "POST",
+                Target = "/login",
+                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Cookie"] = $"sid={existing.Id}",
+                },
+            }
+        );
+
+        var (extract, set) = SessionCookie.Create();
+        var middleware = SessionMiddleware.Create(store, extract, set, logger);
+
+        WebRequestHandler handler = (ctx, ct) =>
+        {
+            SessionRotation.Regenerate(ctx);
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        };
+
+        // The caller went away: a cancelled request is not a rotation *failure*, and swallowing
+        // it hides the cancellation from the pipeline (the standard idiom rethrows it).
+        cts.Cancel();
+
+        await Assert
+            .That(async () => await middleware(context, handler, cts.Token))
+            .Throws<OperationCanceledException>();
+        await Assert.That(logger.WarningCount).IsEqualTo(0);
+    }
 }
