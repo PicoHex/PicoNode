@@ -83,3 +83,5 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 - NuGet reads are served by a lagging mirror, so a version can be missing from the flat container minutes
   after a successful publish. Confirm publications through the search index instead:
   `https://azuresearch-usnc.nuget.org/query?q=packageid:<Id>&prerelease=true`.
+- Tracked one-shot scripts are guarded by `CiWorkflowTests.Tracked_python_scripts_are_referenced`: every
+  `*.py` file in the tree must be named by a CI workflow, a `scripts/*.ps1` or this file. Delete it or wire it.

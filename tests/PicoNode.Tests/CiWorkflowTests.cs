@@ -357,4 +357,113 @@ public sealed class CiWorkflowTests
         FinishStep();
         return duplicates;
     }
+
+    [Test]
+    public async Task Tracked_python_scripts_are_referenced()
+    {
+        // The audit found three one-shot scripts committed from a sibling project
+        // (one carried a live API key). They must stay deleted, and any Python file
+        // still in the tree must be wired into something that actually runs — a CI
+        // workflow, a repository script or AGENTS.md — because a file nobody
+        // references is exactly the kind of dead weight that hid the key.
+        string[] oneShot =
+        [
+            "scripts/test_compaction.py",
+            "scripts/verify_demo.py",
+            "tests/web_test.py",
+        ];
+
+        var resurrected = oneShot.Where(p => File.Exists(Path.Combine(RepoRoot, p))).ToArray();
+
+        await Assert
+            .That(resurrected)
+            .IsEmpty()
+            .Because("the one-shot scripts (and the committed key inside one) stay deleted");
+
+        var corpus = string.Join(
+            '\n',
+            ReferenceCorpus().Select(static path => File.ReadAllText(path))
+        );
+
+        var unreferenced = PythonFiles()
+            .Where(static path => !IsTestFixture(path))
+            .Where(path => !corpus.Contains(Path.GetFileName(path), StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepoRoot, path))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        await Assert
+            .That(unreferenced)
+            .IsEmpty()
+            .Because("a tracked Python script must be referenced by CI, a script or AGENTS.md");
+    }
+
+    /// <summary>
+    /// Live wiring a Python script may legitimately be named in: the CI workflows,
+    /// the repository's PowerShell entry points and <c>AGENTS.md</c>. Plan and audit
+    /// prose is deliberately out of scope — naming a file in a document does not
+    /// make it live (the plans still mention the three deleted scripts).
+    /// </summary>
+    private static IEnumerable<string> ReferenceCorpus() =>
+        Directory
+            .EnumerateFiles(Path.Combine(RepoRoot, ".github", "workflows"), "*.yml")
+            .Concat(Directory.EnumerateFiles(Path.Combine(RepoRoot, "scripts"), "*.ps1"))
+            .Append(Path.Combine(RepoRoot, "AGENTS.md"))
+            .Append(Path.Combine(RepoRoot, "scripts", "README.md"))
+            .Where(File.Exists);
+
+    /// <summary>
+    /// Every <c>*.py</c> file in the working tree, skipping build output and VCS
+    /// metadata (the checkout keeps copies of the fixtures under <c>bin/</c>).
+    /// </summary>
+    private static IEnumerable<string> PythonFiles()
+    {
+        var pending = new Stack<DirectoryInfo>();
+        pending.Push(new DirectoryInfo(RepoRoot));
+
+        while (pending.Count > 0)
+        {
+            var directory = pending.Pop();
+
+            // Hidden directories are VCS/harness state (.git, .venv, .tools), never
+            // repository source.
+            if (
+                directory.Name.StartsWith('.')
+                || SkippedDirectories.Contains(directory.Name, StringComparer.Ordinal)
+            )
+            {
+                continue;
+            }
+
+            foreach (var file in directory.EnumerateFiles("*.py"))
+            {
+                yield return file.FullName;
+            }
+
+            foreach (var child in directory.EnumerateDirectories())
+            {
+                pending.Push(child);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Python fixtures are wired by the owning test project's
+    /// <c>&lt;None Include="Fixtures\**"&gt;</c> glob rather than by name, so they
+    /// cannot be matched against the corpus (the last one, <c>echo_server.py</c>, is
+    /// scheduled for deletion by the JSON-RPC conformance plan).
+    /// </summary>
+    private static bool IsTestFixture(string path) =>
+        path.Contains(
+            $"{Path.DirectorySeparatorChar}Fixtures{Path.DirectorySeparatorChar}",
+            StringComparison.Ordinal
+        );
+
+    private static readonly string[] SkippedDirectories =
+    [
+        "bin",
+        "obj",
+        "TestResults",
+        "artifacts",
+    ];
 }
