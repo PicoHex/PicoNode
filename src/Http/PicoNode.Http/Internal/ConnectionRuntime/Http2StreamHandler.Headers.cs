@@ -3,10 +3,10 @@ namespace PicoNode.Http.Internal.ConnectionRuntime;
 internal static partial class Http2StreamHandler
 {
     /// <summary>
-    /// Encodes the response header list AND writes the resulting HEADERS frame
-    /// (plus CONTINUATION frames when the block exceeds the peer's max frame
-    /// size) inside ONE critical section, so the order of the writes on the wire
-    /// is the order of the encodes.
+    /// Encodes the response header list AND writes the resulting header block —
+    /// a HEADERS frame plus any CONTINUATION frames — in one send, inside ONE
+    /// critical section, so the order of the writes on the wire is the order of
+    /// the encodes.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -17,19 +17,26 @@ internal static partial class Http2StreamHandler
     /// regression: concurrent streams aborted the whole connection.
     /// </para>
     /// <para>
-    /// Keeping encoder and write together also keeps a split header block
-    /// contiguous: RFC 9113 §6.2/§6.10 forbid any other frame between HEADERS
-    /// and its CONTINUATION frames. (DATA frames from a stream body pump are
-    /// still written by other tasks; they do not take this gate.)
+    /// The whole block leaves in ONE <c>SendAsync</c>
+    /// (<see cref="SendHeaderBlockAsync"/>), so the transport's send gate makes it
+    /// atomic on the wire and RFC 9113 §6.2/§6.10 holds no matter what else is
+    /// writing on the connection.
     /// </para>
     /// <para>
-    /// The gate is a <see cref="SemaphoreSlim"/> and not a monitor because the
-    /// critical section spans an <c>await</c>: a C# <c>lock</c> body may not
-    /// contain <c>await</c> (CS1996), and <see cref="Monitor"/> is thread-affine,
-    /// so the continuation thread could not release it. While the gate is held
-    /// only the frame write may await and no other connection-level lock is
-    /// taken, so the lock order stays single and no cycle can form with
-    /// <c>ConnectionRuntimeState.SendWindowLock</c> or the transport send gate.
+    /// The gate deliberately spans the send as well as the encode. Shrinking it to
+    /// "encode + assemble only" would let a later block enter the transport
+    /// before an earlier one whose send was still pending, re-opening exactly the
+    /// dynamic-table ordering bug above (and the encode-order regression test
+    /// documents it). It is a <see cref="SemaphoreSlim"/> and not a monitor
+    /// because the critical section spans an <c>await</c> (a C# <c>lock</c> body
+    /// may not contain one, and <see cref="Monitor"/> is thread-affine). No other
+    /// connection-level lock is taken inside it, so the lock order stays single
+    /// and no cycle can form with <c>ConnectionRuntimeState.SendWindowLock</c> or
+    /// the transport send gate.
+    /// </para>
+    /// <para>
+    /// Nothing on the frame loop ever waits for this gate — see
+    /// <see cref="ConnectionRuntimeState.ApplyPendingHeaderTableResize"/>.
     /// </para>
     /// </remarks>
     private static async ValueTask EncodeAndWriteResponseHeadersAsync(
@@ -47,17 +54,17 @@ internal static partial class Http2StreamHandler
         var headerWriter = new ArrayBufferWriter<byte>();
         var gate = state.ResponseHpackEncoderLock;
 
+        state.OnHpackGateWait?.Invoke(streamId);
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            // A SETTINGS_HEADER_TABLE_SIZE change that arrived while this gate was
+            // held is recorded on the state instead of blocking the frame loop;
+            // apply it before the encoder looks at the table (RFC 7541 §4.2).
+            state.ApplyPendingHeaderTableResize();
+
             state.ResponseHpackEncoder.Encode(headerWriter, headers);
-            await WriteHeadersFrameAsync(
-                    connection,
-                    streamId,
-                    flags,
-                    headerWriter.WrittenMemory,
-                    ct
-                )
+            await SendHeaderBlockAsync(connection, streamId, headerWriter.WrittenMemory, flags, ct)
                 .ConfigureAwait(false);
         }
         finally

@@ -69,21 +69,35 @@ internal static partial class Http2StreamHandler
 
     // ── Shared frame-writing helpers ─────────────────────────────────────
 
-    /// <summary>Writes a HEADERS frame with HPACK-encoded headers using a pooled buffer.
-    /// When the encoded block exceeds the peer's max frame size, it is split across
-    /// CONTINUATION frames (RFC 7540 §6.2/§6.10).</summary>
+    /// <summary>
+    /// Writes one complete header block — a HEADERS frame plus, when the encoded
+    /// block exceeds the peer's max frame size, every one of its CONTINUATION
+    /// frames — from ONE rented buffer in ONE <c>SendAsync</c>.
+    /// </summary>
     /// <remarks>
-    /// Response header blocks are written by <see cref="EncodeAndWriteResponseHeadersAsync"/>,
-    /// which keeps this whole HEADERS+CONTINUATION sequence inside the
-    /// per-connection HPACK gate — the sequence awaits between frames, so calling
-    /// it outside the gate would let another stream's header block interleave
-    /// into the middle of this one (RFC 9113 §6.2).
+    /// <para>
+    /// RFC 9113 §6.2/§6.10 require a header block to be transmitted as a
+    /// contiguous sequence: no other frame may appear between HEADERS and its
+    /// CONTINUATION frames. The transport serialises every send with its own
+    /// send gate, so issuing the whole block as a single send makes it atomic on
+    /// the wire: a concurrent DATA pump, the frame loop's PING ACK / SETTINGS ACK
+    /// / WINDOW_UPDATE / RST_STREAM can only be written entirely before or
+    /// entirely after the block, never inside it. Writing one frame per send —
+    /// the previous shape — could not offer that, because every await between
+    /// two frames was a window for an interleaving frame.
+    /// </para>
+    /// <para>
+    /// Must be called with <c>ConnectionRuntimeState.ResponseHpackEncoderLock</c>
+    /// held: the block was just encoded against the shared encoder's dynamic
+    /// table, and a block encoded later may only reach the wire after the blocks
+    /// encoded before it (otherwise the peer decodes a forward reference).
+    /// </para>
     /// </remarks>
-    private static async ValueTask WriteHeadersFrameAsync(
+    private static async ValueTask SendHeaderBlockAsync(
         ITcpConnectionContext connection,
         int streamId,
-        Http2FrameFlags flags,
         ReadOnlyMemory<byte> encodedHeaders,
+        Http2FrameFlags flags,
         CancellationToken ct
     )
     {
@@ -99,18 +113,16 @@ internal static partial class Http2StreamHandler
             var rented = ArrayPool<byte>.Shared.Rent(totalSize);
             try
             {
-                Http2FrameCodec.WriteFrameHeader(
-                    rented,
-                    encodedHeaders.Length,
+                Http2FrameCodec.WriteFrame(
+                    rented.AsSpan(0, totalSize),
                     Http2FrameType.Headers,
                     flags,
-                    streamId
+                    streamId,
+                    encodedHeaders.Span
                 );
-                encodedHeaders.Span.CopyTo(rented.AsSpan(Http2FrameCodec.FrameHeaderSize));
-                await connection.SendAsync(
-                    new ReadOnlySequence<byte>(rented.AsMemory(0, totalSize)),
-                    ct
-                );
+                await connection
+                    .SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, totalSize)), ct)
+                    .ConfigureAwait(false);
             }
             finally
             {
@@ -119,49 +131,55 @@ internal static partial class Http2StreamHandler
             return;
         }
 
-        // Split: HEADERS without END_HEADERS, then CONTINUATION frames.
-        // END_HEADERS goes on the last frame; other flags (e.g. END_STREAM)
-        // stay on the HEADERS frame only.
-        var offset = 0;
-        var isFirst = true;
-        while (offset < encodedHeaders.Length)
+        // Split: HEADERS without END_HEADERS, then CONTINUATION frames with
+        // END_HEADERS on the last one. Other flags (e.g. END_STREAM) stay on the
+        // HEADERS frame only. Every frame is assembled into the same buffer, so
+        // the block leaves in one send.
+        var frameCount = (encodedHeaders.Length + maxFrameSize - 1) / maxFrameSize;
+        // Every chunk carries at most maxFrameSize payload bytes and costs one
+        // 9-byte frame header, so the total stays below 2 × length and cannot
+        // overflow for any block the server can encode.
+        var totalLength = encodedHeaders.Length + frameCount * Http2FrameCodec.FrameHeaderSize;
+        var blockBuffer = ArrayPool<byte>.Shared.Rent(totalLength);
+        try
         {
-            var chunkLength = Math.Min(encodedHeaders.Length - offset, maxFrameSize);
-            var isLast = offset + chunkLength >= encodedHeaders.Length;
-            var frameType = isFirst ? Http2FrameType.Headers : Http2FrameType.Continuation;
-            var frameFlags =
-                frameType == Http2FrameType.Headers
-                    ? flags & ~Http2FrameFlags.EndHeaders
-                    : Http2FrameFlags.None;
-            if (isLast)
-                frameFlags |= Http2FrameFlags.EndHeaders;
-
-            var frameSize = Http2FrameCodec.FrameHeaderSize + chunkLength;
-            var rented = ArrayPool<byte>.Shared.Rent(frameSize);
-            try
+            var destination = blockBuffer.AsMemory(0, totalLength);
+            var destinationSpan = destination.Span;
+            var readOffset = 0;
+            var writeOffset = 0;
+            for (var frameIndex = 0; frameIndex < frameCount; frameIndex++)
             {
+                var chunkLength = Math.Min(encodedHeaders.Length - readOffset, maxFrameSize);
+                var isLast = frameIndex == frameCount - 1;
+                var frameType =
+                    frameIndex == 0 ? Http2FrameType.Headers : Http2FrameType.Continuation;
+                var frameFlags =
+                    frameIndex == 0 ? flags & ~Http2FrameFlags.EndHeaders : Http2FrameFlags.None;
+                if (isLast)
+                    frameFlags |= Http2FrameFlags.EndHeaders;
+
                 Http2FrameCodec.WriteFrameHeader(
-                    rented,
+                    destinationSpan.Slice(writeOffset),
                     chunkLength,
                     frameType,
                     frameFlags,
                     streamId
                 );
                 encodedHeaders
-                    .Span.Slice(offset, chunkLength)
-                    .CopyTo(rented.AsSpan(Http2FrameCodec.FrameHeaderSize));
-                await connection.SendAsync(
-                    new ReadOnlySequence<byte>(rented.AsMemory(0, frameSize)),
-                    ct
-                );
-            }
-            finally
-            {
-                ArrayPool<byte>.Shared.Return(rented);
+                    .Span.Slice(readOffset, chunkLength)
+                    .CopyTo(destinationSpan.Slice(writeOffset + Http2FrameCodec.FrameHeaderSize));
+
+                readOffset += chunkLength;
+                writeOffset += Http2FrameCodec.FrameHeaderSize + chunkLength;
             }
 
-            offset += chunkLength;
-            isFirst = false;
+            await connection
+                .SendAsync(new ReadOnlySequence<byte>(destination), ct)
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(blockBuffer);
         }
     }
 

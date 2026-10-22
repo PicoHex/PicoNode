@@ -32,15 +32,49 @@ internal sealed class ConnectionRuntimeState
 
     /// <summary>
     /// Serializes HPACK response encoding (and encoder table resizes) across
-    /// concurrent stream handlers — and keeps the frame write of a header block
-    /// inside the same critical section, so the wire order of header blocks
-    /// equals their encode order. A <see cref="SemaphoreSlim"/> rather than a
-    /// monitor because the critical section spans an <c>await</c> (a C#
-    /// <c>lock</c> body cannot contain one, and <see cref="Monitor"/> is
-    /// thread-affine). Held across an await: never nest another
-    /// connection-level lock inside it.
+    /// concurrent stream handlers — and keeps the (single, whole-block) frame
+    /// write of a header block inside the same critical section, so the wire
+    /// order of header blocks equals their encode order. A
+    /// <see cref="SemaphoreSlim"/> rather than a monitor because the critical
+    /// section spans an <c>await</c> (a C# <c>lock</c> body cannot contain one,
+    /// and <see cref="Monitor"/> is thread-affine). Held across an await: never
+    /// nest another connection-level lock inside it, and never wait on it from
+    /// the frame loop (see <see cref="ApplySettings"/>).
     /// </summary>
     public SemaphoreSlim ResponseHpackEncoderLock { get; } = new(1, 1);
+
+    private const int NoPendingEncoderTableSize = -1;
+
+    /// <summary>
+    /// SETTINGS_HEADER_TABLE_SIZE value that could not be applied immediately
+    /// because a header block was in flight; applied at the top of the next
+    /// encode (see <see cref="ApplyPendingHeaderTableResize"/>). -1 = nothing
+    /// pending.
+    /// </summary>
+    private int _pendingEncoderTableSize = NoPendingEncoderTableSize;
+
+    /// <summary>
+    /// Diagnostic seam: invoked with the stream id on the thread that is about to
+    /// wait for <see cref="ResponseHpackEncoderLock"/>. Null in production; lets a
+    /// test observe gate contention deterministically instead of sleeping (same
+    /// kind of instrumentation as <see cref="CleanupPasses"/>).
+    /// </summary>
+    internal Action<int>? OnHpackGateWait { get; set; }
+
+    /// <summary>
+    /// Applies a header-table resize that <see cref="ApplySettings"/> had to
+    /// defer because another stream held <see cref="ResponseHpackEncoderLock"/>.
+    /// Must be called with the gate held, immediately before encoding: the next
+    /// encode is the only consumer of the encoder table, so applying the resize
+    /// there is observationally identical to applying it in <c>ApplySettings</c>
+    /// and it can never block the frame loop.
+    /// </summary>
+    public void ApplyPendingHeaderTableResize()
+    {
+        var pending = Interlocked.Exchange(ref _pendingEncoderTableSize, NoPendingEncoderTableSize);
+        if (pending >= 0)
+            ResponseHpackEncoder.DynamicTable.Resize(pending);
+    }
 
     // Remote (peer) SETTINGS values
     public int RemoteMaxConcurrentStreams { get; set; } = 100;
@@ -121,19 +155,29 @@ internal sealed class ConnectionRuntimeState
                     // it governs our response ENCODER table only. The decoder
                     // table stays bounded by OUR advertised LocalHeaderTableSize
                     // (the peer's encoder must respect it).
-                    // Blocking wait: ApplySettings runs on the frame loop, which
-                    // has no async path, and the gate is only ever held for one
-                    // header-block write. Encoding a response while the table
-                    // resizes would desync the peer decoder, so waiting is the
-                    // safe side of the trade.
-                    ResponseHpackEncoderLock.Wait();
-                    try
+                    //
+                    // This runs on the frame loop, so it must never block: the
+                    // gate holder may be parked in an unbounded socket flush, and
+                    // a blocking Wait() here stops frame processing entirely while
+                    // burning a pool thread with no timeout. Try to take the gate;
+                    // if a header block is in flight, record the size and let the
+                    // next encode apply it (ApplyPendingHeaderTableResize) — that
+                    // encode is the only consumer of the encoder table, so the
+                    // resize is never observable in between.
+                    if (ResponseHpackEncoderLock.Wait(0))
                     {
-                        ResponseHpackEncoder.DynamicTable.Resize(RemoteHeaderTableSize);
+                        try
+                        {
+                            ResponseHpackEncoder.DynamicTable.Resize(RemoteHeaderTableSize);
+                        }
+                        finally
+                        {
+                            ResponseHpackEncoderLock.Release();
+                        }
                     }
-                    finally
+                    else
                     {
-                        ResponseHpackEncoderLock.Release();
+                        Interlocked.Exchange(ref _pendingEncoderTableSize, RemoteHeaderTableSize);
                     }
                     break;
             }
