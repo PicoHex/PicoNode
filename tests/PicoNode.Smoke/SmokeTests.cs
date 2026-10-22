@@ -383,7 +383,10 @@ public sealed class SmokeTests
         await Assert.That(putResponse.StatusLine).IsEqualTo("HTTP/1.1 200 OK");
         await Assert.That(Encoding.ASCII.GetString(putResponse.Body)).IsEqualTo("put-ok");
         await Assert.That(deleteResponse.StatusLine).IsEqualTo("HTTP/1.1 204 No Content");
-        await Assert.That(deleteResponse.Headers["Content-Length"]).IsEqualTo("0");
+        await Assert
+            .That(deleteResponse.Headers.ContainsKey("Content-Length"))
+            .IsFalse()
+            .Because("RFC 9110 §8.6: a 204 response MUST NOT carry Content-Length");
     }
 
     [Test]
