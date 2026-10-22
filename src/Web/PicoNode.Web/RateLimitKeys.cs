@@ -120,6 +120,16 @@ public static class RateLimitKeys
     /// "no such header ⇒ the tier is not applicable". A present-but-empty value is still a
     /// value: it keys an empty-string bucket instead of falling back.
     /// </summary>
+    /// <remarks>
+    /// The header must be written by a trusted proxy that <em>overwrites</em> whatever the client
+    /// sent (<c>X-Forwarded-For</c> behind a load balancer that owns it, an API key the gateway
+    /// sets). The bucket key is whatever the header says, so a caller who controls the header
+    /// rotates keys and bypasses the tier: the store bounds the memory that costs
+    /// (<c>RateLimitOptions.MaxBuckets</c>) but nothing bounds the requests it lets through.
+    /// Prefer <see cref="RemoteAddress"/> for the peer, <see cref="Identity"/> post-auth, or
+    /// <see cref="UntrustedHeader"/> when the header is known to be caller-controlled — that
+    /// alias makes the decision visible at the call site instead of hiding it in a header name.
+    /// </remarks>
     /// <param name="name">The header name to read.</param>
     /// <param name="fallback">The bucket key used when the header is absent; <c>null</c> skips the tier.</param>
     public static Func<WebContext, string?> Header(string name, string? fallback = null)
@@ -127,6 +137,23 @@ public static class RateLimitKeys
         ArgumentNullException.ThrowIfNull(name);
         return ctx => ctx.Request.Headers.TryGetValue(name, out var value) ? value : fallback;
     }
+
+    /// <summary>
+    /// The same classifier as <see cref="Header"/>, named for the case that is too easy to forget:
+    /// the header is <em>caller-controlled</em>.
+    /// </summary>
+    /// <remarks>
+    /// Behaviourally identical to <see cref="Header"/> — a synonym, not a wrapper: a variant that
+    /// behaved differently would be a third classifier to reason about, and the point here is the
+    /// name. Use it where the client chooses the value (<c>X-Forwarded-For</c> no trusted proxy
+    /// normalises, a client-supplied tenant id) so a reader sees that the limit it feeds is a
+    /// speed bump rather than a boundary, and pairs it with a tier that cannot be rotated
+    /// (<see cref="RemoteAddress"/>, <see cref="Identity"/>) if the budget must actually hold.
+    /// </remarks>
+    /// <param name="name">The header name to read.</param>
+    /// <param name="fallback">The bucket key used when the header is absent; <c>null</c> skips the tier.</param>
+    public static Func<WebContext, string?> UntrustedHeader(string name, string? fallback = null) =>
+        Header(name, fallback);
 
     /// <summary>
     /// Classifies by the request path (<see cref="WebContext.Path"/>). Not recommended as a

@@ -21,4 +21,13 @@ public sealed class RateLimitOptions
     public bool FailOpen { get; init; } = true;
 
     public TimeSpan CleanupInterval { get; init; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Upper bound on the number of buckets the store keeps. A bucket key can come from the
+    /// request (<see cref="RateLimitKeys.Header"/>, <see cref="RateLimitKeys.Path"/>), so an
+    /// unbounded dictionary turns key rotation into unbounded memory growth. At the limit the
+    /// store evicts its least recently used buckets — carrying their remaining allowance
+    /// forward — instead of refusing new keys, so the cap can never be used to reset a bucket.
+    /// </summary>
+    public int MaxBuckets { get; init; } = InMemoryRateLimitStore.DefaultMaxBuckets;
 }
