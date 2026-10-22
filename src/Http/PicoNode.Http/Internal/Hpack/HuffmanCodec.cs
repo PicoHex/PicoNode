@@ -391,6 +391,11 @@ internal static class HuffmanCodec
 
                 node = bit == 0 ? HuffLeft[node] : HuffRight[node];
 
+                // Defence-in-depth only: a complete prefix code (RFC 7541 Appendix B, Kraft
+                // sum = 1) gives every internal node both children, so with a correct table
+                // this guard is unreachable for any input. It fires on a damaged table, where
+                // it turns a would-be IndexOutOfRangeException into false (TryDecode must
+                // never throw).
                 if (node < 0)
                     return false; // dead end — a damaged/invalid code, not a crash
 

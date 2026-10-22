@@ -454,7 +454,15 @@ public sealed class HuffmanRfcTests
             (0xF9, [0xFF, 0xFF, 0xFF, 0xEF]),
         };
         foreach (var (symbol, bytes) in expected)
-            await Assert.That(HuffmanCodec.Encode([symbol])).IsEquivalentTo(bytes);
+        {
+            // IsEqualTo on a byte[] compares references (TUnit 1.68.4), and IsEquivalentTo is
+            // order-insensitive and reflection-based (IL2026), so compare element by element:
+            // order-strict, the differing byte stays visible, and no reflection.
+            var encoded = HuffmanCodec.Encode([symbol]);
+            await Assert.That(encoded.Length).IsEqualTo(bytes.Length);
+            for (var i = 0; i < bytes.Length; i++)
+                await Assert.That(encoded[i]).IsEqualTo(bytes[i]);
+        }
     }
 
     /// <summary>
@@ -470,16 +478,26 @@ public sealed class HuffmanRfcTests
             var encoded = ConformingEncode((byte)symbol);
             var ok = HuffmanCodec.TryDecode(encoded, out var decoded);
             await Assert.That(ok).IsTrue().Because($"symbol 0x{symbol:X2} must decode");
-            await Assert.That(decoded).IsEqualTo(Encoding.UTF8.GetString([(byte)symbol]));
+
+            // Content equality only means something below 0x80. TryDecode already ends in
+            // Encoding.UTF8.GetString(...), so for a lone byte >= 0x80 both sides are the same
+            // lossy conversion (0xDC and 0xF9 both become U+FFFD) and comparing them proves
+            // nothing about which symbol came out. Above the ASCII range the assertion is "ok".
+            if (symbol < 0x80)
+                await Assert.That(decoded).IsEqualTo(Encoding.UTF8.GetString([(byte)symbol]));
         }
     }
 
     /// <summary>
-    /// Damaged streams must be rejected, never thrown out of: TryDecode's contract is
-    /// "false for anything invalid", because a decoder exception aborts the connection.
+    /// A conforming peer's codes decode and EOS is rejected, with no exception escaping:
+    /// TryDecode's contract is "false for anything invalid", because a decoder exception
+    /// aborts the connection. Note what this test does <em>not</em> prove — none of its inputs
+    /// reaches TryDecode's <c>node &lt; 0</c> guard. A complete prefix code gives every internal
+    /// node both children, so with a correct table the guard is defence-in-depth against a
+    /// damaged one, not a path any stream (conforming or malformed) can take today.
     /// </summary>
     [Test]
-    public async Task Huffman_decode_never_throws_on_dead_end_paths()
+    public async Task Huffman_decode_accepts_conforming_codes_and_rejects_eos()
     {
         // Twenty-nine 1-bits then a 0 is the 30-bit code of 0x16; the trailing 11 is padding.
         var threw = false;
@@ -495,11 +513,12 @@ public sealed class HuffmanRfcTests
         await Assert.That(threw).IsFalse();
         await Assert.That(ok).IsTrue();
 
-        // EOS (30 one-bits) may never appear in a stream — reject it, do not throw.
+        // EOS (30 one-bits) may never appear in a stream — rejected by the symbol == 256 check,
+        // which sits above the guard's reach, not by the guard itself.
         await Assert.That(HuffmanCodec.TryDecode([0xFF, 0xFF, 0xFF, 0xFF], out _)).IsFalse();
 
-        // A 28-bit code the table could not place walked off the tree; it must decode
-        // to its symbol rather than throw.
+        // Conforming 28-bit code for 0x02: on the pre-fix table the walk left the tree and threw
+        // IndexOutOfRangeException; with a correct table it is an ordinary symbol.
         await Assert.That(HuffmanCodec.TryDecode([0xFF, 0xFF, 0xFE, 0x2F], out var low)).IsTrue();
         await Assert.That(low).IsEqualTo(Encoding.UTF8.GetString([(byte)0x02]));
     }
