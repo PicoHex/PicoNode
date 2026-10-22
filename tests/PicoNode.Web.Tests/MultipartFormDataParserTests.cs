@@ -654,6 +654,55 @@ public sealed class MultipartFormDataParserTests
         await Assert.That(result.Files[0].FileName).IsEqualTo("a.txt");
     }
 
+    // ── empty part content ──────────────────────────────────────────────────
+
+    [Test]
+    public async Task Empty_field_does_not_swallow_the_next_field()
+    {
+        // A part whose content is empty is followed immediately by the delimiter
+        // "\r\n--boundary", i.e. the delimiter starts exactly at the reader's current
+        // position. The streaming reader could not see a boundary there, so it read on
+        // and swallowed the *next* part's header block as this part's content: one empty
+        // text field silently deleted the field after it. Both paths must yield both
+        // fields, in order, with their own values.
+        var body =
+            "--boundary\r\n"
+            + "Content-Disposition: form-data; name=\"a\"\r\n"
+            + "\r\n"
+            + "\r\n"
+            + "--boundary\r\n"
+            + "Content-Disposition: form-data; name=\"b\"\r\n"
+            + "\r\n"
+            + "1\r\n"
+            + "--boundary--\r\n";
+
+        var inMemory = await MultipartFormDataParser.ParseAsync(
+            CreateMultipartRequest("boundary", body)
+        );
+        await Assert.That(inMemory).IsNotNull();
+        await Assert
+            .That(inMemory!.Fields.Count)
+            .IsEqualTo(2)
+            .Because("the in-memory path already yields both fields");
+        await Assert.That(inMemory.Fields[0].Name).IsEqualTo("a");
+        await Assert.That(inMemory.Fields[0].Value).IsEqualTo(string.Empty);
+        await Assert.That(inMemory.Fields[1].Name).IsEqualTo("b");
+        await Assert.That(inMemory.Fields[1].Value).IsEqualTo("1");
+
+        var streaming = await MultipartFormDataParser.ParseAsync(
+            CreateStreamingRequest("boundary", body)
+        );
+        await Assert.That(streaming).IsNotNull();
+        await Assert
+            .That(streaming!.Fields.Count)
+            .IsEqualTo(2)
+            .Because("an empty part must not swallow the part after it");
+        await Assert.That(streaming.Fields[0].Name).IsEqualTo("a");
+        await Assert.That(streaming.Fields[0].Value).IsEqualTo(string.Empty);
+        await Assert.That(streaming.Fields[1].Name).IsEqualTo("b");
+        await Assert.That(streaming.Fields[1].Value).IsEqualTo("1");
+    }
+
     // ── part count ──────────────────────────────────────────────────────────
 
     [Test]
@@ -670,14 +719,27 @@ public sealed class MultipartFormDataParserTests
     }
 
     [Test]
-    public async Task Part_count_is_bounded_on_the_streaming_path()
+    public async Task Part_count_limit_is_identical_on_both_paths()
     {
-        var request = CreateStreamingRequest("b", BuildParts("b", partCount: 300, content: "x"));
+        // 300 empty parts, on both paths. The streaming path used to see only every
+        // second part of such a body (150 fields), so the same 300 parts were rejected
+        // as 300 on one path and accepted as 150 on the other. The limit is not
+        // bypassable — what was broken was that the two paths described different bodies.
+        var body = BuildParts("b", partCount: 300, content: "");
 
         await Assert
-            .That(async () => await MultipartFormDataParser.ParseAsync(request))
+            .That(async () =>
+                await MultipartFormDataParser.ParseAsync(CreateMultipartRequest("b", body))
+            )
             .Throws<InvalidDataException>()
-            .Because("both parse paths must bound the part count");
+            .Because("the in-memory path counts every part");
+
+        await Assert
+            .That(async () =>
+                await MultipartFormDataParser.ParseAsync(CreateStreamingRequest("b", body))
+            )
+            .Throws<InvalidDataException>()
+            .Because("the streaming path must count the same parts as the in-memory path");
     }
 
     [Test]

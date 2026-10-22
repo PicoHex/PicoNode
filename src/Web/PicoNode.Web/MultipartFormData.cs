@@ -91,6 +91,12 @@ public sealed class MultipartFormFile
     /// of separators only) this is <see cref="string.Empty"/> — the name is refused rather
     /// than guessed at, so a caller must treat empty as "no usable file name".
     /// </summary>
+    /// <remarks>
+    /// This does not reject Windows reserved device names (<c>CON</c>, <c>NUL</c>, <c>COM1</c>, …):
+    /// opening such a name reaches the device instead of a file in the upload directory. It also
+    /// does not cap a component's length (255 bytes per component on Windows, shorter on some
+    /// filesystems), so a caller that writes this name to disk must apply both rules itself.
+    /// </remarks>
     public string SafeFileName { get; }
 
     /// <summary>In-memory file content (only available when Length ≤ buffer threshold).</summary>

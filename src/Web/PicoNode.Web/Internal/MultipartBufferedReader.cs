@@ -125,13 +125,18 @@ internal sealed class MultipartBufferedReader : IDisposable
         var searchEnd = _buffered - boundary.Length;
         for (var i = _position; i <= searchEnd; i++)
         {
-            // Look for \r\n-- or -- at start
+            // Look for \r\n-- (or -- at the very start of the body). A delimiter may
+            // begin *exactly* at _position: that is where a part with empty content ends,
+            // because such a part is followed immediately by the "\r\n--boundary" delimiter.
+            // Requiring i > _position made that delimiter invisible, so the reader kept
+            // reading and swallowed the next part's header block as this part's content
+            // (one empty text field silently deleted the field after it).
+            // `i + 3 < _buffered` already implies i + 1 < _buffered, so all four bytes
+            // tested below are known to be inside the buffer.
             if (
-                i > _position
-                && i + 1 < _buffered
+                i + 3 < _buffered
                 && _buffer[i] == (byte)'\r'
                 && _buffer[i + 1] == (byte)'\n'
-                && i + 3 < _buffered
                 && _buffer[i + 2] == (byte)'-'
                 && _buffer[i + 3] == (byte)'-'
             )
