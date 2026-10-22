@@ -6,6 +6,8 @@ namespace PicoNode.Web;
 /// <see cref="AuthOptions.ValidateToken"/> to resolve an identity.
 /// The identity is stored in <see cref="WebContext.Items"/> under
 /// <see cref="WebContextKeys.AuthIdentity"/>.
+/// By default a request without an identity continues anonymously (fail-open);
+/// <see cref="AuthOptions.RequireIdentity"/> turns that into a 401.
 /// </summary>
 public sealed class AuthMiddleware
 {
@@ -13,7 +15,8 @@ public sealed class AuthMiddleware
     /// Creates a Bearer token authentication middleware. Token validation
     /// failures are fail-open: the request continues unauthenticated, and
     /// downstream code must check <see cref="GetIdentity"/> before granting
-    /// access (the middleware never rejects a request by itself).
+    /// access. With <see cref="AuthOptions.RequireIdentity"/> set, the middleware
+    /// answers 401 Unauthorized itself and never calls the rest of the pipeline.
     /// </summary>
     public static WebMiddleware Create(AuthOptions options)
     {
@@ -32,16 +35,23 @@ public sealed class AuthMiddleware
                 }
                 catch (Exception ex)
                 {
-                    // Validation failed — identity not injected.
-                    // Downstream decides whether anonymous access is allowed;
-                    // log so a broken validator is observable (fail-open).
+                    // Validation failed — identity not injected. Whether the request is
+                    // then rejected is RequireIdentity's call; log so a broken validator
+                    // is observable instead of vanishing silently.
                     options.Logger?.Log(
                         LogLevel.Warning,
                         new EventId(0),
-                        "Bearer token validation failed; request continues unauthenticated",
+                        "Bearer token validation failed; no identity was attached to the request",
                         ex
                     );
                 }
+            }
+
+            if (options.RequireIdentity && GetIdentity(context) is null)
+            {
+                // Fail-closed on demand: the route needs an identity and none was proven.
+                // Not logged as a warning — a missing token is a normal client condition.
+                return WebResults.Text(401, "unauthorized");
             }
 
             return await next(context, ct);
