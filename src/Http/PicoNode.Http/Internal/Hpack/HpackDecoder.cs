@@ -10,16 +10,19 @@ internal static class HpackDecoder
         ReadOnlySpan<byte> block,
         out List<(string, string)> headers,
         HpackDynamicTable? dynamicTable = null,
-        int maxTableSize = 4096
+        int maxTableSize = 4096,
+        int maxHeaderListSize = 64 * 1024
     )
     {
         headers = new List<(string, string)>();
         int offset = 0;
         bool sawField = false;
+        int headerListSize = 0;
 
         while (offset < block.Length)
         {
             byte first = block[offset];
+            int fieldsBefore = headers.Count;
 
             if ((first & 0x80) != 0)
             {
@@ -53,7 +56,8 @@ internal static class HpackDecoder
                 if (sawField)
                     return false;
 
-                var newSize = DecodeInteger(block, ref offset, 5);
+                if (!TryDecodeInteger(block, ref offset, 5, out int newSize))
+                    return false;
                 // RFC 7541 §4.2: a size update above the limit WE advertised
                 // is a decoding error — the peer may not grow our decoder table.
                 if (newSize > maxTableSize)
@@ -63,6 +67,17 @@ internal static class HpackDecoder
             else
             {
                 return false;
+            }
+
+            // RFC 7540 §6.5.2 SETTINGS_MAX_HEADER_LIST_SIZE: an oversized header
+            // list is a STREAM error, not a connection error — the caller is the one
+            // that reports it against the single stream (see T1.4).
+            if (headers.Count > fieldsBefore)
+            {
+                var (name, value) = headers[^1];
+                headerListSize += name.Length + value.Length + 32;
+                if (headerListSize > maxHeaderListSize)
+                    return false;
             }
         }
 
@@ -78,7 +93,8 @@ internal static class HpackDecoder
         HpackDynamicTable? dynamicTable = null
     )
     {
-        int index = DecodeInteger(block, ref offset, 7);
+        if (!TryDecodeInteger(block, ref offset, 7, out int index))
+            return false;
 
         // Static table indices: 1-61
         if (index >= 1 && index <= StaticTable.EntryCount)
@@ -111,7 +127,8 @@ internal static class HpackDecoder
         HpackDynamicTable? dynamicTable = null
     )
     {
-        int nameIndex = DecodeInteger(block, ref offset, prefixBits);
+        if (!TryDecodeInteger(block, ref offset, prefixBits, out int nameIndex))
+            return false;
 
         if (!TryResolveName(block, ref offset, nameIndex, out string? name, dynamicTable))
             return false;
@@ -180,9 +197,13 @@ internal static class HpackDecoder
 
         byte first = block[offset];
         bool huffman = (first & 0x80) != 0;
-        int length = DecodeInteger(block, ref offset, 7);
 
-        if (offset + length > block.Length)
+        if (!TryDecodeInteger(block, ref offset, 7, out int length))
+            return false;
+
+        // Written as `length > block.Length - offset` rather than
+        // `offset + length > block.Length` so the guard itself cannot overflow.
+        if (length < 0 || length > block.Length - offset)
             return false;
 
         var data = block.Slice(offset, length);
@@ -197,26 +218,57 @@ internal static class HpackDecoder
 
     // ── Integer decoding (RFC 7541 §5.1) ───────────────────────────────
 
-    private static int DecodeInteger(ReadOnlySpan<byte> data, ref int offset, int prefixBits)
+    /// <summary>
+    /// Decodes a prefix-sized integer. Returns <c>false</c> — it never throws — for a
+    /// truncated run, an unterminated run, or a value that does not fit an <see cref="int"/>.
+    /// RFC 7541 §5.1 makes a value beyond the implementation's integer type a decoding
+    /// error, so peer-controlled input can never wrap the accumulator into a bogus
+    /// (for example negative) length and drive the caller into an out-of-range slice.
+    /// </summary>
+    private static bool TryDecodeInteger(
+        ReadOnlySpan<byte> data,
+        ref int offset,
+        int prefixBits,
+        out int value
+    )
     {
+        value = 0;
+        if (offset < 0 || offset >= data.Length)
+            return false;
+
         int prefixMax = (1 << prefixBits) - 1;
-        int value = data[offset] & prefixMax;
+        long acc = data[offset] & prefixMax;
         offset++;
 
-        if (value < prefixMax)
-            return value;
+        if (acc < prefixMax)
+        {
+            value = (int)acc;
+            return true;
+        }
 
         int m = 0;
         while (offset < data.Length)
         {
             byte b = data[offset++];
-            value += (b & 0x7F) << m;
+            acc += (long)(b & 0x7F) << m;
             m += 7;
+
+            // Reject as soon as the value leaves the int range, and cap the encoding at
+            // four continuation octets (m > 28) so a run of zero-payload continuation
+            // bytes cannot keep shifting the accumulator around.
+            if (acc > int.MaxValue || m > 28)
+                return false;
+
             if ((b & 0x80) == 0)
-                break;
+            {
+                value = (int)acc;
+                return true;
+            }
         }
 
-        return value;
+        // Bytes ran out while the continuation bit was still set: the integer is not
+        // terminated, so whatever was accumulated is not a value at all.
+        return false;
     }
 
     // ── Huffman decoding (RFC 7541 Appendix B) ─────────────────────────

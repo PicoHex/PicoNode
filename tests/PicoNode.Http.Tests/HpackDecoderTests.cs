@@ -676,4 +676,130 @@ public sealed class HpackDecoderTests
         await Assert.That(headers[0].Item1).IsEqualTo("n");
         await Assert.That(headers[0].Item2).IsEqualTo("");
     }
+
+    // ── Integer validation (RFC 7541 §5.1) ──────────────────────────────
+
+    [Test]
+    public async Task Decode_integer_overflow_returns_false()
+    {
+        // RFC 7541 §5.1: an integer that does not fit the implementation's
+        // integer type is a decoding error. 0x04 = literal without indexing,
+        // name index 4 (:path); the value string then starts a 7-bit length
+        // prefix of 127 (0x7F) followed by nine 0xFF continuation bytes, which
+        // pushes the accumulated value far past int.MaxValue. The old
+        // accumulation wrapped to a negative length, the length guard did not
+        // catch it, and block.Slice threw ArgumentOutOfRangeException out of
+        // TryDecode — killing the whole HTTP/2 connection instead of failing
+        // the header block.
+        var block = new byte[]
+        {
+            0x04, // literal without indexing, name index 4
+            0x7F, // raw, length prefix 127 == prefixMax → continuation follows
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF,
+            0xFF, // 9 × continuation byte, all with the continuation bit set
+        };
+
+        bool success = true;
+
+        await Assert
+            .That(() => success = HpackDecoder.TryDecode(block, out _))
+            .ThrowsNothing()
+            .Because("TryDecode must answer false for hostile peer input, never throw");
+        await Assert.That(success).IsFalse();
+    }
+
+    [Test]
+    public async Task Decode_unterminated_integer_returns_false()
+    {
+        // RFC 7541 §5.1: the continuation bit of the last octet must be 0. A
+        // block that simply runs out of bytes with the continuation bit still
+        // set carries a truncated integer and must be rejected, not silently
+        // turned into whatever was accumulated so far.
+        //
+        // First vector: a string length prefix that never terminates.
+        var unterminatedLength = new byte[]
+        {
+            0x04, // literal without indexing, name index 4
+            0x7F, // raw, length prefix 127 == prefixMax → continuation follows
+            0xFF, // continuation bit set
+            0xFF, // continuation bit set, then the block ends
+        };
+        bool lengthSuccess = true;
+
+        await Assert
+            .That(() => lengthSuccess = HpackDecoder.TryDecode(unterminatedLength, out _))
+            .ThrowsNothing();
+        await Assert.That(lengthSuccess).IsFalse();
+
+        // Second vector: a dynamic table size update whose continuation run is
+        // cut off. The accumulated value (31) is in range and the update would
+        // otherwise be accepted, so this case can only be rejected by the
+        // structural "run did not terminate" check.
+        var unterminatedSizeUpdate = new byte[]
+        {
+            0x3F, // 001|11111 → size update, prefix 31 == prefixMax
+            0x80, // continuation byte with payload 0, continuation bit set
+        };
+        bool sizeSuccess = true;
+
+        await Assert
+            .That(() => sizeSuccess = HpackDecoder.TryDecode(unterminatedSizeUpdate, out _))
+            .ThrowsNothing();
+        await Assert.That(sizeSuccess).IsFalse();
+    }
+
+    [Test]
+    public async Task Decode_overlong_integer_returns_false()
+    {
+        // RFC 7541 §5.1 integers are bounded: this declaration spends five
+        // continuation octets on the value 31 by padding the run with zero-payload
+        // continuation bytes (0x80). Accepting an arbitrarily long run scales the
+        // shift with peer-controlled input, so the decoder caps the encoded integer
+        // at four continuation octets. This is the only vector that isolates that
+        // cap: the value itself is small and the run does terminate, so neither the
+        // int-range check nor the termination check rejects it.
+        var block = new byte[]
+        {
+            0x3F, // 001|11111 -> size update, prefix 31 == prefixMax
+            0x80, // continuation, payload 0
+            0x80, // continuation, payload 0
+            0x80, // continuation, payload 0
+            0x80, // continuation, payload 0 -> the encoded integer is 5 octets long
+            0x00, // terminator, payload 0 -> accumulated value would be 31
+        };
+
+        bool success = true;
+
+        await Assert
+            .That(() => success = HpackDecoder.TryDecode(block, out _))
+            .ThrowsNothing();
+        await Assert.That(success).IsFalse();
+    }
+
+    [Test]
+    public async Task Dynamic_table_entry_size_counts_octets()
+    {
+        // RFC 7541 §4.1: an entry's size is the number of OCTETS of name plus
+        // value plus 32. Counting UTF-16 code units under-charges every
+        // non-ASCII header, so a peer can smuggle more state than the table
+        // capacity allows.
+        const string name = "content-disposition";
+        const string value = "attachment; filename=\"файл.txt\"";
+        var table = new HpackDynamicTable(4096);
+
+        table.Add(name, value);
+
+        var expected =
+            Encoding.UTF8.GetByteCount(name) + Encoding.UTF8.GetByteCount(value) + 32;
+        await Assert.That(expected).IsGreaterThan(name.Length + value.Length + 32);
+        await Assert.That(table.GetEntry(1)!.Size).IsEqualTo(expected);
+        await Assert.That(table.CurrentSize).IsEqualTo(expected);
+    }
 }

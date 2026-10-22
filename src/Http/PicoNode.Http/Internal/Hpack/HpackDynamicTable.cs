@@ -42,8 +42,11 @@ internal sealed class HpackDynamicTable
     /// <summary>Adds a new entry. Evicts oldest entries if capacity is exceeded.</summary>
     public void Add(string name, string value)
     {
-        // RFC 7541 §4.1: entry size = name.length + value.length + 32
-        var entrySize = name.Length + value.Length + 32;
+        // RFC 7541 §4.1: an entry costs the number of OCTETS of its name plus the
+        // number of OCTETS of its value plus 32. Counting UTF-16 code units
+        // (string.Length) under-charges every non-ASCII header, which lets a peer
+        // keep more state in the table than the negotiated capacity allows.
+        var entrySize = Encoding.UTF8.GetByteCount(name) + Encoding.UTF8.GetByteCount(value) + 32;
 
         // If a single entry exceeds capacity, reject it per RFC 7541 §4.1
         if (entrySize > _capacity)
