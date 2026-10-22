@@ -294,8 +294,25 @@ internal static partial class Http2StreamHandler
                 return false;
             }
 
+            // §8.2.1/§8.2.2 do not stop at the request's first header block: these
+            // fields are merged into request.Headers just below, so an unvalidated
+            // trailer is the same CR/LF injection — and the same Connection /
+            // Transfer-Encoding smuggling — one frame later. Same helper as the main
+            // block, so the two paths cannot drift apart again.
             foreach (var (name, value) in headerFields)
             {
+                if (!IsValidRegularHeaderField(name, value))
+                {
+                    await SendRstStreamAsync(
+                            connection,
+                            frame.StreamId,
+                            Http2ErrorCode.ProtocolError,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                    return false;
+                }
+
                 state.DecodedHeadersDict![name] = value;
             }
 

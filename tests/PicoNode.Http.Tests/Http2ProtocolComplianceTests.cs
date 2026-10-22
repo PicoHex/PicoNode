@@ -1043,6 +1043,72 @@ public sealed class Http2ProtocolComplianceTests
         await Assert.That(connection.LastRstStreamCode).IsEqualTo(Http2ErrorCode.ProtocolError);
     }
 
+    [Test]
+    public async Task Trailer_with_crlf_value_triggers_RST_PROTOCOL_ERROR()
+    {
+        // RFC 9113 §8.2.1 applies to trailer fields exactly as it does to the
+        // request's header block, and these fields are merged straight into
+        // request.Headers — an unvalidated trailer is the same CR/LF injection
+        // one frame later. A reset (not a 200) is the observable difference.
+        (string Value, string Why)[] poisoned =
+        [
+            ("a\r\nb", "CR LF"),
+            ("a\0b", "NUL"),
+            (" a", "leading SP"),
+        ];
+
+        foreach (var (value, why) in poisoned)
+        {
+            var connection = await OpenRequestStreamAwaitingTrailersAsync();
+
+            var trailers = new List<byte>();
+            AddLiteral(trailers, "x-test", value);
+            await SendTrailerFrameAsync(connection, trailers);
+
+            await Assert
+                .That(connection.LastRstStreamCode)
+                .IsEqualTo(Http2ErrorCode.ProtocolError)
+                .Because($"a trailer value with {why} is malformed");
+            await Assert
+                .That(connection.HasResponseHeaders(1))
+                .IsFalse()
+                .Because($"the request with a trailer value containing {why} must not be answered");
+        }
+    }
+
+    [Test]
+    public async Task Trailer_with_forbidden_or_malformed_name_triggers_RST_PROTOCOL_ERROR()
+    {
+        // §8.2.2: the five connection-specific fields are prohibited in HTTP/2, and
+        // §8.2.1 requires lowercase token names — a trailer is no exception, or a
+        // `connection: close` smuggled after the body would still reach the request.
+        (string Name, string Why)[] poisoned =
+        [
+            ("connection", "a connection-specific field (§8.2.2)"),
+            ("transfer-encoding", "a connection-specific field (§8.2.2)"),
+            ("X-Test", "an uppercase name (§8.2.1)"),
+            ("x-test\r\n", "a control octet in the name (§8.2.1)"),
+        ];
+
+        foreach (var (name, why) in poisoned)
+        {
+            var connection = await OpenRequestStreamAwaitingTrailersAsync();
+
+            var trailers = new List<byte>();
+            AddLiteral(trailers, name, "ok");
+            await SendTrailerFrameAsync(connection, trailers);
+
+            await Assert
+                .That(connection.LastRstStreamCode)
+                .IsEqualTo(Http2ErrorCode.ProtocolError)
+                .Because($"a trailer name carrying {why} is malformed");
+            await Assert
+                .That(connection.HasResponseHeaders(1))
+                .IsFalse()
+                .Because($"the request with a trailer named {why} must not be answered");
+        }
+    }
+
     // ── 6.2 / 6.1 Padding ───────────────────────────────────────────
 
     [Test]
@@ -1652,7 +1718,72 @@ public sealed class Http2ProtocolComplianceTests
         await Assert.That(connection.HasResponseHeaders(1)).IsTrue();
     }
 
-    // ── Helpers ────────────────────────────────────────────────────
+    // ── Helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Opens stream 1 with a complete request header block and a DATA frame, both
+    /// without END_STREAM, so the next HEADERS frame is necessarily a trailer block.
+    /// </summary>
+    private static async Task<ComplianceTestContext> OpenRequestStreamAwaitingTrailersAsync()
+    {
+        var connection = NewConnection();
+        var block = new List<byte> { 0x83, 0x04, 0x04 };
+        block.AddRange("/foo"u8.ToArray());
+        block.Add(0x86);
+        var headers = BuildHeadersFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders,
+            1,
+            block.ToArray()
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(headers),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        var data = BuildHeadersFrame(
+            Http2FrameType.Data,
+            Http2FrameFlags.None,
+            1,
+            "test"u8.ToArray()
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(data),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        return connection;
+    }
+
+    /// <summary>Sends a trailing HEADERS block with END_HEADERS | END_STREAM on stream 1.</summary>
+    private static async Task SendTrailerFrameAsync(
+        ComplianceTestContext connection,
+        List<byte> trailerBlock
+    )
+    {
+        var trailerFrame = BuildHeadersFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+            1,
+            trailerBlock.ToArray()
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(trailerFrame),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+    }
 
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {

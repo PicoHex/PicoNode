@@ -1682,11 +1682,11 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
-    public async Task Continuation_exceeding_MaxHeaderListSize_sends_GoAway()
+    public async Task Continuation_exceeding_MaxCompressedHeaderBlockSize_sends_GoAway()
     {
         var connection = new TestTcpConnectionContext();
 
-        // Build a large HPACK payload that exceeds 16KB MaxHeaderListSize
+        // Build a large HPACK payload that exceeds the 16 KiB MaxCompressedHeaderBlockSize
         // Use BuildFrame directly to avoid Http2FrameCodec's max frame size check
         var largeValue = new string('x', Http2StreamState.MaxCompressedHeaderBlockSize);
         var largeHpack = BuildHpackWithLargeValue(largeValue);
@@ -1704,7 +1704,7 @@ public sealed class Http2StreamHandlerTests
             CancellationToken.None
         );
 
-        // Exceeding MaxHeaderListSize is a connection error
+        // Exceeding MaxCompressedHeaderBlockSize is a connection error
         await Assert.That(connection.IsClosed).IsTrue();
     }
 

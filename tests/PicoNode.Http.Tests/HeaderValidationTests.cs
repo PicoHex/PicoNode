@@ -134,6 +134,60 @@ public sealed class HeaderValidationTests
     }
 
     [Test]
+    public async Task H2_header_names_must_be_lowercase_ascii_tokens()
+    {
+        // RFC 9113 §8.2.1: a field name MUST be lowercase *and* it is a token
+        // (RFC 9110 §5.6.2), which is an ASCII charset. `IndexOfAnyInRange('A','Z')`
+        // answered only the first half and only for ASCII: `Ä` (U+00C4), `ẞ`
+        // (U+1E9E) and Cyrillic `А` (U+0410) are uppercase but outside 'A'..'Z', so
+        // they passed, and no check at all looked at the rest of the character set,
+        // so a control octet in a name ("\r\nx-evil") passed too.
+        (string Name, string Why)[] poisoned =
+        [
+            ("X-Evil", "ASCII uppercase"),
+            ("x-Evil", "interior ASCII uppercase"),
+            ("Ä-x", "non-ASCII uppercase Ä (U+00C4)"),
+            ("ẞ-x", "non-ASCII uppercase ẞ (U+1E9E)"),
+            ("\u0410-x", "Cyrillic uppercase А (U+0410)"),
+            ("\r\nx-evil", "CR LF prefix"),
+            ("x-evil\r\n", "CR LF suffix"),
+            ("x\0evil", "NUL"),
+            ("x\tevil", "HTAB"),
+            ("x evil", "SP is not a tchar"),
+            ("x:evil", ": is not a tchar"),
+            ("", "empty name"),
+        ];
+
+        foreach (var (name, why) in poisoned)
+        {
+            var headers = new List<(string, string)>
+            {
+                (":method", "GET"),
+                (":path", "/"),
+                (":scheme", "http"),
+                (name, "1"),
+            };
+
+            var result = Http2StreamHandler.ValidateHeadersPublic(headers);
+            await Assert
+                .That(result.IsValid)
+                .IsFalse()
+                .Because($"a field name with {why} is malformed");
+        }
+
+        // Every lowercase RFC 9110 §5.6.2 tchar stays legal — the rule rejects the
+        // non-token and non-lowercase octets, not exotic-but-valid names.
+        var accepted = new List<(string, string)>
+        {
+            (":method", "GET"),
+            (":path", "/"),
+            (":scheme", "http"),
+            ("x!#$%&'*+-.^_`|~1", "1"),
+        };
+        await Assert.That(Http2StreamHandler.ValidateHeadersPublic(accepted).IsValid).IsTrue();
+    }
+
+    [Test]
     public async Task H2_header_list_size_is_bounded()
     {
         // 1 200 one-octet index references to static entry 16

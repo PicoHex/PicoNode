@@ -109,45 +109,11 @@ internal static partial class Http2StreamHandler
             {
                 pseudoEnded = true;
 
-                var nameSpan = name.AsSpan();
-
-                // RFC 9113 §8.2.1: header field names MUST be lowercase. Asking the
-                // span whether it holds an ASCII uppercase letter answers that in one
-                // allocation-free pass; the old `name.Equals(name.ToLowerInvariant(),
-                // Ordinal)` built a throwaway lowercased string for every field, and
-                // the forbidden-name check below built a SECOND one for the same field.
-                if (nameSpan.IndexOfAnyInRange('A', 'Z') >= 0)
-                    return HeaderValidationResult.Invalid();
-
-                // RFC 9113 §8.2.2: connection-specific header fields are prohibited in
-                // HTTP/2. Compared against the five literals (the name is already known
-                // to be lowercase) instead of against a lowercased copy.
-                if (
-                    nameSpan.SequenceEqual("connection")
-                    || nameSpan.SequenceEqual("keep-alive")
-                    || nameSpan.SequenceEqual("proxy-connection")
-                    || nameSpan.SequenceEqual("transfer-encoding")
-                    || nameSpan.SequenceEqual("upgrade")
-                )
-                    return HeaderValidationResult.Invalid();
-
-                // RFC 9113 §8.2.2: the only legal `te` value in HTTP/2 is "trailers".
-                if (
-                    nameSpan.SequenceEqual("te")
-                    && !value.Equals("trailers", StringComparison.OrdinalIgnoreCase)
-                )
-                    return HeaderValidationResult.Invalid();
-
-                // RFC 9113 §8.2.1: a field value containing NUL, CR or LF — or one that
-                // starts/ends with optional whitespace — MUST be treated as malformed.
-                // HTTP/1.1 rejects exactly these in HttpCharacters.IsValidHeaderValue while
-                // parsing; HPACK hands us the value verbatim, so HTTP/2 has to reject it
-                // here or a CRLF lands in the request untouched. Both checks run on the
-                // string's own memory (AsSpan), so nothing is allocated per field.
-                if (
-                    !HttpCharacters.IsValidHeaderValue(value.AsSpan())
-                    || HttpCharacters.HasLeadingOrTrailingWhitespace(value.AsSpan())
-                )
+                // Name and value checks live in ONE helper because the trailing
+                // HEADERS block must pass the very same ones: trailers are merged
+                // into request.Headers, and a second, laxer entry point is exactly
+                // how a CRLF (or a Connection/Transfer-Encoding) got in.
+                if (!IsValidRegularHeaderField(name, value))
                     return HeaderValidationResult.Invalid();
             }
             else
@@ -226,6 +192,61 @@ internal static partial class Http2StreamHandler
             regularHeaders,
             headerDict
         );
+    }
+
+    /// <summary>
+    /// The RFC 9113 §8.2.1/§8.2.2 checks that apply to EVERY non-pseudo header field,
+    /// wherever it arrives: in the request's own HEADERS block or in a trailing
+    /// HEADERS block, which is merged into the same request dictionary and therefore
+    /// must not become a second, laxer way into it.
+    /// </summary>
+    /// <remarks>
+    /// The name must be a lowercase HTTP token. That single test carries the
+    /// lowercase rule, the ASCII charset and the control-octet case at once: a name
+    /// such as <c>"\r\nx-evil"</c>, <c>"x evil"</c> or <c>"Ä-x"</c> is not a
+    /// <c>tchar</c>, so it is rejected here rather than reaching the request
+    /// dictionary. The comparisons are span-based and the value is checked in place,
+    /// so nothing is allocated per field on the request path.
+    /// </remarks>
+    internal static bool IsValidRegularHeaderField(string name, string value)
+    {
+        var nameSpan = name.AsSpan();
+
+        // RFC 9113 §8.2.1: header field names MUST be lowercase tokens. This replaces
+        // the old `name.Equals(name.ToLowerInvariant(), Ordinal)` (one throwaway
+        // string per field) and the `IndexOfAnyInRange('A', 'Z')` that followed it
+        // (exact for ASCII only: `Ä`/`ẞ`/Cyrillic `А` are uppercase but outside
+        // 'A'..'Z', and no check at all looked at the rest of the character set).
+        if (!HttpCharacters.IsLowercaseHttpToken(nameSpan))
+            return false;
+
+        // RFC 9113 §8.2.2: connection-specific header fields are prohibited in
+        // HTTP/2. Compared against the five literals (the name is already known
+        // to be lowercase) instead of against a lowercased copy.
+        if (
+            nameSpan.SequenceEqual("connection")
+            || nameSpan.SequenceEqual("keep-alive")
+            || nameSpan.SequenceEqual("proxy-connection")
+            || nameSpan.SequenceEqual("transfer-encoding")
+            || nameSpan.SequenceEqual("upgrade")
+        )
+            return false;
+
+        // RFC 9113 §8.2.2: the only legal `te` value in HTTP/2 is "trailers".
+        if (
+            nameSpan.SequenceEqual("te")
+            && !value.Equals("trailers", StringComparison.OrdinalIgnoreCase)
+        )
+            return false;
+
+        // RFC 9113 §8.2.1: a field value containing NUL, CR or LF — or one that
+        // starts/ends with optional whitespace — MUST be treated as malformed.
+        // HTTP/1.1 rejects exactly these in HttpCharacters.IsValidHeaderValue while
+        // parsing; HPACK hands us the value verbatim, so HTTP/2 has to reject it
+        // here or a CRLF lands in the request untouched. Both checks run on the
+        // string's own memory (AsSpan), so nothing is allocated per field.
+        return HttpCharacters.IsValidHeaderValue(value.AsSpan())
+            && !HttpCharacters.HasLeadingOrTrailingWhitespace(value.AsSpan());
     }
 
     /// <summary>

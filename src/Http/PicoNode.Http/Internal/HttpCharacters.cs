@@ -2,9 +2,50 @@ namespace PicoNode.Http.Internal;
 
 internal static class HttpCharacters
 {
-    public static bool IsHttpToken(string value)
+    public static bool IsHttpToken(string value) => IsHttpToken(value.AsSpan());
+
+    public static bool IsHttpToken(ReadOnlySpan<char> value)
     {
-        return value.Length != 0 && value.All(IsHttpTokenCharacter);
+        if (value.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var character in value)
+        {
+            if (!IsHttpTokenCharacter(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// RFC 9113 §8.2.1: an HTTP/2 field name is a token (RFC 9110 §5.6.2) that MUST be
+    /// lowercase, so ONE pass answers both halves of the rule. A character that is
+    /// not a <c>tchar</c> — a control octet (CR/LF/NUL/HTAB), SP, ':', or any
+    /// non-ASCII character such as `Ä`/`ẞ`/Cyrillic `А` — and an ASCII uppercase
+    /// letter are both rejected. Unlike <c>IndexOfAnyInRange('A','Z')</c> this is
+    /// exact for every input, not just for ASCII.
+    /// </summary>
+    public static bool IsLowercaseHttpToken(ReadOnlySpan<char> value)
+    {
+        if (value.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var character in value)
+        {
+            if (char.IsAsciiLetterUpper(character) || !IsHttpTokenCharacter(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public static bool IsHttpToken(ReadOnlySpan<byte> value)
