@@ -6,6 +6,15 @@ internal sealed class TcpConnectionLifecycle
     private const string OperationHandler = "tcp.handler";
     private const string OperationCloseHandler = "tcp.close.handler";
     private const string OperationCloseCore = "tcp.close.core";
+    private const string OperationCloseWait = "tcp.close.wait";
+
+    /// <summary>
+    /// Upper bound on the wait for a connection's handler loop before the pipe ends and the
+    /// socket are torn down. The bound is what keeps a handler that never returns from
+    /// wedging the close (and, through it, the node's drain): the wait gives up loudly
+    /// instead of blocking for ever.
+    /// </summary>
+    private static readonly TimeSpan HandlerLoopTimeout = TimeSpan.FromSeconds(5);
 
     private readonly TcpNode _node;
     private readonly Socket _socket;
@@ -19,6 +28,7 @@ internal sealed class TcpConnectionLifecycle
     private readonly Action? _onClosed;
     private int _closeState;
     private int _disposeState;
+    private Task? _runTask;
 
     internal TcpConnectionLifecycle(
         TcpNode node,
@@ -48,6 +58,13 @@ internal sealed class TcpConnectionLifecycle
     internal bool IsCloseInitiated => Volatile.Read(ref _closeState) != 0;
 
     /// <summary>
+    /// The task of this connection's receive/handler loop, or <c>null</c> until
+    /// <see cref="RunAsync"/> has been called. It is registered before the loop's first
+    /// action, so a close that races the loop always finds a task to wait for.
+    /// </summary>
+    internal Task? RunTask => Volatile.Read(ref _runTask);
+
+    /// <summary>
     /// Fire-and-forget close. Safe to call from any thread; TryBeginClose
     /// ensures only one close executes. Used by TcpConnection on external
     /// triggers (send faults, explicit Close calls).
@@ -58,10 +75,44 @@ internal sealed class TcpConnectionLifecycle
         ITcpConnectionHandler handler
     )
     {
-        _ = CloseCoreAsync(reason, error, handler);
+        _ = CloseCoreAsync(reason, error, handler, waitsForHandlerLoop: true);
     }
 
-    public async Task RunAsync(ITcpConnectionHandler handler)
+    /// <summary>
+    /// Runs the receive loop and the handler loop and returns the task of that loop. The task
+    /// is registered on the connection <em>before</em> the loop's first action, so a close that
+    /// races the loop always has something to wait for — tearing the pipe down underneath a
+    /// handler that no one can observe is exactly the ordering this fixes.
+    /// </summary>
+    public Task RunAsync(ITcpConnectionHandler handler)
+    {
+        var completion = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        Volatile.Write(ref _runTask, completion.Task);
+        _ = RunLoopIntoAsync(handler, completion);
+        return completion.Task;
+    }
+
+    private async Task RunLoopIntoAsync(
+        ITcpConnectionHandler handler,
+        TaskCompletionSource completion
+    )
+    {
+        try
+        {
+            await RunLoopAsync(handler).ConfigureAwait(false);
+            completion.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            // Mirror the loop's failure onto the task the connection keeps, so a close that
+            // waits for it observes the same outcome as a caller that awaits RunAsync.
+            completion.TrySetException(ex);
+        }
+    }
+
+    private async Task RunLoopAsync(ITcpConnectionHandler handler)
     {
         Exception? error = null;
         var reason = TcpCloseReason.RemoteClosed;
@@ -114,14 +165,18 @@ internal sealed class TcpConnectionLifecycle
         }
         finally
         {
-            await CloseCoreAsync(reason, error, handler).ConfigureAwait(false);
+            // The handler loop has already returned (this is its own finally), so there is no
+            // task left to wait for — waiting here would await ourselves.
+            await CloseCoreAsync(reason, error, handler, waitsForHandlerLoop: false)
+                .ConfigureAwait(false);
         }
     }
 
     internal async Task CloseCoreAsync(
         TcpCloseReason reason,
         Exception? error,
-        ITcpConnectionHandler handler
+        ITcpConnectionHandler handler,
+        bool waitsForHandlerLoop
     )
     {
         try
@@ -133,6 +188,19 @@ internal sealed class TcpConnectionLifecycle
 
             await CancelConnectionAsync().ConfigureAwait(false);
             ShutdownSocketSafely(_node.Options.Logger);
+
+            if (waitsForHandlerLoop)
+            {
+                // An externally triggered close (explicit Close, send fault, idle timeout,
+                // node stop) races the handler loop, which may still be inside
+                // OnReceivedAsync. Completing the pipe ends and disposing the socket first
+                // would run OnClosedAsync against that same context concurrently and make the
+                // handler's next AdvanceTo throw on a completed reader. The receive-initiated
+                // path needs no wait: it reaches this method only after its handler loop
+                // returned — the invariant ExecuteReceiveLoopAsync spells out.
+                await AwaitHandlerLoopAsync().ConfigureAwait(false);
+            }
+
             await InvokeClosedHandlerAsync(handler, reason, error).ConfigureAwait(false);
             await FinalizeCloseAsync().ConfigureAwait(false);
         }
@@ -140,6 +208,40 @@ internal sealed class TcpConnectionLifecycle
         {
             _node.ReportFault(NodeFaultCode.HandlerFailed, OperationCloseCore, ex);
             // Do NOT rethrow — close is best-effort
+        }
+    }
+
+    /// <summary>
+    /// Bounded wait for the handler loop. The bound matters in both directions: the close has
+    /// to finish (the node's drain waits on it), but a handler that outlives the wait must be
+    /// reported instead of silently running against a torn-down pipe.
+    /// </summary>
+    private async Task AwaitHandlerLoopAsync()
+    {
+        var runTask = RunTask;
+        if (runTask is null || runTask.IsCompletedSuccessfully)
+        {
+            return;
+        }
+
+        try
+        {
+            await runTask.WaitAsync(HandlerLoopTimeout).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            _node.ReportFault(
+                NodeFaultCode.StopFailed,
+                OperationCloseWait,
+                new TimeoutException(
+                    $"The connection handler loop did not finish within {HandlerLoopTimeout}."
+                )
+            );
+        }
+        catch (Exception)
+        {
+            // The loop's own failure was reported where it happened (tcp.receive /
+            // tcp.handler); this wait exists for ordering, not for error reporting.
         }
     }
 

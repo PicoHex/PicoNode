@@ -460,6 +460,44 @@ public sealed class TcpNodeBranchTests
     }
 
     [Test]
+    public async Task A_faulted_stop_still_closes_connections_and_drains()
+    {
+        var handler = new RecordingTcpHandler();
+        await using var node = CreateNode(handler);
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+
+        await node.StartAsync();
+        await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+        await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        // A background loop that died with a non-cancellation fault is what StopAsync's
+        // owner-only prefix awaits. A fault escaping there used to skip the connection close
+        // drive entirely: no connection was asked to close, OnConnectionClosed never ran,
+        // the single drain source was never signalled and the node stayed in Stopping for
+        // ever (the host could not shut down). The close drive must run anyway, and the
+        // fault must still reach the caller instead of being swallowed.
+        var acceptFault = new InvalidOperationException("accept loop died");
+        typeof(TcpNode)
+            .GetField("_acceptTask", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(node, Task.FromException(acceptFault));
+
+        var stopTask = node.StopAsync();
+
+        var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.NodeStopping);
+
+        var exception = await Assert
+            .That(async () => await stopTask)
+            .Throws<InvalidOperationException>();
+        await Assert.That(exception!.Message).IsEqualTo("accept loop died");
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+    }
+
+    [Test]
     public async Task TryTrackConnection_returns_false_when_node_is_stopping()
     {
         var pair = await CreateConnectedSocketsAsync();

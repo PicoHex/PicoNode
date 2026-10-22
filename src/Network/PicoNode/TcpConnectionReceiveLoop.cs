@@ -78,6 +78,30 @@ internal sealed class TcpConnectionReceiveLoop
 
             throw;
         }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
+        {
+            // Local close: the connection token fired (Close, send fault, idle timeout, node
+            // stop) or the socket was disposed underneath us, and the handler loop may still
+            // be inside OnReceivedAsync. Cancel the remote-close signal for long-lived
+            // streaming handlers, complete the pipe writer so buffered requests are still
+            // drained, and wait for the handler loop before letting go: the close sequence
+            // runs on top of this method, and it must not reach OnClosedAsync while a handler
+            // is in flight (the invariant the SocketException branch above relies on, now
+            // held for the local-close path too).
+            await _remoteCloseCts.CancelAsync().ConfigureAwait(false);
+            await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
+            try
+            {
+                await processingTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                // The handler's fault is secondary to the local close; the close reason stays
+                // LocalClose, exactly as in the reset branch above.
+            }
+
+            throw;
+        }
 
         // The peer is gone (graceful FIN observed as a 0-byte receive).
         // Unlike the connection token — which must stay alive so buffered

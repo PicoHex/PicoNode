@@ -4,6 +4,8 @@ public sealed class TcpNode : INode
 {
     private const string OperationStart = "tcp.start";
     private const string OperationStop = "tcp.stop.listener";
+    private const string OperationStopSignal = "tcp.stop.signal";
+    private const string OperationStopIdle = "tcp.stop.idle";
     private const string OperationAccept = "tcp.accept";
     private const string OperationRejectLimit = "tcp.reject.limit";
     private const string OperationRejectTracking = "tcp.reject.tracking";
@@ -244,6 +246,7 @@ public sealed class TcpNode : INode
         }
 
         var stopCompleted = false;
+        Exception? stopFault = null;
 
         try
         {
@@ -253,7 +256,16 @@ public sealed class TcpNode : INode
             // asked to close and the drain below is all that is left to wait for.
             if (ownsStop)
             {
-                await _cts.CancelAsync().ConfigureAwait(false);
+                // Each step of the close drive is isolated from the next. A fault escaping
+                // from this prefix used to skip the connection close drive entirely: no
+                // connection was asked to close, OnConnectionClosed never ran, the single
+                // drain source was never signalled and the node stayed in Stopping for ever.
+                // The first fault is reported and rethrown once the stop has finished, so it
+                // is still loud — it just can no longer wedge the node.
+                // Note the shape: every step is awaited even when an earlier one already
+                // faulted (`??=` would short-circuit and skip the wait entirely, leaving a
+                // background loop running while the connections are closed under it).
+                stopFault ??= await CancelNodeSignalAsync().ConfigureAwait(false);
 
                 try
                 {
@@ -262,29 +274,24 @@ public sealed class TcpNode : INode
                 catch (Exception ex)
                 {
                     ReportFault(NodeFaultCode.StopFailed, OperationStop, ex);
+                    stopFault ??= ex;
                 }
 
-                if (_acceptTask is not null)
-                {
-                    try
-                    {
-                        await _acceptTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException)
-                    { /* expected during shutdown — accept task cancelled */
-                    }
-                }
+                var acceptLoopFault = await ObserveBackgroundLoopAsync(
+                        _acceptTask,
+                        cancellationToken,
+                        OperationAccept
+                    )
+                    .ConfigureAwait(false);
+                stopFault ??= acceptLoopFault;
 
-                if (_idleMonitorTask is not null)
-                {
-                    try
-                    {
-                        await _idleMonitorTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException)
-                    { /* expected during shutdown — idle monitor task cancelled */
-                    }
-                }
+                var idleLoopFault = await ObserveBackgroundLoopAsync(
+                        _idleMonitorTask,
+                        cancellationToken,
+                        OperationStopIdle
+                    )
+                    .ConfigureAwait(false);
+                stopFault ??= idleLoopFault;
 
                 foreach (var connection in _connections.Values)
                 {
@@ -308,6 +315,65 @@ public sealed class TcpNode : INode
                     _state = NodeState.Stopped;
                 }
             }
+        }
+
+        if (stopFault is not null)
+        {
+            // The stop did what it could — every connection is closed and the drain was
+            // observed — but the caller still learns that a step of it failed.
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(stopFault).Throw();
+        }
+    }
+
+    /// <summary>
+    /// Cancels the node-wide cancellation signal. A disposed source (a concurrent
+    /// <see cref="DisposeAsync"/>) is a fault to report, not a reason to abandon the stop: the
+    /// connections still have to be closed and the drain still has to be observed.
+    /// </summary>
+    private async Task<Exception?> CancelNodeSignalAsync()
+    {
+        try
+        {
+            await _cts.CancelAsync().ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            ReportFault(NodeFaultCode.StopFailed, OperationStopSignal, ex);
+            return ex;
+        }
+    }
+
+    /// <summary>
+    /// Waits for a background loop to observe the stop. Cancellation is its expected exit and is
+    /// not a fault; a loop that died with a real exception is captured (and reported) so the
+    /// close drive that follows it still runs.
+    /// </summary>
+    private async Task<Exception?> ObserveBackgroundLoopAsync(
+        Task? loop,
+        CancellationToken cancellationToken,
+        string operation
+    )
+    {
+        if (loop is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            await loop.WaitAsync(cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            // expected during shutdown — the loop exits via cancellation
+            return null;
+        }
+        catch (Exception ex)
+        {
+            ReportFault(NodeFaultCode.StopFailed, operation, ex);
+            return ex;
         }
     }
 

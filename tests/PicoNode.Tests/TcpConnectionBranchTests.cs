@@ -664,6 +664,58 @@ public sealed class TcpConnectionBranchTests
         }
     }
 
+    [Test]
+    public async Task CloseAsync_during_handler_does_not_overlap_OnClosedAsync()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var handler = new ParkedReceiveTcpHandler();
+            var connection = CreateConnection(pair.Server, handler);
+            var runTask = connection.RunAsync(handler);
+
+            await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            await pair.Client.SendAsync(new byte[] { 7 }, SocketFlags.None);
+            await handler.ReceivedStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+            // The handler sits inside OnReceivedAsync until ReleaseHandler() is called and only
+            // this test can release it, so nothing in the close sequence can legitimately finish
+            // while it is parked. A close that tears the pipe and the socket down without waiting
+            // for the handler loop runs OnClosedAsync right here instead.
+            connection.Close();
+
+            // Bounded expectation, not synchronisation: the violation is unblocked and therefore
+            // surfaces within microseconds, while the correct behaviour cannot surface at all
+            // before the release below.
+            var closedWhileHandlerParked = await HasCompletedWithinAsync(
+                handler.Closed.Task,
+                TimeSpan.FromMilliseconds(500)
+            );
+
+            handler.ReleaseHandler();
+            var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.LocalClose);
+            await Assert
+                .That(closedWhileHandlerParked)
+                .IsFalse()
+                .Because(
+                    "OnClosedAsync must not run while the handler loop is still inside OnReceivedAsync"
+                );
+            await Assert
+                .That(handler.CloseHandlerStartedAfterHandlerReturned)
+                .IsTrue()
+                .Because("OnClosedAsync must observe the handler loop as finished");
+
+            await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
     private sealed class BlockingStream : Stream
     {
         private readonly TaskCompletionSource _writeStarted = new(
@@ -732,6 +784,57 @@ public sealed class TcpConnectionBranchTests
         {
             Release();
             base.Dispose(disposing);
+        }
+    }
+
+    [Test]
+    public async Task CloseAsync_completes_the_run_task()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var handler = new RecordingTcpHandler();
+            var connection = CreateConnection(pair.Server, handler);
+            var runTask = connection.RunAsync(handler);
+
+            await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+            // The connection must keep the task of its handler loop instead of dropping it:
+            // that task is what tells a close whether the handler loop is still running.
+            await Assert
+                .That(connection.RunTask)
+                .IsSameReferenceAs(runTask)
+                .Because("the handler loop task must be reachable from the connection");
+
+            connection.Close();
+
+            // Close() is fire-and-forget, so the only way to know the loop is finished is
+            // that its task completes — and it must, or a close could never wait for it.
+            await connection.RunTask!.WaitAsync(TimeSpan.FromSeconds(5));
+            await Assert.That(connection.RunTask.IsCompleted).IsTrue();
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Bounded observation of "this task completed", used to assert the ABSENCE of an event:
+    /// a violation is unblocked and shows up immediately, whereas the correct behaviour is
+    /// blocked on a seam the test owns and therefore cannot complete inside the window.
+    /// </summary>
+    private static async Task<bool> HasCompletedWithinAsync(Task task, TimeSpan timeout)
+    {
+        try
+        {
+            await task.WaitAsync(timeout);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
         }
     }
 
@@ -1148,6 +1251,72 @@ public sealed class TcpConnectionBranchTests
         {
             _release.TrySetResult(true);
         }
+    }
+
+    /// <summary>
+    /// Handler whose OnReceivedAsync parks until the test releases it, recording the order in
+    /// which the handler loop finished and OnClosedAsync started. A close that tears the pipe
+    /// down without waiting for the handler loop shows up as a close-handler sequence number
+    /// that precedes the handler's own.
+    /// </summary>
+    private sealed class ParkedReceiveTcpHandler : ITcpConnectionHandler
+    {
+        private readonly TaskCompletionSource _released = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _handlerReturned;
+
+        public TaskCompletionSource<ConnectedTcpConnection> Connected { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource ReceivedStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<ClosedTcpConnection> Closed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>
+        /// Sampled when OnClosedAsync starts: false means the close handler ran while
+        /// OnReceivedAsync was still parked, which is the overlap the fix rules out.
+        /// </summary>
+        public bool CloseHandlerStartedAfterHandlerReturned { get; private set; }
+
+        public Task OnConnectedAsync(
+            ITcpConnectionContext connection,
+            CancellationToken cancellationToken
+        )
+        {
+            Connected.TrySetResult(
+                new ConnectedTcpConnection(connection.ConnectionId, connection.RemoteEndPoint)
+            );
+            return Task.CompletedTask;
+        }
+
+        public async ValueTask<SequencePosition> OnReceivedAsync(
+            ITcpConnectionContext connection,
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken
+        )
+        {
+            ReceivedStarted.TrySetResult();
+            await _released.Task.ConfigureAwait(false);
+            Volatile.Write(ref _handlerReturned, 1);
+            return buffer.End;
+        }
+
+        public ValueTask OnClosedAsync(
+            ITcpConnectionContext connection,
+            TcpCloseReason reason,
+            Exception? error,
+            CancellationToken cancellationToken
+        )
+        {
+            CloseHandlerStartedAfterHandlerReturned = Volatile.Read(ref _handlerReturned) != 0;
+            Closed.TrySetResult(new ClosedTcpConnection(reason, error));
+            return ValueTask.CompletedTask;
+        }
+
+        public void ReleaseHandler() => _released.TrySetResult();
     }
 
     private sealed class RecordingTcpHandler(Exception? receiveException = null)

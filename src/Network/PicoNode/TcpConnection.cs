@@ -80,6 +80,13 @@ internal sealed class TcpConnection : IAsyncDisposable
 
     public Task RunAsync(ITcpConnectionHandler handler) => _lifecycle.RunAsync(handler);
 
+    /// <summary>
+    /// The task of this connection's receive/handler loop, or <c>null</c> until
+    /// <see cref="RunAsync"/> has been called. The close sequence waits for it so the pipe ends
+    /// and the socket are only torn down after the handler loop has finished.
+    /// </summary>
+    internal Task? RunTask => _lifecycle.RunTask;
+
     public Task SendAsync(
         ReadOnlySequence<byte> buffer,
         CancellationToken cancellationToken = default
