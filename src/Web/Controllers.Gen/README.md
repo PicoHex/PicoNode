@@ -34,7 +34,7 @@ Only executable projects (`ConsoleApplication` / `WindowsApplication`) that refe
 | Prefix: `{ClassName}` minus `Controller` suffix → `/api/{kebab-case}` | `UsersController` → `/api/users` |
 | Verb: method name prefix (`Get`/`Post`/`Put`/`Delete`/`Patch`) or `[HttpGet]`-style attribute | `GetUser` → GET |
 | Path: method name minus verb prefix, kebab-cased | `GetUser` → `/user` |
-| Params: simple-typed parameters become `{name}` route segments with TryParse guards (404 on mismatch) | `GetUser(int id)` → `/api/users/user/{id}` |
+| Params: simple-typed parameters bind from the route value, else the query string, else 400 — no `{name}` segment is invented — and non-string types keep their TryParse guard (404 on mismatch) | `GetUser(int id)` → `/api/users/user/{id}`, `[HttpPost] Create(string title)` → `POST /api/posts?title=...` |
 | Attribute override: `[Route(...)]` on class, `[HttpGet("...")]`-style on method | absolute or relative path |
 
 Complex-typed parameters and `WebContext`/`CancellationToken` are resolved at runtime

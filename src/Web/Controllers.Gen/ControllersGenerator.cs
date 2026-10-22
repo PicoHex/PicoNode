@@ -554,67 +554,88 @@ public sealed class ControllersGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Emits the route-value binding for a simple-typed parameter. Strings bind
-    /// raw; every other simple type binds via a TryParse guard that short-
-    /// circuits with 404 when the URL segment cannot be converted (PicoWeb has
-    /// no route constraints, so {id} matches ANY segment — an unguarded
-    /// Guid.Parse(img.png) threw FormatException → 500; regression: browser
-    /// requesting /fragments/sessions/img.png for a relative markdown image).
+    /// Emits the parameter binding for a simple-typed parameter: route value
+    /// first, then query string, then 400 when neither carries the name.
+    /// Reason (audit F-02): a `[HttpPost]` action such as `Create(string title)`
+    /// is emitted as the bare prefix route `/api/posts`, so `title` has NO route
+    /// segment — the old unguarded `ctx.RouteValues["title"]` indexer threw
+    /// KeyNotFoundException → 500. No `{title}` segment may be invented for it:
+    /// RadixTree allows one parameter child per node, so `POST /api/posts/{title}`
+    /// beside `DELETE /api/posts/{id}` aborts the router with "Duplicate route
+    /// registration".
+    /// Non-string simple types keep their TryParse guard and still answer 404
+    /// when the located value cannot be converted (PicoWeb has no route
+    /// constraints, so {id} matches ANY segment — an unguarded Guid.Parse(img.png)
+    /// threw FormatException → 500; regression: browser requesting
+    /// /fragments/sessions/img.png for a relative markdown image).
     /// </summary>
     private static string GetRouteValueBinding(string typeName, string paramName, bool isAsync)
     {
-        var key = $"ctx.RouteValues[\"{paramName}\"]";
         var inv = "System.Globalization.CultureInfo.InvariantCulture";
         // Async lambda: HttpResponse converts implicitly to ValueTask<HttpResponse>;
         // sync lambda must wrap explicitly (its body returns ValueTask<T> directly).
+        var badRequest = isAsync
+            ? "PicoWeb.Results.Empty(400)"
+            : "ValueTask.FromResult(PicoWeb.Results.Empty(400))";
         var notFound = isAsync
             ? "PicoWeb.Results.Empty(404)"
             : "ValueTask.FromResult(PicoWeb.Results.Empty(404))";
 
-        if (typeName is "string" or "global::System.String")
-            return $"var __{paramName} = {key};";
+        var isString = typeName is "string" or "global::System.String";
+        // A string binds the located value directly; every other simple type
+        // needs the raw string for TryParse plus the parsed local.
+        var lookupLocal = isString ? $"__{paramName}" : $"__{paramName}_raw";
+        var lookup =
+            $"if (!ctx.RouteValues.TryGetValue(\"{paramName}\", out var {lookupLocal})\n"
+            + $"                    && !ctx.Query.TryGetValue(\"{paramName}\", out {lookupLocal}))\n"
+            + $"                    return {badRequest};";
+
+        if (isString)
+            return lookup;
 
         var tryParse = typeName switch
         {
             "int" or "global::System.Int32" =>
-                $"int.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+                $"int.TryParse({lookupLocal}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
             "long" or "global::System.Int64" =>
-                $"long.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+                $"long.TryParse({lookupLocal}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
             "short" or "global::System.Int16" =>
-                $"short.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+                $"short.TryParse({lookupLocal}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
             "ushort" or "global::System.UInt16" =>
-                $"ushort.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+                $"ushort.TryParse({lookupLocal}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
             "uint" or "global::System.UInt32" =>
-                $"uint.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+                $"uint.TryParse({lookupLocal}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
             "ulong" or "global::System.UInt64" =>
-                $"ulong.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+                $"ulong.TryParse({lookupLocal}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
             "byte" or "global::System.Byte" =>
-                $"byte.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+                $"byte.TryParse({lookupLocal}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
             "sbyte" or "global::System.SByte" =>
-                $"sbyte.TryParse({key}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
+                $"sbyte.TryParse({lookupLocal}, System.Globalization.NumberStyles.Integer, {inv}, out var __{paramName})",
             "float" or "global::System.Single" =>
-                $"float.TryParse({key}, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, {inv}, out var __{paramName})",
+                $"float.TryParse({lookupLocal}, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, {inv}, out var __{paramName})",
             "double" or "global::System.Double" =>
-                $"double.TryParse({key}, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, {inv}, out var __{paramName})",
+                $"double.TryParse({lookupLocal}, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, {inv}, out var __{paramName})",
             "decimal" or "global::System.Decimal" =>
-                $"decimal.TryParse({key}, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, {inv}, out var __{paramName})",
-            "bool" or "global::System.Boolean" => $"bool.TryParse({key}, out var __{paramName})",
-            "char" or "global::System.Char" => $"char.TryParse({key}, out var __{paramName})",
-            "global::System.Guid" => $"global::System.Guid.TryParse({key}, out var __{paramName})",
+                $"decimal.TryParse({lookupLocal}, System.Globalization.NumberStyles.Float | System.Globalization.NumberStyles.AllowThousands, {inv}, out var __{paramName})",
+            "bool" or "global::System.Boolean" => $"bool.TryParse({lookupLocal}, out var __{paramName})",
+            "char" or "global::System.Char" => $"char.TryParse({lookupLocal}, out var __{paramName})",
+            "global::System.Guid" => $"global::System.Guid.TryParse({lookupLocal}, out var __{paramName})",
             "global::System.DateTime" =>
-                $"global::System.DateTime.TryParse({key}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
+                $"global::System.DateTime.TryParse({lookupLocal}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
             "global::System.DateTimeOffset" =>
-                $"global::System.DateTimeOffset.TryParse({key}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
+                $"global::System.DateTimeOffset.TryParse({lookupLocal}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
             "global::System.TimeSpan" =>
-                $"global::System.TimeSpan.TryParse({key}, {inv}, out var __{paramName})",
+                $"global::System.TimeSpan.TryParse({lookupLocal}, {inv}, out var __{paramName})",
             "global::System.DateOnly" =>
-                $"global::System.DateOnly.TryParse({key}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
+                $"global::System.DateOnly.TryParse({lookupLocal}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
             "global::System.TimeOnly" =>
-                $"global::System.TimeOnly.TryParse({key}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
-            _ => $"System.Enum.TryParse<{typeName}>({key}, out var __{paramName})",
+                $"global::System.TimeOnly.TryParse({lookupLocal}, {inv}, System.Globalization.DateTimeStyles.None, out var __{paramName})",
+            _ => $"System.Enum.TryParse<{typeName}>({lookupLocal}, out var __{paramName})",
         };
 
-        return $"if (!{tryParse})\n                    return {notFound};";
+        return lookup
+            + "\n                "
+            + $"if (!{tryParse})\n                    return {notFound};";
     }
 
     private static bool ReturnsIWebResult(ITypeSymbol returnType)

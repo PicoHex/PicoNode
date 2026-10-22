@@ -262,7 +262,11 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Controllers/UsersController.cs");
 
-        await Assert.That(result).Contains("int.TryParse(ctx.RouteValues[\"id\"]");
+        // Route value first, query string second (audit F-02); only then
+        // does the raw located string go through TryParse.
+        await Assert.That(result).Contains("ctx.RouteValues.TryGetValue(\"id\", out var __id_raw)");
+        await Assert.That(result).Contains("&& !ctx.Query.TryGetValue(\"id\", out __id_raw)");
+        await Assert.That(result).Contains("int.TryParse(__id_raw");
         await Assert.That(result).DoesNotContain("Convert.ChangeType");
     }
 
@@ -279,7 +283,12 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Controllers/PostsController.cs");
 
-        await Assert.That(result).Contains("var __slug = ctx.RouteValues[\"slug\"]");
+        // A string binds raw (no TryParse) from the route value or the
+        // query string.
+        await Assert.That(result).Contains("out var __slug)");
+        await Assert.That(result).Contains("&& !ctx.Query.TryGetValue(\"slug\", out __slug)");
+        await Assert.That(result).Contains("__controller).GetPost(__slug);");
+        await Assert.That(result).DoesNotContain("TryParse");
     }
 
     [Test]
@@ -295,7 +304,7 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Controllers/ItemsController.cs");
 
-        await Assert.That(result).Contains("long.TryParse(ctx.RouteValues[\"id\"]");
+        await Assert.That(result).Contains("long.TryParse(__id_raw");
         await Assert.That(result).Contains("PicoWeb.Results.Empty(404)");
     }
 
@@ -353,8 +362,8 @@ public sealed class ControllersGeneratorTests
 
         await Assert.That(result).Contains("{blogId}");
         await Assert.That(result).Contains("{slug}");
-        await Assert.That(result).Contains("int.TryParse(ctx.RouteValues[\"blogId\"]");
-        await Assert.That(result).Contains("var __slug = ctx.RouteValues[\"slug\"]");
+        await Assert.That(result).Contains("int.TryParse(__blogId_raw");
+        await Assert.That(result).Contains("out var __slug)");
     }
 
     [Test]
@@ -744,8 +753,10 @@ public sealed class ControllersGeneratorTests
 
         var result = RunGenerator(source, "Controllers/UsersController.cs");
 
-        // Strings bind raw — nothing can fail, so no 404 guard may appear.
-        await Assert.That(result).Contains("var __id = ctx.RouteValues[\"id\"];");
+        // Strings bind raw — nothing can fail to parse, so no 404 guard may
+        // appear; the only guard is the 400 for a missing route/query value.
+        await Assert.That(result).Contains("out var __id)");
+        await Assert.That(result).Contains("PicoWeb.Results.Empty(400)");
         await Assert.That(result).DoesNotContain("PicoWeb.Results.Empty(404)");
     }
 
