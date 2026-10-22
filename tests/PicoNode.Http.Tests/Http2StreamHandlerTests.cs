@@ -2006,6 +2006,200 @@ public sealed class Http2StreamHandlerTests
         }
     }
 
+    [Test]
+    public async Task Concurrent_stream_headers_are_written_in_encode_order()
+    {
+        // Regression guard for ERR_HTTP2_COMPRESSION_ERROR on a multiplexed
+        // connection: the shared encoder mutates its dynamic table on every
+        // encode, so a block encoded later may reference an entry inserted by an
+        // earlier block. If the write order can diverge from the encode order
+        // (encode inside the critical section, write after releasing it) the
+        // peer decodes a forward reference against a table that does not hold it
+        // yet and tears the connection down.
+        var connection = new StallingHeadersConnectionContext();
+        var runtime = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = runtime;
+
+        // Identical value on both streams: the first response inserts
+        // "x-request-id: <value>" into the dynamic table, the second response
+        // then references that entry by index.
+        const string requestId = "b7d2e4a1-0c3f-4e5a-9f21-8a6c5d4e3b2a";
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    Headers = new HttpHeaderCollection { { "x-request-id", requestId } },
+                }
+            );
+
+        // Stream 1 encodes first, then parks inside its HEADERS write — the
+        // equivalent of a socket send whose drain has not completed yet.
+        var first = Task.Run(() =>
+            Http2StreamHandler
+                .ProcessHeadersFrame(
+                    connection,
+                    BuildHeadersFrameFor(1, "/first"),
+                    handler,
+                    null,
+                    CancellationToken.None
+                )
+                .AsTask()
+        );
+        await connection.FirstHeadersWriteStarted.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Stream 3 answers while stream 1's write is still in flight.
+        var second = Task.Run(() =>
+            Http2StreamHandler
+                .ProcessHeadersFrame(
+                    connection,
+                    BuildHeadersFrameFor(3, "/second"),
+                    handler,
+                    null,
+                    CancellationToken.None
+                )
+                .AsTask()
+        );
+
+        // Either stream 3 reaches the wire while stream 1 is still parked (the
+        // bug) or it cannot move at all because the write holds the encoder
+        // lock. The window only costs time in the correct case.
+        await Task.WhenAny(second, Task.Delay(TimeSpan.FromSeconds(1)));
+        connection.ReleaseFirstHeadersWrite();
+        await first.WaitAsync(TimeSpan.FromSeconds(10));
+        await second.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Decode the header blocks in wire order against a single peer table,
+        // exactly as the peer does.
+        var peerTable = new HpackDynamicTable();
+        var writtenStreamIds = new List<int>();
+        foreach (var sent in connection.SentFrames)
+        {
+            if (
+                !TryReadFrame(sent, out var sentFrame)
+                || sentFrame!.Type != Http2FrameType.Headers
+            )
+                continue;
+
+            writtenStreamIds.Add(sentFrame.StreamId);
+            var decoded = HpackDecoder.TryDecode(
+                sentFrame.Payload.Span,
+                out var decodedHeaders,
+                peerTable
+            );
+            await Assert
+                .That(decoded)
+                .IsTrue()
+                .Because(
+                    $"stream {sentFrame.StreamId}'s header block must only reference dynamic-table entries the peer has already decoded (wire order: {string.Join(", ", writtenStreamIds)})"
+                );
+            await Assert
+                .That(decodedHeaders.Any(h => h.Item1 == "x-request-id" && h.Item2 == requestId))
+                .IsTrue();
+        }
+
+        await Assert.That(writtenStreamIds.Count).IsEqualTo(2);
+        await Assert
+            .That(writtenStreamIds[0])
+            .IsEqualTo(1)
+            .Because("the first stream to encode must be the first stream written");
+        await Assert
+            .That(writtenStreamIds[1])
+            .IsEqualTo(3)
+            .Because("a header block may not be overtaken by a block encoded after it");
+    }
+
+    [Test]
+    public async Task New_stream_does_not_rescan_cleanup_twice()
+    {
+        // GetOrCreateStream used to run the whole CleanupClosedStreams scan twice
+        // for every new stream — the second scan was pure repetition.
+        var state = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+
+        await Assert.That(state.GetOrCreateStream(1)).IsNotNull();
+        await Assert
+            .That(state.CleanupPasses)
+            .IsEqualTo(1)
+            .Because("creating a stream must scan the stream table once, not twice");
+
+        await Assert.That(state.GetOrCreateStream(3)).IsNotNull();
+        await Assert
+            .That(state.CleanupPasses)
+            .IsEqualTo(2)
+            .Because("every created stream costs exactly one scan");
+
+        // Re-using a known stream adds its own single scan, no hidden extra one.
+        await Assert.That(state.GetOrCreateStream(1)).IsNotNull();
+        await Assert.That(state.CleanupPasses).IsEqualTo(3);
+    }
+
+    /// <summary>
+    /// Connection double that parks the FIRST HEADERS frame write until the test
+    /// releases it, so two stream handlers can be observed with one write still
+    /// in flight.
+    /// </summary>
+    private sealed class StallingHeadersConnectionContext : ITcpConnectionContext
+    {
+        private readonly object _sendGate = new();
+        private readonly List<byte[]> _sentFrames = new();
+        private readonly TaskCompletionSource _firstHeadersWriteStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _releaseFirstHeadersWrite = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _headersWrites;
+
+        public Task FirstHeadersWriteStarted => _firstHeadersWriteStarted.Task;
+
+        public void ReleaseFirstHeadersWrite() => _releaseFirstHeadersWrite.TrySetResult();
+
+        public long ConnectionId => 1;
+        public EndPoint RemoteEndPoint => new IPEndPoint(IPAddress.Loopback, 12345);
+        public DateTimeOffset ConnectedAtUtc => DateTimeOffset.MinValue;
+        public DateTimeOffset LastActivityUtc => DateTimeOffset.MinValue;
+        public object? UserState { get; set; }
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
+        public string? NegotiatedProtocol => null;
+        public bool IsClosed { get; private set; }
+
+        public List<byte[]> SentFrames
+        {
+            get
+            {
+                lock (_sendGate)
+                {
+                    return _sentFrames.ToList();
+                }
+            }
+        }
+
+        public async Task SendAsync(
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var bytes = new byte[buffer.Length];
+            buffer.CopyTo(bytes);
+
+            var isHeadersFrame =
+                bytes.Length >= Http2FrameCodec.FrameHeaderSize
+                && bytes[3] == (byte)Http2FrameType.Headers;
+            if (isHeadersFrame && Interlocked.Increment(ref _headersWrites) == 1)
+            {
+                _firstHeadersWriteStarted.TrySetResult();
+                await _releaseFirstHeadersWrite.Task.ConfigureAwait(false);
+            }
+
+            lock (_sendGate)
+            {
+                _sentFrames.Add(bytes);
+            }
+        }
+
+        public void Close() => IsClosed = true;
+    }
+
     private static async Task AwaitStreamPumpsAsync(TestTcpConnectionContext connection)
     {
         var runtime = connection.UserState as ConnectionRuntimeState;

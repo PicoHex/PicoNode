@@ -30,8 +30,17 @@ internal sealed class ConnectionRuntimeState
     // tasks concurrently, and HPACK dynamic-table state is not thread-safe.
     public HpackEncoder ResponseHpackEncoder { get; } = new();
 
-    /// <summary>Serializes HPACK response encoding (and encoder table resizes) across concurrent stream handlers.</summary>
-    public object ResponseHpackEncoderLock { get; } = new();
+    /// <summary>
+    /// Serializes HPACK response encoding (and encoder table resizes) across
+    /// concurrent stream handlers — and keeps the frame write of a header block
+    /// inside the same critical section, so the wire order of header blocks
+    /// equals their encode order. A <see cref="SemaphoreSlim"/> rather than a
+    /// monitor because the critical section spans an <c>await</c> (a C#
+    /// <c>lock</c> body cannot contain one, and <see cref="Monitor"/> is
+    /// thread-affine). Held across an await: never nest another
+    /// connection-level lock inside it.
+    /// </summary>
+    public SemaphoreSlim ResponseHpackEncoderLock { get; } = new(1, 1);
 
     // Remote (peer) SETTINGS values
     public int RemoteMaxConcurrentStreams { get; set; } = 100;
@@ -112,9 +121,19 @@ internal sealed class ConnectionRuntimeState
                     // it governs our response ENCODER table only. The decoder
                     // table stays bounded by OUR advertised LocalHeaderTableSize
                     // (the peer's encoder must respect it).
-                    lock (ResponseHpackEncoderLock)
+                    // Blocking wait: ApplySettings runs on the frame loop, which
+                    // has no async path, and the gate is only ever held for one
+                    // header-block write. Encoding a response while the table
+                    // resizes would desync the peer decoder, so waiting is the
+                    // safe side of the trade.
+                    ResponseHpackEncoderLock.Wait();
+                    try
                     {
                         ResponseHpackEncoder.DynamicTable.Resize(RemoteHeaderTableSize);
+                    }
+                    finally
+                    {
+                        ResponseHpackEncoderLock.Release();
                     }
                     break;
             }
@@ -161,8 +180,11 @@ internal sealed class ConnectionRuntimeState
         if (Http2Streams is null || Http2Streams.Count == 0)
             return;
 
-        foreach (var stream in Http2Streams.Values)
-            stream.FlowControlSignal?.Release();
+        // Struct enumerator over the dictionary itself: Http2Streams.Values
+        // allocates a List<TValue> snapshot on every non-ACK SETTINGS and every
+        // connection-level WINDOW_UPDATE (i.e. on the frame loop's hot path).
+        foreach (var kvp in Http2Streams)
+            kvp.Value.FlowControlSignal?.Release();
     }
 
     /// <summary>Removes streams that have been idle beyond the timeout.</summary>
@@ -201,6 +223,16 @@ internal sealed class ConnectionRuntimeState
         }
     }
 
+    private int _cleanupPasses;
+
+    /// <summary>
+    /// How many times <see cref="CleanupClosedStreams"/> has been invoked (each
+    /// call is a full scan attempt, including the ones the empty-table guard
+    /// turns into a no-op). Diagnostic only: the stream-creation path must scan
+    /// once per call, never twice.
+    /// </summary>
+    internal int CleanupPasses => Volatile.Read(ref _cleanupPasses);
+
     public Http2StreamState? GetOrCreateStream(int streamId)
     {
         Http2Streams ??= new ConcurrentDictionary<int, Http2StreamState>();
@@ -224,8 +256,6 @@ internal sealed class ConnectionRuntimeState
         if (streamId <= HighestProcessedStreamId)
             return null;
 
-        CleanupClosedStreams();
-
         var state = new Http2StreamState(streamId) { SendWindow = RemoteInitialWindowSize };
         Http2Streams ??= new ConcurrentDictionary<int, Http2StreamState>();
         Http2Streams[streamId] = state;
@@ -238,6 +268,8 @@ internal sealed class ConnectionRuntimeState
 
     public void CleanupClosedStreams()
     {
+        Interlocked.Increment(ref _cleanupPasses);
+
         if (Http2Streams is null || Http2Streams.Count == 0)
             return;
 

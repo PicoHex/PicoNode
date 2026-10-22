@@ -14,15 +14,17 @@ internal static partial class Http2StreamHandler
         // Send 200 response to complete the extended CONNECT handshake
         var responseHeaders = new List<(string, string)> { (":status", "200") };
 
-        var headerWriter = new ArrayBufferWriter<byte>();
-        EncodeResponseHeadersHpack(connection, responseHeaders, headerWriter);
-        await WriteHeadersFrameAsync(
-            connection,
-            state.StreamId,
-            Http2FrameFlags.EndHeaders,
-            headerWriter.WrittenMemory,
-            ct
-        );
+        // Encode and write in one critical section: a header block must reach the
+        // wire in encode order, otherwise the shared encoder's dynamic table and
+        // the peer decoder desync (see EncodeAndWriteResponseHeadersAsync).
+        await EncodeAndWriteResponseHeadersAsync(
+                connection,
+                state.StreamId,
+                Http2FrameFlags.EndHeaders,
+                responseHeaders,
+                ct
+            )
+            .ConfigureAwait(false);
 
         // The tunnel is established. Subsequent DATA frames on this stream
         // carry WebSocket frames. For the MVP, we echo received data on the

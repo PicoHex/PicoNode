@@ -72,6 +72,13 @@ internal static partial class Http2StreamHandler
     /// <summary>Writes a HEADERS frame with HPACK-encoded headers using a pooled buffer.
     /// When the encoded block exceeds the peer's max frame size, it is split across
     /// CONTINUATION frames (RFC 7540 §6.2/§6.10).</summary>
+    /// <remarks>
+    /// Response header blocks are written by <see cref="EncodeAndWriteResponseHeadersAsync"/>,
+    /// which keeps this whole HEADERS+CONTINUATION sequence inside the
+    /// per-connection HPACK gate — the sequence awaits between frames, so calling
+    /// it outside the gate would let another stream's header block interleave
+    /// into the middle of this one (RFC 9113 §6.2).
+    /// </remarks>
     private static async ValueTask WriteHeadersFrameAsync(
         ITcpConnectionContext connection,
         int streamId,

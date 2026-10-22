@@ -2,27 +2,81 @@ namespace PicoNode.Http.Internal.ConnectionRuntime;
 
 internal static partial class Http2StreamHandler
 {
-    private static void EncodeResponseHeadersHpack(
+    /// <summary>
+    /// Encodes the response header list AND writes the resulting HEADERS frame
+    /// (plus CONTINUATION frames when the block exceeds the peer's max frame
+    /// size) inside ONE critical section, so the order of the writes on the wire
+    /// is the order of the encodes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The per-connection encoder mutates its dynamic table on every encode
+    /// (RFC 7541 §2.3). A block encoded while an <em>earlier</em> block is still
+    /// waiting to be written may reference a table entry the peer cannot have
+    /// decoded yet, and the peer answers with COMPRESSION_ERROR — verified
+    /// regression: concurrent streams aborted the whole connection.
+    /// </para>
+    /// <para>
+    /// Keeping encoder and write together also keeps a split header block
+    /// contiguous: RFC 9113 §6.2/§6.10 forbid any other frame between HEADERS
+    /// and its CONTINUATION frames. (DATA frames from a stream body pump are
+    /// still written by other tasks; they do not take this gate.)
+    /// </para>
+    /// <para>
+    /// The gate is a <see cref="SemaphoreSlim"/> and not a monitor because the
+    /// critical section spans an <c>await</c>: a C# <c>lock</c> body may not
+    /// contain <c>await</c> (CS1996), and <see cref="Monitor"/> is thread-affine,
+    /// so the continuation thread could not release it. While the gate is held
+    /// only the frame write may await and no other connection-level lock is
+    /// taken, so the lock order stays single and no cycle can form with
+    /// <c>ConnectionRuntimeState.SendWindowLock</c> or the transport send gate.
+    /// </para>
+    /// </remarks>
+    private static async ValueTask EncodeAndWriteResponseHeadersAsync(
         ITcpConnectionContext connection,
+        int streamId,
+        Http2FrameFlags flags,
         List<(string Name, string Value)> headers,
-        IBufferWriter<byte> writer
+        CancellationToken ct
     )
     {
         // One encoder per connection: HPACK dynamic tables are per-connection by
         // RFC 7541 §2.3. The encoder table capacity tracks the peer's advertised
         // SETTINGS_HEADER_TABLE_SIZE so indices never desync from the peer decoder.
-        var state = connection.UserState as ConnectionRuntimeState;
-        if (state is null)
+        var state = GetOrCreateRuntimeState(connection);
+        var headerWriter = new ArrayBufferWriter<byte>();
+        var gate = state.ResponseHpackEncoderLock;
+
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            state = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
-            connection.UserState = state;
+            state.ResponseHpackEncoder.Encode(headerWriter, headers);
+            await WriteHeadersFrameAsync(
+                    connection,
+                    streamId,
+                    flags,
+                    headerWriter.WrittenMemory,
+                    ct
+                )
+                .ConfigureAwait(false);
         }
-        // Concurrent stream handlers may encode at the same time; the encoder's
-        // dynamic table is shared per connection, so serialise access.
-        lock (state.ResponseHpackEncoderLock)
+        finally
         {
-            state.ResponseHpackEncoder.Encode(writer, headers);
+            gate.Release();
         }
+    }
+
+    /// <summary>Returns the connection runtime state, creating it on first use.</summary>
+    private static ConnectionRuntimeState GetOrCreateRuntimeState(
+        ITcpConnectionContext connection
+    )
+    {
+        if (connection.UserState is ConnectionRuntimeState state)
+            return state;
+
+        state = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = state;
+        return state;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
