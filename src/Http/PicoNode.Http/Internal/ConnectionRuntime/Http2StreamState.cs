@@ -100,11 +100,15 @@ internal sealed class Http2StreamState
     /// Set when the stream is reset (peer RST_STREAM or server-initiated
     /// <c>SendRstStreamAsync</c>). A handler running on a background task checks
     /// this before sending its response so a reset stream is never written to.
+    /// <see cref="MarkAborted"/> is the single writer: a flag that said "aborted"
+    /// without the cancellation and the buffer release would leak both, so the
+    /// setter stays private rather than being assignable from anywhere on the
+    /// connection.
     /// </summary>
     public bool Aborted
     {
         get => _aborted;
-        set => _aborted = value;
+        private set => _aborted = value;
     }
 
     /// <summary>

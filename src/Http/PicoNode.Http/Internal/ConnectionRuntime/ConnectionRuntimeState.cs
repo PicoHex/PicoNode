@@ -66,6 +66,18 @@ internal sealed class ConnectionRuntimeState
     internal Action<int>? OnHpackGateEnter { get; set; }
 
     /// <summary>
+    /// Diagnostic seam: invoked from the deferred-request path immediately after the
+    /// request body snapshot has been taken and before content-length is validated
+    /// against it — the window in which a concurrent <c>MarkAborted</c> used to make
+    /// the two disagree (the snapshot still had the body, the validation re-read an
+    /// already replaced, empty buffer) and produced a bogus RST_STREAM on a stream
+    /// that was already closed. Null in production; lets a test place the abort exactly
+    /// there instead of racing two threads (same kind of instrumentation as
+    /// <see cref="OnHpackGateEnter"/> and <see cref="CleanupPasses"/>).
+    /// </summary>
+    internal Action<Http2StreamState>? OnBodySnapshotCaptured { get; set; }
+
+    /// <summary>
     /// Applies a header-table resize that <see cref="ApplySettings"/> had to
     /// defer because another stream held <see cref="ResponseHpackEncoderLock"/>.
     /// Must be called with the gate held, immediately before encoding: the next
@@ -250,69 +262,155 @@ internal sealed class ConnectionRuntimeState
             kvp.Value.FlowControlSignal?.Release();
     }
 
-    /// <summary>Removes streams that have been idle beyond the timeout.</summary>
-    public void RemoveIdleStreams()
+    /// <summary>
+    /// How many recently closed stream ids the table keeps as tombstones. The
+    /// table's only other bound is <see cref="LocalMaxConcurrentStreams"/>, which
+    /// counts OPEN streams only — a reset tombstone holds no slot, so without this
+    /// cap a peer could loop HEADERS + RST_STREAM (HEADERS is not flow-controlled)
+    /// and accumulate one entry per reset for the whole
+    /// <see cref="StreamIdleTimeout"/> window: unbounded memory, and a table that
+    /// every later HEADERS had to walk once per accumulated entry.
+    /// <para>
+    /// Beyond this many closed ids the oldest is forgotten — its id leaves the
+    /// record and its entry leaves the table, which is exactly what the 2-minute
+    /// idle reaper already did to it, only sooner and deterministically. Ids inside
+    /// the window keep their tombstone so RFC 9113 §5.1 ("minimally process and then
+    /// discard frames received in the closed state") stays cheap and correct for the
+    /// frames a peer had in flight when the stream was reset.
+    /// </para>
+    /// </summary>
+    public const int ClosedStreamKeepAlive = 512;
+
+    // The closed-id record: a FIFO of the newest ClosedStreamKeepAlive closed stream
+    // ids (oldest first) plus the membership set that makes re-registration free.
+    // Only the reclaim pass and the eviction it triggers write them; tests may run a
+    // pass from another thread, hence the gate.
+    private readonly object _closedStreamGate = new();
+    private readonly Queue<int> _recentlyClosedIds = new();
+    private readonly HashSet<int> _recentlyClosedIdSet = [];
+
+    /// <summary>
+    /// Reclaims streams and reports how many streams still occupy a concurrency slot,
+    /// in a SINGLE traversal of the table (it used to be three: closed reaper, idle
+    /// reaper, live counter — the last one taking the state machine's lock per entry).
+    /// A stream is closed — and therefore holds no slot — once it was reset
+    /// (<see cref="Http2StreamState.Aborted"/>) or once both sides finished (state
+    /// machine <c>Closed</c>). Entries may stay in the table after that (they are
+    /// tombstones, so later frames on the id are diagnosed as closed instead of idle,
+    /// RFC 9113 §5.1), but they must never be counted against
+    /// SETTINGS_MAX_CONCURRENT_STREAMS: that limit bounds OPEN streams, so counting
+    /// tombstones both overstates the load and makes the limit unrecoverable.
+    /// <para>
+    /// The HEADERS path calls this BEFORE its concurrency gate: the gate used to count
+    /// every entry (tombstones included) and return before <see cref="GetOrCreateStream"/>
+    /// — the reaper's only caller — so a table at the limit could never shrink again and
+    /// every later HEADERS was answered with REFUSED_STREAM for the lifetime of the
+    /// connection.
+    /// </para>
+    /// </summary>
+    public int ReclaimStreamsAndCountLive()
     {
-        if (Http2Streams is null || Http2Streams.Count == 0)
-            return;
+        Interlocked.Increment(ref _cleanupPasses);
+
+        var streams = Http2Streams;
+        if (streams is null || streams.Count == 0)
+            return 0;
 
         var now = DateTime.UtcNow;
-        List<int>? toRemove = null;
-        foreach (var kvp in Http2Streams)
+        var live = 0;
+        List<int>? finished = null;
+        List<int>? expired = null;
+        List<int>? tombstones = null;
+
+        foreach (var kvp in streams)
         {
             var stream = kvp.Value;
+
+            // Both sides finished: nothing may refer to this stream again, so the
+            // entry goes now and its id is never remembered. Same rule as the old
+            // cleanup reaper, unchanged.
+            if (stream.ResponseSent && stream.EndStreamReceived)
+            {
+                (finished ??= []).Add(kvp.Key);
+                continue;
+            }
+
             // Never reap a stream that still has response work in flight: it may be
             // mid-streaming (ResponseBodyStream), its pump may still be running
             // (ResponsePumpTask), or its handler may still be executing on a
-            // background task (StreamTask).
+            // background task (StreamTask). Same rule as the old idle reaper.
             if (
-                stream.ResponseBodyStream is not null
-                || stream.ResponsePumpTask is not null
-                || stream.StreamTask is { IsCompleted: false }
+                stream.ResponseBodyStream is null
+                && stream.ResponsePumpTask is null
+                && stream.StreamTask is not { IsCompleted: false }
+                && now - stream.LastActivityUtc >= StreamIdleTimeout
             )
-                continue;
-
-            if (now - stream.LastActivityUtc >= StreamIdleTimeout)
             {
-                toRemove ??= new List<int>();
-                toRemove.Add(kvp.Key);
+                (expired ??= []).Add(kvp.Key);
+                continue;
             }
+
+            if (!IsClosed(stream))
+            {
+                live++;
+                continue;
+            }
+
+            // Closed but retained: a tombstone. Re-registered on every pass, so a
+            // stream that closes between passes is remembered by the next one.
+            (tombstones ??= []).Add(kvp.Key);
         }
 
-        if (toRemove is not null)
-        {
-            foreach (var id in toRemove)
-                Http2Streams.TryRemove(id, out _);
-        }
+        RemoveStreams(streams, finished);
+        RemoveStreams(streams, expired);
+        RememberClosedStreams(tombstones);
+
+        return live;
     }
 
     /// <summary>
-    /// Number of streams that still occupy a concurrency slot. A stream is closed —
-    /// and therefore holds no slot — once it was reset
-    /// (<see cref="Http2StreamState.Aborted"/>) or once both sides finished
-    /// (state machine <c>Closed</c>). Entries stay in the table after that (they
-    /// are tombstones, so later frames on the id are diagnosed as closed instead of
-    /// idle, RFC 9113 §5.1), but they must never be counted against
-    /// SETTINGS_MAX_CONCURRENT_STREAMS: that limit bounds OPEN streams, so counting
-    /// tombstones both overstates the load and makes the limit unrecoverable.
+    /// Reclaims finished and idle streams. Kept as the named entry point the idle-reaper
+    /// tests use; the reclamation itself is the single traversal described on
+    /// <see cref="ReclaimStreamsAndCountLive"/> (the live count is simply discarded here).
     /// </summary>
-    public int LiveStreamCount
+    public void RemoveIdleStreams() => ReclaimStreamsAndCountLive();
+
+    private static void RemoveStreams(
+        ConcurrentDictionary<int, Http2StreamState> streams,
+        List<int>? ids
+    )
     {
-        get
+        if (ids is null)
+            return;
+
+        foreach (var id in ids)
+            streams.TryRemove(id, out _);
+    }
+
+    /// <summary>
+    /// Adds the still-retained closed ids to the FIFO record and drops the oldest ones
+    /// beyond <see cref="ClosedStreamKeepAlive"/>, table entry included — so the table
+    /// can never hold more than that many closed streams, whatever the peer does.
+    /// </summary>
+    private void RememberClosedStreams(List<int>? closedIds)
+    {
+        if (closedIds is null)
+            return;
+
+        lock (_closedStreamGate)
         {
-            if (Http2Streams is null || Http2Streams.Count == 0)
-                return 0;
-
-            var live = 0;
-            foreach (var kvp in Http2Streams)
+            foreach (var id in closedIds)
             {
-                if (IsClosed(kvp.Value))
-                    continue;
-
-                live++;
+                if (_recentlyClosedIdSet.Add(id))
+                    _recentlyClosedIds.Enqueue(id);
             }
 
-            return live;
+            while (_recentlyClosedIds.Count > ClosedStreamKeepAlive)
+            {
+                var forgotten = _recentlyClosedIds.Dequeue();
+                _recentlyClosedIdSet.Remove(forgotten);
+                Http2Streams?.TryRemove(forgotten, out _);
+            }
         }
     }
 
@@ -320,28 +418,13 @@ internal sealed class ConnectionRuntimeState
         stream.Aborted
         || stream.StateMachine.CurrentState == Http2StreamStateMachine.StreamState.Closed;
 
-    /// <summary>
-    /// Reclaims closed and idle streams, then reports <see cref="LiveStreamCount"/>.
-    /// The HEADERS path calls this BEFORE its concurrency gate: the gate used to
-    /// count every entry (tombstones included) and return before
-    /// <see cref="GetOrCreateStream"/> — the reaper's only caller — so a table at
-    /// the limit could never shrink again and every later HEADERS was answered with
-    /// REFUSED_STREAM for the lifetime of the connection.
-    /// </summary>
-    public int ReclaimStreamsAndCountLive()
-    {
-        CleanupClosedStreams();
-        RemoveIdleStreams();
-        return LiveStreamCount;
-    }
-
     private int _cleanupPasses;
 
     /// <summary>
-    /// How many times <see cref="CleanupClosedStreams"/> has been invoked (each
-    /// call is a full scan attempt, including the ones the empty-table guard
-    /// turns into a no-op). Diagnostic only: the stream-creation path must scan
-    /// once per call, never twice.
+    /// How many times the stream table has been traversed by the reclaim pass
+    /// (including the passes the empty-table guard turns into a no-op). Diagnostic
+    /// only: one HEADERS frame — and one stream creation — must cost exactly one
+    /// traversal, never two or three.
     /// </summary>
     internal int CleanupPasses => Volatile.Read(ref _cleanupPasses);
 
@@ -356,10 +439,7 @@ internal sealed class ConnectionRuntimeState
 
         // Clean up completed and idle streams before creating new ones
         if (reclaimClosedStreams)
-        {
-            CleanupClosedStreams();
-            RemoveIdleStreams();
-        }
+            ReclaimStreamsAndCountLive();
 
         // Existing stream found — return it regardless of ID rules.
         if (Http2Streams is not null && Http2Streams.TryGetValue(streamId, out var existing))
@@ -384,32 +464,5 @@ internal sealed class ConnectionRuntimeState
             HighestProcessedStreamId = streamId;
 
         return state;
-    }
-
-    public void CleanupClosedStreams()
-    {
-        Interlocked.Increment(ref _cleanupPasses);
-
-        if (Http2Streams is null || Http2Streams.Count == 0)
-            return;
-
-        // Collect keys to remove (iterate over a copy to avoid mutation during enumeration)
-        List<int>? toRemove = null;
-        foreach (var kvp in Http2Streams)
-        {
-            if (kvp.Value.ResponseSent && kvp.Value.EndStreamReceived)
-            {
-                toRemove ??= new List<int>();
-                toRemove.Add(kvp.Key);
-            }
-        }
-
-        if (toRemove is not null)
-        {
-            foreach (var id in toRemove)
-            {
-                Http2Streams.TryRemove(id, out _);
-            }
-        }
     }
 }

@@ -1274,6 +1274,112 @@ public sealed class Http2ProtocolComplianceTests
         await Assert.That(runtimeState.ConnectionReceiveWindow).IsEqualTo(65535 - 200);
     }
 
+    // ── 5.1 Bounded closed set / one reclaim pass / abort vs. body read ──
+
+    [Test]
+    public async Task Closed_stream_table_is_bounded()
+    {
+        // HEADERS is not flow-controlled, so a peer may open a stream and reset it
+        // for free, forever. Once a reset tombstone stopped occupying one of the 100
+        // concurrency slots, nothing capped the table any more: 5,000 resets left
+        // 5,000 entries in place for the whole 2-minute idle window, and every later
+        // HEADERS paid a scan per entry.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+
+        for (var streamId = 1; streamId <= 9999; streamId += 2)
+        {
+            await OpenRequestBodyStreamAsync(connection, streamId);
+            await Http2StreamHandler.SendRstStreamAsync(
+                connection,
+                streamId,
+                Http2ErrorCode.Cancel,
+                CancellationToken.None
+            );
+        }
+
+        // The peer's next HEADERS frame runs exactly this pass; run it directly so
+        // the assertion sees the table that request will see.
+        runtimeState.ReclaimStreamsAndCountLive();
+
+        await Assert
+            .That(runtimeState.Http2Streams!.Count)
+            .IsLessThanOrEqualTo(ConnectionRuntimeState.ClosedStreamKeepAlive)
+            .Because("a peer that only resets streams must not be able to grow the table");
+
+        // Bounded, not amnesiac: the newest closed ids are still tombstones, so
+        // RFC 9113 §5.1 frames for them are still recognised as closed (see
+        // Window_update_after_local_rst_is_ignored). The oldest ones are forgotten —
+        // exactly what the 2-minute idle reaper already did to them, only sooner.
+        await Assert.That(runtimeState.Http2Streams!.ContainsKey(9999)).IsTrue();
+        await Assert.That(runtimeState.Http2Streams.ContainsKey(1)).IsFalse();
+    }
+
+    [Test]
+    public async Task Headers_does_not_rescan_the_table_three_times()
+    {
+        // Reclaiming closed streams, reclaiming idle streams and counting the live
+        // ones were three separate walks of the stream table, all of them paid for by
+        // every HEADERS frame — the one frame type a peer may issue without flow
+        // control. One traversal must do all three jobs.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+
+        // A stream that is both eligible for the idle reaper and holding a concurrency
+        // slot, so the traversal has real work to do in both halves.
+        await OpenRequestBodyStreamAsync(connection, 1);
+        runtimeState.Http2Streams![1].LastActivityUtc =
+            DateTime.UtcNow - runtimeState.StreamIdleTimeout - TimeSpan.FromSeconds(1);
+
+        var scansBefore = runtimeState.CleanupPasses;
+        await SendCompleteGetAsync(connection, 3);
+
+        await Assert
+            .That(runtimeState.CleanupPasses - scansBefore)
+            .IsEqualTo(1)
+            .Because("one HEADERS frame must cost exactly one traversal of the stream table");
+
+        // That one traversal still reaped (the stale entry is gone) and still counted
+        // (the gate it feeds admitted stream 3 even though the stale entry held a slot
+        // when the frame arrived).
+        await Assert
+            .That(runtimeState.Http2Streams!.ContainsKey(1))
+            .IsFalse()
+            .Because("the traversal that counts live streams must also reap stale ones");
+        await Assert.That(connection.HasResponseHeaders(3)).IsTrue();
+    }
+
+    [Test]
+    public async Task Abort_during_body_read_does_not_emit_a_bogus_rst()
+    {
+        // The deferred-request path snapshots the buffered body and then validated
+        // content-length against a SECOND read of state.DataBuffer. An abort landing
+        // between the two (RST_STREAM runs on the frame loop, this path does not)
+        // replaces that buffer with an empty writer, so the snapshot still said 8192
+        // octets while the validation saw 0: a PROTOCOL_ERROR RST_STREAM written for a
+        // stream that our own reset had already closed.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await OpenRequestBodyStreamAsync(connection, 1, contentLength: 8192);
+        var state = runtimeState.Http2Streams![1];
+
+        await SendDataFrameAsync(connection, 1, payloadLength: 8192);
+        await Assert.That(state.DataBuffer.WrittenCount).IsEqualTo(8192);
+
+        // The abort lands in exactly the window between the snapshot and the
+        // content-length check. The body the handler sees is still the 8 KiB that
+        // arrived, so content-length matches and no reset may be written.
+        runtimeState.OnBodySnapshotCaptured = aborted => aborted.MarkAborted();
+
+        await SendEndStreamDataFrameAsync(connection, 1);
+
+        await Assert
+            .That(connection.LastRstStreamCode)
+            .IsNull()
+            .Because("a stream already closed by an abort must not be reset a second time");
+        await Assert.That(state.Aborted).IsTrue();
+    }
+
     // ── HPACK 5.2 String Literal: Huffman padding ──────────────────
 
     [Test]
@@ -1614,18 +1720,25 @@ public sealed class Http2ProtocolComplianceTests
 
     /// <summary>
     /// Opens <paramref name="streamId"/> with a HEADERS frame that does not carry
-    /// END_STREAM, leaving the stream open for the DATA frames that follow.
+    /// END_STREAM, leaving the stream open for the DATA frames that follow. When
+    /// <paramref name="contentLength"/> is set the request declares that
+    /// content-length, so the deferred path validates it against the body.
     /// </summary>
     private static async Task OpenRequestBodyStreamAsync(
         ComplianceTestContext connection,
-        int streamId
+        int streamId,
+        int? contentLength = null
     )
     {
+        var block = new List<byte>(BuildMinimalHpack("POST", "/upload"));
+        if (contentLength is { } declared)
+            AddLiteral(block, "content-length", declared.ToString());
+
         var headers = BuildHeadersFrame(
             Http2FrameType.Headers,
             Http2FrameFlags.EndHeaders,
             streamId,
-            BuildMinimalHpack("POST", "/upload")
+            block.ToArray()
         );
         await Http2ConnectionProcessor.ProcessAsync(
             connection,
@@ -1678,6 +1791,24 @@ public sealed class Http2ProtocolComplianceTests
                 streamId,
                 new byte[payloadLength]
             ),
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+    }
+
+    /// <summary>
+    /// Sends the empty DATA frame that carries END_STREAM — the frame that completes
+    /// the request, so the frame loop hands the buffered body to the handler.
+    /// </summary>
+    private static async ValueTask SendEndStreamDataFrameAsync(
+        ComplianceTestContext connection,
+        int streamId
+    )
+    {
+        await Http2StreamHandler.ProcessDataFrame(
+            connection,
+            BuildFrame(Http2FrameType.Data, Http2FrameFlags.EndStream, streamId, []),
             static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
             null,
             CancellationToken.None

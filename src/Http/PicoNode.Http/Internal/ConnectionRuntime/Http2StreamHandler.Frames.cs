@@ -357,10 +357,23 @@ internal static partial class Http2StreamHandler
     {
         try
         {
-            // Build request from stored headers and buffered data
+            // Build request from stored headers and buffered data.
+            //
+            // This is a SNAPSHOT: MarkAborted (peer RST_STREAM or a server-initiated
+            // reset on a background task) replaces DataBuffer with a fresh, empty
+            // writer, so state.DataBuffer may already be a different buffer by the time
+            // the body is validated below. Everything here therefore reads the captured
+            // memory and its captured length — never the buffer again.
             var bodyBytes = state.DataBuffer.WrittenMemory;
+            var bodyLength = bodyBytes.Length;
+
+            // Diagnostic seam: lets a test abort the stream in exactly the window
+            // between this snapshot and the content-length check.
+            if (connection.UserState is ConnectionRuntimeState snapshotRuntimeState)
+                snapshotRuntimeState.OnBodySnapshotCaptured?.Invoke(state);
+
             var bodyStream =
-                bodyBytes.Length > 0
+                bodyLength > 0
                     ? new ReadOnlySequenceStream(new ReadOnlySequence<byte>(bodyBytes))
                     : Stream.Null;
 
@@ -381,18 +394,14 @@ internal static partial class Http2StreamHandler
             // never reads BodyStream (single-read view). Without this, HTTP/2
             // requests report an empty Body while HTTP/1.1 sees the payload.
             // Mirrors the _bodySequence assignment in HttpBodyParser.ParseBody.
-            if (bodyBytes.Length > 0)
+            if (bodyLength > 0)
                 request._bodySequence = new ReadOnlySequence<byte>(bodyBytes);
 
-            // RFC 7540 §8.1.2.6: content-length must match the request body.
-            if (
-                !await ValidateContentLengthAsync(
-                    connection,
-                    state,
-                    state.DataBuffer.WrittenCount,
-                    ct
-                )
-            )
+            // RFC 7540 §8.1.2.6: content-length must match the request body. Compared
+            // against the CAPTURED length: re-reading state.DataBuffer here saw an
+            // aborted stream's replacement buffer (0 octets) next to a snapshot that
+            // still held the body, and reset a stream we had already closed ourselves.
+            if (!await ValidateContentLengthAsync(connection, state, bodyLength, ct))
             {
                 return false;
             }
