@@ -218,7 +218,14 @@ internal static class Http1ConnectionProcessor
                 // header alone must not enable decompression (zip-bomb guard).
                 if (WebSocketUpgrade.IsCompressionNegotiated(request, response))
                 {
-                    state.WebSocketMessageState ??= new WebSocketMessageProcessorState();
+                    // The state created here is the one the frame loop later
+                    // reuses, so it must already carry the configured limit —
+                    // otherwise the handler's `??=` never supplies it and the
+                    // limit silently falls back to the 256 KB default.
+                    state.WebSocketMessageState ??= new WebSocketMessageProcessorState
+                    {
+                        MaxMessageSize = options.WebSocketMaxMessageSize,
+                    };
                     state.WebSocketMessageState.CompressionNegotiated = true;
                 }
             }

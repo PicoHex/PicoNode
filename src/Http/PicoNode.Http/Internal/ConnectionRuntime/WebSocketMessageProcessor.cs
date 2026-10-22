@@ -20,19 +20,29 @@ internal static class WebSocketMessageProcessor
                 !WebSocketFrameCodec.TryReadFrameHeader(
                     remaining,
                     out var header,
-                    out var tooLarge,
+                    out var headerError,
                     currentState.MaxMessageSize
                 )
             )
             {
-                if (tooLarge)
+                switch (headerError)
                 {
-                    // Frame declares a payload larger than the configured maximum — close 1009.
-                    await CloseWithCodeAsync(connection, 1009, cancellationToken)
-                        .ConfigureAwait(false);
-                    return consumed;
+                    // Payload larger than the configured maximum (RFC 6455 §7.4.1).
+                    case WebSocketFrameHeaderError.TooLarge:
+                        await CloseWithCodeAsync(connection, 1009, cancellationToken)
+                            .ConfigureAwait(false);
+                        return consumed;
+
+                    // A length encoded in more bytes than RFC 6455 §5.2 allows is a
+                    // protocol error, not a size error.
+                    case WebSocketFrameHeaderError.NonMinimalLength:
+                        await CloseWithCodeAsync(connection, 1002, cancellationToken)
+                            .ConfigureAwait(false);
+                        return consumed;
+
+                    default:
+                        return consumed;
                 }
-                return consumed;
             }
 
             consumed = remaining.GetPosition(header.FrameLength);
@@ -206,13 +216,20 @@ internal static class WebSocketMessageProcessor
                     {
                         if (handler is not null)
                         {
-                            await DeliverMessageAsync(
-                                    connection,
-                                    currentState,
-                                    handler,
-                                    cancellationToken
-                                )
-                                .ConfigureAwait(false);
+                            // Delivery can close the connection (1002/1009); nothing
+                            // after that close may be processed from this buffer.
+                            if (
+                                !await DeliverMessageAsync(
+                                        connection,
+                                        currentState,
+                                        handler,
+                                        cancellationToken
+                                    )
+                                    .ConfigureAwait(false)
+                            )
+                            {
+                                return consumed;
+                            }
                         }
                         else
                         {
@@ -260,13 +277,18 @@ internal static class WebSocketMessageProcessor
                     {
                         if (handler is not null)
                         {
-                            await DeliverMessageAsync(
-                                    connection,
-                                    currentState,
-                                    handler,
-                                    cancellationToken
-                                )
-                                .ConfigureAwait(false);
+                            if (
+                                !await DeliverMessageAsync(
+                                        connection,
+                                        currentState,
+                                        handler,
+                                        cancellationToken
+                                    )
+                                    .ConfigureAwait(false)
+                            )
+                            {
+                                return consumed;
+                            }
                         }
                         else
                         {
@@ -293,15 +315,22 @@ internal static class WebSocketMessageProcessor
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
-    /// <summary>Validates close codes per RFC 6455 §7.4.1.</summary>
+    /// <summary>
+    /// Validates close codes per RFC 6455 §7.4.1 plus the IANA WebSocket Close
+    /// Code Number registry: 1000-1003, 1007-1014 (1012 Service Restart,
+    /// 1013 Try Again Later, 1014 Bad Gateway) and the private 3000-4999 range.
+    /// 1004-1006 and 1015 are reserved and MUST NOT appear on the wire.
+    /// </summary>
     private static bool IsValidCloseCode(int code) =>
-        code is (>= 1000 and <= 1003) or (>= 1007 and <= 1011) or (>= 3000 and <= 4999);
+        code is (>= 1000 and <= 1003) or (>= 1007 and <= 1014) or (>= 3000 and <= 4999);
 
     /// <summary>
     /// Decompresses (when the message is permessage-deflate compressed) the fully
     /// reassembled payload, validates UTF-8 for text messages, and delivers it.
+    /// Returns <c>false</c> when the message was rejected and the connection was
+    /// closed — the caller must then stop consuming the buffer.
     /// </summary>
-    private static async ValueTask DeliverMessageAsync(
+    private static async ValueTask<bool> DeliverMessageAsync(
         ITcpConnectionContext connection,
         WebSocketMessageProcessorState currentState,
         WebSocketMessageHandler handler,
@@ -325,7 +354,7 @@ internal static class WebSocketMessageProcessor
             await CloseWithCodeAsync(connection, 1009, ct).ConfigureAwait(false);
             currentState.MessageOpCode = null;
             currentState.PayloadBuffer.Clear();
-            return;
+            return false;
         }
 
         // RFC 6455 §8.1: Text messages must be valid UTF-8
@@ -334,7 +363,7 @@ internal static class WebSocketMessageProcessor
             await CloseWithProtocolError(connection, ct).ConfigureAwait(false);
             currentState.MessageOpCode = null;
             currentState.PayloadBuffer.Clear();
-            return;
+            return false;
         }
 
         await handler(
@@ -345,6 +374,7 @@ internal static class WebSocketMessageProcessor
             .ConfigureAwait(false);
         currentState.MessageOpCode = null;
         currentState.PayloadBuffer.Clear();
+        return true;
     }
 
     private static bool IsValidUtf8(byte[] data)

@@ -116,13 +116,19 @@ public sealed class WebSocketTests
     }
 
     [Test]
-    public async Task TryUpgrade_returns_null_for_wrong_version()
+    public async Task TryUpgrade_returns_426_for_wrong_version()
     {
         var request = CreateUpgradeRequest(version: "8");
 
         var response = WebSocketUpgrade.TryUpgrade(request);
 
-        await Assert.That(response).IsNull();
+        // RFC 6455 §4.2.2: 426 Upgrade Required with the supported version.
+        await Assert.That(response).IsNotNull();
+        await Assert.That(response!.StatusCode).IsEqualTo(426);
+        await Assert.That(response.ReasonPhrase).IsEqualTo("Upgrade Required");
+        await Assert
+            .That(response.Headers.FirstOrDefault(h => h.Key == "Sec-WebSocket-Version").Value)
+            .IsEqualTo("13");
     }
 
     [Test]

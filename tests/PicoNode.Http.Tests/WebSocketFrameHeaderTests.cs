@@ -19,11 +19,11 @@ public sealed class WebSocketFrameHeaderTests
         var parsed = WebSocketFrameCodec.TryReadFrameHeader(
             new ReadOnlySequence<byte>(frame),
             out var header,
-            out var tooLarge
+            out var headerError
         );
 
         await Assert.That(parsed).IsTrue();
-        await Assert.That(tooLarge).IsFalse();
+        await Assert.That(headerError).IsEqualTo(WebSocketFrameHeaderError.None);
         await Assert.That(header.Fin).IsTrue();
         await Assert.That(header.OpCode).IsEqualTo(WebSocketOpCode.Text);
         await Assert.That(header.Masked).IsTrue();
@@ -65,12 +65,12 @@ public sealed class WebSocketFrameHeaderTests
         var parsed = WebSocketFrameCodec.TryReadFrameHeader(
             new ReadOnlySequence<byte>(frame),
             out _,
-            out var tooLarge,
+            out var headerError,
             maxPayloadLength: 16
         );
 
         await Assert.That(parsed).IsFalse();
-        await Assert.That(tooLarge).IsTrue();
+        await Assert.That(headerError).IsEqualTo(WebSocketFrameHeaderError.TooLarge);
     }
 
     [Test]
@@ -85,11 +85,11 @@ public sealed class WebSocketFrameHeaderTests
         var parsed = WebSocketFrameCodec.TryReadFrameHeader(
             new ReadOnlySequence<byte>(frame.AsMemory(0, 4)),
             out _,
-            out var tooLarge
+            out var headerError
         );
 
         await Assert.That(parsed).IsFalse();
-        await Assert.That(tooLarge).IsFalse();
+        await Assert.That(headerError).IsEqualTo(WebSocketFrameHeaderError.None);
     }
 
     [Test]

@@ -600,9 +600,10 @@ public sealed class WebSocketMessageProcessorTests
     {
         // Build a state with a small MaxMessageSize and feed a frame larger than it.
         var state = new WebSocketMessageProcessorState { MaxMessageSize = 64 };
-        // Frame: FIN+Text, length 100 (126-form), masked (mask key 00000000)
-        byte[] frame = [0x81, 0xFE, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00];
-        frame = frame.Concat(new byte[100]).ToArray();
+        // Frame: FIN+Text, length 200 (126-form, the minimal form for this size),
+        // masked (mask key 00000000).
+        byte[] frame = [0x81, 0xFE, 0x00, 0xC8, 0x00, 0x00, 0x00, 0x00];
+        frame = frame.Concat(new byte[200]).ToArray();
         var connection = new RecordingConnectionContext();
 
         await WebSocketMessageProcessor.ProcessAsync(

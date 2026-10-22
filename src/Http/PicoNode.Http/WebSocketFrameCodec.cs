@@ -12,12 +12,13 @@ public static class WebSocketFrameCodec
         frame = null;
         consumed = 0;
 
-        if (!TryReadFrameHeader(buffer, out var header, out var tooLarge, maxPayloadLength))
+        if (!TryReadFrameHeader(buffer, out var header, out var headerError, maxPayloadLength))
         {
-            // Public contract: -1 means "too large / invalid length" (not merely
-            // incomplete). Rejecting before the array allocation keeps a malicious
-            // 127-form length with the sign bit set from overflowing new byte[].
-            if (tooLarge)
+            // Public contract: -1 means "invalid length" (too large or
+            // non-minimal), not merely incomplete. Rejecting before the array
+            // allocation keeps a malicious 127-form length with the sign bit set
+            // from overflowing new byte[].
+            if (headerError != WebSocketFrameHeaderError.None)
                 consumed = -1;
             return false;
         }
@@ -62,12 +63,12 @@ public static class WebSocketFrameCodec
     internal static bool TryReadFrameHeader(
         ReadOnlySequence<byte> buffer,
         out WebSocketFrameHeader header,
-        out bool tooLarge,
+        out WebSocketFrameHeaderError error,
         int maxPayloadLength = int.MaxValue
     )
     {
         header = default;
-        tooLarge = false;
+        error = WebSocketFrameHeaderError.None;
 
         if (buffer.Length < 2)
             return false;
@@ -76,8 +77,9 @@ public static class WebSocketFrameCodec
         reader.TryRead(out var b0);
         reader.TryRead(out var b1);
 
-        var payloadLength = (long)(b1 & 0x7F);
-        if (payloadLength == 126)
+        var lengthForm = b1 & 0x7F;
+        var payloadLength = (long)lengthForm;
+        if (lengthForm == 126)
         {
             if (reader.Remaining < 2)
                 return false;
@@ -85,8 +87,16 @@ public static class WebSocketFrameCodec
             reader.TryRead(out var h);
             reader.TryRead(out var l);
             payloadLength = (h << 8) | l;
+
+            // RFC 6455 §5.2: "the minimal number of bytes MUST be used to encode
+            // the length". The 126 form for anything below 126 is a protocol error.
+            if (payloadLength < 126)
+            {
+                error = WebSocketFrameHeaderError.NonMinimalLength;
+                return false;
+            }
         }
-        else if (payloadLength == 127)
+        else if (lengthForm == 127)
         {
             if (reader.Remaining < 8)
                 return false;
@@ -96,6 +106,14 @@ public static class WebSocketFrameCodec
             {
                 reader.TryRead(out var b);
                 payloadLength = (payloadLength << 8) | b;
+            }
+
+            // Same rule one tier up. A negative value here is the 127 form with
+            // its reserved sign bit set; that stays a "too large" rejection below.
+            if (payloadLength >= 0 && payloadLength < 65536)
+            {
+                error = WebSocketFrameHeaderError.NonMinimalLength;
+                return false;
             }
         }
 
@@ -116,7 +134,7 @@ public static class WebSocketFrameCodec
         // set arrives here negative.
         if (payloadLength > maxPayloadLength || payloadLength < 0)
         {
-            tooLarge = true;
+            error = WebSocketFrameHeaderError.TooLarge;
             return false;
         }
 

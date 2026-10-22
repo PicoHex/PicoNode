@@ -21,11 +21,14 @@ public static class WebSocketUpgrade
         if (!request.Headers.TryGetValue("Sec-WebSocket-Key", out var key) || !IsValidKey(key))
             return null;
 
+        // RFC 6455 §4.2.2: a version the server does not understand MUST abort
+        // the handshake with 426 Upgrade Required naming the version it supports
+        // (a null here would surface to the client as an unexplained 404/400).
         if (
             !request.Headers.TryGetValue("Sec-WebSocket-Version", out var version)
             || version != "13"
         )
-            return null;
+            return BuildUpgradeRequired();
 
         var acceptKey = ComputeAcceptKey(key);
 
@@ -66,6 +69,21 @@ public static class WebSocketUpgrade
             Headers = headers,
         };
     }
+
+    /// <summary>
+    /// RFC 6455 §4.2.2 + RFC 9110 §15.5.21: a 426 carries the version(s) the
+    /// server does understand plus the protocol the client should retry with.
+    /// </summary>
+    private static HttpResponse BuildUpgradeRequired() =>
+        new()
+        {
+            StatusCode = 426,
+            ReasonPhrase = "Upgrade Required",
+            Headers = new HttpHeaderCollection([
+                new KeyValuePair<string, string>("Sec-WebSocket-Version", "13"),
+                new KeyValuePair<string, string>("Upgrade", "websocket"),
+            ]),
+        };
 
     internal static bool IsUpgradeResponse(HttpResponse response)
     {
