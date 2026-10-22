@@ -266,6 +266,9 @@ public sealed class AuthMiddlewareTests
 
         await Assert.That(response.StatusCode).IsEqualTo(401);
         await Assert.That(nextCalled).IsFalse();
+        // RFC 9110 §15.5.2 makes WWW-Authenticate a MUST on a 401: without a challenge the
+        // client cannot learn which scheme to retry with.
+        await Assert.That(response.Headers[HttpHeaderNames.WwwAuthenticate]).IsEqualTo("Bearer");
     }
 
     [Test]

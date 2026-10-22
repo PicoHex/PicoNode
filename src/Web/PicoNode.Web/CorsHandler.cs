@@ -66,10 +66,11 @@ public static class CorsHandler
     /// list when the request is not a cross-origin one this policy allows.
     /// </summary>
     /// <remarks>
-    /// The returned list ends with <c>Vary: Origin</c>. A caller that appends these headers
-    /// to a response which already carries a <c>Vary</c> field (e.g.
-    /// <c>Vary: Accept-Encoding</c> from compression) should route the collection through
-    /// <see cref="WithVaryOrigin"/> instead of adding the duplicate entry blindly.
+    /// The returned list ends with <c>Vary: Origin</c>. Two <c>Vary</c> field lines on one
+    /// response are legal (RFC 9110 §5.3: same-name field lines combine with a comma), so a
+    /// caller that appends these pairs to a response which already carries a <c>Vary</c>
+    /// field (e.g. <c>Vary: Accept-Encoding</c> from compression) is correct as-is; merge
+    /// them into one line only if your pipeline or a proxy needs the single-field form.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <paramref name="options"/> is invalid (see <see cref="CorsOptions.Validate"/>).

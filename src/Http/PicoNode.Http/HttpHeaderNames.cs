@@ -18,6 +18,7 @@ public static class HttpHeaderNames
     public const string Location = "Location";
     public const string Expect = "Expect";
     public const string Authorization = "Authorization";
+    public const string WwwAuthenticate = "WWW-Authenticate";
     public const string Origin = "Origin";
     public const string AccessControlRequestMethod = "Access-Control-Request-Method";
     public const string AccessControlAllowOrigin = "Access-Control-Allow-Origin";

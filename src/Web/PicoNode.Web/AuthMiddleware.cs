@@ -51,7 +51,11 @@ public sealed class AuthMiddleware
             {
                 // Fail-closed on demand: the route needs an identity and none was proven.
                 // Not logged as a warning — a missing token is a normal client condition.
-                return WebResults.Text(401, "unauthorized");
+                // RFC 9110 §15.5.2 makes WWW-Authenticate a MUST on a 401: without a challenge
+                // the client cannot tell which scheme to retry with, so a bare 401 is invalid.
+                var unauthorized = WebResults.Text(401, "unauthorized");
+                unauthorized.Headers.Add(HttpHeaderNames.WwwAuthenticate, "Bearer");
+                return unauthorized;
             }
 
             return await next(context, ct);
