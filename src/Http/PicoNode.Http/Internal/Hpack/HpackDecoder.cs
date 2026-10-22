@@ -75,7 +75,12 @@ internal static class HpackDecoder
             if (headers.Count > fieldsBefore)
             {
                 var (name, value) = headers[^1];
-                headerListSize += name.Length + value.Length + 32;
+                // RFC 7540 §6.5.2 measures the header list in octets (field sizes as
+                // defined in §4.1), NOT in UTF-16 code units. Billing string lengths
+                // would under-count every non-ASCII field by 2× (3× for CJK), letting a
+                // peer exceed the advertised budget without tripping this reject.
+                headerListSize +=
+                    Encoding.UTF8.GetByteCount(name) + Encoding.UTF8.GetByteCount(value) + 32;
                 if (headerListSize > maxHeaderListSize)
                     return false;
             }
@@ -203,6 +208,9 @@ internal static class HpackDecoder
 
         // Written as `length > block.Length - offset` rather than
         // `offset + length > block.Length` so the guard itself cannot overflow.
+        // `length < 0` is unreachable — TryDecodeInteger only assigns a non-negative
+        // accumulator that has been checked against int.MaxValue — but it stays as
+        // defence-in-depth: the slice below is the one operation that would throw.
         if (length < 0 || length > block.Length - offset)
             return false;
 
@@ -233,6 +241,8 @@ internal static class HpackDecoder
     )
     {
         value = 0;
+        // `offset < 0` is unreachable — every caller passes a non-negative cursor — and is
+        // kept as defence-in-depth so a future caller cannot turn a bad cursor into a throw.
         if (offset < 0 || offset >= data.Length)
             return false;
 
@@ -255,7 +265,13 @@ internal static class HpackDecoder
 
             // Reject as soon as the value leaves the int range, and cap the encoding at
             // four continuation octets (m > 28) so a run of zero-payload continuation
-            // bytes cannot keep shifting the accumulator around.
+            // bytes cannot keep shifting the accumulator around. This cap is deliberately
+            // STRICTER than RFC 7541 §5.1's decoding algorithm: it also rejects
+            // non-minimal runs (e.g. 0x3F 0x80 0x80 0x80 0x80 0x00 for the value 31).
+            // That is a strictness choice, not a conformance defect — with 7-bit steps the
+            // reachable thresholds are {7,14,21,28,35}, so every cap in [29,35] rejects the
+            // same octet and the accept-set is identical. Noted so a later conformance
+            // sweep does not file it as a bug.
             if (acc > int.MaxValue || m > 28)
                 return false;
 

@@ -777,9 +777,7 @@ public sealed class HpackDecoderTests
 
         bool success = true;
 
-        await Assert
-            .That(() => success = HpackDecoder.TryDecode(block, out _))
-            .ThrowsNothing();
+        await Assert.That(() => success = HpackDecoder.TryDecode(block, out _)).ThrowsNothing();
         await Assert.That(success).IsFalse();
     }
 
@@ -796,10 +794,73 @@ public sealed class HpackDecoderTests
 
         table.Add(name, value);
 
-        var expected =
-            Encoding.UTF8.GetByteCount(name) + Encoding.UTF8.GetByteCount(value) + 32;
+        var expected = Encoding.UTF8.GetByteCount(name) + Encoding.UTF8.GetByteCount(value) + 32;
         await Assert.That(expected).IsGreaterThan(name.Length + value.Length + 32);
         await Assert.That(table.GetEntry(1)!.Size).IsEqualTo(expected);
         await Assert.That(table.CurrentSize).IsEqualTo(expected);
+    }
+
+    // ── Header list budget (RFC 7540 §6.5.2) ────────────────────────────
+
+    [Test]
+    public async Task Decode_header_list_over_budget_in_octets_returns_false()
+    {
+        // RFC 7540 §6.5.2 budgets SETTINGS_MAX_HEADER_LIST_SIZE in OCTETS (field
+        // sizes as defined in §4.1), so the accounting has to compare UTF-8 byte
+        // counts, not UTF-16 code units. The pair below is chosen so the two
+        // accountings disagree: 'ф' (U+0444) is 1 UTF-16 unit but 2 UTF-8 octets.
+        //
+        //   value = 16 × 'ф'  → 16 units / 32 octets, name "x-name" → 6 / 6
+        //   UTF-16 accounting: 6 + 16 + 32 = 54  → fits a 64 budget  (old bug)
+        //   octet  accounting: 6 + 32 + 32 = 70  → exceeds it          (expected)
+        //
+        // A whole header list sized like this is therefore under-counted 2× for
+        // Cyrillic (3× for CJK) before the fix, so a peer could blow past the
+        // advertised budget without ever tripping the reject.
+        const string name = "x-name";
+        var value = new string('ф', 16);
+        var valueBytes = Encoding.UTF8.GetBytes(value);
+        var huffmanValue = HuffmanCodec.Encode(valueBytes);
+
+        // The literal is hand-built so that a rejection cannot come from anything
+        // but the budget: literal without indexing, new name encoded raw, value
+        // encoded with Huffman (the only way a peer can carry non-ASCII octets —
+        // a raw string is decoded as ASCII and could never yield 'ф').
+        await Assert.That(huffmanValue.Length).IsLessThan(127);
+        var block = new List<byte>
+        {
+            0x00, // literal without indexing, new name
+            (byte)name.Length, // raw name, 7-bit length prefix (6 < 127)
+        };
+        block.AddRange(Encoding.ASCII.GetBytes(name));
+        block.Add((byte)(0x80 | huffmanValue.Length)); // Huffman flag + 7-bit length
+        block.AddRange(huffmanValue);
+        var encoded = block.ToArray();
+
+        // Pin the discriminating property, so this test cannot silently degenerate
+        // into one that both accountings pass.
+        var utf16Size = name.Length + value.Length + 32;
+        var octetSize = Encoding.UTF8.GetByteCount(name) + valueBytes.Length + 32;
+        await Assert.That(utf16Size).IsLessThanOrEqualTo(64);
+        await Assert.That(octetSize).IsGreaterThan(64);
+
+        // Same block under a generous budget: it decodes, and to the real field.
+        var fitsSuccess = HpackDecoder.TryDecode(
+            encoded,
+            out var fitsHeaders,
+            maxHeaderListSize: 128
+        );
+        await Assert.That(fitsSuccess).IsTrue();
+        await Assert.That(fitsHeaders![0].Item1).IsEqualTo(name);
+        await Assert.That(fitsHeaders[0].Item2).IsEqualTo(value);
+
+        // Under the 64-octet budget the decoder must answer false — never throw.
+        bool overBudget = true;
+
+        await Assert
+            .That(() => overBudget = HpackDecoder.TryDecode(encoded, out _, maxHeaderListSize: 64))
+            .ThrowsNothing()
+            .Because("an oversized header list is a stream error, not a crash (T1.4)");
+        await Assert.That(overBudget).IsFalse();
     }
 }
