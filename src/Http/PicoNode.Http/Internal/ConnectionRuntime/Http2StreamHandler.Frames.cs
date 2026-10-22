@@ -166,8 +166,10 @@ internal static partial class Http2StreamHandler
         // Stop the response pump (and any background handler) — without this, a
         // stalled body producer would keep the pump alive for the lifetime of the
         // connection, and a parked handler would send a response on a reset stream.
-        rstState.Aborted = true;
-        rstState.ResponseCts?.Cancel();
+        // MarkAborted also releases the buffered request body, which would
+        // otherwise sit in the tombstone (up to MaxRequestBodyBytes) until a reaper
+        // collects it.
+        rstState.MarkAborted();
 
         return false;
     }
@@ -260,6 +262,13 @@ internal static partial class Http2StreamHandler
             // window as a flow-control error.
             if (flowControlled > state.ReceiveWindow)
             {
+                // RFC 9113 §6.9.1: flow control counts every octet the peer sent,
+                // whatever we end up doing with it. Returning without charging the
+                // connection window left our window above the peer's send window by
+                // exactly the offending frame (it spent those octets, we never
+                // booked them), so the connection window drifted for good.
+                runtimeState?.AddConnectionReceiveWindow(-flowControlled);
+
                 await SendRstStreamAsync(
                         connection,
                         frame.StreamId,

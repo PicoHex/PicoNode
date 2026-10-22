@@ -48,12 +48,14 @@ internal static partial class Http2StreamHandler
         // reads as an idle stream instead and escalates to a connection-level
         // GOAWAY — exactly what a peer that resets and then drains does.
         // Reclamation stays with ConnectionRuntimeState.RemoveIdleStreams.
+        //
+        // MarkAborted also drops the buffered request body: the tombstone outlives
+        // the reset by up to StreamIdleTimeout, and that buffer can be 64 MiB
+        // (MaxRequestBodyBytes) — exactly the case the ENHANCE_YOUR_CALM reset above
+        // fires for.
         var state = connection.UserState as ConnectionRuntimeState;
         if (state?.Http2Streams?.TryGetValue(streamId, out var resetStream) == true)
-        {
-            resetStream.Aborted = true;
-            resetStream.ResponseCts?.Cancel();
-        }
+            resetStream.MarkAborted();
     }
 
     private static async ValueTask SendGoAwayAndCloseAsync(

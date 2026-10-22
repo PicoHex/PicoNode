@@ -286,6 +286,55 @@ internal sealed class ConnectionRuntimeState
         }
     }
 
+    /// <summary>
+    /// Number of streams that still occupy a concurrency slot. A stream is closed —
+    /// and therefore holds no slot — once it was reset
+    /// (<see cref="Http2StreamState.Aborted"/>) or once both sides finished
+    /// (state machine <c>Closed</c>). Entries stay in the table after that (they
+    /// are tombstones, so later frames on the id are diagnosed as closed instead of
+    /// idle, RFC 9113 §5.1), but they must never be counted against
+    /// SETTINGS_MAX_CONCURRENT_STREAMS: that limit bounds OPEN streams, so counting
+    /// tombstones both overstates the load and makes the limit unrecoverable.
+    /// </summary>
+    public int LiveStreamCount
+    {
+        get
+        {
+            if (Http2Streams is null || Http2Streams.Count == 0)
+                return 0;
+
+            var live = 0;
+            foreach (var kvp in Http2Streams)
+            {
+                if (IsClosed(kvp.Value))
+                    continue;
+
+                live++;
+            }
+
+            return live;
+        }
+    }
+
+    private static bool IsClosed(Http2StreamState stream) =>
+        stream.Aborted
+        || stream.StateMachine.CurrentState == Http2StreamStateMachine.StreamState.Closed;
+
+    /// <summary>
+    /// Reclaims closed and idle streams, then reports <see cref="LiveStreamCount"/>.
+    /// The HEADERS path calls this BEFORE its concurrency gate: the gate used to
+    /// count every entry (tombstones included) and return before
+    /// <see cref="GetOrCreateStream"/> — the reaper's only caller — so a table at
+    /// the limit could never shrink again and every later HEADERS was answered with
+    /// REFUSED_STREAM for the lifetime of the connection.
+    /// </summary>
+    public int ReclaimStreamsAndCountLive()
+    {
+        CleanupClosedStreams();
+        RemoveIdleStreams();
+        return LiveStreamCount;
+    }
+
     private int _cleanupPasses;
 
     /// <summary>
@@ -296,13 +345,21 @@ internal sealed class ConnectionRuntimeState
     /// </summary>
     internal int CleanupPasses => Volatile.Read(ref _cleanupPasses);
 
-    public Http2StreamState? GetOrCreateStream(int streamId)
+    /// <param name="reclaimClosedStreams">
+    /// Whether to run the reaper first. The HEADERS path passes <c>false</c> after
+    /// calling <see cref="ReclaimStreamsAndCountLive"/> for the same frame, so a
+    /// request still costs one scan of the stream table, not two.
+    /// </param>
+    public Http2StreamState? GetOrCreateStream(int streamId, bool reclaimClosedStreams = true)
     {
         Http2Streams ??= new ConcurrentDictionary<int, Http2StreamState>();
 
         // Clean up completed and idle streams before creating new ones
-        CleanupClosedStreams();
-        RemoveIdleStreams();
+        if (reclaimClosedStreams)
+        {
+            CleanupClosedStreams();
+            RemoveIdleStreams();
+        }
 
         // Existing stream found — return it regardless of ID rules.
         if (Http2Streams is not null && Http2Streams.TryGetValue(streamId, out var existing))

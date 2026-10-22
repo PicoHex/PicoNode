@@ -33,8 +33,10 @@ internal sealed class Http2StreamState
         StateMachine = stateMachine;
     }
 
-    // DATA frame buffering for request body assembly
-    public ArrayBufferWriter<byte> DataBuffer { get; } = new();
+    // DATA frame buffering for request body assembly. Replaceable so an abort can
+    // drop a grown buffer (up to MaxRequestBodyBytes) instead of parking it in the
+    // tombstone until the reaper collects the stream — see MarkAborted.
+    public ArrayBufferWriter<byte> DataBuffer { get; private set; } = new();
 
     // Decoded request headers (set when HEADERS arrive without EndStream)
     public string? DecodedMethod { get; set; }
@@ -103,6 +105,26 @@ internal sealed class Http2StreamState
     {
         get => _aborted;
         set => _aborted = value;
+    }
+
+    /// <summary>
+    /// Closes the stream as reset (peer RST_STREAM or server-initiated
+    /// RST_STREAM): marks it <see cref="Aborted"/> so the state is kept as a
+    /// tombstone, stops any response work in flight, and releases the buffered
+    /// request body.
+    /// </summary>
+    public void MarkAborted()
+    {
+        Aborted = true;
+        ResponseCts?.Cancel();
+
+        // The tombstone keeps this state object alive until the reaper collects it,
+        // so the buffered body must go now: it can hold up to MaxRequestBodyBytes
+        // (64 MiB) — the very size that makes the ENHANCE_YOUR_CALM reset fire.
+        // Assign a fresh writer instead of calling Clear(), which keeps the grown
+        // array alive. The header block (bounded by MaxHeaderListSize) goes too.
+        DataBuffer = new ArrayBufferWriter<byte>();
+        HeaderBlockBuffer = null;
     }
 
     /// <summary>

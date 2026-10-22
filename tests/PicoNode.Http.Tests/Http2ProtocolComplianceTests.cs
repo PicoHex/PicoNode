@@ -1144,6 +1144,136 @@ public sealed class Http2ProtocolComplianceTests
         await Assert.That(connection.IsClosed).IsFalse();
     }
 
+    // ── 5.1 Concurrency limit vs. closed streams / abort releases ──
+
+    [Test]
+    public async Task Resetting_100_streams_does_not_starve_new_streams()
+    {
+        // A tombstone left by a server-side reset is CLOSED, so it must not occupy
+        // one of the 100 concurrency slots we advertise in SETTINGS. Sizing the
+        // gate from the raw table size made 100 resets a permanent outage: every
+        // later HEADERS could only be answered with REFUSED_STREAM.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await Assert.That(runtimeState.LocalMaxConcurrentStreams).IsEqualTo(100);
+
+        // 100 streams reset before their responses were ever sent. Neither reaper
+        // can collect these: CleanupClosedStreams needs a sent response plus the
+        // peer's END_STREAM, and RemoveIdleStreams needs the 2-minute idle timeout.
+        for (var streamId = 1; streamId <= 199; streamId += 2)
+        {
+            await OpenRequestBodyStreamAsync(connection, streamId);
+            await Http2StreamHandler.SendRstStreamAsync(
+                connection,
+                streamId,
+                Http2ErrorCode.Cancel,
+                CancellationToken.None
+            );
+        }
+
+        await Assert.That(runtimeState.Http2Streams!.Count).IsEqualTo(100);
+
+        // The 101st stream must still be admitted and answered.
+        await SendCompleteGetAsync(connection, 201);
+
+        await Assert
+            .That(runtimeState.Http2Streams!.ContainsKey(201))
+            .IsTrue()
+            .Because("100 closed tombstones must not exhaust the concurrency limit");
+        await Assert.That(connection.HasResponseHeaders(201)).IsTrue();
+        await Assert.That(connection.LastGoAwayErrorCode).IsNull();
+    }
+
+    [Test]
+    public async Task Stale_streams_are_reaped_before_the_concurrency_gate_decides()
+    {
+        // GetOrCreateStream is the reaper's only call site and the concurrency gate
+        // sits in front of it, so an entry the reaper would collect pinned the limit
+        // for the lifetime of the connection: the gate refused, refused again, and
+        // never reached the reaper. Here the stale entries are two streams of a peer
+        // that went quiet for longer than StreamIdleTimeout.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        runtimeState.LocalMaxConcurrentStreams = 2;
+
+        // Both streams are open, so both occupy a concurrency slot.
+        await OpenRequestBodyStreamAsync(connection, 1);
+        await OpenRequestBodyStreamAsync(connection, 3);
+
+        // Both streams fall out of the idle window without a single frame arriving.
+        var idleSince = DateTime.UtcNow - runtimeState.StreamIdleTimeout - TimeSpan.FromSeconds(1);
+        runtimeState.Http2Streams![1].LastActivityUtc = idleSince;
+        runtimeState.Http2Streams![3].LastActivityUtc = idleSince;
+
+        // A new request must be admitted, and the stale entries actually collected.
+        await SendCompleteGetAsync(connection, 5);
+
+        await Assert
+            .That(runtimeState.Http2Streams!.ContainsKey(5))
+            .IsTrue()
+            .Because("idle streams must be reaped before the gate counts");
+        await Assert.That(connection.HasResponseHeaders(5)).IsTrue();
+        await Assert.That(runtimeState.Http2Streams.ContainsKey(1)).IsFalse();
+        await Assert.That(runtimeState.Http2Streams.ContainsKey(3)).IsFalse();
+        await Assert.That(connection.LastGoAwayErrorCode).IsNull();
+    }
+
+    [Test]
+    public async Task Aborting_a_stream_frees_its_body_buffer()
+    {
+        // The tombstone keeps the whole Http2StreamState alive until the reaper
+        // collects it, so an abort must drop the buffered body -- up to
+        // MaxRequestBodyBytes (64 MiB), and the ENHANCE_YOUR_CALM reset fires
+        // precisely because that buffer got huge.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await OpenRequestBodyStreamAsync(connection, 1);
+        var state = runtimeState.Http2Streams![1];
+
+        await SendDataFrameAsync(connection, 1, payloadLength: 8192);
+        await Assert.That(state.DataBuffer.WrittenCount).IsEqualTo(8192);
+        await Assert.That(state.DataBuffer.Capacity).IsGreaterThanOrEqualTo(8192);
+
+        await Http2StreamHandler.SendRstStreamAsync(
+            connection,
+            1,
+            Http2ErrorCode.EnhanceYourCalm,
+            CancellationToken.None
+        );
+
+        // Still a tombstone, so later frames on stream 1 are ignored (RFC 9113 5.1)...
+        await Assert.That(runtimeState.Http2Streams!.ContainsKey(1)).IsTrue();
+        await Assert.That(state.Aborted).IsTrue();
+
+        // ...but the body buffer is gone. Clear() would keep the grown array, so the
+        // empty writer AND its zero capacity are both asserted.
+        await Assert.That(state.DataBuffer.WrittenCount).IsEqualTo(0);
+        await Assert.That(state.DataBuffer.Capacity).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Stream_level_flow_control_error_still_charges_the_connection_window()
+    {
+        // RFC 9113 6.9.1: flow control covers every DATA octet the peer sends,
+        // whatever we end up doing with it. A stream-level FLOW_CONTROL_ERROR used
+        // to return before the connection window was charged, so the peer's send
+        // window and our receive window drifted apart by the offending frame.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await OpenRequestBodyStreamAsync(connection, 1);
+        var state = runtimeState.Http2Streams![1];
+        state.ReceiveWindow = 100;
+
+        await SendDataFrameAsync(connection, 1, payloadLength: 200);
+
+        await Assert.That(connection.LastRstStreamCode).IsEqualTo(Http2ErrorCode.FlowControlError);
+        await Assert.That(connection.LastGoAwayErrorCode).IsNull();
+        // Stream window untouched: the stream is reset, not credited.
+        await Assert.That(state.ReceiveWindow).IsEqualTo(100);
+        // Connection window charged by the whole frame payload.
+        await Assert.That(runtimeState.ConnectionReceiveWindow).IsEqualTo(65535 - 200);
+    }
+
     // ── HPACK 5.2 String Literal: Huffman padding ──────────────────
 
     [Test]
@@ -1524,6 +1654,30 @@ public sealed class Http2ProtocolComplianceTests
         await Http2StreamHandler.ProcessDataFrame(
             connection,
             BuildFrame(Http2FrameType.Data, Http2FrameFlags.Padded, streamId, payload),
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+    }
+
+    /// <summary>
+    /// Sends one unpadded DATA frame with <paramref name="payloadLength"/> zero
+    /// octets, so padding can never mask a flow-control accounting bug.
+    /// </summary>
+    private static async ValueTask SendDataFrameAsync(
+        ComplianceTestContext connection,
+        int streamId,
+        int payloadLength
+    )
+    {
+        await Http2StreamHandler.ProcessDataFrame(
+            connection,
+            BuildFrame(
+                Http2FrameType.Data,
+                Http2FrameFlags.None,
+                streamId,
+                new byte[payloadLength]
+            ),
             static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
             null,
             CancellationToken.None

@@ -11,13 +11,22 @@ internal static partial class Http2StreamHandler
     )
     {
         // Check stream concurrency limit before creating stream state.
+        var gateReclaimed = false;
         var runtimeStateForLimit = connection.UserState as ConnectionRuntimeState;
         if (runtimeStateForLimit is not null && frame.StreamId != 0)
         {
-            var streamCount = runtimeStateForLimit.Http2Streams?.Count ?? 0;
+            // Reclaim BEFORE the gate decides. GetOrCreateStream — the reaper's
+            // only call site — sits behind this check, so a table that reached the
+            // limit could never shrink again: 100 finished streams (or 100
+            // tombstones left by our own RST_STREAMs) turned every later HEADERS
+            // into REFUSED_STREAM for the lifetime of the connection.
+            gateReclaimed = true;
             // Our own advertised limit governs how many streams the PEER may open
-            // (the peer's SETTINGS value only limits what WE open).
-            if (streamCount >= runtimeStateForLimit.LocalMaxConcurrentStreams)
+            // (the peer's SETTINGS value only limits what WE open), and only OPEN
+            // streams occupy a slot: a reset tombstone and a stream both sides have
+            // finished are closed (RFC 9113 §5.1) and count against nothing.
+            var liveStreams = runtimeStateForLimit.ReclaimStreamsAndCountLive();
+            if (liveStreams >= runtimeStateForLimit.LocalMaxConcurrentStreams)
             {
                 // Per RFC 7540, refuse the specific stream with RST_STREAM,
                 // not GoAway (which would close the entire connection).
@@ -31,7 +40,7 @@ internal static partial class Http2StreamHandler
             }
         }
 
-        var state = GetStreamState(connection, frame.StreamId);
+        var state = GetStreamState(connection, frame.StreamId, !gateReclaimed);
         if (state is null)
         {
             // Invalid stream ID (even, non-monotonic, or stream 0) — a
@@ -387,7 +396,11 @@ internal static partial class Http2StreamHandler
     // ── HPACK response encoder (uses the connection's shared HpackEncoder, whose
     //    dynamic table is resized by peer SETTINGS — see ConnectionRuntimeState) ──
 
-    private static Http2StreamState? GetStreamState(ITcpConnectionContext connection, int streamId)
+    private static Http2StreamState? GetStreamState(
+        ITcpConnectionContext connection,
+        int streamId,
+        bool reclaimClosedStreams = true
+    )
     {
         var state = connection.UserState as ConnectionRuntimeState;
         if (state is null)
@@ -396,6 +409,6 @@ internal static partial class Http2StreamHandler
             connection.UserState = state;
         }
 
-        return state.GetOrCreateStream(streamId);
+        return state.GetOrCreateStream(streamId, reclaimClosedStreams);
     }
 }
