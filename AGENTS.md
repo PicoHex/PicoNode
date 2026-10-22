@@ -39,8 +39,10 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
   next version. Read it **before** touching the baselines.
 - `./scripts/release.ps1 -Push` refreshes the baselines, commits `chore(release): vX.Y.Z`, creates an
   annotated tag and pushes branch + tag.
-- **The tag is the release trigger**: `.github/workflows/release.yml` runs the tests, packs every package at
-  the tag version and publishes to NuGet. Never tag by hand.
+- **The tag is the release trigger**: `.github/workflows/release.yml` gates the publish on a **`verify` job**
+  (restore + build, all ten test projects, the version-shape assertion) and `publish` reaches NuGet only
+  through `needs: verify`. It then packs every package at the tag version and publishes to NuGet; a version
+  that already exists on nuget.org fails the run instead of being skipped. Never tag by hand.
 - A baseline holds the **last release's** surface and the script enforces it: when the committed baselines
   match the worktree but differ from the last tag (someone refreshed them mid-cycle), it explains the drift,
   warns on `-DryRun` and refuses to release - that is exactly how the API delta stayed invisible and
@@ -70,10 +72,11 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 
 ## Environment quirks (this developer machine)
 
-- - Small, focused, conventional commits: `fix(web):`, `test(http):`, `docs(spec):`, `build(api):`, `chore(release):`.
 - Commit before you use a throwaway branch for a probe. `git checkout -B probe && git add -A && git commit`
   sweeps uncommitted work into the probe commit, and deleting the branch deletes that work (recoverable via
-  `git reflog` + `git fsck` while the commit is unreferenced, but not worth the scare).fig` (`http.https://github.com.proxy`) and a direct connection. Sometimes only one works, and the
+  `git reflog` + `git fsck` while the commit is unreferenced, but not worth the scare).
+- github.com is reachable either through the proxy configured in `.gitconfig`
+  (`http.https://github.com.proxy`) or directly. Sometimes only one works, and the
   symptom is `Failed to connect to github.com port 443`. Start with `git ls-remote origin main`; if that
   fails, retry with `-c http.https://github.com.proxy=` (and vice versa) before blaming credentials.
 - `curl` does not read git's proxy setting, so `curl https://api.nuget.org/...` returns an empty response while

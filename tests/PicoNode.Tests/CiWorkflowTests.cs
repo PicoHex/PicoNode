@@ -542,4 +542,163 @@ public sealed class CiWorkflowTests
         "TestResults",
         "artifacts",
     ];
+    private static string ReleasePath =>
+        Path.Combine(RepoRoot, ".github", "workflows", "release.yml");
+
+    /// <summary>
+    /// The ten test projects the release gate must execute — the same set
+    /// <c>ci.yml</c> runs, so a version can never ship while a suite is red.
+    /// </summary>
+    private static readonly string[] ReleaseTestProjects =
+    [
+        "tests/PicoNode.Tests/PicoNode.Tests.csproj",
+        "tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj",
+        "tests/PicoJsonRpc.Tests/PicoJsonRpc.Tests.csproj",
+        "tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj",
+        "tests/PicoWeb.Tests/PicoWeb.Tests.csproj",
+        "tests/PicoWeb.Integration.Tests/PicoWeb.Integration.Tests.csproj",
+        "tests/PicoWeb.DI.Tests/PicoWeb.DI.Tests.csproj",
+        "tests/PicoNode.Smoke/PicoNode.Smoke.csproj",
+        "tests/PicoNode.PerfHarness/PicoNode.PerfHarness.csproj",
+        "tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj",
+    ];
+
+    [Test]
+    public async Task Release_workflow_verifies_before_publishing()
+    {
+        // The tag is the release trigger, but release.yml had no test step at all
+        // (AGENTS.md and release.ps1 both claimed it ran the tests), and
+        // --skip-duplicate turned a re-run — or a workflow_dispatch, where the
+        // version resolved to the branch name — into a green run that published
+        // nothing. The gate is a `verify` job the `publish` job depends on.
+        var release = File.ReadAllText(ReleasePath);
+        var verify = TopLevelBlock(release, "verify");
+
+        await Assert
+            .That(verify is not null)
+            .IsTrue()
+            .Because("release.yml must declare a `verify:` job, not only a `publish:` job");
+
+        var publish = TopLevelBlock(release, "publish");
+
+        await Assert.That(publish is not null).IsTrue();
+        await Assert
+            .That((publish ?? string.Empty).Contains("needs: verify", StringComparison.Ordinal))
+            .IsTrue()
+            .Because("publish must be gated on verify, otherwise the test run is advisory");
+
+        await Assert
+            .That(Regex.Matches(release, "dotnet test").Count >= 1)
+            .IsTrue()
+            .Because("the release workflow must actually run the test suites");
+
+        // Prose may name the flag — the workflow explains why it is gone — but a
+        // line that actually runs must not still carry it.
+        await Assert
+            .That(
+                WithoutCommentLines(release)
+                    .Any(static line =>
+                        line.Contains("--skip-duplicate", StringComparison.Ordinal)
+                    )
+            )
+            .IsFalse()
+            .Because("--skip-duplicate hides an already-published version behind a green run");
+    }
+
+    [Test]
+    public async Task Release_verify_job_runs_every_test_project_and_asserts_the_version_shape()
+    {
+        // A gate that runs "the tests" in prose is worth nothing: the verify job
+        // must execute all ten suites and reject a ref that is not a release
+        // version (a dispatch used to resolve PACKAGE_VERSION to the branch name).
+        var release = File.ReadAllText(ReleasePath);
+        var verify = TopLevelBlock(release, "verify") ?? string.Empty;
+
+        var missing = ReleaseTestProjects
+            .Where(p => !verify.Contains(p, StringComparison.Ordinal))
+            .ToArray();
+
+        await Assert
+            .That(missing.Length)
+            .IsEqualTo(0)
+            .Because(
+                $"the verify job must run every test project; missing: {string.Join(", ", missing)}"
+            );
+
+        await Assert.That(verify).Contains("dotnet test");
+        await Assert
+            .That(verify.Contains("grep -Eq", StringComparison.Ordinal))
+            .IsTrue()
+            .Because("the version must be asserted against a shape, not merely echoed");
+        await Assert
+            .That(verify.Contains("[0-9]{4}", StringComparison.Ordinal))
+            .IsTrue()
+            .Because("the release version shape is <four-digit year>.<x>.<y>");
+    }
+
+    [Test]
+    public async Task Release_dispatch_takes_the_version_from_an_input_not_the_branch_name()
+    {
+        // On workflow_dispatch GITHUB_REF_NAME is the branch (main), so
+        // `PACKAGE_VERSION=${GITHUB_REF_NAME#v}` packed seven packages labelled
+        // `main` — and --skip-duplicate made the no-op push look successful.
+        var release = File.ReadAllText(ReleasePath);
+        var dispatch = TopLevelBlock(release, "workflow_dispatch");
+
+        await Assert.That(dispatch is not null).IsTrue();
+        await Assert
+            .That((dispatch ?? string.Empty).Contains("version:", StringComparison.Ordinal))
+            .IsTrue()
+            .Because("a dispatch carries no tag: the version must be an explicit input");
+
+        await Assert
+            .That(release.Contains("inputs.version", StringComparison.Ordinal))
+            .IsTrue()
+            .Because("both jobs must resolve PACKAGE_VERSION from the input before the ref");
+
+        await Assert
+            .That(release.Contains("PACKAGE_VERSION=${GITHUB_REF_NAME#v}", StringComparison.Ordinal))
+            .IsFalse()
+            .Because("the unguarded tag-only expression is what produced PACKAGE_VERSION=main");
+    }
+
+    /// <summary>
+    /// The lines of <paramref name="yaml"/> that are not full-line <c>#</c>
+    /// comments: a comment may explain why a construct was removed, a command must
+    /// not still carry it.
+    /// </summary>
+    private static IEnumerable<string> WithoutCommentLines(string yaml) =>
+        yaml.Split('\n')
+            .Select(static line => line.TrimEnd('\r'))
+            .Where(static line => !line.TrimStart().StartsWith('#'));
+
+    /// <summary>
+    /// The YAML block of a top-level key — a job, or a trigger nested under
+    /// <c>on:</c>: the header line plus every following line indented four or more
+    /// spaces (blank lines included). <c>null</c> when the key is absent, so an
+    /// assertion about a missing job fails loudly instead of matching an empty
+    /// string and passing.
+    /// </summary>
+    private static string? TopLevelBlock(string yaml, string key)
+    {
+        var lines = yaml.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var start = Array.FindIndex(lines, line => line == $"  {key}:");
+
+        if (start < 0)
+        {
+            return null;
+        }
+
+        var end = start + 1;
+        while (
+            end < lines.Length
+            && (lines[end].StartsWith("    ", StringComparison.Ordinal) || lines[end].Length == 0)
+        )
+        {
+            end++;
+        }
+
+        return string.Join('\n', lines[start..end]).TrimEnd();
+    }
+
 }

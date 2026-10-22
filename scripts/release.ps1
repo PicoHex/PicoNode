@@ -21,8 +21,11 @@ last tag: they were then refreshed before the release, which hides the API delta
 that tag and would ship a y bump where an x bump is due. Restore them first
 (git checkout <last-tag> -- api/) so the comparison sees the real delta.
 
-The tag is the release trigger: the release workflow runs the tests, packs every
-package at the tag version, and publishes to NuGet.
+The tag is the release trigger: the release workflow gates the publish on a
+`verify` job (restore + build, all ten test projects, the version-shape assertion)
+and `publish` depends on it through `needs: verify`; only then does it pack every
+package at the tag version and publish to NuGet. A version that already exists on
+nuget.org now fails the run instead of being skipped.
 
 Releases are cut from the mainline (main): check it out, let its CI finish green, then
 tag there. The script refuses to tag any other branch unless -AllowBranch is passed,

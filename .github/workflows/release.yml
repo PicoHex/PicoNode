@@ -1,5 +1,7 @@
 # PicoNode Release — NuGet publish
-# Triggered by tags shaped like v*
+# Triggered by tags shaped like v*, or by a manual dispatch that names the version.
+# Nothing reaches nuget.org until the `verify` job has built, tested and accepted
+# the version: `publish` runs only on `needs: verify`.
 
 name: release
 
@@ -7,6 +9,11 @@ on:
   push:
     tags: [v*]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, <year>.<x>.<y> (e.g. 2026.10.0). A dispatch carries no tag."
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -17,7 +24,69 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
 
 jobs:
+  # The gate. Before this job existed the workflow published untested code while
+  # AGENTS.md and scripts/release.ps1 both claimed it ran the tests, and a
+  # workflow_dispatch packed seven packages labelled `main`.
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 10.0.x }
+
+      - name: Assert the release version shape
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="${INPUT_VERSION:-$GITHUB_REF_NAME}"
+          version="${version#v}"
+          echo "$version" | grep -Eq '^[0-9]{4}\.[0-9]+\.[0-9]+$'
+          echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Restore
+        run: dotnet restore PicoNode.slnx
+
+      - name: Build
+        run: dotnet build PicoNode.slnx --no-restore -c Release
+
+      - name: Test every suite
+        run: |
+          set -euo pipefail
+          for p in tests/PicoNode.Tests/PicoNode.Tests.csproj \
+                   tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj \
+                   tests/PicoJsonRpc.Tests/PicoJsonRpc.Tests.csproj \
+                   tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj \
+                   tests/PicoWeb.Tests/PicoWeb.Tests.csproj \
+                   tests/PicoWeb.Integration.Tests/PicoWeb.Integration.Tests.csproj \
+                   tests/PicoWeb.DI.Tests/PicoWeb.DI.Tests.csproj \
+                   tests/PicoNode.Smoke/PicoNode.Smoke.csproj \
+                   tests/PicoNode.PerfHarness/PicoNode.PerfHarness.csproj \
+                   tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj; do
+            dotnet test --project "$p" --no-build -c Release
+          done
+
+      - name: Assert the API surface still bumps x
+        run: |
+          set -euo pipefail
+          for dll in $(find src -path '*/bin/Release/net10.0/*.dll' \
+                       \( -name 'PicoNode*.dll' -o -name 'PicoWeb.dll' -o -name 'PicoJsonRpc.dll' \) \
+                       -not -path '*/ref/*'); do
+            id=$(basename "$dll" .dll)
+            [ -f "api/$id.public.txt" ] || continue
+            dotnet run --project scripts/api-surface -c Release -- dump "$dll" --out "/tmp/$id.public.txt"
+            if ! diff -q "api/$id.public.txt" "/tmp/$id.public.txt" >/dev/null; then
+              echo "::warning::$id public surface differs from the last release — confirm an x bump"
+            fi
+          done
+
   publish:
+    needs: verify
     runs-on: ubuntu-latest
     environment: release
 
@@ -30,8 +99,15 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Set version from tag
-        run: echo "PACKAGE_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+      - name: Set version from the tag or the dispatch input
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          version="${INPUT_VERSION:-$GITHUB_REF_NAME}"
+          version="${version#v}"
+          echo "$version" | grep -Eq '^[0-9]{4}\.[0-9]+\.[0-9]+$'
+          echo "PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
 
       # Pack in dependency order with UseProjectReferences=false.
       # Each csproj uses conditional ItemGroup to select between
@@ -90,6 +166,8 @@ jobs:
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
           -o packages
 
+      # No --skip-duplicate: a version that already exists on nuget.org is a
+      # failure, not a silent no-op that leaves a green run behind.
       - name: Publish to NuGet
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
@@ -97,9 +175,19 @@ jobs:
           dotnet nuget push packages/*.nupkg
           --api-key ${{ env.NUGET_API_KEY }}
           --source https://api.nuget.org/v3/index.json
-          --skip-duplicate
 
+      - name: Assert every package was published
+        run: |
+          set -euo pipefail
+          ls packages/*.nupkg | wc -l | grep -qx 7
+          for p in packages/*.nupkg; do
+            unzip -p "$p" '*.nuspec' | grep -q "<version>${PACKAGE_VERSION}</version>"
+          done
+
+      # A dispatch has no tag to attach a Release to; the packages are published,
+      # the Release is what a tag push adds.
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: packages/*
