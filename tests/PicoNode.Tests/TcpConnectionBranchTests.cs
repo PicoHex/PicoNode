@@ -530,13 +530,18 @@ public sealed class TcpConnectionBranchTests
     }
 
     [Test]
-    public async Task MapSocketExceptionReason_returns_local_close_after_connection_cancellation()
+    public async Task MapSocketExceptionReason_returns_local_close_while_a_local_close_is_in_progress()
     {
         var pair = await CreateConnectedSocketsAsync();
         try
         {
             var connection = CreateConnection(pair.Server);
-            await InvokeCancelConnectionAsync(connection);
+
+            // A reset-class error seen while a local close is under way is that close's own
+            // shutdown/dispose landing on the in-flight receive. The fact is the close state,
+            // not the connection token: the receive loop's ordered teardown cancels that token
+            // on every escape, so a token-based test would call every peer reset a local close.
+            connection.Close();
 
             var result = InvokeMapSocketExceptionReason(
                 connection,
@@ -545,7 +550,6 @@ public sealed class TcpConnectionBranchTests
             );
 
             await Assert.That(result).IsEqualTo(TcpCloseReason.LocalClose);
-            await connection.DisposeAsync();
         }
         finally
         {
@@ -789,13 +793,14 @@ public sealed class TcpConnectionBranchTests
 
     /// <summary>
     /// Stands in for an <c>SslStream</c>: it delivers one byte (so the handler gets a request and
-    /// parks inside <c>OnReceivedAsync</c>) and then fails the next read with a plain
-    /// <see cref="IOException"/> — the shape a TLS/stream framing fault arrives in, which is
-    /// neither a <see cref="SocketException"/> nor a cancellation.
+    /// parks inside <c>OnReceivedAsync</c>) and then fails the next read with <paramref name="fault"/>
+    /// — by default a plain <see cref="IOException"/>, the shape a TLS/stream framing fault arrives
+    /// in, which is neither a <see cref="SocketException"/> nor a cancellation.
     /// </summary>
-    private sealed class FaultingReadStream(Task faultAfter) : Stream
+    private sealed class FaultingReadStream(Task faultAfter, Exception? fault = null) : Stream
     {
         private readonly Task _faultAfter = faultAfter;
+        private readonly Exception _fault = fault ?? new IOException("TLS read fault");
         private readonly TaskCompletionSource _faulted = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
@@ -837,7 +842,7 @@ public sealed class TcpConnectionBranchTests
             // the overlap the test looks for deterministic instead of a matter of scheduling.
             await _faultAfter.WaitAsync(cancellationToken).ConfigureAwait(false);
             _faulted.TrySetResult();
-            throw new IOException("TLS read fault");
+            throw _fault;
         }
 
         public override Task<int> ReadAsync(
@@ -975,6 +980,224 @@ public sealed class TcpConnectionBranchTests
                 );
 
             await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task RemoteCloseToken_fires_on_local_close()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var handler = new RecordingTcpHandler();
+            var connection = CreateConnection(pair.Server, handler);
+
+            // A local close of a connection whose receive loop has not started yet: the shape a
+            // node produces when it closes a connection it has tracked but not yet run, and when
+            // it disposes one it refused to track. Today nothing on this path touches the
+            // remote-close source — the close sequence never fires it, and there is no receive
+            // loop whose teardown could do it by accident — so a response that waits on this
+            // token waits for ever.
+            connection.Close();
+
+            await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            await Assert
+                .That(connection.RemoteCloseToken.IsCancellationRequested)
+                .IsTrue()
+                .Because("the close path itself fires RemoteCloseToken, not the receive loop");
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task RemoteCloseToken_fires_on_node_stop()
+    {
+        var handler = new ParkedConnectTcpHandler();
+        await using var node = new TcpNode(
+            new TcpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                ConnectionHandler = handler,
+            }
+        );
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+
+        await node.StartAsync();
+        await client.ConnectAsync((IPEndPoint)node.LocalEndPoint!);
+        var token = await handler.RemoteCloseToken.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        // The handler is parked inside OnConnectedAsync on a source only this test can
+        // release, so the receive loop cannot reach its own teardown — the close path is the
+        // only thing left that can deliver the signal. That is the reason the fire lives in
+        // CloseCoreAsync and not (only) in the receive loop: there may be no loop, or the loop
+        // may not be past OnConnectedAsync when the connection is closed.
+        await handler.ConnectStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        var fired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = token.Register(() => fired.TrySetResult());
+
+        var stopTask = node.StopAsync();
+        try
+        {
+            // A node stop is a LOCAL close: the peer sends no FIN and no RST. A response that
+            // outlives its request (SSE) waits on this token, so a stop that leaves it
+            // un-cancelled leaves that response running until some unrelated backstop reaps it.
+            await fired.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        }
+        finally
+        {
+            handler.ReleaseConnect();
+            try
+            {
+                await stopTask.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            catch (Exception)
+            { // the stop still has to finish; the assertion below owns the verdict
+            }
+        }
+
+        await Assert
+            .That(token.IsCancellationRequested)
+            .IsTrue()
+            .Because("a node stop fires RemoteCloseToken for every connection it closes");
+    }
+
+    [Test]
+    public async Task RemoteCloseToken_is_readable_after_dispose()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var handler = new RecordingTcpHandler();
+            var connection = CreateConnection(pair.Server, handler);
+            var runTask = connection.RunAsync(handler);
+
+            await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            connection.Close();
+            await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            // Handler code reads the token after the connection is gone (a response task that
+            // is still finishing, a keep-alive loop shutting down). The property is the only
+            // way a handler can reach it, so it must stay readable once the source is disposed.
+            void ReadToken() => _ = connection.RemoteCloseToken.IsCancellationRequested;
+
+            await Assert
+                .That(ReadToken)
+                .ThrowsNothing()
+                .Because(
+                    "the token struct is cached at construction, so disposing its source cannot make the property throw"
+                );
+            await Assert.That(connection.RemoteCloseToken.IsCancellationRequested).IsTrue();
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task RunAsync_with_io_exception_wrapping_a_reset_closes_as_remote_closed()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var logger = new SpyLogger();
+            var handler = new RecordingTcpHandler();
+            var reset = new SocketException((int)SocketError.ConnectionReset);
+            var readFault = new IOException("TLS read fault", reset);
+            var stream = new FaultingReadStream(handler.Received.Task, readFault);
+            var connection = CreateConnection(pair.Server, handler, logger, stream);
+            var runTask = connection.RunAsync(handler);
+
+            var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+            // The reset is the PEER's close (RST), which TcpCloseReason names, and the mapping
+            // must say so for a TLS/stream read fault exactly as it does for a bare socket
+            // reset. The connection token is not a proxy for "we closed locally": the ordered
+            // teardown cancels it on the way out of the pump, so a mapping that asks the token
+            // answers "yes, the teardown ran" and files every reset as a silent local close.
+            await Assert
+                .That(closed.Reason)
+                .IsEqualTo(TcpCloseReason.RemoteClosed)
+                .Because("an RST from the peer is a remote close, not a local one");
+            await Assert.That(closed.Error).IsSameReferenceAs(readFault);
+            await Assert
+                .That(logger.Calls.Count)
+                .IsEqualTo(1)
+                .Because("a peer reset is reported once, against the receive that saw it");
+            await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
+            await Assert.That(call!.EventId.Id).IsEqualTo((int)NodeFaultCode.ReceiveFailed);
+            await Assert.That(call.Exception).IsSameReferenceAs(readFault);
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task RunAsync_with_stream_read_fault_bounds_the_wait_for_a_handler_that_never_returns()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var logger = new SpyLogger();
+            var handler = new NeverReturningTcpHandler();
+            var stream = new FaultingReadStream(handler.ReceivedStarted.Task);
+            var connection = CreateConnection(pair.Server, handler, logger, stream);
+            var runTask = connection.RunAsync(handler);
+
+            await stream.Faulted.WaitAsync(TimeSpan.FromSeconds(3));
+
+            try
+            {
+                // The handler ignores the completed pipe writer and both cancellation tokens,
+                // so nothing but a bound can end the wait the receive loop does before it lets
+                // the close sequence run. Without one the close never happens at all — and with
+                // it the node's drain, which waits for exactly that close.
+                var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(15));
+
+                await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.ReceiveFailed);
+                await Assert.That(closed.Error).IsNotNull();
+                await Assert
+                    .That(
+                        logger.Calls.Any(x =>
+                            x.EventId.Id == (int)NodeFaultCode.StopFailed
+                            && x.Exception is TimeoutException
+                        )
+                    )
+                    .IsTrue()
+                    .Because("the bound gives up loudly instead of blocking for ever");
+            }
+            finally
+            {
+                handler.ReleaseHandler();
+            }
+
+            try
+            {
+                await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (Exception)
+            { /* the abandoned handler loop is expected to fault once it is released */
+            }
         }
         finally
         {
@@ -1485,6 +1708,107 @@ public sealed class TcpConnectionBranchTests
             Closed.TrySetResult(new ClosedTcpConnection(reason, error));
             return ValueTask.CompletedTask;
         }
+    }
+
+    /// <summary>
+    /// Captures the transport's <see cref="ITcpConnectionContext.RemoteCloseToken"/> at connect
+    /// time — the way a handler that outlives its request (SSE) does — and then parks inside
+    /// <c>OnConnectedAsync</c> on a source only the test can release. The receive loop therefore
+    /// cannot reach its own teardown while the handler is parked, so the token's fate across a
+    /// close is decided by the close path alone.
+    /// </summary>
+    private sealed class ParkedConnectTcpHandler : ITcpConnectionHandler
+    {
+        private readonly TaskCompletionSource _released = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public TaskCompletionSource<CancellationToken> RemoteCloseToken { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource ConnectStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task OnConnectedAsync(
+            ITcpConnectionContext connection,
+            CancellationToken cancellationToken
+        )
+        {
+            RemoteCloseToken.TrySetResult(connection.RemoteCloseToken);
+            ConnectStarted.TrySetResult();
+            await _released.Task.ConfigureAwait(false);
+        }
+
+        public void ReleaseConnect() => _released.TrySetResult();
+
+        public ValueTask<SequencePosition> OnReceivedAsync(
+            ITcpConnectionContext connection,
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken
+        ) => ValueTask.FromResult(buffer.End);
+
+        public ValueTask OnClosedAsync(
+            ITcpConnectionContext connection,
+            TcpCloseReason reason,
+            Exception? error,
+            CancellationToken cancellationToken
+        ) => ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Handler that parks inside <c>OnReceivedAsync</c> on a source only the test can release:
+    /// it ignores the completed pipe writer and both cancellation tokens, so it is the shape a
+    /// close sequence can neither wait out nor release.
+    /// </summary>
+    private sealed class NeverReturningTcpHandler : ITcpConnectionHandler
+    {
+        private readonly TaskCompletionSource _released = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public TaskCompletionSource<ConnectedTcpConnection> Connected { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource ReceivedStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<ClosedTcpConnection> Closed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task OnConnectedAsync(
+            ITcpConnectionContext connection,
+            CancellationToken cancellationToken
+        )
+        {
+            Connected.TrySetResult(
+                new ConnectedTcpConnection(connection.ConnectionId, connection.RemoteEndPoint)
+            );
+            return Task.CompletedTask;
+        }
+
+        public async ValueTask<SequencePosition> OnReceivedAsync(
+            ITcpConnectionContext connection,
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken
+        )
+        {
+            ReceivedStarted.TrySetResult();
+            await _released.Task.ConfigureAwait(false);
+            return buffer.End;
+        }
+
+        public ValueTask OnClosedAsync(
+            ITcpConnectionContext connection,
+            TcpCloseReason reason,
+            Exception? error,
+            CancellationToken cancellationToken
+        )
+        {
+            Closed.TrySetResult(new ClosedTcpConnection(reason, error));
+            return ValueTask.CompletedTask;
+        }
+
+        public void ReleaseHandler() => _released.TrySetResult();
     }
 
     private sealed class ParkedReceiveTcpHandler : ITcpConnectionHandler

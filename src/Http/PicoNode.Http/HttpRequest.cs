@@ -11,10 +11,15 @@ public sealed class HttpRequest
     public string QueryString { get; init; } = string.Empty;
 
     /// <summary>
-    /// Cancelled by the transport when the peer closes the connection
-    /// (FIN or RST). Stamped by the HTTP layer at dispatch time; used by
-    /// endpoints that outlive the request (SSE) to detect client disconnect.
+    /// Cancelled by the transport when the connection closes, whichever side closed it: the
+    /// peer's FIN or RST, or a local close (an idle timeout, a fault, or the node stopping).
+    /// Stamped by the HTTP layer at dispatch time; used by endpoints that outlive the request
+    /// (SSE) to detect that the connection is going away.
     /// </summary>
+    /// <remarks>
+    /// It is a stamped struct, so it stays readable after the connection is gone — a response
+    /// task that finishes late can still observe it instead of faulting on a disposed source.
+    /// </remarks>
     public CancellationToken RemoteCloseToken { get; internal set; }
 
     /// <summary>

@@ -6,15 +6,31 @@ internal sealed class TcpConnectionLifecycle
     private const string OperationHandler = "tcp.handler";
     private const string OperationCloseHandler = "tcp.close.handler";
     private const string OperationCloseCore = "tcp.close.core";
-    private const string OperationCloseWait = "tcp.close.wait";
+
+    /// <summary>Operation tag for a close sequence that gave up waiting for a handler loop.</summary>
+    internal const string OperationCloseWait = "tcp.close.wait";
 
     /// <summary>
-    /// Upper bound on the wait for a connection's handler loop before the pipe ends and the
+    /// Upper bound on a wait for a connection's handler loop before the pipe ends and the
     /// socket are torn down. The bound is what keeps a handler that never returns from
     /// wedging the close (and, through it, the node's drain): the wait gives up loudly
     /// instead of blocking for ever.
     /// </summary>
-    private static readonly TimeSpan HandlerLoopTimeout = TimeSpan.FromSeconds(5);
+    /// <remarks>
+    /// It bounds two waits: the one in <see cref="CloseCoreAsync"/> for a close that does not
+    /// own the handler loop, and the one <see cref="TcpConnectionReceiveLoop"/> does before it
+    /// lets a faulted close sequence run. It deliberately does NOT bound the graceful-FIN path:
+    /// a half-closing client is still owed the responses to the requests it already sent, so
+    /// there the loop waits for its handler however long that takes.
+    /// </remarks>
+    internal static readonly TimeSpan HandlerLoopTimeout = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// The fault a bounded wait reports when it gives up. Shared so the receive loop's bound and
+    /// this class's bound are indistinguishable to a host that counts them.
+    /// </summary>
+    internal static TimeoutException HandlerLoopTimeoutException() =>
+        new($"The connection handler loop did not finish within {HandlerLoopTimeout}.");
 
     private readonly TcpNode _node;
     private readonly Socket _socket;
@@ -186,6 +202,16 @@ internal sealed class TcpConnectionLifecycle
                 return;
             }
 
+            // Fire the remote-close token first, before the socket shutdown, before the wait for
+            // the handler loop and — the point of the ordering — before the source is disposed.
+            // It is the deterministic disconnect signal for responses that outlive their request
+            // (SSE), and the receive loop is not guaranteed to deliver it: there may be no loop
+            // (a connection closed before it ran, or one that was never tracked), it may still be
+            // inside OnConnectedAsync, or its teardown may have been short-circuited. Firing it
+            // here makes the contract a property of the close path, and firing it early is what
+            // releases a streaming handler instead of waiting it out below.
+            await CancelRemoteCloseAsync().ConfigureAwait(false);
+
             await CancelConnectionAsync().ConfigureAwait(false);
             ShutdownSocketSafely(_node.Options.Logger);
 
@@ -236,9 +262,7 @@ internal sealed class TcpConnectionLifecycle
             _node.ReportFault(
                 NodeFaultCode.StopFailed,
                 OperationCloseWait,
-                new TimeoutException(
-                    $"The connection handler loop did not finish within {HandlerLoopTimeout}."
-                )
+                HandlerLoopTimeoutException()
             );
         }
         catch (Exception)
@@ -330,6 +354,36 @@ internal sealed class TcpConnectionLifecycle
 
     private Task CancelConnectionAsync() => _cts.CancelAsync();
 
+    /// <summary>
+    /// Fires the remote-close token for a connection that is going away. A source a concurrent
+    /// dispose already disposed is tolerated: the token struct the connection hands out stays
+    /// valid either way, and a close must not turn itself into a fault over a token nobody is
+    /// left to wait on.
+    /// </summary>
+    private async Task CancelRemoteCloseAsync()
+    {
+        try
+        {
+            await _remoteCloseCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Nothing left to fire.
+        }
+    }
+
+    /// <summary>
+    /// Reason for a socket error that escaped the receive pump. A reset-class error is the
+    /// PEER's close — <see cref="TcpCloseReason.RemoteClosed"/> names it ("FIN or RST
+    /// received") — unless a local close is already in progress, in which case the error is
+    /// that close's own shutdown or dispose surfacing on the in-flight receive.
+    /// </summary>
+    /// <remarks>
+    /// The test is the close state and NOT the connection token: the ordered teardown in
+    /// <see cref="TcpConnectionReceiveLoop"/> cancels that token on every escape, so asking it
+    /// here answers "did the teardown run?" — always yes — and files a peer reset as a silent
+    /// local close, with no tcp.receive fault and a wrong reason on the close handler.
+    /// </remarks>
     private TcpCloseReason MapSocketExceptionReason(
         SocketException exception,
         TcpCloseReason currentReason
@@ -342,9 +396,7 @@ internal sealed class TcpConnectionLifecycle
                 or SocketError.OperationAborted
         )
         {
-            return _cts.IsCancellationRequested
-                ? TcpCloseReason.LocalClose
-                : TcpCloseReason.RemoteClosed;
+            return IsCloseInitiated ? TcpCloseReason.LocalClose : TcpCloseReason.RemoteClosed;
         }
 
         return currentReason == TcpCloseReason.LocalClose

@@ -81,7 +81,9 @@ internal sealed class TcpConnectionReceiveLoop
             //      requests it already sent, so there the CONNECTION token is kept alive and
             //      only the remote-close token fires.
             //   4. await the processing task: the handler loop is finished before this method
-            //      lets go, which is the invariant the close sequence relies on.
+            //      lets go, which is the invariant the close sequence relies on. The wait is
+            //      bounded (HandlerLoopTimeout) so a handler that ignores steps 1–3 cannot hold
+            //      the close, and through it the node's drain, for ever.
             if (ex is not OperationCanceledException && !_connectionCts.IsCancellationRequested)
             {
                 await CancelConnectionTokenAsync().ConfigureAwait(false);
@@ -91,7 +93,22 @@ internal sealed class TcpConnectionReceiveLoop
             await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
             try
             {
-                await processingTask.ConfigureAwait(false);
+                // Bounded, because this close is already under way: the peer is gone or the
+                // connection is being closed, so a handler that ignores the completed writer and
+                // both tokens must not hold the close sequence — and, through it, the node's
+                // drain, which waits for exactly that close — for ever. Giving up is loud: the
+                // fault is reported and the original one is still the one rethrown below.
+                await processingTask
+                    .WaitAsync(TcpConnectionLifecycle.HandlerLoopTimeout)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                _node.ReportFault(
+                    NodeFaultCode.StopFailed,
+                    TcpConnectionLifecycle.OperationCloseWait,
+                    TcpConnectionLifecycle.HandlerLoopTimeoutException()
+                );
             }
             catch
             {
@@ -111,6 +128,9 @@ internal sealed class TcpConnectionReceiveLoop
         await _remoteCloseCts.CancelAsync().ConfigureAwait(false);
 
         await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
+        // Deliberately unbounded, unlike the faulting path above: a half-closing client is still
+        // owed the responses to the requests it already sent, so this wait has no upper bound.
+        // HandlerLoopTimeout documents the exemption.
         await processingTask.ConfigureAwait(false);
         return NormalizeCompletionReason(reason, cancellationToken);
     }
