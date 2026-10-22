@@ -254,6 +254,82 @@ public sealed class CacheMiddlewareTests
     }
 
     [Test]
+    public async Task Identity_request_never_revalidates_against_a_cached_anonymous_entry()
+    {
+        // The security claim of this task is an ORDERING: the identity guard sits above the
+        // cache lookup (and above the 304 early-return), so a cached anonymous entry can never
+        // be revalidated by — or hand its validators to — a request that carries identity.
+        // The neighbouring tests only cover *uncached* identity requests; this one seeds the
+        // path first, then asks for it back with identity plus a matching If-None-Match.
+        var middleware = new CacheMiddleware();
+        var path = "/guard-before-lookup-" + Guid.NewGuid();
+        var handlerCalls = 0;
+
+        ValueTask<HttpResponse> Handler(WebContext _, CancellationToken __)
+        {
+            handlerCalls++;
+            return ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    ReasonPhrase = "OK",
+                    Body = "anonymous content"u8.ToArray(),
+                }
+            );
+        }
+
+        // 1. Anonymous GET: the path is now in the path-keyed cache and its ETag is known.
+        var anonymous = await middleware.InvokeAsync(
+            CreateContext("GET", path, ifNoneMatch: null),
+            Handler,
+            CancellationToken.None
+        );
+        var etag = GetHeader(anonymous, "ETag");
+        await Assert
+            .That(etag)
+            .IsNotNull()
+            .Because("the anonymous response is the one that gets cached");
+        await Assert.That(handlerCalls).IsEqualTo(1);
+
+        // 2. Same path, now carrying identity AND a validator matching the cached entry:
+        //    the strongest possible invitation for the lookup to answer 304.
+        var identified = await middleware.InvokeAsync(
+            CreateContextWithHeaders(
+                "GET",
+                path,
+                ("X-Session-Id", "s1"),
+                ("If-None-Match", etag!)
+            ),
+            Handler,
+            CancellationToken.None
+        );
+
+        // 3. The guard must win: the origin ran, and not one cache header leaked out.
+        await Assert
+            .That(identified.StatusCode)
+            .IsEqualTo(200)
+            .Because(
+                "the guard runs before the lookup, so an identified request must never be answered 304 from an anonymous entry"
+            );
+        await Assert
+            .That(handlerCalls)
+            .IsEqualTo(2)
+            .Because("the request passed the guard straight through to the handler");
+        await Assert
+            .That(GetHeader(identified, "ETag"))
+            .IsNull()
+            .Because("an identified request must not receive the cached entry's ETag");
+        await Assert
+            .That(GetHeader(identified, "Cache-Control"))
+            .IsNull()
+            .Because("an identified request must not receive cached cacheability directives");
+        await Assert
+            .That(GetHeaders(identified, "Vary"))
+            .IsEmpty()
+            .Because("an identified request must not receive the cached entry's Vary dimensions");
+    }
+
+    [Test]
     public async Task Identity_headers_are_varied()
     {
         var middleware = new CacheMiddleware();
