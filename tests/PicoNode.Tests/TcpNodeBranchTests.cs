@@ -397,6 +397,69 @@ public sealed class TcpNodeBranchTests
     }
 
     [Test]
+    public async Task StopAsync_twice_with_zero_drain_does_not_hang()
+    {
+        var handler = new RecordingTcpHandler(blockClose: true);
+        await using var node = CreateNode(handler, drainTimeout: TimeSpan.Zero);
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+
+        await node.StartAsync();
+        await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+        await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        // DrainTimeout.Zero is legal and means "no deadline at all" (no stop CTS is
+        // created), so a caller parked on a drain source nobody signals waits for ever
+        // and the host cannot shut down. Fixed racer count (2), released through a TCS —
+        // no delays: the first stop is provably inside the close path before the second
+        // one is started.
+        var first = node.StopAsync();
+        await handler.CloseStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        var second = node.StopAsync();
+
+        handler.AllowClose();
+
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+    }
+
+    [Test]
+    public async Task StopAsync_second_call_observes_Stopped()
+    {
+        var handler = new RecordingTcpHandler(blockClose: true);
+        await using var node = CreateNode(handler, drainTimeout: TimeSpan.Zero);
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+
+        await node.StartAsync();
+        await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+        await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        var first = node.StopAsync();
+        await handler.CloseStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        // Second caller arrives while the node is Stopping: it must join the single
+        // drain source and complete the stop instead of minting a second one.
+        var second = node.StopAsync();
+
+        handler.AllowClose();
+
+        await first.WaitAsync(TimeSpan.FromSeconds(5));
+        await second.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+
+        // Once the stop completed, a repeat call returns without touching the state.
+        await node.StopAsync().WaitAsync(TimeSpan.FromSeconds(1));
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+    }
+
+    [Test]
     public async Task TryTrackConnection_returns_false_when_node_is_stopping()
     {
         var pair = await CreateConnectedSocketsAsync();
@@ -562,19 +625,26 @@ public sealed class TcpNodeBranchTests
         IPEndPoint? endpoint = null,
         bool enableDualMode = false,
         TimeSpan? idleTimeout = null,
-        TimeSpan? idleScanInterval = null
-    ) =>
-        new(
-            new TcpNodeOptions
-            {
-                Endpoint = endpoint ?? new IPEndPoint(IPAddress.Loopback, 0),
-                ConnectionHandler = handler,
-                Logger = logger,
-                EnableDualMode = enableDualMode,
-                IdleTimeout = idleTimeout ?? TimeSpan.Zero,
-                IdleScanInterval = idleScanInterval ?? TimeSpan.FromSeconds(1),
-            }
-        );
+        TimeSpan? idleScanInterval = null,
+        TimeSpan? drainTimeout = null
+    )
+    {
+        var options = new TcpNodeOptions
+        {
+            Endpoint = endpoint ?? new IPEndPoint(IPAddress.Loopback, 0),
+            ConnectionHandler = handler,
+            Logger = logger,
+            EnableDualMode = enableDualMode,
+            IdleTimeout = idleTimeout ?? TimeSpan.Zero,
+            IdleScanInterval = idleScanInterval ?? TimeSpan.FromSeconds(1),
+        };
+        if (drainTimeout is { } timeout)
+        {
+            options.DrainTimeout = timeout;
+        }
+
+        return new TcpNode(options);
+    }
 
     private static void InvokeRejectAcceptedSocket(
         TcpNode node,

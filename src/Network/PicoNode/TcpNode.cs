@@ -32,7 +32,17 @@ public sealed class TcpNode : INode
     /// to ensure in-flight reloads complete gracefully.
     /// </summary>
     private Task? _configReloadTask;
-    private TaskCompletionSource<bool>? _drained;
+
+    /// <summary>
+    /// The one and only drain source for this node: created exactly once — under
+    /// <see cref="_stateLock"/>, by the caller that performs the Running→Stopping
+    /// transition — and signalled exactly once by <see cref="OnConnectionClosed"/> when the
+    /// last tracked connection is removed. Every <see cref="StopAsync"/> caller awaits this
+    /// very task, so a repeat or concurrent stop can never be stranded on a source nobody
+    /// signals. It is never reset: the Stopping transition is one way, so a node is
+    /// stopped at most once.
+    /// </summary>
+    private TaskCompletionSource? _drainSource;
     private volatile NodeState _state;
     private int _disposed;
     private long _totalAccepted;
@@ -186,12 +196,42 @@ public sealed class TcpNode : INode
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        if (_state is NodeState.Stopped or NodeState.Disposed or NodeState.Created)
-        {
-            return;
-        }
+        Task drainTask;
+        var ownsStop = false;
 
-        var stopCompleted = false;
+        lock (_stateLock)
+        {
+            // Nothing to do — but Stopping is deliberately NOT in this set. A caller that
+            // finds the node already Stopping is a repeat or concurrent stop: it must not
+            // own the stop, yet it still has to await the drain below instead of returning
+            // with the node parked in Stopping and a caller unconvinced.
+            if (_state is NodeState.Stopped or NodeState.Disposed or NodeState.Created)
+            {
+                return;
+            }
+
+            if (_state is not NodeState.Stopping)
+            {
+                // Exactly one caller performs the transition and, under the same lock,
+                // becomes the owner of the single drain source. Ownership is what makes it
+                // single: every later caller sees Stopping and creates nothing.
+                _state = NodeState.Stopping;
+                ownsStop = true;
+                _drainSource = new TaskCompletionSource(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                if (_connections.IsEmpty)
+                {
+                    // No connection can be tracked from here on (TryTrackConnection rejects
+                    // Stopping), so OnConnectionClosed will never run: nothing to drain.
+                    _drainSource.TrySetResult();
+                }
+            }
+
+            // Null only when the state was forced to Stopping from outside (tests) — then
+            // there is no stop in flight to wait for.
+            drainTask = _drainSource?.Task ?? Task.CompletedTask;
+        }
 
         using var stopCts =
             Options.DrainTimeout > TimeSpan.Zero
@@ -203,67 +243,59 @@ public sealed class TcpNode : INode
             cancellationToken = stopCts.Token;
         }
 
-        TaskCompletionSource<bool>? drained;
-        lock (_stateLock)
-        {
-            if (_state is NodeState.Stopped or NodeState.Disposed or NodeState.Created)
-            {
-                return;
-            }
-
-            _state = NodeState.Stopping;
-            drained = _connections.IsEmpty
-                ? null
-                : new TaskCompletionSource<bool>(
-                    TaskCreationOptions.RunContinuationsAsynchronously
-                );
-            _drained = drained;
-        }
+        var stopCompleted = false;
 
         try
         {
-            await _cts.CancelAsync().ConfigureAwait(false);
+            // Safe for a repeat caller to skip this: it runs before the first await that can
+            // surface a caller/token cancellation (the accept and idle waits swallow it), so
+            // by the time the owner can abandon the stop, every connection has already been
+            // asked to close and the drain below is all that is left to wait for.
+            if (ownsStop)
+            {
+                await _cts.CancelAsync().ConfigureAwait(false);
 
-            try
-            {
-                _listener.Close();
-            }
-            catch (Exception ex)
-            {
-                ReportFault(NodeFaultCode.StopFailed, OperationStop, ex);
-            }
-
-            if (_acceptTask is not null)
-            {
                 try
                 {
-                    await _acceptTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    _listener.Close();
                 }
-                catch (OperationCanceledException)
-                { /* expected during shutdown — accept task cancelled */
-                }
-            }
-
-            if (_idleMonitorTask is not null)
-            {
-                try
+                catch (Exception ex)
                 {
-                    await _idleMonitorTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    ReportFault(NodeFaultCode.StopFailed, OperationStop, ex);
                 }
-                catch (OperationCanceledException)
-                { /* expected during shutdown — idle monitor task cancelled */
+
+                if (_acceptTask is not null)
+                {
+                    try
+                    {
+                        await _acceptTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    { /* expected during shutdown — accept task cancelled */
+                    }
+                }
+
+                if (_idleMonitorTask is not null)
+                {
+                    try
+                    {
+                        await _idleMonitorTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    { /* expected during shutdown — idle monitor task cancelled */
+                    }
+                }
+
+                foreach (var connection in _connections.Values)
+                {
+                    connection.Close(TcpCloseReason.NodeStopping);
                 }
             }
 
-            foreach (var connection in _connections.Values)
-            {
-                connection.Close(TcpCloseReason.NodeStopping);
-            }
-
-            if (drained is not null)
-            {
-                await drained.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-            }
+            // One task, every caller: completed by OnConnectionClosed once the last
+            // connection is gone, so a second caller observes the outcome of the same drain
+            // instead of waiting on a source that a later call replaced.
+            await drainTask.WaitAsync(cancellationToken).ConfigureAwait(false);
 
             stopCompleted = true;
         }
@@ -271,12 +303,7 @@ public sealed class TcpNode : INode
         {
             lock (_stateLock)
             {
-                if (stopCompleted)
-                {
-                    _drained = null;
-                }
-
-                if (_state != NodeState.Disposed && stopCompleted)
+                if (stopCompleted && _state != NodeState.Disposed)
                 {
                     _state = NodeState.Stopped;
                 }
@@ -567,7 +594,9 @@ public sealed class TcpNode : INode
         {
             if (_connections.TryRemove(connection.Id, out _) && _connections.IsEmpty)
             {
-                _drained?.TrySetResult(true);
+                // The single drain source, signalled exactly once. TrySetResult keeps that
+                // guarantee even when several closes race on the last removal.
+                _drainSource?.TrySetResult();
             }
         }
     }
