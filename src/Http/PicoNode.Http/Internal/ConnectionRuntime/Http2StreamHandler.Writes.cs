@@ -193,6 +193,7 @@ internal static partial class Http2StreamHandler
     )
     {
         var totalSize = Http2FrameCodec.FrameHeaderSize + payload.Length;
+        // Hazard (pre-existing in every writer here, not restructured): a cancelled send can outlive this scope and still be reading the rented buffer when the finally returns it to the pool.
         var rented = ArrayPool<byte>.Shared.Rent(totalSize);
         try
         {

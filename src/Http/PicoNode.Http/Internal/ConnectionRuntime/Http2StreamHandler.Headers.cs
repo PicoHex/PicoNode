@@ -54,7 +54,7 @@ internal static partial class Http2StreamHandler
         var headerWriter = new ArrayBufferWriter<byte>();
         var gate = state.ResponseHpackEncoderLock;
 
-        state.OnHpackGateWait?.Invoke(streamId);
+        state.OnHpackGateEnter?.Invoke(streamId);
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {

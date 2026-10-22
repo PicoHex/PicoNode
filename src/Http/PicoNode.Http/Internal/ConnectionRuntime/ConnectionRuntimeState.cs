@@ -49,17 +49,21 @@ internal sealed class ConnectionRuntimeState
     /// SETTINGS_HEADER_TABLE_SIZE value that could not be applied immediately
     /// because a header block was in flight; applied at the top of the next
     /// encode (see <see cref="ApplyPendingHeaderTableResize"/>). -1 = nothing
-    /// pending.
+    /// pending. Whoever applies a resize with the gate held clears the marker
+    /// first, so a deferred size that was superseded by a newer one can never be
+    /// re-applied on top of it.
     /// </summary>
     private int _pendingEncoderTableSize = NoPendingEncoderTableSize;
 
     /// <summary>
     /// Diagnostic seam: invoked with the stream id on the thread that is about to
-    /// wait for <see cref="ResponseHpackEncoderLock"/>. Null in production; lets a
-    /// test observe gate contention deterministically instead of sleeping (same
-    /// kind of instrumentation as <see cref="CleanupPasses"/>).
+    /// enter the <see cref="ResponseHpackEncoderLock"/> gate — before the wait, so
+    /// it fires whether or not the gate turns out to be contended. Null in
+    /// production; lets a test observe that a header block has reached the gate
+    /// deterministically instead of sleeping (same kind of instrumentation as
+    /// <see cref="CleanupPasses"/>).
     /// </summary>
-    internal Action<int>? OnHpackGateWait { get; set; }
+    internal Action<int>? OnHpackGateEnter { get; set; }
 
     /// <summary>
     /// Applies a header-table resize that <see cref="ApplySettings"/> had to
@@ -150,11 +154,18 @@ internal sealed class ConnectionRuntimeState
                     RemoteMaxFrameSize = (int)setting.Value;
                     break;
                 case Http2SettingId.HeaderTableSize:
-                    RemoteHeaderTableSize = (int)setting.Value;
                     // RFC 7540 §6.5.2: this setting limits what WE may index —
                     // it governs our response ENCODER table only. The decoder
                     // table stays bounded by OUR advertised LocalHeaderTableSize
                     // (the peer's encoder must respect it).
+                    //
+                    // The same section puts no upper bound on the value, so a peer
+                    // may send one that does not fit an int. Clamp it here, once:
+                    // a negative cast made the direct Resize() call clamp it to 0
+                    // (table disabled) while the deferred path's `pending >= 0`
+                    // sentinel silently dropped it. 0 at the entry point keeps both
+                    // paths on the old behaviour and never yields a huge table.
+                    RemoteHeaderTableSize = setting.Value > int.MaxValue ? 0 : (int)setting.Value;
                     //
                     // This runs on the frame loop, so it must never block: the
                     // gate holder may be parked in an unbounded socket flush, and
@@ -168,6 +179,14 @@ internal sealed class ConnectionRuntimeState
                     {
                         try
                         {
+                            // Drop the deferred marker first: this resize is the
+                            // newer one, and a stale pending size applied by the
+                            // next encode would undo it after the peer's decoder
+                            // already evicted at this capacity (COMPRESSION_ERROR).
+                            Interlocked.Exchange(
+                                ref _pendingEncoderTableSize,
+                                NoPendingEncoderTableSize
+                            );
                             ResponseHpackEncoder.DynamicTable.Resize(RemoteHeaderTableSize);
                         }
                         finally

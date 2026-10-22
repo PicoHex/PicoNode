@@ -1962,6 +1962,14 @@ public sealed class Http2StreamHandlerTests
             .That(state.HpackTable.Capacity)
             .IsEqualTo(4096)
             .Because("the peer cannot change our decoder table capacity");
+
+        // RFC 7540 §6.5.2 leaves the value unbounded: one that does not fit an
+        // int is clamped to 0 (table disabled) at the entry point, instead of
+        // casting negative — which the deferred path's `pending >= 0` sentinel
+        // dropped silently.
+        state.ApplySettings([new Http2Setting(Http2SettingId.HeaderTableSize, uint.MaxValue)]);
+        await Assert.That(state.RemoteHeaderTableSize).IsEqualTo(0);
+        await Assert.That(state.ResponseHpackEncoder.DynamicTable.Capacity).IsEqualTo(0);
     }
 
     [Test]
@@ -2036,12 +2044,12 @@ public sealed class Http2StreamHandlerTests
         var runtime = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
         connection.UserState = runtime;
 
-        // Deterministic "stream 3 is at the gate" signal: no timing window. The
-        // seam fires on the thread that is about to wait for the encoder gate.
+        // Deterministic "stream 3 has reached the gate" signal: no timing window.
+        // The seam fires on the thread that is about to enter the encoder gate.
         var streamThreeAtGate = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
-        runtime.OnHpackGateWait = streamId =>
+        runtime.OnHpackGateEnter = streamId =>
         {
             if (streamId == 3)
                 streamThreeAtGate.TrySetResult();
@@ -2385,6 +2393,84 @@ public sealed class Http2StreamHandlerTests
             .IsEqualTo(1024)
             .Because(
                 "a resize deferred behind an in-flight header write must be applied before the next encode"
+            );
+    }
+
+    [Test]
+    public async Task A_deferred_resize_is_not_reapplied_after_a_newer_resize()
+    {
+        // Regression guard: SETTINGS A arrived while the encoder gate was taken,
+        // so it was recorded as the deferred size; the in-flight write then
+        // completed and SETTINGS B was applied directly. Re-applying the stale
+        // deferred A on the next encode would resize the table back to A while
+        // the peer's decoder evicted everything at B, so the encoder would emit
+        // dynamic-table indexes the peer cannot resolve (COMPRESSION_ERROR).
+        // The old blocking code applied both sizes, in order.
+        var connection = new StallingHeadersConnectionContext();
+        var runtime = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = runtime;
+
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    Headers = new HttpHeaderCollection { { "x-request-id", "alpha" } },
+                }
+            );
+
+        var first = Task.Run(() =>
+            Http2StreamHandler
+                .ProcessHeadersFrame(
+                    connection,
+                    BuildHeadersFrameFor(1, "/first"),
+                    handler,
+                    null,
+                    CancellationToken.None
+                )
+                .AsTask()
+        );
+
+        try
+        {
+            // Stream 1's HEADERS write is parked inside the gate.
+            await connection.FirstHeadersWriteStarted.WaitAsync(TimeSpan.FromSeconds(10));
+
+            // SETTINGS A: contended, so it is deferred instead of applied.
+            runtime.ApplySettings([new Http2Setting(Http2SettingId.HeaderTableSize, 1024)]);
+            await Assert
+                .That(runtime.ResponseHpackEncoder.DynamicTable.Capacity)
+                .IsEqualTo(4096)
+                .Because("a resize that arrives while the gate is taken must be deferred");
+        }
+        finally
+        {
+            connection.ReleaseFirstHeadersWrite();
+        }
+
+        // The parked write completes: the gate is free again, and the deferred
+        // SETTINGS A has still not been consumed by any encode.
+        await first.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // SETTINGS B: uncontended, so it is applied immediately.
+        runtime.ApplySettings([new Http2Setting(Http2SettingId.HeaderTableSize, 0)]);
+        await Assert.That(runtime.RemoteHeaderTableSize).IsEqualTo(0);
+        await Assert.That(runtime.ResponseHpackEncoder.DynamicTable.Capacity).IsEqualTo(0);
+
+        // One encode: the deferred SETTINGS A is superseded by B and must not be
+        // re-applied on top of it.
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            BuildHeadersFrameFor(3, "/second"),
+            handler,
+            null,
+            CancellationToken.None
+        );
+        await Assert
+            .That(runtime.ResponseHpackEncoder.DynamicTable.Capacity)
+            .IsEqualTo(0)
+            .Because(
+                "SETTINGS A was superseded by SETTINGS B: re-applying the stale deferred size would emit indexes the peer's evicted decoder table cannot resolve"
             );
     }
 
