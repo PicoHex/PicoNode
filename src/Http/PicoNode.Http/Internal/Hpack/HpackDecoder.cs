@@ -6,7 +6,35 @@ internal static class HpackDecoder
 
     // Huffman decode delegates to shared HuffmanCodec
 
+    /// <summary>
+    /// Boolean view of <see cref="Decode"/>: <c>true</c> only for a fully decoded
+    /// header block. Callers that must distinguish "the peer sent garbage" from
+    /// "the peer exceeded SETTINGS_MAX_HEADER_LIST_SIZE" need <see cref="Decode"/>
+    /// — those two are a connection error and a stream error respectively
+    /// (RFC 9113 §6.5.2), and answering the wrong scope for a 70 KiB header list
+    /// kills 99 innocent streams along with the hostile one.
+    /// </summary>
     public static bool TryDecode(
+        ReadOnlySpan<byte> block,
+        out List<(string, string)> headers,
+        HpackDynamicTable? dynamicTable = null,
+        int maxTableSize = 4096,
+        int maxHeaderListSize = 64 * 1024
+    ) =>
+        Decode(block, out headers, dynamicTable, maxTableSize, maxHeaderListSize)
+        == HpackDecodeStatus.Success;
+
+    /// <summary>
+    /// Decodes a complete header block and reports WHY it was rejected.
+    /// </summary>
+    /// <param name="maxHeaderListSize">
+    /// Budget for the DECODED header list in octets (RFC 9113 §6.5.2 field sizes,
+    /// +32 per field), checked after every decoded field so overshoot is bounded
+    /// by one field. A block of short index references expands ~60x (one octet
+    /// becomes a whole static-table entry), which is why the compressed-block cap
+    /// alone cannot bound memory.
+    /// </param>
+    public static HpackDecodeStatus Decode(
         ReadOnlySpan<byte> block,
         out List<(string, string)> headers,
         HpackDynamicTable? dynamicTable = null,
@@ -27,25 +55,25 @@ internal static class HpackDecoder
             if ((first & 0x80) != 0)
             {
                 if (!TryDecodeIndexed(block, ref offset, headers, dynamicTable))
-                    return false;
+                    return HpackDecodeStatus.CompressionError;
                 sawField = true;
             }
             else if ((first & 0xC0) == 0x40)
             {
                 if (!TryDecodeLiteral(block, ref offset, 6, headers, dynamicTable))
-                    return false;
+                    return HpackDecodeStatus.CompressionError;
                 sawField = true;
             }
             else if ((first & 0xF0) == 0x00)
             {
                 if (!TryDecodeLiteral(block, ref offset, 4, headers, dynamicTable))
-                    return false;
+                    return HpackDecodeStatus.CompressionError;
                 sawField = true;
             }
             else if ((first & 0xF0) == 0x10)
             {
                 if (!TryDecodeLiteral(block, ref offset, 4, headers, dynamicTable))
-                    return false;
+                    return HpackDecodeStatus.CompressionError;
                 sawField = true;
             }
             else if ((first & 0xE0) == 0x20)
@@ -54,39 +82,40 @@ internal static class HpackDecoder
                 // beginning of the header block, before any header field
                 // representation. Multiple consecutive updates are allowed.
                 if (sawField)
-                    return false;
+                    return HpackDecodeStatus.CompressionError;
 
                 if (!TryDecodeInteger(block, ref offset, 5, out int newSize))
-                    return false;
+                    return HpackDecodeStatus.CompressionError;
                 // RFC 7541 §4.2: a size update above the limit WE advertised
                 // is a decoding error — the peer may not grow our decoder table.
                 if (newSize > maxTableSize)
-                    return false;
+                    return HpackDecodeStatus.CompressionError;
                 dynamicTable?.Resize(newSize);
             }
             else
             {
-                return false;
+                return HpackDecodeStatus.CompressionError;
             }
 
-            // RFC 7540 §6.5.2 SETTINGS_MAX_HEADER_LIST_SIZE: an oversized header
-            // list is a STREAM error, not a connection error — the caller is the one
-            // that reports it against the single stream (see T1.4).
+            // RFC 9113 §6.5.2 SETTINGS_MAX_HEADER_LIST_SIZE: an oversized header
+            // list is a STREAM error, not a connection error — it gets its own
+            // status so the caller can reset the one stream instead of tearing
+            // down a connection that is carrying innocent ones.
             if (headers.Count > fieldsBefore)
             {
                 var (name, value) = headers[^1];
-                // RFC 7540 §6.5.2 measures the header list in octets (field sizes as
+                // RFC 9113 §6.5.2 measures the header list in octets (field sizes as
                 // defined in §4.1), NOT in UTF-16 code units. Billing string lengths
                 // would under-count every non-ASCII field by 2× (3× for CJK), letting a
                 // peer exceed the advertised budget without tripping this reject.
                 headerListSize +=
                     Encoding.UTF8.GetByteCount(name) + Encoding.UTF8.GetByteCount(value) + 32;
                 if (headerListSize > maxHeaderListSize)
-                    return false;
+                    return HpackDecodeStatus.HeaderListTooLarge;
             }
         }
 
-        return true;
+        return HpackDecodeStatus.Success;
     }
 
     // ── Header field decoders ──────────────────────────────────────────
@@ -293,4 +322,24 @@ internal static class HpackDecoder
     {
         return HuffmanCodec.TryDecode(data, out result);
     }
+}
+
+/// <summary>Why a header block was not decoded.</summary>
+internal enum HpackDecodeStatus
+{
+    /// <summary>The block decoded and the header list is usable.</summary>
+    Success,
+
+    /// <summary>
+    /// Malformed block (RFC 7541). A CONNECTION error: our decoder table is no
+    /// longer in sync with the peer's encoder, so no later block on this
+    /// connection can be trusted either.
+    /// </summary>
+    CompressionError,
+
+    /// <summary>
+    /// Decoded header list over SETTINGS_MAX_HEADER_LIST_SIZE (RFC 9113 §6.5.2).
+    /// A STREAM error — the HPACK table itself is still in sync.
+    /// </summary>
+    HeaderListTooLarge,
 }

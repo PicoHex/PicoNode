@@ -25,11 +25,25 @@ internal static class HttpCharacters
         return true;
     }
 
-    public static bool IsValidHeaderValue(string value)
+    public static bool IsValidHeaderValue(string value) => IsValidHeaderValue(value.AsSpan());
+
+    /// <summary>
+    /// RFC 9110 §5.5 field-value check over a char span, so a caller that already
+    /// holds the value as a string never has to encode it into a scratch buffer
+    /// first. The HTTP/2 request path calls this once per header field, and an
+    /// <c>Encoding.ASCII.GetBytes</c> there would be pure per-request garbage.
+    /// </summary>
+    public static bool IsValidHeaderValue(ReadOnlySpan<char> value)
     {
-        return value.All(character =>
-            (character >= 0x20 || character == '\t') && character != 0x7F
-        );
+        foreach (var character in value)
+        {
+            if ((character < 0x20 && character != '\t') || character == 0x7F)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public static bool IsValidHeaderValue(ReadOnlySpan<byte> value)
@@ -44,6 +58,14 @@ internal static class HttpCharacters
 
         return true;
     }
+
+    /// <summary>
+    /// RFC 9113 §8.2.1: a field value must not start or end with optional
+    /// whitespace (SP / HTAB). HTTP/1.1 strips OWS in the request-line parser;
+    /// HPACK carries a value verbatim, so HTTP/2 has to reject it here.
+    /// </summary>
+    public static bool HasLeadingOrTrailingWhitespace(ReadOnlySpan<char> value) =>
+        value.Length > 0 && (value[0] is ' ' or '\t' || value[^1] is ' ' or '\t');
 
     public static bool IsHttpTokenCharacter(char character) =>
         char.IsAsciiLetterOrDigit(character)

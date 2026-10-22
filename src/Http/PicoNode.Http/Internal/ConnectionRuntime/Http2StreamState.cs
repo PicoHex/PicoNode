@@ -2,8 +2,14 @@ namespace PicoNode.Http.Internal.ConnectionRuntime;
 
 internal sealed class Http2StreamState
 {
-    /// <summary>Default max header list size: 16 KB (same as typical HTTP/2 default).</summary>
-    internal const int MaxHeaderListSize = 16 * 1024;
+    /// <summary>
+    /// Cap on the COMPRESSED header block of one request (HEADERS + CONTINUATION
+    /// octets, 16 KiB). This bounds the wire form only — see
+    /// <see cref="ConnectionRuntimeState.LocalMaxHeaderListSize"/> for the budget on
+    /// the DECODED list, which is the one a peer attacks: 16 KiB of one-octet index
+    /// references expand to ~1 MiB of header list.
+    /// </summary>
+    internal const int MaxCompressedHeaderBlockSize = 16 * 1024;
 
     public int StreamId { get; }
     public bool EndStreamReceived { get; set; }
@@ -126,7 +132,7 @@ internal sealed class Http2StreamState
         // so the buffered body must go now: it can hold up to MaxRequestBodyBytes
         // (64 MiB) — the very size that makes the ENHANCE_YOUR_CALM reset fire.
         // Assign a fresh writer instead of calling Clear(), which keeps the grown
-        // array alive. The header block (bounded by MaxHeaderListSize) goes too.
+        // array alive. The compressed header block (bounded by the cap above) goes too.
         DataBuffer = new ArrayBufferWriter<byte>();
         HeaderBlockBuffer = null;
     }
@@ -149,7 +155,8 @@ internal sealed class Http2StreamState
     /// Combines buffered CONTINUATION data with the current frame payload.
     /// Returns null when headers are still incomplete (expecting CONTINUATION).
     /// Returns non-null when END_HEADERS is received, containing the complete header block.
-    /// Throws <see cref="Http2HeaderTooLargeException"/> if the total exceeds <see cref="MaxHeaderListSize"/>.
+    /// Throws <see cref="Http2HeaderTooLargeException"/> if the total exceeds
+    /// <see cref="MaxCompressedHeaderBlockSize"/>.
     /// </summary>
     public ArraySegment<byte>? AppendHeaderData(ReadOnlyMemory<byte> payload, bool endHeaders)
     {
@@ -160,14 +167,14 @@ internal sealed class Http2StreamState
                 // No prior CONTINUATION; return the frame payload directly.
                 if (payload.Length == 0)
                     return null;
-                if (payload.Length > MaxHeaderListSize)
+                if (payload.Length > MaxCompressedHeaderBlockSize)
                     throw new Http2HeaderTooLargeException(payload.Length);
                 return new ArraySegment<byte>(payload.ToArray());
             }
 
             // Flush buffered data + final payload.
             HeaderBlockBuffer.Write(payload.Span);
-            if (HeaderBlockBuffer.WrittenCount > MaxHeaderListSize)
+            if (HeaderBlockBuffer.WrittenCount > MaxCompressedHeaderBlockSize)
                 throw new Http2HeaderTooLargeException(HeaderBlockBuffer.WrittenCount);
             var result = HeaderBlockBuffer.WrittenMemory.ToArray();
             HeaderBlockBuffer = null;
@@ -178,7 +185,7 @@ internal sealed class Http2StreamState
             // Buffer for future CONTINUATION.
             HeaderBlockBuffer ??= new ArrayBufferWriter<byte>();
             HeaderBlockBuffer.Write(payload.Span);
-            if (HeaderBlockBuffer.WrittenCount > MaxHeaderListSize)
+            if (HeaderBlockBuffer.WrittenCount > MaxCompressedHeaderBlockSize)
                 throw new Http2HeaderTooLargeException(HeaderBlockBuffer.WrittenCount);
             return null;
         }
@@ -191,7 +198,7 @@ internal sealed class Http2HeaderTooLargeException : InvalidOperationException
 
     public Http2HeaderTooLargeException(int size)
         : base(
-            $"HTTP/2 header list exceeds maximum size ({size} > {Http2StreamState.MaxHeaderListSize})"
+            $"HTTP/2 header list exceeds maximum size ({size} > {Http2StreamState.MaxCompressedHeaderBlockSize})"
         )
     {
         Size = size;

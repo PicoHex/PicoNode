@@ -1688,7 +1688,7 @@ public sealed class Http2StreamHandlerTests
 
         // Build a large HPACK payload that exceeds 16KB MaxHeaderListSize
         // Use BuildFrame directly to avoid Http2FrameCodec's max frame size check
-        var largeValue = new string('x', Http2StreamState.MaxHeaderListSize);
+        var largeValue = new string('x', Http2StreamState.MaxCompressedHeaderBlockSize);
         var largeHpack = BuildHpackWithLargeValue(largeValue);
 
         var frame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.EndHeaders, 1, largeHpack);

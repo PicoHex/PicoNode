@@ -9,6 +9,17 @@ internal sealed class ConnectionRuntimeState
     /// </summary>
     public const int LocalHeaderTableSize = 4096;
 
+    /// <summary>
+    /// The SETTINGS_MAX_HEADER_LIST_SIZE value WE advertise (same list of
+    /// initial SETTINGS frames as above). It bounds the DECODED header list of
+    /// one request in octets (RFC 9113 §6.5.2 field sizes, +32 per field) — the
+    /// compressed-block cap in <see cref="Http2StreamState"/> bounds the block on
+    /// the wire and cannot bound the expansion: 16 KiB of one-octet index
+    /// references decode to ~1 MiB of header list. An overflow is a STREAM error
+    /// (RST_STREAM ENHANCE_YOUR_CALM), never a connection error.
+    /// </summary>
+    public const int LocalMaxHeaderListSize = 64 * 1024;
+
     public ConnectionProtocol Protocol { get; set; }
 
     /// <summary>HTTP/1.1-specific state, allocated on first use to avoid waste on HTTP/2 connections.</summary>

@@ -223,15 +223,35 @@ internal static partial class Http2StreamHandler
             clearState.PendingContinuationStreamId = null;
 
         // Decode HPACK header block from the complete (possibly reassembled) data.
+        // The budget is the same value we advertised in SETTINGS_MAX_HEADER_LIST_SIZE,
+        // so a peer that obeyed our SETTINGS never trips it, and one that ignored
+        // them cannot make us build a multi-megabyte header list from a 16 KiB block.
         var dynamicTable = runtimeStateForLimit?.HpackTable;
-        if (
-            !HpackDecoder.TryDecode(
-                payloadData.Value.AsSpan(),
-                out var headerFields,
-                dynamicTable,
-                ConnectionRuntimeState.LocalHeaderTableSize
-            )
-        )
+        var decodeStatus = HpackDecoder.Decode(
+            payloadData.Value.AsSpan(),
+            out var headerFields,
+            dynamicTable,
+            ConnectionRuntimeState.LocalHeaderTableSize,
+            ConnectionRuntimeState.LocalMaxHeaderListSize
+        );
+
+        if (decodeStatus == HpackDecodeStatus.HeaderListTooLarge)
+        {
+            // RFC 9113 §6.5.2: SETTINGS_MAX_HEADER_LIST_SIZE is a per-stream limit, so
+            // the answer is RST_STREAM — not the GOAWAY below. The HPACK table is still
+            // in sync (the block decoded cleanly; it was merely too big), so the other
+            // streams on this connection are innocent and keep running.
+            logger?.Log(
+                LogLevel.Debug,
+                $"[H2] header list over MaxHeaderListSize: StreamId={frame.StreamId}, sending RST_STREAM ENHANCE_YOUR_CALM",
+                null
+            );
+            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.EnhanceYourCalm, ct)
+                .ConfigureAwait(false);
+            return false;
+        }
+
+        if (decodeStatus != HpackDecodeStatus.Success)
         {
             logger?.Log(
                 LogLevel.Debug,

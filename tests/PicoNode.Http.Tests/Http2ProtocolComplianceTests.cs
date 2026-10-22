@@ -713,6 +713,67 @@ public sealed class Http2ProtocolComplianceTests
     }
 
     [Test]
+    public async Task Crlf_in_header_field_value_triggers_RST_PROTOCOL_ERROR()
+    {
+        // RFC 9113 §8.2.1: CR/LF in a field value is malformed. It must be a
+        // stream error (the other streams on the connection are innocent) — and
+        // above all the poisoned value must never reach the request.
+        var connection = NewConnection();
+        var block = new List<byte>(BuildMinimalHpack("GET", "/foo"));
+        AddLiteral(block, "x-echo", "a\r\nb");
+        var headers = BuildHeadersFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+            1,
+            block.ToArray()
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(headers),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.LastRstStreamCode).IsEqualTo(Http2ErrorCode.ProtocolError);
+        await Assert.That(connection.IsClosed).IsFalse();
+    }
+
+    [Test]
+    public async Task Oversized_decoded_header_list_triggers_RST_ENHANCE_YOUR_CALM()
+    {
+        // SETTINGS_MAX_HEADER_LIST_SIZE (§6.5.2) is a stream limit: the peer sent
+        // 1 200 one-octet index references that decode to ~70 KiB of header list,
+        // so we reset THAT stream and keep every other stream on the connection
+        // alive. Treating it as a connection error (GOAWAY COMPRESSION_ERROR) let
+        // one hostile stream kill a connection carrying 99 innocent ones.
+        var connection = NewConnection();
+        var block = new List<byte>(BuildMinimalHpack("GET", "/foo"));
+        for (var i = 0; i < 1200; i++)
+            block.Add(0x90); // index 16: "accept-encoding: gzip, deflate" (59 octets)
+
+        var headers = BuildHeadersFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+            1,
+            block.ToArray()
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(headers),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.LastRstStreamCode).IsEqualTo(Http2ErrorCode.EnhanceYourCalm);
+        await Assert.That(connection.LastGoAwayErrorCode).IsNull();
+        await Assert.That(connection.IsClosed).IsFalse();
+    }
+
+    [Test]
     public async Task Unknown_pseudo_header_triggers_RST_PROTOCOL_ERROR()
     {
         var connection = NewConnection();

@@ -397,6 +397,13 @@ internal static partial class Http2StreamHandler
             if (bodyLength > 0)
                 request._bodySequence = new ReadOnlySequence<byte>(bodyBytes);
 
+            // An abort (peer RST_STREAM, or our own reset) that landed in the window
+            // between the snapshot above and this point leaves nothing to validate:
+            // the stream is already closed, so a content-length mismatch here would
+            // emit a bogus RST_STREAM(PROTOCOL_ERROR) against a closed stream.
+            if (state.Aborted)
+                return false;
+
             // RFC 7540 §8.1.2.6: content-length must match the request body. Compared
             // against the CAPTURED length: re-reading state.DataBuffer here saw an
             // aborted stream's replacement buffer (0 octets) next to a snapshot that

@@ -74,9 +74,7 @@ internal static partial class Http2StreamHandler
     }
 
     /// <summary>Returns the connection runtime state, creating it on first use.</summary>
-    private static ConnectionRuntimeState GetOrCreateRuntimeState(
-        ITcpConnectionContext connection
-    )
+    private static ConnectionRuntimeState GetOrCreateRuntimeState(ITcpConnectionContext connection)
     {
         if (connection.UserState is ConnectionRuntimeState state)
             return state;
@@ -111,13 +109,58 @@ internal static partial class Http2StreamHandler
             {
                 pseudoEnded = true;
 
-                // RFC 7540 §8.1.2: header field names MUST be lowercase.
-                if (!name.Equals(name.ToLowerInvariant(), StringComparison.Ordinal))
+                var nameSpan = name.AsSpan();
+
+                // RFC 9113 §8.2.1: header field names MUST be lowercase. Asking the
+                // span whether it holds an ASCII uppercase letter answers that in one
+                // allocation-free pass; the old `name.Equals(name.ToLowerInvariant(),
+                // Ordinal)` built a throwaway lowercased string for every field, and
+                // the forbidden-name check below built a SECOND one for the same field.
+                if (nameSpan.IndexOfAnyInRange('A', 'Z') >= 0)
+                    return HeaderValidationResult.Invalid();
+
+                // RFC 9113 §8.2.2: connection-specific header fields are prohibited in
+                // HTTP/2. Compared against the five literals (the name is already known
+                // to be lowercase) instead of against a lowercased copy.
+                if (
+                    nameSpan.SequenceEqual("connection")
+                    || nameSpan.SequenceEqual("keep-alive")
+                    || nameSpan.SequenceEqual("proxy-connection")
+                    || nameSpan.SequenceEqual("transfer-encoding")
+                    || nameSpan.SequenceEqual("upgrade")
+                )
+                    return HeaderValidationResult.Invalid();
+
+                // RFC 9113 §8.2.2: the only legal `te` value in HTTP/2 is "trailers".
+                if (
+                    nameSpan.SequenceEqual("te")
+                    && !value.Equals("trailers", StringComparison.OrdinalIgnoreCase)
+                )
+                    return HeaderValidationResult.Invalid();
+
+                // RFC 9113 §8.2.1: a field value containing NUL, CR or LF — or one that
+                // starts/ends with optional whitespace — MUST be treated as malformed.
+                // HTTP/1.1 rejects exactly these in HttpCharacters.IsValidHeaderValue while
+                // parsing; HPACK hands us the value verbatim, so HTTP/2 has to reject it
+                // here or a CRLF lands in the request untouched. Both checks run on the
+                // string's own memory (AsSpan), so nothing is allocated per field.
+                if (
+                    !HttpCharacters.IsValidHeaderValue(value.AsSpan())
+                    || HttpCharacters.HasLeadingOrTrailingWhitespace(value.AsSpan())
+                )
                     return HeaderValidationResult.Invalid();
             }
             else
             {
                 if (pseudoEnded)
+                    return HeaderValidationResult.Invalid();
+
+                // RFC 9113 §8.2.1 applies to EVERY field value, pseudo-headers included:
+                // a CR/LF/NUL in :path reaches routing, the access log and any response
+                // header an application reflects the target into. (Leading/trailing OWS is
+                // deliberately not rejected here — :path may legitimately carry interior
+                // spaces — but control octets never are.)
+                if (!HttpCharacters.IsValidHeaderValue(value.AsSpan()))
                     return HeaderValidationResult.Invalid();
 
                 switch (name)
@@ -161,20 +204,6 @@ internal static partial class Http2StreamHandler
                 }
                 continue;
             }
-
-            var lower = name.ToLowerInvariant();
-            if (
-                lower
-                is "connection"
-                    or "keep-alive"
-                    or "proxy-connection"
-                    or "transfer-encoding"
-                    or "upgrade"
-            )
-                return HeaderValidationResult.Invalid();
-
-            if (lower == "te" && !value.Equals("trailers", StringComparison.OrdinalIgnoreCase))
-                return HeaderValidationResult.Invalid();
 
             regularHeaders.Add(new(name, value));
             if (!headerDict.ContainsKey(name))
