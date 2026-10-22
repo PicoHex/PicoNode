@@ -90,8 +90,38 @@ public sealed class SessionMiddleware
             throw;
         }
 
-        // 5. Persist if dirty
-        if (session is not null && session.IsDirty)
+        // 5. Rotate the id first if the handler asked for it (sign-in, role change), then persist
+        var idToEmit = session?.Id;
+        var rotated = false;
+        if (session is not null && context.SessionRegenerationRequested)
+        {
+            try
+            {
+                // Persist first: a session minted on this very request was never saved, while
+                // rotation moves what the *store* holds. Skipping this drops the state the
+                // handler just wrote on the way to the new id.
+                if (session.IsDirty)
+                {
+                    await store.SaveAsync(session.Id, session, ct);
+                }
+
+                idToEmit = await store.RegenerateAsync(session.Id, ct);
+                rotated = true;
+
+                // Point the context at the session the client now owns, so a handler that
+                // reads it after an await does not see the dead id.
+                context.Session = await store.LoadAsync(idToEmit, ct) ?? session;
+            }
+            catch
+            {
+                // Best-effort rotation — fall back to the id the client already has
+                idToEmit = session.Id;
+                rotated = false;
+            }
+        }
+
+        // 6. Persist if dirty (a completed rotation already moved the payload)
+        if (!rotated && session is not null && session.IsDirty)
         {
             try
             {
@@ -103,12 +133,16 @@ public sealed class SessionMiddleware
             }
         }
 
-        // 6. Emit session ID if new AND dirty
-        if (session is not null && session.IsNew && session.IsDirty)
+        // 7. Emit the session ID when it is new AND dirty, or when it just rotated
+        if (
+            session is not null
+            && idToEmit is not null
+            && (rotated || (session.IsNew && session.IsDirty))
+        )
         {
             try
             {
-                setter(response, session.Id);
+                setter(response, idToEmit);
             }
             catch
             {

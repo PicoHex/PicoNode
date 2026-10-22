@@ -203,4 +203,92 @@ public sealed class SessionMiddlewareTests
         // IsDirty should remain false; no Set-Cookie for existing session
         await Assert.That(context.Session!.IsDirty).IsFalse();
     }
+
+    [Test]
+    public async Task Middleware_rotates_session_id_when_handler_requests_it()
+    {
+        var store = new InMemorySessionStore(DefaultOptions);
+        var existing = await store.CreateAsync();
+        existing.SetString("user", "alice");
+        await store.SaveAsync(existing.Id, existing);
+
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Cookie"] = $"sid={existing.Id}",
+        };
+        var request = new HttpRequest
+        {
+            Method = "POST",
+            Target = "/login",
+            Headers = headers,
+        };
+        var context = WebContext.Create(request);
+
+        var (extract, set) = SessionCookie.Create();
+        var middleware = SessionMiddleware.Create(store, extract, set);
+
+        WebRequestHandler handler = (ctx, ct) =>
+        {
+            // A privilege change just happened — the pre-login id must not survive it.
+            SessionRotation.Regenerate(ctx);
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        };
+
+        var response = await middleware(context, handler, CancellationToken.None);
+
+        var cookie = response.Headers[HttpHeaderNames.SetCookie];
+        await Assert.That(cookie).IsNotNull();
+        await Assert.That(cookie!).StartsWith("sid=");
+        await Assert.That(cookie!).DoesNotContain(existing.Id);
+
+        var newId = cookie!["sid=".Length..].Split(';')[0];
+        await Assert.That(newId).IsNotEqualTo(existing.Id);
+        await Assert.That(await store.LoadAsync(existing.Id)).IsNull();
+
+        var moved = await store.LoadAsync(newId);
+        await Assert.That(moved).IsNotNull();
+        await Assert.That(moved!.GetString("user")).IsEqualTo("alice");
+        // The context must point at the session the client now owns.
+        await Assert.That(context.Session!.Id).IsEqualTo(newId);
+    }
+
+    [Test]
+    public async Task Middleware_rotates_unsaved_new_session_without_losing_data()
+    {
+        // Cookie-less request: the middleware creates a detached session that has never been
+        // persisted. Rotation must persist the handler's writes first, or the login state is
+        // silently dropped on the way to the new id.
+        var store = new InMemorySessionStore(DefaultOptions);
+        var request = new HttpRequest
+        {
+            Method = "POST",
+            Target = "/login",
+            Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
+        };
+        var context = WebContext.Create(request);
+
+        var (extract, set) = SessionCookie.Create();
+        var middleware = SessionMiddleware.Create(store, extract, set);
+
+        string? mintedId = null;
+        WebRequestHandler handler = (ctx, ct) =>
+        {
+            mintedId = ctx.Session!.Id;
+            ctx.Session.SetString("user", "bob");
+            SessionRotation.Regenerate(ctx);
+            return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+        };
+
+        var response = await middleware(context, handler, CancellationToken.None);
+
+        var cookie = response.Headers[HttpHeaderNames.SetCookie];
+        await Assert.That(cookie).IsNotNull();
+        var newId = cookie!["sid=".Length..].Split(';')[0];
+        await Assert.That(newId).IsNotEqualTo(mintedId);
+
+        var moved = await store.LoadAsync(newId);
+        await Assert.That(moved).IsNotNull();
+        await Assert.That(moved!.GetString("user")).IsEqualTo("bob");
+        await Assert.That(await store.LoadAsync(mintedId!)).IsNull();
+    }
 }

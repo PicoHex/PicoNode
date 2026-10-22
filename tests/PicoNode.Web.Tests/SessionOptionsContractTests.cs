@@ -19,6 +19,22 @@ public sealed class SessionOptionsContractTests
     }
 
     [Test]
+    public async Task Defaults_are_10_000_sessions()
+    {
+        var options = new SessionOptions();
+
+        await Assert.That(options.MaxSessions).IsEqualTo(10_000);
+    }
+
+    [Test]
+    public async Task Defaults_are_256_KiB_per_session()
+    {
+        var options = new SessionOptions();
+
+        await Assert.That(options.MaxBytesPerSession).IsEqualTo(256 * 1024);
+    }
+
+    [Test]
     public async Task Defaults_are_not_equal()
     {
         var options = new SessionOptions();
