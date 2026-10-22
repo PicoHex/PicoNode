@@ -517,10 +517,14 @@ public sealed class MultipartFormDataParserTests
             + new string('x', 10)
             + "\r\n--b--\r\n";
         var request = CreateMultipartRequest("b", body);
+        // Headers are part of the budget, so "exactly at the limit" is header bytes + 10.
+        var headerBytes = Encoding.UTF8.GetByteCount(
+            "Content-Disposition: form-data; name=\"a\"\r\n"
+        );
         var options = new MultipartFormDataParserOptions
         {
             MaxPartSizeBytes = 10,
-            MaxTotalSizeBytes = 10,
+            MaxTotalSizeBytes = headerBytes + 10,
         };
 
         var result = await MultipartFormDataParser.ParseAsync(request, options);
@@ -528,6 +532,363 @@ public sealed class MultipartFormDataParserTests
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Fields.Count).IsEqualTo(1);
         await Assert.That(result.Fields[0].Value).IsEqualTo(new string('x', 10));
+    }
+
+    // ── parameter parsing: `name=` must not match inside `filename=` ──────────
+
+    [Test]
+    public async Task Name_parameter_is_not_matched_inside_filename()
+    {
+        // Audit F-45: an unanchored IndexOf("name=") matches the tail of
+        // "filename=", so the declared name is discarded and the attacker's file
+        // name is promoted to the field name.
+        var body =
+            "--boundary\r\n"
+            + "Content-Disposition: form-data; filename=\"evil.txt\"; name=\"role\"\r\n"
+            + "\r\n"
+            + "admin\r\n"
+            + "--boundary--\r\n";
+        var request = CreateMultipartRequest("boundary", body);
+
+        var result = await MultipartFormDataParser.ParseAsync(request);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Files.Count).IsEqualTo(1);
+        await Assert.That(result.Files[0].Name).IsEqualTo("role");
+        await Assert.That(result.Files[0].FileName).IsEqualTo("evil.txt");
+    }
+
+    [Test]
+    public async Task Name_parameter_is_not_matched_inside_filename_on_the_streaming_path()
+    {
+        var body =
+            "--boundary\r\n"
+            + "Content-Disposition: form-data; filename=\"evil.txt\"; name=\"role\"\r\n"
+            + "\r\n"
+            + "admin\r\n"
+            + "--boundary--\r\n";
+        var request = CreateStreamingRequest("boundary", body);
+
+        var result = await MultipartFormDataParser.ParseAsync(request);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Files.Count).IsEqualTo(1);
+        await Assert.That(result.Files[0].Name).IsEqualTo("role");
+        await Assert.That(result.Files[0].FileName).IsEqualTo("evil.txt");
+    }
+
+    [Test]
+    public async Task Part_without_a_name_parameter_is_skipped()
+    {
+        // With the anchored parser the part declares no name at all, so it is not a
+        // form value: it must be dropped rather than filed under "evil.txt".
+        var body =
+            "--boundary\r\n"
+            + "Content-Disposition: form-data; filename=\"evil.txt\"\r\n"
+            + "\r\n"
+            + "admin\r\n"
+            + "--boundary--\r\n";
+        var request = CreateMultipartRequest("boundary", body);
+
+        var result = await MultipartFormDataParser.ParseAsync(request);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Fields.Count).IsEqualTo(0);
+        await Assert.That(result.Files.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Part_without_a_name_parameter_is_skipped_on_the_streaming_path()
+    {
+        var body =
+            "--boundary\r\n"
+            + "Content-Disposition: form-data; filename=\"evil.txt\"\r\n"
+            + "\r\n"
+            + "admin\r\n"
+            + "--boundary--\r\n";
+        var request = CreateStreamingRequest("boundary", body);
+
+        var result = await MultipartFormDataParser.ParseAsync(request);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Fields.Count).IsEqualTo(0);
+        await Assert.That(result.Files.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Semicolon_inside_a_quoted_filename_does_not_split_the_parameter()
+    {
+        var body =
+            "--boundary\r\n"
+            + "Content-Disposition: form-data; name=\"doc\"; filename=\"a;b.txt\"\r\n"
+            + "Content-Type: text/plain\r\n"
+            + "\r\n"
+            + "data\r\n"
+            + "--boundary--\r\n";
+        var request = CreateMultipartRequest("boundary", body);
+
+        var result = await MultipartFormDataParser.ParseAsync(request);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Files.Count).IsEqualTo(1);
+        await Assert.That(result.Files[0].Name).IsEqualTo("doc");
+        await Assert.That(result.Files[0].FileName).IsEqualTo("a;b.txt");
+    }
+
+    [Test]
+    public async Task Parameter_name_is_matched_case_insensitively_and_with_surrounding_spaces()
+    {
+        var body =
+            "--boundary\r\n"
+            + "Content-Disposition: form-data; NAME = \"doc\"; FILENAME=\"a.txt\"\r\n"
+            + "\r\n"
+            + "data\r\n"
+            + "--boundary--\r\n";
+        var request = CreateMultipartRequest("boundary", body);
+
+        var result = await MultipartFormDataParser.ParseAsync(request);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Files.Count).IsEqualTo(1);
+        await Assert.That(result.Files[0].Name).IsEqualTo("doc");
+        await Assert.That(result.Files[0].FileName).IsEqualTo("a.txt");
+    }
+
+    // ── part count ──────────────────────────────────────────────────────────
+
+    [Test]
+    public async Task Part_count_is_bounded()
+    {
+        // 300 empty parts: every one of them costs no content bytes, so only a part
+        // count can bound the number of allocations a 64 MB body can buy.
+        var request = CreateMultipartRequest("b", BuildParts("b", partCount: 300, content: ""));
+
+        await Assert
+            .That(async () => await MultipartFormDataParser.ParseAsync(request))
+            .Throws<InvalidDataException>()
+            .Because("an unbounded part count is a heap amplifier, not a payload limit");
+    }
+
+    [Test]
+    public async Task Part_count_is_bounded_on_the_streaming_path()
+    {
+        var request = CreateStreamingRequest("b", BuildParts("b", partCount: 300, content: "x"));
+
+        await Assert
+            .That(async () => await MultipartFormDataParser.ParseAsync(request))
+            .Throws<InvalidDataException>()
+            .Because("both parse paths must bound the part count");
+    }
+
+    [Test]
+    public async Task Part_count_at_the_default_limit_is_accepted()
+    {
+        var request = CreateMultipartRequest("b", BuildParts("b", partCount: 256, content: ""));
+
+        var result = await MultipartFormDataParser.ParseAsync(request);
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Fields.Count).IsEqualTo(256);
+    }
+
+    [Test]
+    public async Task Part_count_limit_is_configurable()
+    {
+        var two = BuildParts("b", partCount: 2, content: "");
+        var three = BuildParts("b", partCount: 3, content: "");
+        var options = new MultipartFormDataParserOptions { MaxPartCount = 2 };
+
+        var accepted = await MultipartFormDataParser.ParseAsync(
+            CreateMultipartRequest("b", two),
+            options
+        );
+        await Assert.That(accepted).IsNotNull();
+        await Assert.That(accepted!.Fields.Count).IsEqualTo(2);
+
+        await Assert
+            .That(async () =>
+                await MultipartFormDataParser.ParseAsync(CreateMultipartRequest("b", three), options)
+            )
+            .Throws<InvalidDataException>();
+    }
+
+    [Test]
+    public async Task Parse_rejects_non_positive_part_limits()
+    {
+        var request = CreateMultipartRequest("b", BuildParts("b", partCount: 1, content: "x"));
+
+        await Assert
+            .That(async () =>
+                await MultipartFormDataParser.ParseAsync(
+                    request,
+                    new MultipartFormDataParserOptions { MaxPartCount = 0 }
+                )
+            )
+            .Throws<ArgumentOutOfRangeException>();
+
+        await Assert
+            .That(async () =>
+                await MultipartFormDataParser.ParseAsync(
+                    request,
+                    new MultipartFormDataParserOptions { MaxHeaderBytesPerPart = 0 }
+                )
+            )
+            .Throws<ArgumentOutOfRangeException>();
+    }
+
+    // ── header bytes ────────────────────────────────────────────────────────
+
+    [Test]
+    public async Task Part_header_bytes_are_bounded()
+    {
+        var request = CreateMultipartRequest("b", BuildPaddedBody("b", padLength: 9000));
+
+        await Assert
+            .That(async () => await MultipartFormDataParser.ParseAsync(request))
+            .Throws<InvalidDataException>()
+            .Because("unbounded part headers are parsed into strings the size limit never counted");
+    }
+
+    [Test]
+    public async Task Part_header_bytes_are_bounded_on_the_streaming_path()
+    {
+        var request = CreateStreamingRequest("b", BuildPaddedBody("b", padLength: 9000));
+
+        await Assert
+            .That(async () => await MultipartFormDataParser.ParseAsync(request))
+            .Throws<InvalidDataException>()
+            .Because("both parse paths must bound the per-part header size");
+    }
+
+    [Test]
+    public async Task Header_bytes_count_toward_MaxTotalSizeBytes_on_both_paths()
+    {
+        // Two parts, 2 content bytes in total, ~1.7 KB of headers: a total limit of
+        // 1 KB only trips when headers are part of the budget.
+        var body = BuildPaddedBody("b", padLength: 800);
+        var options = new MultipartFormDataParserOptions { MaxTotalSizeBytes = 1024 };
+
+        await Assert
+            .That(async () =>
+                await MultipartFormDataParser.ParseAsync(CreateMultipartRequest("b", body), options)
+            )
+            .Throws<InvalidDataException>()
+            .Because("headers are attacker-supplied bytes and must be counted");
+
+        await Assert
+            .That(async () =>
+                await MultipartFormDataParser.ParseAsync(CreateStreamingRequest("b", body), options)
+            )
+            .Throws<InvalidDataException>()
+            .Because("headers are attacker-supplied bytes and must be counted");
+    }
+
+    [Test]
+    public async Task Header_bytes_within_the_total_are_accepted()
+    {
+        // Positive control for the test above: the same body parses when the total
+        // limit is large enough for headers + content.
+        var body = BuildPaddedBody("b", padLength: 800);
+        var options = new MultipartFormDataParserOptions { MaxTotalSizeBytes = 4096 };
+
+        var result = await MultipartFormDataParser.ParseAsync(
+            CreateMultipartRequest("b", body),
+            options
+        );
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Fields.Count).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task Part_headers_exactly_at_the_limit_are_accepted_on_both_paths()
+    {
+        // The two paths have to charge the same bytes for a header block, otherwise one of
+        // them refuses a body the other accepts.
+        var headerBlock =
+            "Content-Disposition: form-data; name=\"a\"\r\nX-Pad: " + new string('p', 16) + "\r\n";
+        var body = "--b\r\n" + headerBlock + "\r\nv\r\n--b--\r\n";
+        var options = new MultipartFormDataParserOptions
+        {
+            MaxHeaderBytesPerPart = headerBlock.Length,
+        };
+
+        var inMemory = await MultipartFormDataParser.ParseAsync(
+            CreateMultipartRequest("b", body),
+            options
+        );
+        await Assert.That(inMemory).IsNotNull();
+        await Assert.That(inMemory!.Fields.Count).IsEqualTo(1);
+        await Assert.That(inMemory.Fields[0].Value).IsEqualTo("v");
+
+        var streaming = await MultipartFormDataParser.ParseAsync(
+            CreateStreamingRequest("b", body),
+            options
+        );
+        await Assert.That(streaming).IsNotNull();
+        await Assert.That(streaming!.Fields.Count).IsEqualTo(1);
+        await Assert.That(streaming.Fields[0].Value).IsEqualTo("v");
+    }
+
+    private static string BuildParts(string boundary, int partCount, string content)
+    {
+        var builder = new StringBuilder();
+        for (var i = 0; i < partCount; i++)
+        {
+            builder
+                .Append("--")
+                .Append(boundary)
+                .Append("\r\nContent-Disposition: form-data; name=\"f")
+                .Append(i)
+                .Append("\"\r\n\r\n")
+                .Append(content)
+                .Append("\r\n");
+        }
+
+        return builder.Append("--").Append(boundary).Append("--\r\n").ToString();
+    }
+
+    private static string BuildPaddedBody(string boundary, int padLength)
+    {
+        var pad = new string('p', padLength);
+        var builder = new StringBuilder();
+        foreach (var name in new[] { "a", "b" })
+        {
+            builder
+                .Append("--")
+                .Append(boundary)
+                .Append("\r\nContent-Disposition: form-data; name=\"")
+                .Append(name)
+                .Append("\"\r\nX-Pad: ")
+                .Append(pad)
+                .Append("\r\n\r\nx\r\n");
+        }
+
+        return builder.Append("--").Append(boundary).Append("--\r\n").ToString();
+    }
+
+    private static HttpRequest CreateStreamingRequest(string boundary, string body)
+    {
+        var bodyBytes = Encoding.UTF8.GetBytes(body);
+        return new HttpRequest
+        {
+            Method = "POST",
+            Target = "/upload",
+            Version = HttpVersion.Http11,
+            HeaderFields =
+            [
+                new("Content-Type", $"multipart/form-data; boundary={boundary}"),
+                new("Content-Length", bodyBytes.Length.ToString()),
+                new("Host", "localhost"),
+            ],
+            Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Content-Type"] = $"multipart/form-data; boundary={boundary}",
+                ["Content-Length"] = bodyBytes.Length.ToString(),
+                ["Host"] = "localhost",
+            },
+            BodyStream = new MemoryStream(bodyBytes, writable: false),
+        };
     }
 
     internal static async Task<byte[]> ReadFileAsync(MultipartFormFile file)
