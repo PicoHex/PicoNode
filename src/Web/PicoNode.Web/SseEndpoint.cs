@@ -227,9 +227,11 @@ public static class SseEndpoint
                 TimeProvider = timeProvider,
             };
 
-            // Per-stream disconnect source: fires on remote close (transport's
-            // RemoteCloseToken) or when keep-alive writes start failing, which
-            // means the client is gone even if the request token stays alive.
+            // Per-stream disconnect source: fires when the connection closes, whichever side
+            // closed it — the transport's RemoteCloseToken is cancelled on the peer's FIN or
+            // RST, on an idle timeout, on a fault, and on a node stop — or when keep-alive
+            // writes start failing, which means the client is gone even if the request token
+            // stays alive.
             var streamCts = CancellationTokenSource.CreateLinkedTokenSource(
                 ct,
                 context.Request.RemoteCloseToken

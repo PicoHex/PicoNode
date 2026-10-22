@@ -221,12 +221,18 @@ internal sealed class TcpConnectionLifecycle
                 // node stop) races the handler loop, which may still be inside
                 // OnReceivedAsync. Completing the pipe ends and disposing the socket first
                 // would run OnClosedAsync against that same context concurrently and make the
-                // handler's next AdvanceTo throw on a completed reader. The receive-initiated
-                // path needs no wait: it reaches this method only after its handler loop
-                // returned — the invariant ExecuteReceiveLoopAsync spells out, and now
-                // establishes on every one of its exits (normal return, graceful FIN, reset,
-                // local close and any other escaping fault) by completing the pipe writer and
-                // awaiting the processing task before it returns or rethrows.
+                // handler's next AdvanceTo throw on a completed reader. So the close waits for
+                // the loop — bounded by HandlerLoopTimeout: a handler that ignores the completed
+                // writer and both cancellation tokens holds the close for at most that long,
+                // after which the wait gives up loudly (StopFailed / tcp.close.wait) and the
+                // teardown below runs anyway, in degraded mode — OnClosedAsync then runs
+                // concurrently with the handler the close could not wait out.
+                //
+                // The wait only exists for a close that does not own the loop's completion. The
+                // receive-initiated path skips it because ExecuteReceiveLoopAsync has already
+                // awaited its processing task before it returns or rethrows — bounded there too
+                // on the faulting path, deliberately unbounded for a graceful FIN — so what it
+                // reacts to is a finished loop, not a live one.
                 await AwaitHandlerLoopAsync().ConfigureAwait(false);
             }
 
@@ -355,11 +361,20 @@ internal sealed class TcpConnectionLifecycle
     private Task CancelConnectionAsync() => _cts.CancelAsync();
 
     /// <summary>
-    /// Fires the remote-close token for a connection that is going away. A source a concurrent
-    /// dispose already disposed is tolerated: the token struct the connection hands out stays
-    /// valid either way, and a close must not turn itself into a fault over a token nobody is
-    /// left to wait on.
+    /// Fires the remote-close token for a connection that is going away. Both ways it can fail
+    /// are tolerated: a source a concurrent dispose already disposed (the token struct the
+    /// connection hands out stays valid either way, and a close must not turn itself into a
+    /// fault over a token nobody is left to wait on), and — the narrower reading of the same
+    /// rule — a cancellation callback a user registered that throws, which
+    /// <c>CancellationTokenSource.CancelAsync</c> collects into a faulted cancellation task.
     /// </summary>
+    /// <remarks>
+    /// Firing the token is the FIRST statement of the teardown, so a callback fault that escaped
+    /// here would skip the socket shutdown, the wait for the handler loop, <c>OnClosedAsync</c>
+    /// and the pipe/socket dispose: a connection whose socket and pipe are never released, and a
+    /// node drain that stalls on it until its own deadline. The fault is therefore reported and
+    /// the close carries on with its remaining steps.
+    /// </remarks>
     private async Task CancelRemoteCloseAsync()
     {
         try
@@ -369,6 +384,11 @@ internal sealed class TcpConnectionLifecycle
         catch (ObjectDisposedException)
         {
             // Nothing left to fire.
+        }
+        catch (Exception ex)
+        {
+            // A registered callback threw. The teardown below still has to run.
+            _node.ReportFault(NodeFaultCode.HandlerFailed, OperationCloseCore, ex);
         }
     }
 

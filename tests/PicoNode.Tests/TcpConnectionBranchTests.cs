@@ -1111,6 +1111,82 @@ public sealed class TcpConnectionBranchTests
     }
 
     [Test]
+    public async Task Close_with_a_throwing_remote_close_registration_still_tears_the_connection_down()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var logger = new SpyLogger();
+            var handler = new RecordingTcpHandler();
+            var connection = CreateConnection(pair.Server, handler, logger);
+
+            // A user registration on the token the transport hands out — the shape of a
+            // streaming response that fails while it is being cancelled. CancelAsync collects
+            // it and completes the cancellation task faulted, so firing the token is a step
+            // that CAN throw. It must not be able to abandon the rest of the teardown: the
+            // socket shutdown, the handler wait, OnClosedAsync and the pipe/socket dispose all
+            // follow it in the same sequence, and a close that stops at its own first statement
+            // leaks the socket and pipe and strands the node's drain on the connection it never
+            // finished closing.
+            //
+            // No receive loop is started here on purpose: the loop's teardown can also fire
+            // this source, and the point of the test is what the CLOSE PATH does with a
+            // registration that throws.
+            var callbackFault = new InvalidOperationException("token callback boom");
+            using var registration = connection.RemoteCloseToken.Register(() =>
+            {
+                throw callbackFault;
+            });
+
+            connection.Close();
+
+            var closedInTime = await HasCompletedWithinAsync(
+                handler.Closed.Task,
+                TimeSpan.FromSeconds(5)
+            );
+            // The close is fire-and-forget, so the dispose is observed by a bounded probe rather
+            // than by a sleep that would impose an order. The socket is disposed after the pipe
+            // ends are completed, in one synchronous block, so seeing it disposed means both.
+            var tornDown = await PollUntilAsync(
+                () => IsSocketDisposed(pair.Server),
+                TimeSpan.FromSeconds(5)
+            );
+
+            await Assert
+                .That(closedInTime)
+                .IsTrue()
+                .Because("a throwing token callback must not skip OnClosedAsync");
+            await Assert
+                .That(tornDown)
+                .IsTrue()
+                .Because("a throwing token callback must not skip the pipe/socket dispose");
+            await Assert
+                .That(handler.Closed.Task.IsCompletedSuccessfully)
+                .IsTrue()
+                .Because("the close handler ran to completion");
+            await Assert
+                .That(handler.Closed.Task.Result.Reason)
+                .IsEqualTo(TcpCloseReason.LocalClose);
+            await Assert
+                .That(
+                    logger.Calls.Any(x =>
+                        x.EventId.Id == (int)NodeFaultCode.HandlerFailed
+                        && Mentions(x.Exception, callbackFault)
+                    )
+                )
+                .IsTrue()
+                .Because(
+                    "the registration's fault is reported against tcp.close.core instead of being swallowed"
+                );
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    [Test]
     public async Task RunAsync_with_io_exception_wrapping_a_reset_closes_as_remote_closed()
     {
         var pair = await CreateConnectedSocketsAsync();
@@ -1222,6 +1298,77 @@ public sealed class TcpConnectionBranchTests
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Bounded observation of a side effect that has no task to await (disposal). Same contract
+    /// as <see cref="HasCompletedWithinAsync"/>: the delay is only the poll interval on a
+    /// positive observation, never an order the test relies on.
+    /// </summary>
+    private static async Task<bool> PollUntilAsync(Func<bool> probe, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            if (probe())
+            {
+                return true;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                return false;
+            }
+
+            await Task.Delay(20);
+        }
+    }
+
+    /// <summary>
+    /// True once the socket has been disposed. A shutdown on a live socket succeeds or fails
+    /// with <see cref="SocketException"/> (already shut down); only a disposed one throws
+    /// <see cref="ObjectDisposedException"/>, so the probe never confuses the two.
+    /// </summary>
+    private static bool IsSocketDisposed(Socket socket)
+    {
+        try
+        {
+            socket.Shutdown(SocketShutdown.Both);
+            return false;
+        }
+        catch (ObjectDisposedException)
+        {
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="exception"/> is, wraps or aggregates <paramref name="target"/>:
+    /// a cancellation callback's fault reaches the fault report either directly or inside the
+    /// <see cref="AggregateException"/> the cancellation task faults with.
+    /// </summary>
+    private static bool Mentions(Exception? exception, Exception target)
+    {
+        if (exception is null)
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(exception, target))
+        {
+            return true;
+        }
+
+        if (exception is AggregateException aggregate)
+        {
+            return aggregate.Flatten().InnerExceptions.Any(x => Mentions(x, target));
+        }
+
+        return Mentions(exception.InnerException, target);
     }
 
     private static TcpConnection CreateConnection(
