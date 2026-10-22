@@ -787,6 +787,75 @@ public sealed class TcpConnectionBranchTests
         }
     }
 
+    /// <summary>
+    /// Stands in for an <c>SslStream</c>: it delivers one byte (so the handler gets a request and
+    /// parks inside <c>OnReceivedAsync</c>) and then fails the next read with a plain
+    /// <see cref="IOException"/> — the shape a TLS/stream framing fault arrives in, which is
+    /// neither a <see cref="SocketException"/> nor a cancellation.
+    /// </summary>
+    private sealed class FaultingReadStream(Task faultAfter) : Stream
+    {
+        private readonly Task _faultAfter = faultAfter;
+        private readonly TaskCompletionSource _faulted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _reads;
+
+        /// <summary>Completes when the read fault has been raised.</summary>
+        public Task Faulted => _faulted.Task;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() { }
+
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (Interlocked.Increment(ref _reads) == 1)
+            {
+                buffer.Span[0] = 0x42;
+                return 1;
+            }
+
+            // The first read exists only to put the handler inside OnReceivedAsync, so the
+            // fault must not land before it got there: waiting for that seam is what makes
+            // the overlap the test looks for deterministic instead of a matter of scheduling.
+            await _faultAfter.WaitAsync(cancellationToken).ConfigureAwait(false);
+            _faulted.TrySetResult();
+            throw new IOException("TLS read fault");
+        }
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken
+        ) => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+    }
+
     [Test]
     public async Task CloseAsync_completes_the_run_task()
     {
@@ -812,6 +881,100 @@ public sealed class TcpConnectionBranchTests
             // that its task completes — and it must, or a close could never wait for it.
             await connection.RunTask!.WaitAsync(TimeSpan.FromSeconds(5));
             await Assert.That(connection.RunTask.IsCompleted).IsTrue();
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task RunAsync_with_stream_read_fault_closes_only_after_the_handler_loop()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var handler = new ParkedReceiveTcpHandler();
+            var stream = new FaultingReadStream(handler.ReceivedStarted.Task);
+            var connection = CreateConnection(pair.Server, handler, stream: stream);
+            var runTask = connection.RunAsync(handler);
+
+            await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            await handler.ReceivedStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+            // A read fault (a TLS/SSL framing error arrives as a plain IOException) is neither
+            // a SocketException nor a cancellation, and it used to escape the receive loop with
+            // the handler still parked in OnReceivedAsync and the pipe writer never completed.
+            // The close sequence then ran on its "the handler loop already returned" assumption:
+            // OnClosedAsync overlapped the live handler, and the orphaned loop later failed
+            // unobserved on the completed reader.
+            await stream.Faulted.WaitAsync(TimeSpan.FromSeconds(3));
+
+            // Bounded expectation, not synchronisation: the violation is unblocked and shows up
+            // immediately, while the correct behaviour is blocked on a release only this test
+            // controls and therefore cannot complete inside the window.
+            var closedWhileHandlerParked = await HasCompletedWithinAsync(
+                handler.Closed.Task,
+                TimeSpan.FromMilliseconds(500)
+            );
+
+            handler.ReleaseHandler();
+            var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.ReceiveFailed);
+            await Assert.That(closed.Error).IsNotNull().Because("the read fault is reported");
+            await Assert
+                .That(closedWhileHandlerParked)
+                .IsFalse()
+                .Because(
+                    "a read fault must not run OnClosedAsync while the handler loop is still inside OnReceivedAsync"
+                );
+            await Assert
+                .That(handler.CloseHandlerStartedAfterHandlerReturned)
+                .IsTrue()
+                .Because("a read fault must close through the ordered path, not around it");
+
+            await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task RunAsync_with_stream_read_fault_releases_a_handler_on_the_connection_token()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var handler = new TokenParkedTcpHandler();
+            var stream = new FaultingReadStream(handler.ReceivedStarted);
+            var connection = CreateConnection(pair.Server, handler, stream: stream);
+            var runTask = connection.RunAsync(handler);
+
+            await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+            // A streaming handler parks on the connection token, not on a pipe read. Nothing in
+            // this test releases it: only the ordered teardown can, by firing that token. A read
+            // fault that skipped that first step would leave the handler waiting for a
+            // cancellation that the close sequence cannot deliver until the handler returns —
+            // the deadlock the reset branch has always avoided, now owed to every escape.
+            await stream.Faulted.WaitAsync(TimeSpan.FromSeconds(3));
+
+            var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.ReceiveFailed);
+            await Assert
+                .That(handler.CancellationObserved)
+                .IsTrue()
+                .Because(
+                    "a faulted read must release a handler that waits on the connection token"
+                );
+
+            await runTask.WaitAsync(TimeSpan.FromSeconds(5));
         }
         finally
         {
@@ -1259,6 +1422,71 @@ public sealed class TcpConnectionBranchTests
     /// down without waiting for the handler loop shows up as a close-handler sequence number
     /// that precedes the handler's own.
     /// </summary>
+    /// <summary>
+    /// Handler that parks inside <c>OnReceivedAsync</c> on the connection token itself — the
+    /// shape a streaming handler takes. Only a cancellation of that token releases it, so a
+    /// teardown that never fires the token waits for it for ever.
+    /// </summary>
+    private sealed class TokenParkedTcpHandler : ITcpConnectionHandler
+    {
+        private readonly TaskCompletionSource _receivedStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _cancellationObserved;
+
+        public TaskCompletionSource<ConnectedTcpConnection> Connected { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<ClosedTcpConnection> Closed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task ReceivedStarted => _receivedStarted.Task;
+
+        public bool CancellationObserved => Volatile.Read(ref _cancellationObserved) != 0;
+
+        public Task OnConnectedAsync(
+            ITcpConnectionContext connection,
+            CancellationToken cancellationToken
+        )
+        {
+            Connected.TrySetResult(
+                new ConnectedTcpConnection(connection.ConnectionId, connection.RemoteEndPoint)
+            );
+            return Task.CompletedTask;
+        }
+
+        public async ValueTask<SequencePosition> OnReceivedAsync(
+            ITcpConnectionContext connection,
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken
+        )
+        {
+            _receivedStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // expected: the close fires the connection token to release a streaming handler
+            }
+
+            Volatile.Write(ref _cancellationObserved, 1);
+            return buffer.End;
+        }
+
+        public ValueTask OnClosedAsync(
+            ITcpConnectionContext connection,
+            TcpCloseReason reason,
+            Exception? error,
+            CancellationToken cancellationToken
+        )
+        {
+            Closed.TrySetResult(new ClosedTcpConnection(reason, error));
+            return ValueTask.CompletedTask;
+        }
+    }
+
     private sealed class ParkedReceiveTcpHandler : ITcpConnectionHandler
     {
         private readonly TaskCompletionSource _released = new(

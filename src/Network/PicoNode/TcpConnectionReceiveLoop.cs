@@ -47,47 +47,46 @@ internal sealed class TcpConnectionReceiveLoop
         {
             reason = await PumpSocketToPipeAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (SocketException)
+        catch (Exception ex)
         {
-            // The client is gone (abortive close/reset). Cancel the connection
-            // token IMMEDIATELY so an in-flight streaming response (e.g. an SSE
-            // stream whose body pipe never completes) unblocks now — the close
-            // sequence can only run after this method returns, so without this
-            // the handler waits for cancellation while cancellation waits for
-            // the handler (deadlock).
+            // Every escape from the pump gets one ordered teardown, because the close
+            // sequence runs on top of this method and treats its return as proof that the
+            // handler loop has finished (CloseCoreAsync's `waitsForHandlerLoop: false`).
             //
-            // A graceful FIN below is handled differently: a half-closed
-            // client still expects responses to requests already sent, so the
-            // CONNECTION token stays alive while the processing task drains
-            // the buffered requests. The remote-close token (used by
-            // long-lived streaming responses such as SSE) is cancelled on
-            // BOTH paths — see the FIN branch below.
-            await _connectionCts.CancelAsync().ConfigureAwait(false);
-            await _remoteCloseCts.CancelAsync().ConfigureAwait(false);
-            await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
-            try
+            // The escapes are: the client is gone (abortive close/reset), the connection
+            // token fired (Close, send fault, idle timeout, node stop), the socket or stream
+            // was disposed underneath us, or the read itself faulted — a TLS/SSL framing
+            // fault arrives as a plain IOException, which is neither a SocketException nor a
+            // cancellation. That last one used to run straight past this block: the handler
+            // loop was left orphaned mid-OnReceivedAsync, the pipe writer was never completed
+            // (so the loop could never drain), OnClosedAsync ran underneath the live handler,
+            // and the orphaned loop later failed unobserved on the completed reader.
+            //
+            // The steps, in order:
+            //   1. cancel the CONNECTION token, so an in-flight streaming response (e.g. an
+            //      SSE stream whose body pipe never completes) unblocks now. The close
+            //      sequence can only run after this method returns, so without it the handler
+            //      waits for a cancellation that waits for the handler (deadlock). A local
+            //      close arrives here *because* its token fired (or because the socket was
+            //      disposed), so this step is a no-op for it; and an OperationCanceledException
+            //      raised with a live token is a handler fault — cancelling for it would file
+            //      that fault as a local close.
+            //   2. cancel the remote-close token: long-lived streaming responses (SSE) observe
+            //      the disconnect on BOTH sides of the connection, not only at the socket
+            //      teardown, which is what keeps a streaming handler from waiting out the
+            //      close.
+            //   3. complete the pipe writer: buffered requests are still drained, and the
+            //      reader stays alive for them. A graceful FIN is deliberately different (see
+            //      the branch below): a half-closed client still expects the responses to the
+            //      requests it already sent, so there the CONNECTION token is kept alive and
+            //      only the remote-close token fires.
+            //   4. await the processing task: the handler loop is finished before this method
+            //      lets go, which is the invariant the close sequence relies on.
+            if (ex is not OperationCanceledException && !_connectionCts.IsCancellationRequested)
             {
-                await processingTask.ConfigureAwait(false);
-            }
-            catch
-            {
-                // The handler's fault is secondary to the reset; RunAsync
-                // reports the receive fault instead. Swallow so the close
-                // sequence can run.
+                await CancelConnectionTokenAsync().ConfigureAwait(false);
             }
 
-            throw;
-        }
-        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
-        {
-            // Local close: the connection token fired (Close, send fault, idle timeout, node
-            // stop) or the socket was disposed underneath us, and the handler loop may still
-            // be inside OnReceivedAsync. Cancel the remote-close signal for long-lived
-            // streaming handlers, complete the pipe writer so buffered requests are still
-            // drained, and wait for the handler loop before letting go: the close sequence
-            // runs on top of this method, and it must not reach OnClosedAsync while a handler
-            // is in flight (the invariant the SocketException branch above relies on, now
-            // held for the local-close path too).
             await _remoteCloseCts.CancelAsync().ConfigureAwait(false);
             await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
             try
@@ -96,8 +95,9 @@ internal sealed class TcpConnectionReceiveLoop
             }
             catch
             {
-                // The handler's fault is secondary to the local close; the close reason stays
-                // LocalClose, exactly as in the reset branch above.
+                // The handler's fault is secondary to the one that closed the connection;
+                // RunAsync reports the escaping exception (tcp.receive / tcp.handler) and maps
+                // the close reason from it. Swallow so the close sequence can run.
             }
 
             throw;
@@ -122,6 +122,24 @@ internal sealed class TcpConnectionReceiveLoop
         cancellationToken.IsCancellationRequested && reason == TcpCloseReason.RemoteClosed
             ? TcpCloseReason.LocalClose
             : reason;
+
+    /// <summary>
+    /// Cancels the connection token for a connection that is already going away. A source a
+    /// concurrent dispose already disposed is tolerated: the fault that brought us here is the
+    /// one worth propagating, and replacing it with an ObjectDisposedException would orphan the
+    /// handler loop this cancel exists to release.
+    /// </summary>
+    private async Task CancelConnectionTokenAsync()
+    {
+        try
+        {
+            await _connectionCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Nothing left to release.
+        }
+    }
 
     private async Task ProcessPipeAsync(
         ITcpConnectionHandler handler,

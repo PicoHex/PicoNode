@@ -197,7 +197,10 @@ internal sealed class TcpConnectionLifecycle
                 // would run OnClosedAsync against that same context concurrently and make the
                 // handler's next AdvanceTo throw on a completed reader. The receive-initiated
                 // path needs no wait: it reaches this method only after its handler loop
-                // returned — the invariant ExecuteReceiveLoopAsync spells out.
+                // returned — the invariant ExecuteReceiveLoopAsync spells out, and now
+                // establishes on every one of its exits (normal return, graceful FIN, reset,
+                // local close and any other escaping fault) by completing the pipe writer and
+                // awaiting the processing task before it returns or rethrows.
                 await AwaitHandlerLoopAsync().ConfigureAwait(false);
             }
 
