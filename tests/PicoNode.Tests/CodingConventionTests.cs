@@ -289,6 +289,72 @@ public sealed class CodingConventionTests
     }
 
     [Test]
+    public async Task EffectiveAcceptFaultBackoff_docs_match_what_the_clamp_does()
+    {
+        // The summary claimed the pause was "clamped into [floor, max]", which a 0.5 ms value
+        // contradicts: it passes through unchanged. Only a NON-POSITIVE value is replaced by the floor,
+        // and only the upper end is a cap. The behaviour is pinned in TcpNodeBranchTests; this pins the
+        // words, because a doc line that misdescribes the clamp is how the next reader is misled.
+        var content = await File.ReadAllTextAsync(
+            Path.Combine(SrcPath, "Network", "PicoNode", "TcpNode.cs")
+        );
+        var doc = DocBlockAbove(
+            content,
+            "internal static TimeSpan EffectiveAcceptFaultBackoff(TimeSpan configured)"
+        );
+
+        await Assert.That(doc).IsNotEmpty();
+        await Assert.That(doc).Contains("REPLACED");
+        await Assert.That(doc).Contains("capped");
+        await Assert.That(doc).Contains("unchanged");
+        await Assert.That(doc).DoesNotContain("clamped into");
+    }
+
+    [Test]
+    public async Task WebServerOptions_AcceptFaultBackoff_documents_the_one_millisecond_floor()
+    {
+        // PicoWeb inherits the TCP accept-loop clamp through WebServerOptionsExtensions, so a
+        // WebServerOptions.AcceptFaultBackoff of zero now means "pause 1 ms", not "pause not at all".
+        // The public doc has to say so: it is the only place a PicoWeb host reads the option.
+        var content = await File.ReadAllTextAsync(
+            Path.Combine(SrcPath, "Web", "PicoWeb", "WebServerOptions.cs")
+        );
+        var doc = DocBlockAbove(content, "public TimeSpan AcceptFaultBackoff { get; init; }");
+
+        await Assert.That(doc).IsNotEmpty();
+        await Assert.That(doc).Contains("1 ms");
+        await Assert.That(doc).Contains("zero");
+    }
+
+    /// <summary>
+    /// The <c>///</c> block immediately above a declaration, joined into one string, so a doc
+    /// assertion cannot be satisfied by wording that lives somewhere else in the file.
+    /// </summary>
+    private static string DocBlockAbove(string content, string declaration)
+    {
+        var index = content.IndexOf(declaration, StringComparison.Ordinal);
+        if (index < 0)
+        {
+            return string.Empty;
+        }
+
+        var before = content[..index].Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var doc = new List<string>();
+        for (var i = before.Length - 2; i >= 0; i--)
+        {
+            var line = before[i].Trim();
+            if (!line.StartsWith("///", StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            doc.Insert(0, line);
+        }
+
+        return string.Join('\n', doc);
+    }
+
+    [Test]
     public async Task Analyzer_pack_paths_use_Configuration_variable_not_hardcoded_Release()
     {
         var content = await File.ReadAllTextAsync(

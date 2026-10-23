@@ -18,13 +18,6 @@ internal sealed class TcpConnectionLifecycle
     internal const string OperationCloseTeardown = "tcp.close.teardown";
 
     /// <summary>
-    /// The longest timeout the timer-backed waits accept: <c>Task.WaitAsync(TimeSpan)</c>,
-    /// <c>Task.Delay</c> and <c>CancellationTokenSource.CancelAfter</c> share one validation and
-    /// throw <see cref="ArgumentOutOfRangeException"/> above it — 0xFFFFFFFE ms, i.e. ~49.7 days.
-    /// </summary>
-    internal static readonly TimeSpan MaxTimerDuration = TimeSpan.FromMilliseconds(0xFFFFFFFE);
-
-    /// <summary>
     /// Upper bound on a wait for a connection's handler loop before the pipe ends and the
     /// socket are torn down, as a fraction of the node's <see cref="TcpNodeOptions.DrainTimeout"/>
     /// (see <see cref="HandlerLoopTimeoutFor"/>). The bound is what keeps a handler that never
@@ -67,7 +60,7 @@ internal sealed class TcpConnectionLifecycle
     /// a one-tick budget degenerates to a zero wait (give up at once) rather than to a wait that
     /// spends the entire budget.
     /// <para>
-    /// The result is also capped at <see cref="MaxTimerDuration"/>: it is handed to
+    /// The result is also capped at <see cref="DrainBudget.MaxTimerDuration"/>: it is handed to
     /// <c>Task.WaitAsync(TimeSpan)</c>, which throws <see cref="ArgumentOutOfRangeException"/> above
     /// that, and the throw happens synchronously inside the wait's own <c>try</c> — so an uncapped
     /// bound did not shorten the wait, it silently skipped it.
@@ -89,7 +82,7 @@ internal sealed class TcpConnectionLifecycle
         // accepts), and the cap is the timer limit itself, so an ordinary budget keeps exactly the
         // bound it had.
         var half = TimeSpan.FromTicks(drainTimeout.Ticks / 2);
-        return half < MaxTimerDuration ? half : MaxTimerDuration;
+        return half < DrainBudget.MaxTimerDuration ? half : DrainBudget.MaxTimerDuration;
     }
 
     private readonly TcpNode _node;

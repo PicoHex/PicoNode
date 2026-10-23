@@ -8,12 +8,35 @@ public sealed class UdpNode : INode
     private const string OperationReceive = "udp.receive";
     private const string OperationQueueDrop = "udp.queue.drop";
     private const string OperationDatagramHandler = "udp.datagram.handler";
+    private const string OperationStopHandlers = "udp.stop.handlers";
     private const long UdpConnectionIdTag = 2L << 56;
     private const string OperationMulticast = "udp.multicast";
     private const int MaxUdpDatagramSize = 65527;
 
     private readonly Socket _socket;
+
+    /// <summary>
+    /// Lifetime of the datagram RECEIVE loop, and nothing else: <see cref="StopAsync"/> cancels it
+    /// first, which is what fixes "no datagram is queued after this point".
+    /// </summary>
     private readonly CancellationTokenSource _receiveCts = new();
+
+    /// <summary>
+    /// Lifetime of the datagram HANDLERS, deliberately separate from <see cref="_receiveCts"/>: it is
+    /// the token <see cref="UdpNodeOptions.DatagramHandler"/> receives, so it has to outlive the stop's
+    /// drain. The dispatch workers keep delivering what is already queued while
+    /// <see cref="StopAsync"/> waits for them, and only a drain that does NOT finish — or
+    /// <see cref="DisposeAsync"/> — cancels it.
+    /// </summary>
+    /// <remarks>
+    /// Sharing the receive lifetime is what used to abort every in-flight AND queued datagram the
+    /// instant a stop began: the workers' handler token was <see cref="_receiveCts"/>'s token, so the
+    /// first thing <see cref="StopAsync"/> did was cancel the token each handler was waiting on, and the
+    /// worker's <see cref="OperationCanceledException"/> branch then discarded the rest of the queue.
+    /// <see cref="INode.StopAsync"/> is documented as draining in-flight work up to the drain timeout;
+    /// two lifetimes are what make that true for datagrams.
+    /// </remarks>
+    private readonly CancellationTokenSource _handlerCts = new();
 
     /// <summary>
     /// Cancellation token source for the config reload loop.
@@ -40,6 +63,7 @@ public sealed class UdpNode : INode
     private long _totalBytesReceived;
     private long _totalBytesSent;
     private long _totalDropped;
+    private long _receiveFaultBackoffs;
 
     /// <summary>Returns a snapshot of cumulative UDP metrics.</summary>
     public UdpNodeMetrics GetMetrics() =>
@@ -175,7 +199,7 @@ public sealed class UdpNode : INode
             {
                 var queue = _queues[i];
                 _workers[i] = Task.Run(
-                    () => ProcessQueueAsync(queue, _receiveCts.Token),
+                    () => ProcessQueueAsync(queue, _handlerCts.Token),
                     CancellationToken.None
                 );
             }
@@ -214,14 +238,18 @@ public sealed class UdpNode : INode
             return;
         }
 
+        // The deadline timer gets the CLAMPED budget: CancelAfter rejects a delay above the timer
+        // limit, and that call sits before the drain's own try, so a huge DrainTimeout used to skip the
+        // drain entirely instead of shortening it.
         var callerToken = cancellationToken;
+        var drainBudget = DrainBudget.Effective(Options.DrainTimeout);
         using var stopCts =
-            Options.DrainTimeout > TimeSpan.Zero
+            drainBudget > TimeSpan.Zero
                 ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
                 : null;
         if (stopCts is not null)
         {
-            stopCts.CancelAfter(Options.DrainTimeout);
+            stopCts.CancelAfter(drainBudget);
             cancellationToken = stopCts.Token;
         }
 
@@ -243,6 +271,9 @@ public sealed class UdpNode : INode
             _state = NodeState.Stopping;
         }
 
+        // 1. Stop the intake. The receive loop is the only writer to the dispatch queues, so its
+        //    lifetime is what decides "no datagram is queued from here on" — a datagram still in the
+        //    socket is abandoned with the loop, one already queued is not.
         await _receiveCts.CancelAsync().ConfigureAwait(false);
 
         try
@@ -254,6 +285,10 @@ public sealed class UdpNode : INode
             ReportFault(NodeFaultCode.StopFailed, OperationStop, ex);
         }
 
+        // 2. Complete the queues, then drain them. Completion is what lets a worker finish on its own
+        //    once the buffer is empty, and the handlers still run on _handlerCts: a datagram queued
+        //    before the stop is DELIVERED during the stop, which is the whole point of keeping the two
+        //    lifetimes apart.
         foreach (var queue in _queues)
         {
             queue.Writer.TryComplete();
@@ -271,14 +306,28 @@ public sealed class UdpNode : INode
         }
         catch (OperationCanceledException) when (callerToken.IsCancellationRequested)
         {
+            // A genuine caller cancellation: the drain is abandoned, not completed. A later StopAsync on
+            // this node is a no-op (the state is already Stopping/Stopped and the queues are complete),
+            // so nothing is left to drain for it — the finally below releases the handler lifetime
+            // instead of leaving handlers parked on it for ever.
             throw;
         }
         catch (OperationCanceledException)
         {
-            // DrainTimeout fired — complete gracefully without rethrowing.
+            // The drain budget expired with datagrams still queued or a handler still running: that,
+            // and only that, is when the handlers' own lifetime is cancelled (in the finally below).
+            // Complete gracefully without rethrowing, as before.
         }
         finally
         {
+            // The one rule for the handler lifetime: it is cancelled when — and only when — the drain
+            // did not complete (budget expired, the caller cancelled, a worker faulted). A stop that
+            // drained keeps it quiet, because nothing is left to observe it.
+            if (!stopCompleted)
+            {
+                await AbortHandlersAsync().ConfigureAwait(false);
+            }
+
             lock (_stateLock)
             {
                 if (_state != NodeState.Disposed && stopCompleted)
@@ -315,6 +364,55 @@ public sealed class UdpNode : INode
             ReportFault(NodeFaultCode.SendFailed, OperationSend, ex);
             throw;
         }
+    }
+
+    /// <summary>
+    /// How many receive-fault backoffs the datagram receive loop has COMPLETED (one per receive fault
+    /// that reached the pause, counted only after the pause elapsed). Diagnostics for the one thing a
+    /// test cannot otherwise observe without consulting a wall clock: that the loop suspends between two
+    /// failed receives instead of re-entering the receive immediately. At every instant it is
+    /// <c>faults - 1</c> or <c>faults</c> — the next fault cannot be reported before its pause ran.
+    /// </summary>
+    internal long ReceiveFaultBackoffs => Interlocked.Read(ref _receiveFaultBackoffs);
+
+    /// <summary>
+    /// The smallest pause the datagram receive loop takes after a failed receive — see
+    /// <see cref="EffectiveReceiveFaultBackoff"/>.
+    /// </summary>
+    internal static readonly TimeSpan ReceiveFaultBackoffFloor = TimeSpan.FromMilliseconds(1);
+
+    /// <summary>
+    /// The pause the datagram receive loop takes after a failed receive, for a given
+    /// <see cref="UdpNodeOptions.ReceiveFaultBackoff"/>: a NON-POSITIVE value is REPLACED by
+    /// <see cref="ReceiveFaultBackoffFloor"/> (1 ms), and a positive value is capped at
+    /// <see cref="DrainBudget.MaxTimerDuration"/>. Between the two ends the configured value is used
+    /// unchanged — a 0.5 ms backoff still means 0.5 ms, not the floor.
+    /// </summary>
+    /// <remarks>
+    /// A NON-POSITIVE value is the case that matters, and the reason the loop no longer hands the
+    /// option to <see cref="Task.Delay(TimeSpan, CancellationToken)"/> as it stands: zero produced an
+    /// already-completed task, so the loop re-entered the receive with no suspension at all. The option
+    /// keeps its documented meaning ("how long to pause after a failed receive"); a value that would
+    /// switch the pause off is raised to the floor instead of switching it off.
+    /// <para>
+    /// The clamp lives HERE — where the loop reads the option — and not in the constructor, because the
+    /// option is hot-reloadable and <see cref="ApplyConfigReload"/> takes whatever
+    /// <see cref="TimeSpan.TryParse(string, out TimeSpan)"/> accepts: <c>00:00:00</c> and negative
+    /// values included. The upper end is the timer limit for the same kind of reason: a delay
+    /// <see cref="Task.Delay(TimeSpan, CancellationToken)"/> rejects would throw out of the receive
+    /// loop's catch and end the loop for good, instead of pacing it.
+    /// </para>
+    /// </remarks>
+    internal static TimeSpan EffectiveReceiveFaultBackoff(TimeSpan configured)
+    {
+        if (configured <= TimeSpan.Zero)
+        {
+            return ReceiveFaultBackoffFloor;
+        }
+
+        return configured < DrainBudget.MaxTimerDuration
+            ? configured
+            : DrainBudget.MaxTimerDuration;
     }
 
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
@@ -373,8 +471,19 @@ public sealed class UdpNode : INode
                 ReportFault(NodeFaultCode.DatagramReceiveFailed, OperationReceive, ex);
                 try
                 {
-                    await Task.Delay(Options.ReceiveFaultBackoff, cancellationToken)
+                    // Never re-enter the receive without suspending: see
+                    // EffectiveReceiveFaultBackoff. A non-positive backoff used to hand Task.Delay a
+                    // zero delay — an already-completed task — so a permanently failing socket (closed
+                    // underneath the loop, an exhausted handle table) pinned a core and raised one
+                    // DatagramReceiveFailed fault per iteration for as long as the fault lasted.
+                    await Task.Delay(
+                            EffectiveReceiveFaultBackoff(Options.ReceiveFaultBackoff),
+                            cancellationToken
+                        )
                         .ConfigureAwait(false);
+                    // Counted only once the pause has actually elapsed, so the counter can never
+                    // claim a suspension that did not happen.
+                    Interlocked.Increment(ref _receiveFaultBackoffs);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -382,6 +491,40 @@ public sealed class UdpNode : INode
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Cancels the datagram handlers' own lifetime — the reason it is kept apart from the receive
+    /// lifetime. Only the give-up paths call this: a stop whose drain did not complete, and
+    /// <see cref="DisposeAsync"/>. A stop that fits in its budget leaves it alone, so the queue is
+    /// delivered instead of discarded.
+    /// </summary>
+    private async Task AbortHandlersAsync()
+    {
+        try
+        {
+            await _handlerCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Cancellation callbacks run user code and one of them threw. The node has already given up
+            // on the drain, so keep going — loudly.
+            ReportFault(NodeFaultCode.StopFailed, OperationStopHandlers, ex);
+        }
+    }
+
+    /// <summary>True when no worker can still be inside a handler.</summary>
+    private bool HandlersHaveExited()
+    {
+        foreach (var worker in _workers)
+        {
+            if (worker is not null && !worker.IsCompleted)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private async Task ProcessQueueAsync(
@@ -424,8 +567,9 @@ public sealed class UdpNode : INode
                         catch (OperationCanceledException)
                             when (handlerCancellationToken.IsCancellationRequested)
                         {
-                            // Drain remaining datagrams from channel to return
-                            // ArrayPool buffers before shutdown.
+                            // The handler lifetime was cancelled, i.e. the drain gave up (see
+                            // AbortHandlersAsync) — there is nothing left to deliver, only buffers to
+                            // return to ArrayPool.
                             while (reader.TryRead(out var remainingLease))
                             {
                                 remainingLease.Dispose();
@@ -552,6 +696,16 @@ public sealed class UdpNode : INode
         {
             _configCts.Cancel();
             _receiveCts.Dispose();
+            // A handler that outlived the drain (one that ignores its token) must not be left with a
+            // live lifetime, so cancel it. Dispose it only once no worker can be inside a handler: a
+            // disposed source makes Cancel/Register on its token throw, and that throw would land in
+            // user handler code rather than here.
+            await AbortHandlersAsync().ConfigureAwait(false);
+            if (HandlersHaveExited())
+            {
+                _handlerCts.Dispose();
+            }
+
             _socket.Dispose();
             _state = NodeState.Disposed;
         }

@@ -739,7 +739,7 @@ public sealed class TcpNodeBranchTests
 
         // The upper end is the timer limit, so the pause the loop schedules is always legal.
         var capped = TcpNode.EffectiveAcceptFaultBackoff(TimeSpan.MaxValue);
-        await Assert.That(capped).IsEqualTo(TcpConnectionLifecycle.MaxTimerDuration);
+        await Assert.That(capped).IsEqualTo(DrainBudget.MaxTimerDuration);
         await Assert
             .That(IsLegalWaitTimeout(capped))
             .IsTrue()
@@ -773,7 +773,7 @@ public sealed class TcpNodeBranchTests
                 .That(bound)
                 .IsLessThan(budget)
                 .Because($"a {budget} drain budget has to leave room for the close steps after it");
-            await Assert.That(bound).IsLessThanOrEqualTo(TcpConnectionLifecycle.MaxTimerDuration);
+            await Assert.That(bound).IsLessThanOrEqualTo(DrainBudget.MaxTimerDuration);
             await Assert
                 .That(IsLegalWaitTimeout(bound))
                 .IsTrue()
@@ -784,7 +784,7 @@ public sealed class TcpNodeBranchTests
         // below it, so an ordinary budget keeps exactly the bound it had.
         await Assert
             .That(TcpConnectionLifecycle.HandlerLoopTimeoutFor(TimeSpan.MaxValue))
-            .IsEqualTo(TcpConnectionLifecycle.MaxTimerDuration);
+            .IsEqualTo(DrainBudget.MaxTimerDuration);
         await Assert
             .That(TcpConnectionLifecycle.HandlerLoopTimeoutFor(TimeSpan.FromDays(90)))
             .IsEqualTo(TimeSpan.FromDays(45));
@@ -828,10 +828,66 @@ public sealed class TcpNodeBranchTests
         }
         finally
         {
-            // A 365-day budget also makes StopAsync's own CancelAfter throw (recorded as a separate
-            // concern — this task clamps the derived bound), so give the node a usable budget before
-            // it is stopped: the same assignment a config reload performs.
+            // The 365-day budget used to make StopAsync's own CancelAfter throw as well; T2.6 clamps it
+            // once at the boundary, so the teardown no longer needs a small budget — it gets one anyway,
+            // because nothing here wants a 24-day bound parked behind the handler.
             node.Options.DrainTimeout = TimeSpan.FromMilliseconds(250);
+            await node.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public async Task A_huge_drain_budget_cannot_break_the_stop_path()
+    {
+        // DrainTimeout accepts any non-negative TimeSpan — a host assigns it directly, and the reload
+        // path takes whatever TimeSpan.TryParse accepts, up to TimeSpan.MaxValue — while
+        // CancellationTokenSource.CancelAfter throws ArgumentOutOfRangeException above 0xFFFFFFFE ms.
+        // That call sat BEFORE StopAsync's own try, so a huge budget did not shorten the drain, it
+        // removed it: no connection was asked to close, the node stayed Stopping, and DisposeAsync
+        // rethrew after the teardown had already run.
+        await Assert.That(DrainBudget.Effective(TimeSpan.Zero)).IsEqualTo(TimeSpan.Zero);
+        await Assert
+            .That(DrainBudget.Effective(TimeSpan.FromSeconds(5)))
+            .IsEqualTo(TimeSpan.FromSeconds(5));
+        await Assert
+            .That(DrainBudget.Effective(TimeSpan.FromDays(365)))
+            .IsEqualTo(DrainBudget.MaxTimerDuration);
+        await Assert
+            .That(DrainBudget.Effective(TimeSpan.MaxValue))
+            .IsEqualTo(DrainBudget.MaxTimerDuration);
+
+        var node = CreateNode(new NoOpTcpHandler(), drainTimeout: TimeSpan.FromDays(365));
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+        try
+        {
+            await node.StartAsync();
+            await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+            var connected = await PollUntilAsync(
+                () => node.GetMetrics().ActiveConnections == 1,
+                TimeSpan.FromSeconds(10)
+            );
+            await Assert
+                .That(connected)
+                .IsTrue()
+                .Because("the client has to be tracked before the stop begins");
+
+            // The whole stop path: deadline timer, drain, connection close.
+            await node.StopAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+
+            // The drain really ran: the server closed the connection, so the client reads EOF.
+            var buffer = new byte[1];
+            var read = await client
+                .ReceiveAsync(buffer, SocketFlags.None)
+                .WaitAsync(TimeSpan.FromSeconds(5));
+            await Assert.That(read).IsEqualTo(0).Because("the drain has to close the connection");
+        }
+        finally
+        {
             await node.DisposeAsync();
         }
     }

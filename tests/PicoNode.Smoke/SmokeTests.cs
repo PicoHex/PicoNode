@@ -598,25 +598,28 @@ public sealed class SmokeTests
         await client.SendAsync(new byte[] { 1, 2, 3 }, 3, new IPEndPoint(IPAddress.Loopback, port));
         await handler.Started.WaitAsync(TimeSpan.FromSeconds(5));
 
-        Task? stopTask = null;
+        var stopTask = node.StopAsync();
         try
         {
-            stopTask = node.StopAsync();
-            // Handler is now cancellable via _receiveCts.Token — StopAsync
-            // should complete promptly rather than blocking until Release().
+            // The handler runs on its OWN lifetime now (udp.stop.handlers / _handlerCts): the stop has
+            // to WAIT for the in-flight handler, bounded by DrainTimeout, instead of cancelling the
+            // token it is parked on and discarding the queue. Neither assertion is a race — the state
+            // is set before the stop's first await, and the stop cannot finish while the single worker
+            // is still inside a handler this test has not released.
+            await Assert.That(node.State).IsEqualTo(NodeState.Stopping);
             await Assert
-                .That(await CompletesWithinAsync(stopTask, TimeSpan.FromSeconds(2)))
-                .IsTrue();
+                .That(stopTask.IsCompleted)
+                .IsFalse()
+                .Because("the drain waits for the in-flight handler instead of aborting it");
         }
         finally
         {
             handler.Release();
-            if (stopTask is not null)
-            {
-                await stopTask.WaitAsync(TimeSpan.FromSeconds(5));
-                await handler.Completed.WaitAsync(TimeSpan.FromSeconds(5));
-            }
         }
+
+        await stopTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await handler.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
     }
 
     [Test]
@@ -694,7 +697,7 @@ public sealed class SmokeTests
     }
 
     [Test]
-    public async Task Udp_stop_cancellation_leaves_state_as_stopping_until_drain_finishes()
+    public async Task Udp_stop_caller_cancellation_abandons_the_drain_and_releases_the_handler()
     {
         var port = 0; // OS-assigned; read back from LocalEndPoint after StartAsync
         var handler = new BlockingUdpHandler();
@@ -704,6 +707,9 @@ public sealed class SmokeTests
             {
                 Endpoint = new IPEndPoint(IPAddress.Loopback, port),
                 DatagramHandler = handler,
+                // Deliberately far longer than the caller's token: the handler's own lifetime would hold
+                // the drain for this whole budget, so the CALLER's cancellation is what ends the wait.
+                DrainTimeout = TimeSpan.FromSeconds(30),
             }
         );
 
@@ -714,15 +720,17 @@ public sealed class SmokeTests
         await client.SendAsync(new byte[] { 0x33 }, 1, new IPEndPoint(IPAddress.Loopback, port));
         await handler.Started.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Handler is now cancellable via _receiveCts.Token — StopAsync
-        // completes promptly even with a short timeout.
-        using var stopCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-        await node.StopAsync(stopCts.Token);
-        await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+        // A caller cancellation is the caller's business, not a drain that finished: the stop reports it
+        // instead of pretending the work was drained.
+        using var stopCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+        await Assert
+            .That(async () => await node.StopAsync(stopCts.Token))
+            .Throws<OperationCanceledException>();
 
-        // Release is a no-op (handler was already cancelled) but safe to call.
-        handler.Release();
+        // The give-up path is the one that cancels the handler lifetime, so the parked handler is
+        // released by it rather than by this test.
         await handler.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
     }
 
     [Test]

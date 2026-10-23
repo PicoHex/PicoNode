@@ -26,10 +26,12 @@ public sealed class TcpNodeOptions
 
     /// <summary>
     /// Budget for draining in-flight connections during <see cref="INode.StopAsync"/>.
-    /// <see cref="TimeSpan.Zero"/> means "no deadline at all". The wait for a closing connection's
-    /// handler loop is derived from it — half of it, capped at the longest timeout a timer-backed
-    /// wait accepts (<c>HandlerLoopTimeoutFor</c>) — so the steps that follow that wait inside the
-    /// same budget still have room.
+    /// <see cref="TimeSpan.Zero"/> means "no deadline at all". A positive budget above the longest
+    /// timeout a timer-backed wait accepts (~49.7 days) is capped at it where the stop reads it
+    /// (<c>DrainBudget.Effective</c>), because the deadline timer itself rejects anything larger. The
+    /// wait for a closing connection's handler loop is derived from it — half of it, capped the same
+    /// way (<c>HandlerLoopTimeoutFor</c>) — so the steps that follow that wait inside the same budget
+    /// still have room.
     /// </summary>
     public TimeSpan DrainTimeout { get; set; } = TimeSpan.FromSeconds(5);
     public int? ReceivePipePauseThresholdBytes { get; set; }

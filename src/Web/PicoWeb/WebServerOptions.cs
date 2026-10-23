@@ -25,9 +25,17 @@ public sealed class WebServerOptions
     /// <summary>Idle connection timeout. Default: 2 minutes.</summary>
     public TimeSpan IdleTimeout { get; init; } = TimeSpan.FromMinutes(2);
 
-    /// <summary>Graceful shutdown drain timeout. Default: 5 seconds.</summary>
+    /// <summary>
+    /// Graceful shutdown drain timeout. Default: 5 seconds. Zero means "no deadline at all"; a value
+    /// above the longest timeout a timer-backed wait accepts (~49.7 days) is capped at it, so the drain
+    /// still runs instead of throwing out of the stop.
+    /// </summary>
     public TimeSpan DrainTimeout { get; init; } = TimeSpan.FromSeconds(5);
 
-    /// <summary>Backoff delay between accept retries after a fault. Default: 50ms.</summary>
+    /// <summary>
+    /// Backoff delay between accept retries after a fault. Default: 50ms. A delay of zero — or one a
+    /// config reload makes non-positive — is raised to a 1 ms floor when the accept loop reads it, so
+    /// this option always means "how long to pause", never "do not pause".
+    /// </summary>
     public TimeSpan AcceptFaultBackoff { get; init; } = TimeSpan.FromMilliseconds(50);
 }

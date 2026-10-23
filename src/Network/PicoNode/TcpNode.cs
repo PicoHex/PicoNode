@@ -239,14 +239,19 @@ public sealed class TcpNode : INode
         // The caller's own token, kept before the internal deadline is linked in: the two
         // cancellations below are indistinguishable at the catch site, and only one of them is
         // the caller's business.
+        // The deadline timer gets the CLAMPED budget. CancelAfter rejects a delay above the timer limit
+        // with ArgumentOutOfRangeException, and this call sits before the try below — so an oversized
+        // DrainTimeout did not shorten the drain, it removed it: no connection was asked to close, the
+        // node stayed Stopping and DisposeAsync rethrew after the teardown.
         var callerToken = cancellationToken;
+        var drainBudget = DrainBudget.Effective(Options.DrainTimeout);
         using var stopCts =
-            Options.DrainTimeout > TimeSpan.Zero
+            drainBudget > TimeSpan.Zero
                 ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
                 : null;
         if (stopCts is not null)
         {
-            stopCts.CancelAfter(Options.DrainTimeout);
+            stopCts.CancelAfter(drainBudget);
             cancellationToken = stopCts.Token;
         }
 
@@ -425,8 +430,11 @@ public sealed class TcpNode : INode
 
     /// <summary>
     /// The pause the accept loop takes after a failed accept, for a given
-    /// <see cref="TcpNodeOptions.AcceptFaultBackoff"/>: the configured value clamped into
-    /// [<see cref="AcceptFaultBackoffFloor"/>, <see cref="TcpConnectionLifecycle.MaxTimerDuration"/>].
+    /// <see cref="TcpNodeOptions.AcceptFaultBackoff"/>. A NON-POSITIVE value is REPLACED by
+    /// <see cref="AcceptFaultBackoffFloor"/> (1 ms) — the pause cannot be switched off. A positive
+    /// value is used unchanged up to <see cref="DrainBudget.MaxTimerDuration"/>, and capped at it
+    /// above, so that a delay <see cref="Task.Delay(TimeSpan, CancellationToken)"/> rejects can never
+    /// end the accept loop. A 0.5 ms backoff therefore still means 0.5 ms, not the floor.
     /// </summary>
     /// <remarks>
     /// A NON-POSITIVE value is the case that matters, and the reason the loop no longer branches on
@@ -451,9 +459,9 @@ public sealed class TcpNode : INode
             return AcceptFaultBackoffFloor;
         }
 
-        return configured < TcpConnectionLifecycle.MaxTimerDuration
+        return configured < DrainBudget.MaxTimerDuration
             ? configured
-            : TcpConnectionLifecycle.MaxTimerDuration;
+            : DrainBudget.MaxTimerDuration;
     }
 
     private async Task AcceptLoopAsync()
