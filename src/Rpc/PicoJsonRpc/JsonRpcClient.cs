@@ -63,6 +63,10 @@ public sealed class JsonRpcClient : IAsyncDisposable
     private ConcurrentDictionary<string, StreamCall> _streams = new();
     private readonly CancellationTokenSource _disposeCts = new();
 
+    /// <summary>1 once <see cref="DisposeAsync"/> has started. Registration checks
+    /// it under <see cref="_stateGate"/> — see <see cref="TrackPending"/>.</summary>
+    private int _disposed;
+
     private JsonRpcChannel? _readerChannel;
     private Task? _readerTask;
 
@@ -203,7 +207,20 @@ public sealed class JsonRpcClient : IAsyncDisposable
 
     /// <summary>Publish the call — owner included — and attach the owner's reader
     /// in the same critical section as
-    /// <see cref="HandleEof(JsonRpcChannel)"/>'s drain.</summary>
+    /// <see cref="HandleEof(JsonRpcChannel)"/>'s drain.
+    /// <para>
+    /// T7.3 fold-in (T7.2 carries #2, same hang class): a call that registers
+    /// AFTER <see cref="DisposeAsync"/> drained the tables would be inserted into
+    /// the replacement — which nobody will ever drain again, because the reader
+    /// is cancelled on dispose and a cancelled reader deliberately skips
+    /// <see cref="HandleEof(JsonRpcChannel)"/>. Nothing then completes that TCS and
+    /// the caller waits on <see cref="CancellationToken.None"/> forever. So a
+    /// registration past dispose fails immediately instead of entering the table.
+    /// The check is INSIDE the gate: dispose raises <c>_disposed</c> before it
+    /// takes the gate, so an insert that passes it is guaranteed to be seen by the
+    /// drain.
+    /// </para>
+    /// </summary>
     private void TrackPending(
         string id,
         JsonRpcChannel owner,
@@ -212,18 +229,31 @@ public sealed class JsonRpcClient : IAsyncDisposable
     {
         lock (_stateGate)
         {
+            ThrowIfDisposed();
             _pending[id] = new PendingCall(owner, tcs);
             EnsureReaderLocked(owner);
         }
     }
 
+    /// <summary>Stream counterpart of <see cref="TrackPending"/>: a subscription
+    /// registered after dispose is refused the same way, or its queue could never
+    /// be completed and the enumerator would wait forever.</summary>
     private void TrackStream(string id, JsonRpcChannel owner, Channel<JsonRpcFrame> queue)
     {
         lock (_stateGate)
         {
+            ThrowIfDisposed();
             _streams[id] = new StreamCall(owner, queue);
             EnsureReaderLocked(owner);
         }
+    }
+
+    /// <summary>Under the gate: refuse to register on a disposed client — the
+    /// caller's task is abandoned, so it must fail here rather than hang.</summary>
+    private void ThrowIfDisposed()
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+            throw new ObjectDisposedException(nameof(JsonRpcClient));
     }
 
     /// <summary>Under the gate: a drain cannot swap the registry out from under
@@ -402,8 +432,6 @@ public sealed class JsonRpcClient : IAsyncDisposable
         var body = tail.Length <= maxInMessage ? tail : "…" + tail[^maxInMessage..];
         return "; child stderr tail:\n" + body;
     }
-
-    private int _disposed;
 
     public async ValueTask DisposeAsync()
     {

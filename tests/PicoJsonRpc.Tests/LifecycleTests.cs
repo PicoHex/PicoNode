@@ -121,6 +121,50 @@ public sealed class LifecycleTests
     }
 
     /// <summary>
+    /// T7.3: the crash counter must outlive the channel it counts. A crash
+    /// destroys its channel, so a counter kept ON the channel dies with the
+    /// generation it measured — every respawn then starts from 0, the threshold
+    /// is unreachable in the real flow, and a child that dies on start-up is
+    /// respawned on every single request (no backoff, no cap, no circuit-open).
+    /// <para>
+    /// Second half: the <see cref="TimeoutException"/> must not destroy the state
+    /// it was decided from. Reading the deadline off the channel that acquire had
+    /// just detached made the refusal itself the reason the next acquire resumed.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Second_acquire_after_crash_still_respects_backoff()
+    {
+        Skip.Unless(
+            NodePresent,
+            "node is not installed in PATH - the backoff flow needs a real child"
+        );
+        var lc = new ProcessLifecycle(
+            "echo",
+            ["node", FixtureJs],
+            idleTimeout: TimeSpan.FromMinutes(1)
+        );
+        // exactly the start-up-crash flow: spawn → die → respawn, three times,
+        // each crash on a DIFFERENT channel
+        for (var crash = 1; crash <= ProcessLifecycle.BackoffCrashThreshold; crash++)
+        {
+            var ch = await lc.AcquireAsync(default);
+            Kill(ch);
+            lc.Churn(ch); // what the client's read loop does on the child's EOF
+            await Assert.That(ch.ConsecutiveCrashes).IsEqualTo(crash);
+        }
+
+        // 4th acquire: backoff is armed, so it refuses instead of spawning yet
+        // another doomed child (a per-channel counter reads 0 here and spawns)
+        await Assert.That(async () => await lc.AcquireAsync(default)).Throws<TimeoutException>();
+        // 5th acquire: the refusal must leave the state behind it intact — the
+        // old order nulled _channel and then read the deadline off it, so this
+        // acquire skipped the backoff and spawned immediately
+        await Assert.That(async () => await lc.AcquireAsync(default)).Throws<TimeoutException>();
+        await lc.RecycleAsync();
+    }
+
+    /// <summary>
     /// T7.1: a child that writes ≫ one pipe buffer to stderr BEFORE it serves
     /// its first request must still complete the round trip quickly. Without a
     /// reader on stderr the child parks inside write(2) — the call never
@@ -148,9 +192,7 @@ public sealed class LifecycleTests
 
             // the tail keeps the LAST bytes of 200 KB and stays bounded
             var deadline = DateTime.UtcNow.AddSeconds(2);
-            while (
-                DateTime.UtcNow < deadline && !ch.StderrTail.EndsWith("CHATTY-STDERR-END\n")
-            )
+            while (DateTime.UtcNow < deadline && !ch.StderrTail.EndsWith("CHATTY-STDERR-END\n"))
                 await Task.Delay(20);
             await Assert.That(ch.StderrTail).EndsWith("CHATTY-STDERR-END\n");
             await Assert.That(ch.StderrTail.Length).IsLessThanOrEqualTo(8 * 1024);

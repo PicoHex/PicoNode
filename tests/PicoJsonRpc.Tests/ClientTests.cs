@@ -118,6 +118,77 @@ public sealed class ClientTests
         await Assert.That(resp!.Result).IsEqualTo("\"ok\"");
     }
 
+    /// <summary>
+    /// T7.3 fold-in (carried from T7.2 #2 - the same hang class): a call that
+    /// registers while <see cref="JsonRpcClient.DisposeAsync"/> is already past its
+    /// drain must fail fast, not wait forever. Pre-fix it was inserted into the
+    /// replacement tables, and nothing ever fails those again: the reader is
+    /// cancelled by dispose and a cancelled reader deliberately skips
+    /// <c>HandleEof</c>, so that call's TCS was never completed and a caller
+    /// holding <see cref="CancellationToken.None"/> waited with no timeout, no
+    /// error and no diagnostic.
+    /// <para>
+    /// The window has to be held open to be reproducible:
+    /// <see cref="ScriptedLifecycle.ParkRecycle"/> stops <c>DisposeAsync</c> after
+    /// the drain and BEFORE it disposes the cancellation source - exactly the state
+    /// in which a late reader takes the deliberate-cancellation path
+    /// (<c>OperationCanceledException</c>, no EOF handling) instead of tripping
+    /// over the disposed source. Only there is the hang deterministic; with the
+    /// dispose already finished, the misclassification is merely a different wrong
+    /// answer (an <see cref="IOException"/> claiming the child closed the stream).
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Call_and_stream_registered_during_dispose_fail_instead_of_hanging()
+    {
+        Skip.Unless(
+            NodeRuntime.Present,
+            "node is not installed in PATH - the scripted channels need a real process handle"
+        );
+
+        using var first = new TestChannel("ch-1");
+        var lifecycle = new ScriptedLifecycle(first.Channel);
+        var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
+
+        // hold DisposeAsync inside the window: tables drained, reader cancelled,
+        // cancellation source still alive
+        var (entered, release) = lifecycle.ParkRecycle();
+        var disposing = client.DisposeAsync().AsTask();
+        await entered.WaitAsync(HangBudget);
+        try
+        {
+            // a call: AcquireAsync still hands out a channel and the write still
+            // succeeds - only the registration can refuse
+            await Assert
+                .That(async () =>
+                    await client
+                        .CallAsync("late", null, CancellationToken.None)
+                        .WaitAsync(HangBudget)
+                )
+                .Throws<ObjectDisposedException>();
+
+            // a stream: same registration, same abandoned queue (its enumerator
+            // would otherwise wait on a channel nobody completes)
+            await Assert
+                .That(async () =>
+                    await DrainAsync(client.StreamAsync("late", null, CancellationToken.None))
+                        .WaitAsync(HangBudget)
+                )
+                .Throws<ObjectDisposedException>();
+        }
+        finally
+        {
+            release.TrySetResult();
+            await disposing;
+        }
+    }
+
+    /// <summary>Consume a stream to its end so its registration and teardown run.</summary>
+    private static async Task DrainAsync(IAsyncEnumerable<JsonRpcFrame> frames)
+    {
+        await foreach (var _ in frames) { }
+    }
+
     /// <summary>Await a task and return its result or the exception it faulted
     /// with, so the assertion can NAME the failure instead of the test dying
     /// with a stack trace from inside the client.</summary>
@@ -145,6 +216,8 @@ public sealed class ClientTests
         private JsonRpcChannel? _current;
         private TaskCompletionSource? _entered;
         private TaskCompletionSource? _release;
+        private TaskCompletionSource? _recycleEntered;
+        private TaskCompletionSource? _recycleRelease;
 
         /// <summary>
         /// Block the next <see cref="AcquireAsync"/>: the first task completes
@@ -190,7 +263,37 @@ public sealed class ClientTests
 
         public void MarkHealthy() { }
 
-        public Task RecycleAsync() => Task.CompletedTask;
+        /// <summary>
+        /// Park the NEXT <see cref="RecycleAsync"/> - the last await inside
+        /// <see cref="JsonRpcClient.DisposeAsync"/>. The first task completes when
+        /// dispose has ENTERED it (tables drained, reader cancelled, cancellation
+        /// source still alive) and it returns only once the test releases it.
+        /// </summary>
+        public (Task Entered, TaskCompletionSource Release) ParkRecycle()
+        {
+            var entered = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var release = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            _recycleEntered = entered;
+            _recycleRelease = release;
+            return (entered.Task, release);
+        }
+
+        public Task RecycleAsync()
+        {
+            if (_recycleRelease is { } release)
+            {
+                var entered = _recycleEntered!;
+                _recycleEntered = null;
+                _recycleRelease = null;
+                entered.TrySetResult();
+                return release.Task;
+            }
+            return Task.CompletedTask;
+        }
     }
 
     /// <summary>

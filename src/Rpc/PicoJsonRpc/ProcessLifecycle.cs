@@ -50,12 +50,17 @@ internal sealed class LifecycleChannelSource(ProcessLifecycle lifecycle) : IChan
 
 /// <summary>
 /// A live stdio channel to one child process: process handle + stdin/stdout/stderr
-/// streams. Carries the crash/backoff state the lifecycle manages on behalf
-/// of the client read loop (B3): <see cref="ConsecutiveCrashes"/> /
-/// <see cref="NextRetryAtUtc"/> are bumped via <see cref="ProcessLifecycle.Churn"/>
-/// and reset via <see cref="ProcessLifecycle.MarkHealthy"/>.
-/// <see cref="RecycleRequested"/> distinguishes an INTENTIONAL recycle
+/// streams. <see cref="RecycleRequested"/> distinguishes an INTENTIONAL recycle
 /// (idle/RecycleAsync — not a crash) from an EOF the client observes spuriously.
+/// <para>
+/// <see cref="ConsecutiveCrashes"/> / <see cref="NextRetryAtUtc"/> are a READ-ONLY
+/// VIEW of the lifecycle's crash streak (T7.3), not its storage: they are
+/// re-stamped on every spawn and on every <see cref="ProcessLifecycle.Churn"/>,
+/// so a caller holding this generation's channel reads the streak that includes
+/// its predecessors. They are mirrored — not owned — precisely because a channel
+/// is destroyed by the crash it reports: a counter kept on it would die with the
+/// generation it measured. The properties stay public (released surface).
+/// </para>
 /// </summary>
 public sealed class JsonRpcChannel : IDisposable
 {
@@ -76,7 +81,13 @@ public sealed class JsonRpcChannel : IDisposable
     /// write(2), with no error, no timeout and no diagnostic.</summary>
     public required Stream Stderr { get; init; }
     public required string Name { get; init; }
+
+    /// <summary>How many crashes in a row the LIFECYCLE has counted, including
+    /// generations before this channel. Stamped by <see cref="ProcessLifecycle"/>.</summary>
     public int ConsecutiveCrashes { get; set; }
+
+    /// <summary>When the lifecycle will next try to spawn; <c>default</c> while no
+    /// backoff is armed. Stamped by <see cref="ProcessLifecycle"/>.</summary>
     public DateTime NextRetryAtUtc { get; set; }
 
     /// <summary>
@@ -184,7 +195,12 @@ public sealed class JsonRpcChannel : IDisposable
 /// stdio child-process lifecycle (spec §9.2): spawn-on-demand single-instance
 /// reuse, idle reclamation (default 300s, descriptor-overridable), crash
 /// backoff — 3 consecutive crashes arm exponential backoff from 2s up to 60s,
-/// reset on the first successful response (MarkHealthy). PATH resolution is
+/// reset on the first successful response (MarkHealthy). The streak and its
+/// deadline belong to the LIFECYCLE (T7.3), never to the channel: a crash
+/// destroys the channel it happened on, so a channel-owned counter would restart
+/// at 0 on every respawn, the threshold would be unreachable in the real flow,
+/// and a child dying on start-up would be respawned on every single request with
+/// no backoff and no cap. PATH resolution is
 /// self-contained (equivalent to the Tools CommandResolver, deliberately not
 /// referenced to avoid a Tools↔Binding cycle). Batch runtimes (.cmd/.bat) are
 /// rejected defensively (audit M1 discipline).
@@ -201,6 +217,13 @@ public sealed class ProcessLifecycle
     private JsonRpcChannel? _channel;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private DateTime _lastActivityUtc = DateTime.UtcNow;
+
+    // T7.3: crash/backoff state — LIFECYCLE scope, so it survives respawns.
+    // Written by the reader thread (Churn) and read by the gate holder
+    // (AcquireAsync): `Volatile` on both, and the deadline is kept as UTC ticks
+    // so the cross-thread read/write is a single word on every platform.
+    private int _consecutiveCrashes;
+    private long _nextRetryAtUtcTicks; // 0 = no backoff armed
 
     public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromSeconds(300);
 
@@ -221,13 +244,29 @@ public sealed class ProcessLifecycle
     /// <summary>
     /// Return the live channel (reusing the single instance), recycling it
     /// first when idle, or spawn a fresh one. While in crash backoff the call
-    /// throws <see cref="TimeoutException"/> until <see cref="NextRetryAtUtc"/>.
+    /// throws <see cref="TimeoutException"/> until the lifecycle's
+    /// <c>_nextRetryAtUtc</c> — checked BEFORE anything is detached, because the
+    /// refusal itself must not destroy the state it was decided from.
     /// </summary>
     public async Task<JsonRpcChannel> AcquireAsync(CancellationToken ct)
     {
         await _gate.WaitAsync(ct);
         try
         {
+            // T7.3 step 1: the backoff deadline lives on the lifecycle, so it is
+            // still readable after the channel that caused it has been disposed.
+            // (It used to be read off the channel this method had just nulled —
+            // the throw then became the reason the next acquire resumed.)
+            var retryTicks = Volatile.Read(ref _nextRetryAtUtcTicks);
+            if (retryTicks != 0)
+            {
+                var retry = new DateTime(retryTicks, DateTimeKind.Utc);
+                if (DateTime.UtcNow < retry)
+                    throw new TimeoutException(
+                        $"extension '{_name}' in crash backoff until {retry:O}"
+                    );
+            }
+
             var live = _channel;
             if (live is not null && !live.Process.HasExited)
             {
@@ -244,21 +283,18 @@ public sealed class ProcessLifecycle
                     return live;
                 }
             }
-            // dead-but-retained channel carries the crash/backoff state — read
-            // it BEFORE dispose, then drop the reference so no later path
-            // touches the disposed Process object.
-            var crashed = _channel;
-            _channel = null;
-            if (crashed is not null)
+            // A dead-but-retained channel is dropped — the OBJECT, never the
+            // crash history: that lives on the lifecycle now, which is why no
+            // path here may reset it.
+            if (_channel is { } dead)
             {
-                var retry = crashed.NextRetryAtUtc;
-                crashed.Dispose();
-                if (retry != default && DateTime.UtcNow < retry)
-                    throw new TimeoutException(
-                        $"extension '{_name}' in crash backoff until {retry:O}"
-                    );
+                _channel = null;
+                dead.Dispose();
             }
             var fresh = await SpawnAsync(ct);
+            // stamp the current streak onto the new generation so the channel a
+            // caller holds reports the truth (diagnostics + released surface)
+            MirrorCrashState(fresh);
             _channel = fresh;
             _lastActivityUtc = DateTime.UtcNow;
             return fresh;
@@ -272,38 +308,55 @@ public sealed class ProcessLifecycle
     /// <summary>Refresh the idle timer on every request write (B3 client calls).</summary>
     public void Touch() => _lastActivityUtc = DateTime.UtcNow;
 
-    /// <summary>Reset crash/backoff state after the first successful response (B3).</summary>
+    /// <summary>Reset crash/backoff state after the first successful response
+    /// (B3). The ONLY place the streak is cleared: an idle reclaim or a recycle is
+    /// a deliberate teardown and must not launder a crash loop into a fresh
+    /// budget.</summary>
     internal void MarkHealthy()
     {
+        Volatile.Write(ref _consecutiveCrashes, 0);
+        Volatile.Write(ref _nextRetryAtUtcTicks, 0L);
         if (_channel is { } ch)
-        {
-            ch.ConsecutiveCrashes = 0;
-            ch.NextRetryAtUtc = default;
-        }
+            MirrorCrashState(ch);
     }
 
     /// <summary>Bump the crash counter and arm/refresh backoff (B3 read-loop
     /// EOF). Defensive guard: only the CURRENT channel's crash is attributed —
     /// a stale reader EOF (channel already replaced by a newer spawn) must not
-    /// corrupt the live channel's state or arm a ghost backoff.</summary>
+    /// corrupt the live channel's state or arm a ghost backoff.
+    /// <para>
+    /// The counter and the deadline are the LIFECYCLE's (T7.3), so the streak
+    /// continues across the respawn the crash forces; the channel only receives
+    /// a mirror of them.
+    /// </para></summary>
     internal void Churn(JsonRpcChannel ch)
     {
         if (!ReferenceEquals(ch, _channel))
             return; // stale channel — the lifecycle already moved on
-        ch.ConsecutiveCrashes++;
-        if (ch.ConsecutiveCrashes >= BackoffCrashThreshold)
+        var crashes = Interlocked.Increment(ref _consecutiveCrashes);
+        if (crashes >= BackoffCrashThreshold)
         {
-            var pow = Math.Min(ch.ConsecutiveCrashes - BackoffCrashThreshold + 1, 6);
+            var pow = Math.Min(crashes - BackoffCrashThreshold + 1, 6);
             var delay = Math.Min(
                 BackoffStart.TotalSeconds * Math.Pow(2, pow - 1),
                 BackoffMax.TotalSeconds
             );
-            ch.NextRetryAtUtc = DateTime.UtcNow.AddSeconds(delay);
+            Volatile.Write(ref _nextRetryAtUtcTicks, DateTime.UtcNow.AddSeconds(delay).Ticks);
         }
         else
         {
-            ch.NextRetryAtUtc = default;
+            Volatile.Write(ref _nextRetryAtUtcTicks, 0L);
         }
+        MirrorCrashState(ch);
+    }
+
+    /// <summary>Publish the lifecycle's streak onto <paramref name="ch"/> — the
+    /// channel-side view (see <see cref="JsonRpcChannel.ConsecutiveCrashes"/>).</summary>
+    private void MirrorCrashState(JsonRpcChannel ch)
+    {
+        ch.ConsecutiveCrashes = Volatile.Read(ref _consecutiveCrashes);
+        var ticks = Volatile.Read(ref _nextRetryAtUtcTicks);
+        ch.NextRetryAtUtc = ticks == 0 ? default : new DateTime(ticks, DateTimeKind.Utc);
     }
 
     /// <summary>Kill the tree and drop the channel (marks <see cref="JsonRpcChannel.RecycleRequested"/>).</summary>
