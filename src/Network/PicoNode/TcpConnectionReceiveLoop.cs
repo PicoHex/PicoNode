@@ -95,6 +95,9 @@ internal sealed class TcpConnectionReceiveLoop
 
             await CancelRemoteCloseTokenAsync().ConfigureAwait(false);
             await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
+            var handlerLoopBound = TcpConnectionLifecycle.HandlerLoopTimeoutFor(
+                _node.Options.DrainTimeout
+            );
             try
             {
                 // Bounded, because this close is already under way: the peer is gone or the
@@ -102,16 +105,14 @@ internal sealed class TcpConnectionReceiveLoop
                 // both tokens must not hold the close sequence — and, through it, the node's
                 // drain, which waits for exactly that close — for ever. Giving up is loud: the
                 // fault is reported and the original one is still the one rethrown below.
-                await processingTask
-                    .WaitAsync(TcpConnectionLifecycle.HandlerLoopTimeout)
-                    .ConfigureAwait(false);
+                await processingTask.WaitAsync(handlerLoopBound).ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
                 _node.ReportFault(
                     NodeFaultCode.StopFailed,
                     TcpConnectionLifecycle.OperationCloseWait,
-                    TcpConnectionLifecycle.HandlerLoopTimeoutException()
+                    TcpConnectionLifecycle.HandlerLoopTimeoutException(handlerLoopBound)
                 );
             }
             catch
@@ -150,22 +151,19 @@ internal sealed class TcpConnectionReceiveLoop
             : reason;
 
     /// <summary>
-    /// Cancels the connection token for a connection that is already going away. A source a
-    /// concurrent dispose already disposed is tolerated: the fault that brought us here is the
-    /// one worth propagating, and replacing it with an ObjectDisposedException would orphan the
-    /// handler loop this cancel exists to release.
+    /// Cancels the connection token through the tolerant helper the close path uses — one
+    /// implementation for both sites, so the two cannot drift into different tolerances. A source a
+    /// concurrent dispose already disposed is ignored, and a registered callback that throws is
+    /// reported (tcp.close.teardown) instead of escaping: the fault that brought us here is the one
+    /// worth propagating, and the steps after this one (the remote-close fire, the writer
+    /// completion, the wait for the handler loop) are what keep the close off a live handler.
     /// </summary>
-    private async Task CancelConnectionTokenAsync()
-    {
-        try
-        {
-            await _connectionCts.CancelAsync().ConfigureAwait(false);
-        }
-        catch (ObjectDisposedException)
-        {
-            // Nothing left to release.
-        }
-    }
+    private Task CancelConnectionTokenAsync() =>
+        TcpConnectionLifecycle.CancelConnectionTokenAsync(
+            _node,
+            _connectionCts,
+            TcpConnectionLifecycle.OperationCloseTeardown
+        );
 
     /// <summary>
     /// Fires the remote-close token through the tolerant helper the close path uses: this loop's

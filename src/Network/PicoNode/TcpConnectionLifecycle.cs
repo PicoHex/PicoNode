@@ -19,9 +19,10 @@ internal sealed class TcpConnectionLifecycle
 
     /// <summary>
     /// Upper bound on a wait for a connection's handler loop before the pipe ends and the
-    /// socket are torn down. The bound is what keeps a handler that never returns from
-    /// wedging the close (and, through it, the node's drain): the wait gives up loudly
-    /// instead of blocking for ever.
+    /// socket are torn down, as a fraction of the node's <see cref="TcpNodeOptions.DrainTimeout"/>
+    /// (see <see cref="HandlerLoopTimeoutFor"/>). The bound is what keeps a handler that never
+    /// returns from wedging the close (and, through it, the node's drain): the wait gives up
+    /// loudly instead of blocking for ever.
     /// </summary>
     /// <remarks>
     /// It bounds two waits: the one in <see cref="CloseCoreAsync"/> for a close that does not
@@ -29,15 +30,40 @@ internal sealed class TcpConnectionLifecycle
     /// lets a faulted close sequence run. It deliberately does NOT bound the graceful-FIN path:
     /// a half-closing client is still owed the responses to the requests it already sent, so
     /// there the loop waits for its handler however long that takes.
+    /// <para>
+    /// It is DERIVED from the drain budget because the node's drain waits for exactly this close:
+    /// a bound equal to <see cref="TcpNodeOptions.DrainTimeout"/> spends the whole budget on the
+    /// wait and leaves nothing for the steps that follow it inside the same budget —
+    /// <c>OnClosedAsync</c> and the pipe/socket teardown — so every slow handler became a
+    /// caller-visible drain failure. Half the budget is the wait; the other half is those steps.
+    /// </para>
     /// </remarks>
-    internal static readonly TimeSpan HandlerLoopTimeout = TimeSpan.FromSeconds(5);
+    internal static readonly TimeSpan UnboundedDrainHandlerLoopTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// The fault a bounded wait reports when it gives up. Shared so the receive loop's bound and
     /// this class's bound are indistinguishable to a host that counts them.
     /// </summary>
-    internal static TimeoutException HandlerLoopTimeoutException() =>
-        new($"The connection handler loop did not finish within {HandlerLoopTimeout}.");
+    internal static TimeoutException HandlerLoopTimeoutException(TimeSpan bound) =>
+        new($"The connection handler loop did not finish within {bound}.");
+
+    /// <summary>
+    /// The bound a wait for a handler loop gets under a given <see cref="TcpNodeOptions.DrainTimeout"/>
+    /// budget: <b>strictly less</b> than the budget — one half of it — so the close that wait
+    /// belongs to still has the other half for the steps that come after the wait. One seam, so
+    /// the lifecycle's wait and the receive loop's wait cannot drift apart.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="TimeSpan.Zero"/> is "no deadline at all" (<see cref="TcpNode.StopAsync"/> creates
+    /// no stop CTS for it), so nothing bounds the drain and any finite wait is strictly inside it:
+    /// that case keeps the historic 5 s. Halving is strictly less for every budget above one tick;
+    /// a one-tick budget degenerates to a zero wait (give up at once) rather than to a wait that
+    /// spends the entire budget.
+    /// </remarks>
+    internal static TimeSpan HandlerLoopTimeoutFor(TimeSpan drainTimeout) =>
+        drainTimeout > TimeSpan.Zero
+            ? TimeSpan.FromTicks(drainTimeout.Ticks / 2)
+            : UnboundedDrainHandlerLoopTimeout;
 
     private readonly TcpNode _node;
     private readonly Socket _socket;
@@ -266,16 +292,17 @@ internal sealed class TcpConnectionLifecycle
             return;
         }
 
+        var bound = HandlerLoopTimeoutFor(_node.Options.DrainTimeout);
         try
         {
-            await runTask.WaitAsync(HandlerLoopTimeout).ConfigureAwait(false);
+            await runTask.WaitAsync(bound).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
             _node.ReportFault(
                 NodeFaultCode.StopFailed,
                 OperationCloseWait,
-                HandlerLoopTimeoutException()
+                HandlerLoopTimeoutException(bound)
             );
         }
         catch (Exception)
@@ -365,7 +392,9 @@ internal sealed class TcpConnectionLifecycle
 
     private bool TryBeginDispose() => Interlocked.Exchange(ref _disposeState, 1) == 0;
 
-    private Task CancelConnectionAsync() => _cts.CancelAsync();
+    /// <summary>Fires this connection's own token from the close path.</summary>
+    private Task CancelConnectionAsync() =>
+        CancelConnectionTokenAsync(_node, _cts, OperationCloseCore);
 
     /// <summary>
     /// Fires a connection's remote-close token for a close that is already under way, and lets
@@ -399,6 +428,43 @@ internal sealed class TcpConnectionLifecycle
         catch (ObjectDisposedException)
         {
             // Nothing left to fire.
+        }
+        catch (Exception ex)
+        {
+            // A registered callback threw. The teardown that called this still has to run.
+            node.ReportFault(NodeFaultCode.HandlerFailed, operation, ex);
+        }
+    }
+
+    /// <summary>
+    /// Cancels a connection's own token for a connection that is already going away, with the same
+    /// tolerance as <see cref="CancelRemoteCloseTokenAsync"/>: a source a concurrent dispose already
+    /// disposed is ignored, and a cancellation callback a user registered that throws — which
+    /// <c>CancellationTokenSource.CancelAsync</c> collects into a faulted cancellation task — is
+    /// reported and stepped over.
+    /// </summary>
+    /// <remarks>
+    /// The tolerance matters for the same reason there: both call sites have a sequence left to run
+    /// after this step. On the close path it is the socket shutdown, the wait for the handler loop,
+    /// <c>OnClosedAsync</c> and the pipe/socket dispose; in the receive-loop teardown it is the
+    /// remote-close fire, the writer completion and the wait for the handler loop. A fault escaping
+    /// here would abandon all of them, and through them the node's drain, which waits for exactly
+    /// that close. Only the disposed-source case is silent (nothing is left to release); anything
+    /// else is a fault of the user's callback and is reported at the site's operation tag.
+    /// </remarks>
+    internal static async Task CancelConnectionTokenAsync(
+        TcpNode node,
+        CancellationTokenSource connectionCts,
+        string operation
+    )
+    {
+        try
+        {
+            await connectionCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            // Nothing left to release.
         }
         catch (Exception ex)
         {

@@ -235,6 +235,10 @@ public sealed class TcpNode : INode
             drainTask = _drainSource?.Task ?? Task.CompletedTask;
         }
 
+        // The caller's own token, kept before the internal deadline is linked in: the two
+        // cancellations below are indistinguishable at the catch site, and only one of them is
+        // the caller's business.
+        var callerToken = cancellationToken;
         using var stopCts =
             Options.DrainTimeout > TimeSpan.Zero
                 ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
@@ -246,6 +250,7 @@ public sealed class TcpNode : INode
         }
 
         var stopCompleted = false;
+        var drainTimedOut = false;
         Exception? stopFault = null;
 
         try
@@ -306,11 +311,36 @@ public sealed class TcpNode : INode
 
             stopCompleted = true;
         }
+        catch (OperationCanceledException) when (callerToken.IsCancellationRequested)
+        {
+            // A genuine caller cancellation. The deadline is the caller's, so the stop it
+            // interrupted is not one this method may report as done: the node stays Stopping and a
+            // later stop finishes it, which is what
+            // StopAsync_cancellation_leaves_state_as_stopping_until_drain_finishes pins.
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // DrainTimeout expired with a connection still closing. That deadline is the node's
+            // own, not the caller's: surfacing it as an OperationCanceledException would make
+            // `await using var node` throw on the way out of a host shutdown in which nothing was
+            // cancelled. So the stop completes here instead (the same two-catch shape as
+            // UdpNode.StopAsync).
+            //
+            // Nothing is hidden by completing: a connection that missed the deadline is still
+            // running its own close, and every way that close can fail is reported at its site
+            // (tcp.close.wait, tcp.close.handler, tcp.close.core). The timeout is a deadline on the
+            // WAIT, not a verdict on the close.
+            drainTimedOut = true;
+        }
         finally
         {
             lock (_stateLock)
             {
-                if (stopCompleted && _state != NodeState.Disposed)
+                // A drained stop and a stop that ran out of deadline both end as Stopped: from the
+                // caller's side the stop is over either way, and leaving the node in Stopping would
+                // park every later stop on a drain nobody is left to finish in time.
+                if (_state != NodeState.Disposed && (stopCompleted || drainTimedOut))
                 {
                     _state = NodeState.Stopped;
                 }

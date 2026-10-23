@@ -1317,10 +1317,10 @@ public sealed class TcpConnectionBranchTests
 
             connection.Close();
 
-            // Both windows are 2x HandlerLoopTimeout (5 s) on purpose: a bounded wait for the
-            // handler loop is a legitimate step of this close, so a window equal to the bound
-            // would turn a healthy close into a false failure as soon as this test grows a
-            // variant whose handler parks.
+            // Both windows are deliberately many times the handler-loop bound (half the default
+            // 5 s DrainTimeout, i.e. 2.5 s): a bounded wait for the handler loop is a legitimate
+            // step of this close, so a window equal to the bound would turn a healthy close into a
+            // false failure as soon as this test grows a variant whose handler parks.
             var closedInTime = await HasCompletedWithinAsync(
                 handler.Closed.Task,
                 TimeSpan.FromSeconds(10)
@@ -1359,6 +1359,135 @@ public sealed class TcpConnectionBranchTests
                 .Because(
                     "the registration's fault is reported against tcp.close.core instead of being swallowed"
                 );
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task Close_with_a_throwing_connection_token_registration_still_tears_the_connection_down()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var logger = new SpyLogger();
+            var handler = new RecordingTcpHandler();
+            var connection = CreateConnection(pair.Server, handler, logger);
+
+            // A user registration on the CONNECTION token — the shape of a request handler that
+            // fails while its token fires. Firing it is step 2 of the close sequence, and the
+            // socket shutdown, the wait for the handler loop, OnClosedAsync and the pipe/socket
+            // dispose all follow it, so a fault escaping here used to abandon them and strand the
+            // node's drain on a connection nobody finished closing.
+            var callbackFault = new InvalidOperationException("connection token boom");
+            using var registration = GetConnectionTokenSource(connection)
+                .Token.Register(() =>
+                {
+                    throw callbackFault;
+                });
+
+            connection.Close();
+
+            var closedInTime = await HasCompletedWithinAsync(
+                handler.Closed.Task,
+                TimeSpan.FromSeconds(10)
+            );
+            var tornDown = await PollUntilAsync(
+                () => IsSocketDisposed(pair.Server),
+                TimeSpan.FromSeconds(10)
+            );
+
+            await Assert
+                .That(closedInTime)
+                .IsTrue()
+                .Because("a throwing token callback must not skip OnClosedAsync");
+            await Assert
+                .That(tornDown)
+                .IsTrue()
+                .Because("a throwing token callback must not skip the pipe/socket dispose");
+            await Assert.That(handler.Closed.Task.IsCompletedSuccessfully).IsTrue();
+            await Assert
+                .That(handler.Closed.Task.Result.Reason)
+                .IsEqualTo(TcpCloseReason.LocalClose);
+            await Assert
+                .That(
+                    logger.Calls.Any(x =>
+                        x.EventId.Id == (int)NodeFaultCode.HandlerFailed
+                        && Mentions(x.Exception, callbackFault)
+                    )
+                )
+                .IsTrue()
+                .Because(
+                    "the callback's fault is reported against tcp.close.core instead of escaping"
+                );
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task Reset_with_a_throwing_connection_token_registration_still_runs_the_teardown()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var logger = new SpyLogger();
+            var handler = new RecordingTcpHandler();
+            var reset = new SocketException((int)SocketError.ConnectionReset);
+            var readFault = new IOException("TLS read fault", reset);
+            var stream = new FaultingReadStream(handler.Received.Task, readFault);
+            var connection = CreateConnection(pair.Server, handler, logger, stream);
+
+            // The same registration, reached through the OTHER site that fires the connection
+            // token: the ordered teardown in the receive loop. Step 1 of four — the remote-close
+            // fire, the writer completion and the wait for the handler loop follow it — so a
+            // callback that throws there must be reported against that site and stepped over, not
+            // allowed to replace the peer reset with its own collateral.
+            var callbackFault = new InvalidOperationException("connection token boom");
+            using var registration = GetConnectionTokenSource(connection)
+                .Token.Register(() =>
+                {
+                    throw callbackFault;
+                });
+
+            var runTask = connection.RunAsync(handler);
+
+            var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await runTask.WaitAsync(TimeSpan.FromSeconds(10));
+
+            await Assert
+                .That(closed.Reason)
+                .IsEqualTo(TcpCloseReason.RemoteClosed)
+                .Because("the peer's reset is still the reason, not the callback's fault");
+            await Assert.That(closed.Error).IsSameReferenceAs(readFault);
+            await Assert
+                .That(
+                    logger.Calls.Any(x =>
+                        x.EventId.Id == (int)NodeFaultCode.HandlerFailed
+                        && (
+                            x.Message?.Contains("tcp.close.teardown", StringComparison.Ordinal)
+                            ?? false
+                        )
+                        && Mentions(x.Exception, callbackFault)
+                    )
+                )
+                .IsTrue()
+                .Because("the throwing callback is reported against the teardown that fired it");
+            await Assert
+                .That(
+                    logger.Calls.Any(x =>
+                        x.EventId.Id == (int)NodeFaultCode.ReceiveFailed
+                        && ReferenceEquals(x.Exception, readFault)
+                    )
+                )
+                .IsTrue()
+                .Because("the original fault is still reported, not replaced");
         }
         finally
         {
@@ -1574,6 +1703,17 @@ public sealed class TcpConnectionBranchTests
 
         return new TcpConnection(node, serverSocket, stream);
     }
+
+    /// <summary>
+    /// The connection's own token source — the one the close path and the receive-loop teardown
+    /// both fire. Internal by design, so a test that needs a registration on it has to reach for
+    /// it.
+    /// </summary>
+    private static CancellationTokenSource GetConnectionTokenSource(TcpConnection connection) =>
+        (CancellationTokenSource)
+            typeof(TcpConnectionLifecycle)
+                .GetField("_cts", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(GetLifecycle(connection))!;
 
     private static object GetLifecycle(TcpConnection connection)
     {

@@ -3,40 +3,49 @@ namespace PicoNode.Tests;
 public sealed class TcpConnectionFaultTests
 {
     [Test]
-    public async Task CloseCoreAsync_reports_fault_when_internal_step_throws()
+    public async Task CloseCoreAsync_tolerates_a_connection_token_its_dispose_already_released()
     {
         var pair = await CreateConnectedSocketsAsync();
         try
         {
             var logger = new SpyLogger();
-            var faultReported = new TaskCompletionSource<LogCall>(
-                TaskCreationOptions.RunContinuationsAsynchronously
+            var handler = new RecordingCloseHandler();
+            var node = new TcpNode(
+                new TcpNodeOptions
+                {
+                    Endpoint = (IPEndPoint)pair.Server.LocalEndPoint!,
+                    ConnectionHandler = handler,
+                    Logger = logger,
+                }
             );
+            var connection = new TcpConnection(node, pair.Server);
 
-            var connection = CreateConnection(pair.Server, logger);
-
-            var disposedCts = new CancellationTokenSource();
-            disposedCts.Dispose();
-            var lifecycleField = typeof(TcpConnection).GetField(
-                "_lifecycle",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            )!;
-            var lifecycle = lifecycleField.GetValue(connection)!;
-            var ctsField = typeof(TcpConnectionLifecycle).GetField(
-                "_cts",
-                BindingFlags.Instance | BindingFlags.NonPublic
-            )!;
-            ctsField.SetValue(lifecycle, disposedCts);
+            // The shape of a close racing a dispose: the connection token's source is already
+            // disposed by the time the close path fires it. Nobody is left to wait on that token,
+            // so it is not a fault to report — but it must not abandon the steps that follow it
+            // either (the socket shutdown, the wait for the handler loop, OnClosedAsync, the
+            // pipe/socket teardown), which is what reporting-and-skipping them used to buy.
+            var releasedCts = new CancellationTokenSource();
+            releasedCts.Dispose();
+            var lifecycle = typeof(TcpConnection)
+                .GetField("_lifecycle", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(connection)!;
+            typeof(TcpConnectionLifecycle)
+                .GetField("_cts", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(lifecycle, releasedCts);
 
             connection.Close();
 
-            await Task.Delay(500);
+            var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-            await Assert.That(logger.Calls.Count).IsEqualTo(1);
-            await Assert.That(logger.Calls.TryPeek(out var call)).IsTrue();
-            await Assert.That(call!.Level).IsEqualTo(LogLevel.Error);
-            await Assert.That(call.EventId.Id).IsEqualTo((int)NodeFaultCode.HandlerFailed);
-            await Assert.That(call.Exception).IsTypeOf<ObjectDisposedException>();
+            await Assert
+                .That(closed)
+                .IsEqualTo(TcpCloseReason.LocalClose)
+                .Because("the close sequence still ran to its end");
+            await Assert
+                .That(logger.Calls.Count)
+                .IsEqualTo(0)
+                .Because("a source a concurrent dispose already released is not a fault");
             await connection.DisposeAsync();
         }
         finally
@@ -44,20 +53,6 @@ public sealed class TcpConnectionFaultTests
             pair.Client.Dispose();
             pair.Server.Dispose();
         }
-    }
-
-    private static TcpConnection CreateConnection(Socket serverSocket, ILogger? logger = null)
-    {
-        var node = new TcpNode(
-            new TcpNodeOptions
-            {
-                Endpoint = (IPEndPoint)serverSocket.LocalEndPoint!,
-                ConnectionHandler = new NoOpTcpHandler(),
-                Logger = logger,
-            }
-        );
-
-        return new TcpConnection(node, serverSocket);
     }
 
     private static async Task<(Socket Client, Socket Server)> CreateConnectedSocketsAsync()
@@ -72,27 +67,6 @@ public sealed class TcpConnectionFaultTests
         await connectTask;
         listener.Dispose();
         return (client, server);
-    }
-
-    private sealed class NoOpTcpHandler : ITcpConnectionHandler
-    {
-        public Task OnConnectedAsync(
-            ITcpConnectionContext connection,
-            CancellationToken cancellationToken
-        ) => Task.CompletedTask;
-
-        public ValueTask<SequencePosition> OnReceivedAsync(
-            ITcpConnectionContext connection,
-            ReadOnlySequence<byte> buffer,
-            CancellationToken cancellationToken
-        ) => ValueTask.FromResult(buffer.End);
-
-        public ValueTask OnClosedAsync(
-            ITcpConnectionContext connection,
-            TcpCloseReason reason,
-            Exception? error,
-            CancellationToken cancellationToken
-        ) => ValueTask.CompletedTask;
     }
 
     [Test]
@@ -125,6 +99,34 @@ public sealed class TcpConnectionFaultTests
         {
             pair.Client.Dispose();
             pair.Server.Dispose();
+        }
+    }
+
+    private sealed class RecordingCloseHandler : ITcpConnectionHandler
+    {
+        public TaskCompletionSource<TcpCloseReason> Closed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task OnConnectedAsync(
+            ITcpConnectionContext connection,
+            CancellationToken cancellationToken
+        ) => Task.CompletedTask;
+
+        public ValueTask<SequencePosition> OnReceivedAsync(
+            ITcpConnectionContext connection,
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken
+        ) => ValueTask.FromResult(buffer.End);
+
+        public ValueTask OnClosedAsync(
+            ITcpConnectionContext connection,
+            TcpCloseReason reason,
+            Exception? error,
+            CancellationToken cancellationToken
+        )
+        {
+            Closed.TrySetResult(reason);
+            return ValueTask.CompletedTask;
         }
     }
 

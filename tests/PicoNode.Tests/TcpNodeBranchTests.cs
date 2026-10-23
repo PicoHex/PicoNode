@@ -498,6 +498,181 @@ public sealed class TcpNodeBranchTests
     }
 
     [Test]
+    public async Task DisposeAsync_does_not_throw_when_drain_times_out()
+    {
+        var handler = new RecordingTcpHandler(blockClose: true);
+        var node = CreateNode(handler, drainTimeout: TimeSpan.FromMilliseconds(50));
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+
+        await node.StartAsync();
+        await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+        await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        try
+        {
+            // The close handler is parked, so the drain cannot complete on its own: the node's
+            // own DrainTimeout (50 ms) is the only thing that can end the wait. A caller that
+            // cancelled nothing must not be handed an OperationCanceledException for that
+            // internal deadline — `await using var node` would then throw on the way out of a
+            // host shutdown that otherwise succeeded.
+            await Assert
+                .That(async () => await node.DisposeAsync())
+                .ThrowsNothing()
+                .Because("the internal drain deadline is not the caller's cancellation");
+
+            // Proof the dispose returned at its own deadline instead of waiting the parked close
+            // handler out: the handler is still parked when the caller is already released.
+            await Assert
+                .That(handler.Closed.Task.IsCompleted)
+                .IsFalse()
+                .Because("the caller was released by DrainTimeout, not by the close finishing");
+            await Assert.That(node.State).IsEqualTo(NodeState.Disposed);
+        }
+        finally
+        {
+            handler.AllowClose();
+        }
+
+        var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Assert
+            .That(closed.Reason)
+            .IsEqualTo(TcpCloseReason.NodeStopping)
+            .Because("swallowing the deadline must not abandon the close that was still running");
+    }
+
+    [Test]
+    public async Task StopAsync_swallows_the_drain_timeout_and_reaches_Stopped()
+    {
+        var handler = new RecordingTcpHandler(blockClose: true);
+        var node = CreateNode(handler, drainTimeout: TimeSpan.FromMilliseconds(50));
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+
+        await node.StartAsync();
+        await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+        await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        try
+        {
+            await Assert.That(async () => await node.StopAsync()).ThrowsNothing();
+
+            // A stop whose own deadline expired is over from the caller's point of view: leaving
+            // the node in Stopping would park every later stop on a drain nobody is left to
+            // finish in time.
+            await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+            await Assert
+                .That(async () => await node.StopAsync())
+                .ThrowsNothing()
+                .Because("a repeat stop after a timed-out drain finds a Stopped node");
+        }
+        finally
+        {
+            handler.AllowClose();
+        }
+
+        await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await node.DisposeAsync();
+    }
+
+    [Test]
+    public async Task The_handler_loop_bound_is_strictly_inside_the_drain_budget()
+    {
+        // One slow handler must not be able to spend the node's WHOLE drain budget on the wait
+        // for it: the steps that follow the wait (OnClosedAsync, the pipe/socket teardown) run on
+        // the same budget, and if the two numbers are equal they get nothing at all.
+        TimeSpan[] budgets =
+        [
+            TimeSpan.FromMilliseconds(1),
+            TimeSpan.FromMilliseconds(50),
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromHours(1),
+        ];
+
+        foreach (var budget in budgets)
+        {
+            var bound = TcpConnectionLifecycle.HandlerLoopTimeoutFor(budget);
+            await Assert
+                .That(bound)
+                .IsLessThan(budget)
+                .Because(
+                    $"a {budget} drain budget has to leave room for the close steps after the wait"
+                );
+            await Assert
+                .That(bound)
+                .IsGreaterThan(TimeSpan.Zero)
+                .Because($"a {budget} drain budget still bounds the wait");
+        }
+
+        // DrainTimeout.Zero is "no deadline at all" (StopAsync creates no stop CTS), so any
+        // finite bound is strictly inside it.
+        var unbounded = TcpConnectionLifecycle.HandlerLoopTimeoutFor(TimeSpan.Zero);
+        await Assert.That(unbounded).IsGreaterThan(TimeSpan.Zero);
+
+        var defaults = new TcpNodeOptions
+        {
+            Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+            ConnectionHandler = new NoOpTcpHandler(),
+        };
+        await Assert
+            .That(TcpConnectionLifecycle.HandlerLoopTimeoutFor(defaults.DrainTimeout))
+            .IsLessThan(defaults.DrainTimeout)
+            .Because("the default node must not sit on the 5 s == 5 s collision");
+    }
+
+    [Test]
+    public async Task StopAsync_gives_up_on_a_parked_handler_loop_inside_the_drain_budget()
+    {
+        var logger = new SpyLogger();
+        var handler = new ParkedConnectHandler();
+        // 500 ms budget: the handler-loop wait is half of it, so the close (and through it the
+        // drain) is free well before the deadline instead of after the old fixed 5 s.
+        var node = CreateNode(handler, logger, drainTimeout: TimeSpan.FromMilliseconds(500));
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+
+        await node.StartAsync();
+        await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+        await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        try
+        {
+            var stopTask = node.StopAsync();
+
+            var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await stopTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+            await Assert.That(closed.Reason).IsEqualTo(TcpCloseReason.NodeStopping);
+            await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+            await Assert
+                .That(
+                    logger.Calls.Any(x =>
+                        x.EventId.Id == (int)NodeFaultCode.StopFailed
+                        && (
+                            x.Message?.Contains("tcp.close.wait", StringComparison.Ordinal) ?? false
+                        )
+                    )
+                )
+                .IsTrue()
+                .Because("giving up on the handler loop is reported, not silent");
+        }
+        finally
+        {
+            await node.DisposeAsync();
+        }
+    }
+
+    [Test]
     public async Task TryTrackConnection_returns_false_when_node_is_stopping()
     {
         var pair = await CreateConnectedSocketsAsync();
@@ -766,6 +941,51 @@ public sealed class TcpNodeBranchTests
         await connectTask;
         listener.Dispose();
         return (client, server);
+    }
+
+    /// <summary>
+    /// Handler whose connect callback never returns: the connection's handler loop stays live for
+    /// the whole test, which is exactly what the bounded wait for a handler loop exists for. The
+    /// park is never released — releasing it would run the loop against a pipe the test already
+    /// tore down, and an unobserved fault there would be noise, not a result.
+    /// </summary>
+    private sealed class ParkedConnectHandler : ITcpConnectionHandler
+    {
+        private readonly TaskCompletionSource _park = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        public TaskCompletionSource Connected { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<ClosedTcpConnection> Closed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task OnConnectedAsync(
+            ITcpConnectionContext connection,
+            CancellationToken cancellationToken
+        )
+        {
+            Connected.TrySetResult();
+            return _park.Task;
+        }
+
+        public ValueTask<SequencePosition> OnReceivedAsync(
+            ITcpConnectionContext connection,
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken
+        ) => ValueTask.FromResult(buffer.End);
+
+        public ValueTask OnClosedAsync(
+            ITcpConnectionContext connection,
+            TcpCloseReason reason,
+            Exception? error,
+            CancellationToken cancellationToken
+        )
+        {
+            Closed.TrySetResult(new ClosedTcpConnection(reason, error));
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class RecordingTcpHandler : ITcpConnectionHandler
