@@ -49,7 +49,7 @@ public sealed class CodingConventionTests
         await Assert
             .That(content)
             .Contains(
-                "/// <summary>User-provided connection handler threw an unhandled exception.</summary>"
+                "/// <summary>User-provided connection handler or close-sequence callback threw an unhandled exception.</summary>"
             );
         await Assert.That(content).Contains("/// <summary>UDP socket receive failed.</summary>");
         await Assert

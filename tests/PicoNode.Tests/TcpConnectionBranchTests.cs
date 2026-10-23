@@ -989,6 +989,183 @@ public sealed class TcpConnectionBranchTests
     }
 
     [Test]
+    public async Task RunAsync_with_a_throwing_remote_close_registration_keeps_the_ordered_teardown()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var logger = new SpyLogger();
+            var handler = new ParkedReceiveTcpHandler();
+            // The reset path: here the loop's OWN teardown is what fires the remote-close token,
+            // and it fires it as one step of a sequence whose remaining steps — completing the
+            // writer and awaiting the handler loop — are what keep OnClosedAsync off a live
+            // handler. A fault escaping at the fire replaces the fault that brought us here, so
+            // the loop's caller relabels a peer RST as a handler fault and runs the close with
+            // `waitsForHandlerLoop: false` over a handler that is still parked.
+            var reset = new SocketException((int)SocketError.ConnectionReset);
+            var readFault = new IOException("TLS read fault", reset);
+            var letFault = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var stream = new FaultingReadStream(letFault.Task, readFault);
+            var connection = CreateConnection(pair.Server, handler, logger, stream);
+            var runTask = connection.RunAsync(handler);
+
+            await handler.ReceivedStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+            // A user registration on the token the transport hands out — the shape of a
+            // streaming response that fails while it is being cancelled. The first registration
+            // is the test's own signal that the loop reached its fire; the second one throws and
+            // is what the fix has to tolerate.
+            var fired = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            using var signal = connection.RemoteCloseToken.Register(() => fired.TrySetResult());
+            var callbackFault = new InvalidOperationException("token callback boom");
+            using var registration = connection.RemoteCloseToken.Register(() =>
+            {
+                throw callbackFault;
+            });
+
+            letFault.TrySetResult();
+            await stream.Faulted.WaitAsync(TimeSpan.FromSeconds(3));
+            await fired.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+            // Bounded expectation, not synchronisation: a teardown that stops at its second step
+            // is unblocked and closes right here, while the correct one is parked on the handler
+            // loop and cannot close inside the window.
+            var closedWhileHandlerParked = await HasCompletedWithinAsync(
+                handler.Closed.Task,
+                TimeSpan.FromMilliseconds(500)
+            );
+
+            handler.ReleaseHandler();
+            var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            await Assert
+                .That(closedWhileHandlerParked)
+                .IsFalse()
+                .Because(
+                    "a throwing token callback must not skip the writer completion and the wait for the handler loop"
+                );
+            await Assert
+                .That(handler.CloseHandlerStartedAfterHandlerReturned)
+                .IsTrue()
+                .Because(
+                    "the loop's teardown must still await the handler loop before it rethrows"
+                );
+            await Assert
+                .That(closed.Reason)
+                .IsEqualTo(TcpCloseReason.RemoteClosed)
+                .Because("the peer's reset is the reason, not the callback's collateral");
+            await Assert.That(closed.Error).IsSameReferenceAs(readFault);
+            await Assert
+                .That(
+                    logger.Calls.Any(x =>
+                        x.EventId.Id == (int)NodeFaultCode.HandlerFailed
+                        && Mentions(x.Exception, callbackFault)
+                    )
+                )
+                .IsTrue()
+                .Because("the callback's fault is reported instead of being swallowed");
+            await Assert
+                .That(
+                    logger.Calls.Any(x =>
+                        x.EventId.Id == (int)NodeFaultCode.ReceiveFailed
+                        && ReferenceEquals(x.Exception, readFault)
+                    )
+                )
+                .IsTrue()
+                .Because(
+                    "the read fault is still the one reported, not replaced by the callback's"
+                );
+
+            // The processing task can only finish on a COMPLETED writer, so a run task that ends
+            // here is the proof that step 3 of the teardown ran (step 4 is the wait itself).
+            await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task RunAsync_with_a_throwing_remote_close_registration_survives_a_graceful_fin()
+    {
+        var pair = await CreateConnectedSocketsAsync();
+        try
+        {
+            var logger = new SpyLogger();
+            var handler = new ParkedReceiveTcpHandler();
+            var connection = CreateConnection(pair.Server, handler, logger);
+            var runTask = connection.RunAsync(handler);
+
+            await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            await pair.Client.SendAsync(new byte[] { 9 }, SocketFlags.None);
+            await handler.ReceivedStarted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+            // The same throwing registration, met by the OTHER site the loop fires this token: the
+            // graceful FIN branch, where the fire is the first await after a pump that returned
+            // normally. (The reset branch is pinned by the test above; this one makes a fix that
+            // only guards one of the two sites fail.)
+            var fired = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            using var signal = connection.RemoteCloseToken.Register(() => fired.TrySetResult());
+            var callbackFault = new InvalidOperationException("token callback boom");
+            using var registration = connection.RemoteCloseToken.Register(() =>
+            {
+                throw callbackFault;
+            });
+
+            pair.Client.Shutdown(SocketShutdown.Send);
+            await fired.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+            var closedWhileHandlerParked = await HasCompletedWithinAsync(
+                handler.Closed.Task,
+                TimeSpan.FromMilliseconds(500)
+            );
+
+            handler.ReleaseHandler();
+            var closed = await handler.Closed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            await Assert
+                .That(closedWhileHandlerParked)
+                .IsFalse()
+                .Because(
+                    "a throwing token callback on the FIN branch must not skip the writer completion and the handler wait"
+                );
+            await Assert
+                .That(handler.CloseHandlerStartedAfterHandlerReturned)
+                .IsTrue()
+                .Because("the FIN branch must still await the handler loop before it returns");
+            await Assert
+                .That(closed.Reason)
+                .IsEqualTo(TcpCloseReason.RemoteClosed)
+                .Because("a graceful FIN stays a remote close, whatever a callback did");
+            await Assert.That(closed.Error).IsNull();
+            await Assert
+                .That(
+                    logger.Calls.Any(x =>
+                        x.EventId.Id == (int)NodeFaultCode.HandlerFailed
+                        && Mentions(x.Exception, callbackFault)
+                    )
+                )
+                .IsTrue()
+                .Because("the callback's fault is reported instead of being swallowed");
+
+            await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            pair.Client.Dispose();
+            pair.Server.Dispose();
+        }
+    }
+
+    [Test]
     public async Task RemoteCloseToken_fires_on_local_close()
     {
         var pair = await CreateConnectedSocketsAsync();
@@ -1140,16 +1317,20 @@ public sealed class TcpConnectionBranchTests
 
             connection.Close();
 
+            // Both windows are 2x HandlerLoopTimeout (5 s) on purpose: a bounded wait for the
+            // handler loop is a legitimate step of this close, so a window equal to the bound
+            // would turn a healthy close into a false failure as soon as this test grows a
+            // variant whose handler parks.
             var closedInTime = await HasCompletedWithinAsync(
                 handler.Closed.Task,
-                TimeSpan.FromSeconds(5)
+                TimeSpan.FromSeconds(10)
             );
             // The close is fire-and-forget, so the dispose is observed by a bounded probe rather
             // than by a sleep that would impose an order. The socket is disposed after the pipe
             // ends are completed, in one synchronous block, so seeing it disposed means both.
             var tornDown = await PollUntilAsync(
                 () => IsSocketDisposed(pair.Server),
-                TimeSpan.FromSeconds(5)
+                TimeSpan.FromSeconds(10)
             );
 
             await Assert
@@ -1305,9 +1486,13 @@ public sealed class TcpConnectionBranchTests
     /// as <see cref="HasCompletedWithinAsync"/>: the delay is only the poll interval on a
     /// positive observation, never an order the test relies on.
     /// </summary>
+    /// <remarks>
+    /// The deadline is on a <see cref="Stopwatch"/>: a wall clock can step (NTP, DST) either way
+    /// inside a bounded window, and a window that is asserted on must not be able to expire early.
+    /// </remarks>
     private static async Task<bool> PollUntilAsync(Func<bool> probe, TimeSpan timeout)
     {
-        var deadline = DateTime.UtcNow + timeout;
+        var elapsed = Stopwatch.StartNew();
         while (true)
         {
             if (probe())
@@ -1315,7 +1500,7 @@ public sealed class TcpConnectionBranchTests
                 return true;
             }
 
-            if (DateTime.UtcNow >= deadline)
+            if (elapsed.Elapsed >= timeout)
             {
                 return false;
             }

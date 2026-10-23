@@ -11,6 +11,13 @@ internal sealed class TcpConnectionLifecycle
     internal const string OperationCloseWait = "tcp.close.wait";
 
     /// <summary>
+    /// Operation tag for a token fired by the ordered teardown in
+    /// <see cref="TcpConnectionReceiveLoop"/> — a close the receive loop itself is carrying out,
+    /// as opposed to the close path's own fire.
+    /// </summary>
+    internal const string OperationCloseTeardown = "tcp.close.teardown";
+
+    /// <summary>
     /// Upper bound on a wait for a connection's handler loop before the pipe ends and the
     /// socket are torn down. The bound is what keeps a handler that never returns from
     /// wedging the close (and, through it, the node's drain): the wait gives up loudly
@@ -361,25 +368,33 @@ internal sealed class TcpConnectionLifecycle
     private Task CancelConnectionAsync() => _cts.CancelAsync();
 
     /// <summary>
-    /// Fires the remote-close token for a connection that is going away. Both ways it can fail
-    /// are tolerated: a source a concurrent dispose already disposed (the token struct the
-    /// connection hands out stays valid either way, and a close must not turn itself into a
-    /// fault over a token nobody is left to wait on), and — the narrower reading of the same
-    /// rule — a cancellation callback a user registered that throws, which
-    /// <c>CancellationTokenSource.CancelAsync</c> collects into a faulted cancellation task.
+    /// Fires a connection's remote-close token for a close that is already under way, and lets
+    /// neither way the fire can fail escape: both call sites have a teardown left to run after it.
+    /// A source a concurrent dispose already disposed is ignored (the token struct the connection
+    /// hands out stays valid either way, and a close must not turn itself into a fault over a
+    /// token nobody is left to wait on); a cancellation callback a user registered that throws —
+    /// which <c>CancellationTokenSource.CancelAsync</c> collects into a faulted cancellation
+    /// task — is reported and stepped over.
     /// </summary>
     /// <remarks>
-    /// Firing the token is the FIRST statement of the teardown, so a callback fault that escaped
-    /// here would skip the socket shutdown, the wait for the handler loop, <c>OnClosedAsync</c>
-    /// and the pipe/socket dispose: a connection whose socket and pipe are never released, and a
-    /// node drain that stalls on it until its own deadline. The fault is therefore reported and
-    /// the close carries on with its remaining steps.
+    /// The call sites are the close path (<see cref="CloseCoreAsync"/>, whose FIRST statement this
+    /// is) and the ordered teardown in <see cref="TcpConnectionReceiveLoop"/>. Both fire it in the
+    /// middle of a sequence that still has to run — the socket shutdown, the wait for the handler
+    /// loop, the writer completion and the pipe/socket dispose — so a fault that escaped here
+    /// would not merely relabel the close: it would abandon the steps that release the connection
+    /// and keep <c>OnClosedAsync</c> off a live handler. Escaping at the loop's site would also
+    /// replace the fault that brought the connection down, so the loop's caller would report a
+    /// peer reset as a handler fault (`tcp.handler`) — the mislabelling that fire exists to avoid.
     /// </remarks>
-    private async Task CancelRemoteCloseAsync()
+    internal static async Task CancelRemoteCloseTokenAsync(
+        TcpNode node,
+        CancellationTokenSource remoteCloseCts,
+        string operation
+    )
     {
         try
         {
-            await _remoteCloseCts.CancelAsync().ConfigureAwait(false);
+            await remoteCloseCts.CancelAsync().ConfigureAwait(false);
         }
         catch (ObjectDisposedException)
         {
@@ -387,10 +402,14 @@ internal sealed class TcpConnectionLifecycle
         }
         catch (Exception ex)
         {
-            // A registered callback threw. The teardown below still has to run.
-            _node.ReportFault(NodeFaultCode.HandlerFailed, OperationCloseCore, ex);
+            // A registered callback threw. The teardown that called this still has to run.
+            node.ReportFault(NodeFaultCode.HandlerFailed, operation, ex);
         }
     }
+
+    /// <summary>Fires this connection's remote-close token from the close path.</summary>
+    private Task CancelRemoteCloseAsync() =>
+        CancelRemoteCloseTokenAsync(_node, _remoteCloseCts, OperationCloseCore);
 
     /// <summary>
     /// Reason for a socket error that escaped the receive pump. A reset-class error is the

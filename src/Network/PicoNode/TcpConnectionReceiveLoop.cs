@@ -74,7 +74,11 @@ internal sealed class TcpConnectionReceiveLoop
             //   2. cancel the remote-close token: long-lived streaming responses (SSE) observe
             //      the disconnect on BOTH sides of the connection, not only at the socket
             //      teardown, which is what keeps a streaming handler from waiting out the
-            //      close.
+            //      close. The shared helper tolerates a registration that throws, because this
+            //      is step 2 of 4: a fault escaping here would skip the writer completion and
+            //      the handler wait, replace the fault being handled with the callback's
+            //      collateral — which the close sequence then files as a handler fault — and
+            //      let it close over a live handler.
             //   3. complete the pipe writer: buffered requests are still drained, and the
             //      reader stays alive for them. A graceful FIN is deliberately different (see
             //      the branch below): a half-closed client still expects the responses to the
@@ -89,7 +93,7 @@ internal sealed class TcpConnectionReceiveLoop
                 await CancelConnectionTokenAsync().ConfigureAwait(false);
             }
 
-            await _remoteCloseCts.CancelAsync().ConfigureAwait(false);
+            await CancelRemoteCloseTokenAsync().ConfigureAwait(false);
             await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
             try
             {
@@ -124,8 +128,10 @@ internal sealed class TcpConnectionReceiveLoop
         // Unlike the connection token — which must stay alive so buffered
         // requests of a half-closing client are still served — the
         // remote-close token fires immediately, letting long-lived streaming
-        // responses (SSE) observe the disconnect deterministically.
-        await _remoteCloseCts.CancelAsync().ConfigureAwait(false);
+        // responses (SSE) observe the disconnect deterministically. A registration that throws
+        // is tolerated here too: the writer completion and the handler wait that follow are what
+        // keep the close sequence off a live handler.
+        await CancelRemoteCloseTokenAsync().ConfigureAwait(false);
 
         await _pipe.Writer.CompleteAsync().ConfigureAwait(false);
         // Deliberately unbounded, unlike the faulting path above: a half-closing client is still
@@ -160,6 +166,18 @@ internal sealed class TcpConnectionReceiveLoop
             // Nothing left to release.
         }
     }
+
+    /// <summary>
+    /// Fires the remote-close token through the tolerant helper the close path uses: this loop's
+    /// teardown has steps after it (the writer completion, the wait for the handler loop) that
+    /// the close sequence depends on, so a registered callback that throws must not escape here.
+    /// </summary>
+    private Task CancelRemoteCloseTokenAsync() =>
+        TcpConnectionLifecycle.CancelRemoteCloseTokenAsync(
+            _node,
+            _remoteCloseCts,
+            TcpConnectionLifecycle.OperationCloseTeardown
+        );
 
     private async Task ProcessPipeAsync(
         ITcpConnectionHandler handler,
