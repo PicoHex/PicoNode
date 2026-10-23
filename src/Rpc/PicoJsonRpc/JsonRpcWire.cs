@@ -51,6 +51,15 @@ namespace PicoJsonRpc;
 /// emit is always a frame we can read back.
 /// </para>
 /// <para>
+/// "One line" means one line to an <b>LF/CR</b> reader, which is what NDJSON is: a
+/// raw U+2028/U+2029/U+0085 inside an otherwise one-line payload is emitted
+/// VERBATIM (none of them is CR or LF, so neither the normalisation gate nor the
+/// writer's string escaping touches them). A UNICODE-AWARE splitter — a JS regex
+/// matching U+2028, Python's <c>splitlines()</c> — would see two lines where an
+/// LF/CR reader sees one. This is stated, not fixed: escaping those characters
+/// would move the bytes of valid one-line payloads.
+/// </para>
+/// <para>
 /// What the payload TEXT means (a caller-visible consequence, see
 /// <see cref="JsonRpcFrame.Params"/>/<see cref="JsonRpcFrame.Result"/>): the text
 /// is the value, and its JSON kind is the emitted kind — <c>"7"</c> ships as the
@@ -283,13 +292,74 @@ internal static class JsonRpcWire
     /// wire, and a valid one-line payload keeps its exact bytes. The string fallback
     /// escapes control characters, so it cannot break the line either.
     /// </para>
+    /// <para>
+    /// LIMIT, stated because it is a real one: "one line" here means one line to an
+    /// LF/CR reader. A raw U+2028 (LINE SEPARATOR), U+2029 (PARAGRAPH SEPARATOR) or
+    /// U+0085 (NEL) inside an otherwise one-line payload is emitted VERBATIM — none of
+    /// them is <c>\n</c> or <c>\r</c>, so neither the normalisation gate
+    /// (<see cref="ContainsLineBreak"/>) nor <see cref="Utf8JsonWriter"/>'s string
+    /// escaping touches them. NDJSON itself splits on LF only, which is why this is
+    /// sound here — but a UNICODE-AWARE splitter (a JS regex on <c>/\r?\n|\u2028/</c>,
+    /// Python's <c>str.splitlines()</c>) sees TWO lines where an LF/CR reader sees one.
+    /// A peer that must interoperate with such a splitter should escape those three
+    /// characters itself; this writer does not, because escaping them would change the
+    /// bytes of valid one-line payloads (the same hazard scoping F1 chose).
+    /// </para>
     /// </summary>
     private static void WritePayload(Utf8JsonWriter writer, string name, string raw)
     {
         writer.WritePropertyName(name);
-        if (TryWriteCompact(writer, raw))
+        var text = SubstituteUnpairedSurrogates(raw);
+        if (TryWriteCompact(writer, text))
             return;
-        writer.WriteStringValue(raw);
+        writer.WriteStringValue(text);
+    }
+
+    /// <summary>
+    /// Replace every UNPAIRED surrogate with U+FFFD — exactly what a UTF-8 transcode
+    /// does with invalid UTF-16, which is this writer's only failure mode for caller
+    /// text.
+    /// <para>
+    /// Why the writer must not throw: <see cref="Utf8JsonWriter.WriteRawValue(string)"/>
+    /// and <see cref="JsonDocument.Parse(string)"/> both transcode to UTF-8, so a lone
+    /// surrogate raises <see cref="ArgumentException"/> — where the pre-T7.4 serializer
+    /// path substituted. A caller's malformed STRING is the same class as malformed
+    /// JSON text, which already degrades to a quoted string by design: the answer is
+    /// the same, not an exception.
+    /// </para>
+    /// <para>
+    /// Substituting (rather than rejecting) also preserves the payload's SHAPE: the
+    /// substitution runs before the "is it JSON" gate, so payload text carrying a lone
+    /// surrogate inside an otherwise valid JSON string stays an inline object. A
+    /// correctly PAIRED surrogate pair is left untouched, so a valid payload keeps its
+    /// exact bytes (<c>One_line_payload_keeps_its_exact_bytes</c>).
+    /// </para>
+    /// </summary>
+    private static string SubstituteUnpairedSurrogates(string text)
+    {
+        // cheap gate: the overwhelming majority of payloads carry no surrogate at all,
+        // and this is one vectorized pass over the span
+        if (text.AsSpan().IndexOfAnyInRange('\uD800', '\uDFFF') < 0)
+            return text;
+        StringBuilder? builder = null;
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+            {
+                builder?.Append(c).Append(text[i + 1]);
+                i++;
+                continue;
+            }
+            if (char.IsSurrogate(c))
+            {
+                builder ??= new StringBuilder(text.Length).Append(text, 0, i);
+                builder.Append('\uFFFD');
+                continue;
+            }
+            builder?.Append(c);
+        }
+        return builder?.ToString() ?? text;
     }
 
     /// <summary>
@@ -313,6 +383,15 @@ internal static class JsonRpcWire
         }
         catch (JsonException)
         {
+            return false;
+        }
+        catch (ArgumentException)
+        {
+            // text that cannot be transcoded to UTF-8 (an unpaired surrogate) takes
+            // the gate's ordinary answer — "not one JSON value", i.e. degrade to a
+            // string. WritePayload substitutes such text before it arrives here, so
+            // this is belt-and-braces; it stays because this method is the one place
+            // that sees caller text and must never be a throw site.
             return false;
         }
         using (document)

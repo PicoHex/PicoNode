@@ -60,6 +60,10 @@ public sealed class JsonRpcClient : IAsyncDisposable
     /// <summary>id → its owner channel + completer. Replaced wholesale, never
     /// cleared in place (a `Clear` would race a registration into oblivion).</summary>
     private ConcurrentDictionary<string, PendingCall> _pending = new();
+
+    /// <summary>stream REQUEST id → its owner channel + queue. Keyed by the request
+    /// id because that is what a chunk names in <c>params._streamId</c> — the one
+    /// correlation a JSON-RPC notification can carry (T7.5).</summary>
     private ConcurrentDictionary<string, StreamCall> _streams = new();
     private readonly CancellationTokenSource _disposeCts = new();
 
@@ -123,6 +127,17 @@ public sealed class JsonRpcClient : IAsyncDisposable
     /// or it crashes (IOException). Cancellation sends a `cancel` notification
     /// (params = raw JSON text {"id":"&lt;request id&gt;"}) and ends the
     /// enumeration without waiting for the abandoned id.
+    /// <para>
+    /// ROUTING (T7.5): a notification is delivered to the subscription it NAMES,
+    /// via <c>params._streamId</c> = the id of the request that opened the stream
+    /// (see <see cref="StreamCorrelation"/>). It is NOT broadcast: every
+    /// notification used to be fanned out to every open subscription, so two
+    /// concurrent streams received each other's chunks — duplicated, interleaved
+    /// text. A peer that streams must therefore tag its chunks inside
+    /// <c>params</c>; a chunk with no <c>_streamId</c> is delivered while exactly
+    /// one stream is open and dropped once several are, and a <c>_streamId</c>
+    /// naming no open stream is dropped.
+    /// </para>
     /// <para>
     /// Lifecycle note (review #6): `await foreach` disposes the enumerator on
     /// break/abandonment, releasing the in-flight slot and cancel-acknowledging
@@ -304,11 +319,13 @@ public sealed class JsonRpcClient : IAsyncDisposable
                 // idle timer or a concurrent call after IdleTimeout of no
                 // writes would reclaim the channel of an active stream.
                 _lifecycle.Touch();
-                if (frame.Method is { } method)
+                if (frame.Method is not null)
                 {
-                    // notification — fan out to every active stream subscription
-                    foreach (var kvp in _streams)
-                        kvp.Value.Queue.Writer.TryWrite(frame);
+                    // notification — routed to the subscription it NAMES
+                    // (`params._streamId`), never broadcast: two concurrent
+                    // streams used to receive each other's chunks (T7.5).
+                    if (StreamCorrelation.Route(_streams, frame) is { } queue)
+                        queue.Writer.TryWrite(frame);
                     continue;
                 }
                 var id = frame.Id;

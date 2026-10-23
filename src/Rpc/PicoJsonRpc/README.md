@@ -57,11 +57,30 @@ member presence follows the frame kind:
   cannot append a second line. Text already on one line keeps its exact bytes.
   The payload TEXT also decides the emitted JSON kind: `"7"` → `7`, `"true"` →
   `true`, `"null"` → `null`, `"ok"` → `"ok"`, and malformed text (`{"ok":true`)
-  degrades to a quoted string instead of a broken line. See the `JsonRpcFrame`
-  remarks.
+  degrades to a quoted string instead of a broken line. Text that carries an
+  unpaired surrogate (which cannot be transcoded to UTF-8) is substituted with
+  U+FFFD rather than throwing. See the `JsonRpcFrame` remarks.
+- **"One line" means one line to an LF/CR reader.** NDJSON splits on LF, so a raw
+  U+2028 / U+2029 / U+0085 inside an otherwise one-line payload is emitted
+  verbatim: an LF/CR reader sees one line, a Unicode-aware splitter (a JS regex
+  matching U+2028, Python's `splitlines()`) sees two. A peer that must
+  interoperate with such a splitter should escape those three characters itself
+  — escaping them here would move the bytes of valid one-line payloads.
 - Payload nesting is inlined up to 256 levels; deeper text degrades to a JSON
   string. The reader's depth limit is derived from that constant, so a frame this
   writer can emit is always a frame it can read back.
+- **Stream chunks are correlated, not broadcast.** A stream chunk is a
+  notification, and a JSON-RPC 2.0 notification has no request id — so the chunk
+  names its stream with a member **inside `params`**, `params._streamId`, whose
+  value is the id of the request that opened the stream. A member at the TOP
+  level would be non-standard and break 2.0 conformance; `_streamId` inside
+  `params` is application data and stays conforming:
+  `{"jsonrpc":"2.0","method":"stream","params":{"_streamId":"<request id>","text":"…"}}`.
+  The client delivers such a chunk to that stream and no other (T7.5 — it used to
+  fan every chunk out to every open stream, so concurrent streams saw each
+  other's text). A notification with **no** `_streamId` is delivered only when
+  exactly one stream is open, and dropped when several are — guessing is the
+  interleaving defect itself. A `_streamId` that names no open stream is dropped.
 - **Batching is unsupported.** A line that starts with `[` is not decoded: the
   framer yields a `-32600 Invalid Request` frame (null id), and the stream keeps
   flowing — the channel is not failed. Note the second half honestly: that frame

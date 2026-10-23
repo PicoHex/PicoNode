@@ -240,6 +240,199 @@ public sealed class ClientTests
     }
 
     /// <summary>
+    /// T7.5 — the routing defect this task exists for. JSON-RPC notifications carry
+    /// NO request correlation, so a client that fans every method-tagged frame out
+    /// to every subscription makes two concurrent <see cref="JsonRpcClient.StreamAsync"/>
+    /// callers receive each other's chunks: duplicated, interleaved text, with
+    /// nothing in the code or in the tests establishing "one stream at a time".
+    /// <para>
+    /// The fix is correlation INSIDE <c>params</c> (<c>_streamId</c>): a notification
+    /// belongs to the stream whose request id it names. Three chunks per stream,
+    /// sent interleaved, must arrive as three-and-three.
+    /// </para>
+    /// <para>
+    /// A pre-fix run delivers six frames to each stream — that is the "was 6"
+    /// the assertions below rule out.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Two_concurrent_streams_do_not_cross_talk()
+    {
+        Skip.Unless(
+            NodeRuntime.Present,
+            "node is not installed in PATH - the scripted channels need a real process handle"
+        );
+
+        using var first = new TestChannel("ch-1");
+        var lifecycle = new ScriptedLifecycle(first.Channel);
+        await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
+
+        // two streams open at the same time, each with its own request id
+        var left = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var leftRequest = await first.NextRequestAsync();
+        var right = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var rightRequest = await first.NextRequestAsync();
+        await Assert.That(leftRequest.Id).IsNotNull();
+        await Assert.That(rightRequest.Id).IsNotEqualTo(leftRequest.Id);
+
+        // the child streams each request, tagging every chunk with ITS stream id
+        for (var i = 0; i < 3; i++)
+            first.Send(Chunk(leftRequest.Id!, "left", i));
+        for (var i = 0; i < 3; i++)
+            first.Send(Chunk(rightRequest.Id!, "right", i));
+        first.Send(JsonRpcFrame.Response(leftRequest.Id!, "\"done\""));
+        first.Send(JsonRpcFrame.Response(rightRequest.Id!, "\"done\""));
+
+        var leftFrames = await left.WaitAsync(HangBudget);
+        var rightFrames = await right.WaitAsync(HangBudget);
+
+        // exactly the three chunks of its own stream — not six — and in order,
+        // so "deliver everything and let the caller filter" cannot pass
+        await Assert.That(leftFrames.Count).IsEqualTo(3);
+        await Assert.That(rightFrames.Count).IsEqualTo(3);
+        await Assert.That(Labels(leftFrames)).IsEqualTo("left-0,left-1,left-2");
+        await Assert.That(Labels(rightFrames)).IsEqualTo("right-0,right-1,right-2");
+    }
+
+    /// <summary>
+    /// T7.5, fallback 1 — an UNCORRELATED notification (no <c>params._streamId</c>)
+    /// still reaches the one live stream. A peer that predates the convention, or a
+    /// method that carries no stream correlation, must not go silent just because
+    /// the client learned to route: with a single subscription there is nobody to
+    /// cross-talk with, so the pre-T7.5 delivery is preserved verbatim.
+    /// </summary>
+    [Test]
+    public async Task Uncorrelated_notification_reaches_a_lone_stream()
+    {
+        Skip.Unless(
+            NodeRuntime.Present,
+            "node is not installed in PATH - the scripted channels need a real process handle"
+        );
+
+        using var first = new TestChannel("ch-1");
+        var lifecycle = new ScriptedLifecycle(first.Channel);
+        await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
+
+        var only = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var request = await first.NextRequestAsync();
+
+        first.Send(JsonRpcFrame.Notification("stream", "{\"text\":\"uncorrelated\"}"));
+        first.Send(JsonRpcFrame.Response(request.Id!, "\"done\""));
+
+        var frames = await only.WaitAsync(HangBudget);
+        await Assert.That(frames.Count).IsEqualTo(1);
+        await Assert.That(TextOf(frames[0])).IsEqualTo("uncorrelated");
+    }
+
+    /// <summary>
+    /// T7.5, fallback 2 — the same uncorrelated notification with TWO streams live
+    /// is dropped, not guessed. There is no fact that says which stream it belongs
+    /// to, and "give it to everyone" is the interleaving defect itself.
+    /// </summary>
+    [Test]
+    public async Task Uncorrelated_notification_is_dropped_when_several_streams_are_live()
+    {
+        Skip.Unless(
+            NodeRuntime.Present,
+            "node is not installed in PATH - the scripted channels need a real process handle"
+        );
+
+        using var first = new TestChannel("ch-1");
+        var lifecycle = new ScriptedLifecycle(first.Channel);
+        await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
+
+        var left = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var leftRequest = await first.NextRequestAsync();
+        var right = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var rightRequest = await first.NextRequestAsync();
+
+        // one uncorrelated chunk — unroutable with two subscriptions — then a
+        // correlated chunk per stream, so "dropped" is distinguishable from
+        // "delivered late" or "the stream never worked"
+        first.Send(JsonRpcFrame.Notification("stream", "{\"text\":\"uncorrelated\"}"));
+        first.Send(Chunk(leftRequest.Id!, "left", 0));
+        first.Send(Chunk(rightRequest.Id!, "right", 0));
+        first.Send(JsonRpcFrame.Response(leftRequest.Id!, "\"done\""));
+        first.Send(JsonRpcFrame.Response(rightRequest.Id!, "\"done\""));
+
+        var leftFrames = await left.WaitAsync(HangBudget);
+        var rightFrames = await right.WaitAsync(HangBudget);
+        await Assert.That(Labels(leftFrames)).IsEqualTo("left-0");
+        await Assert.That(Labels(rightFrames)).IsEqualTo("right-0");
+    }
+
+    /// <summary>
+    /// T7.5, fallback 3 — a <c>_streamId</c> naming a stream that is not live is
+    /// dropped, and in particular is NOT handed to a lone live stream as a
+    /// fallback. The id is a fact about who the chunk belongs to; when the owner
+    /// has ended, the chunk is dead, and delivering it to a stranger would be the
+    /// same cross-talk in a rarer costume.
+    /// </summary>
+    [Test]
+    public async Task Notification_for_an_unknown_stream_id_is_dropped()
+    {
+        Skip.Unless(
+            NodeRuntime.Present,
+            "node is not installed in PATH - the scripted channels need a real process handle"
+        );
+
+        using var first = new TestChannel("ch-1");
+        var lifecycle = new ScriptedLifecycle(first.Channel);
+        await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
+
+        var only = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var request = await first.NextRequestAsync();
+
+        first.Send(Chunk("not-a-live-stream", "ghost", 0));
+        first.Send(Chunk(request.Id!, "mine", 0));
+        first.Send(JsonRpcFrame.Response(request.Id!, "\"done\""));
+
+        var frames = await only.WaitAsync(HangBudget);
+        await Assert.That(Labels(frames)).IsEqualTo("mine-0");
+    }
+
+    /// <summary>
+    /// The correlation read must use the PAYLOAD depth limit, not System.Text.Json's
+    /// default 64: a legitimately deep chunk whose <c>_streamId</c> sits at the root
+    /// would otherwise fail to parse, be mistaken for "uncorrelated", and — with two
+    /// streams open — be DROPPED. The chunk below nests well past 64 and must still
+    /// reach its own stream.
+    /// </summary>
+    [Test]
+    public async Task Deeply_nested_chunk_is_still_routed_by_its_stream_id()
+    {
+        Skip.Unless(
+            NodeRuntime.Present,
+            "node is not installed in PATH - the scripted channels need a real process handle"
+        );
+
+        using var first = new TestChannel("ch-1");
+        var lifecycle = new ScriptedLifecycle(first.Channel);
+        await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
+
+        var left = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var leftRequest = await first.NextRequestAsync();
+        var right = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var rightRequest = await first.NextRequestAsync();
+
+        // 100 nested objects beside the correlation member — deeper than STJ's default
+        var deep = string.Concat(Enumerable.Repeat("{\"a\":", 100)) + "1" + new string('}', 100);
+        first.Send(
+            JsonRpcFrame.Notification(
+                "stream",
+                $"{{\"_streamId\":\"{leftRequest.Id}\",\"deep\":{deep}}}"
+            )
+        );
+        first.Send(JsonRpcFrame.Response(leftRequest.Id!, "\"done\""));
+        first.Send(JsonRpcFrame.Response(rightRequest.Id!, "\"done\""));
+
+        var leftFrames = await left.WaitAsync(HangBudget);
+        var rightFrames = await right.WaitAsync(HangBudget);
+        await Assert.That(leftFrames.Count).IsEqualTo(1);
+        await Assert.That(rightFrames.Count).IsEqualTo(0);
+    }
+
+    /// <summary>
     /// F3 (review fix round 1): the batch answer the framer produces (<c>-32600</c>,
     /// null id) is <b>offered but never sent</b> — the client's reader drops a
     /// frame with a null id, because it has no id to route. This test states the
@@ -287,6 +480,38 @@ public sealed class ClientTests
     private static async Task DrainAsync(IAsyncEnumerable<JsonRpcFrame> frames)
     {
         await foreach (var _ in frames) { }
+    }
+
+    /// <summary>Consume a stream to its end, keeping the frames: what a caller of
+    /// <see cref="JsonRpcClient.StreamAsync"/> actually sees.</summary>
+    private static async Task<List<JsonRpcFrame>> CollectAsync(
+        IAsyncEnumerable<JsonRpcFrame> frames
+    )
+    {
+        var collected = new List<JsonRpcFrame>();
+        await foreach (var frame in frames)
+            collected.Add(frame);
+        return collected;
+    }
+
+    /// <summary>One stream chunk, correlated to <paramref name="streamId"/> the way
+    /// a T7.5 peer must: a member INSIDE <c>params</c> (a non-standard top-level
+    /// member would break JSON-RPC 2.0 conformance).</summary>
+    private static JsonRpcFrame Chunk(string streamId, string label, int index) =>
+        JsonRpcFrame.Notification(
+            "stream",
+            $"{{\"_streamId\":\"{streamId}\",\"text\":\"{label}-{index}\"}}"
+        );
+
+    /// <summary>The chunk labels in the order the caller saw them.</summary>
+    private static string Labels(List<JsonRpcFrame> frames) =>
+        string.Join(",", frames.Select(TextOf));
+
+    /// <summary>The <c>text</c> member of a chunk's raw payload text.</summary>
+    private static string TextOf(JsonRpcFrame frame)
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(frame.Params!);
+        return document.RootElement.GetProperty("text").GetString()!;
     }
 
     /// <summary>Await a task and return its result or the exception it faulted

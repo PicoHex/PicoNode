@@ -351,6 +351,97 @@ public sealed class WireConformanceTests
         await Assert.That(deepFrames[0].Params![0]).IsEqualTo('"'); // a JSON string, not a value
     }
 
+    /// <summary>
+    /// The documented LIMIT of "one line per frame" (T7.4 re-review follow-up 3). A raw
+    /// U+2028 (LINE SEPARATOR), U+2029 (PARAGRAPH SEPARATOR) or U+0085 (NEL) inside an
+    /// otherwise one-line payload goes out VERBATIM: none of them is CR/LF, so the
+    /// normalisation gate leaves the text alone and <see cref="Utf8JsonWriter"/> does
+    /// not escape a character it considers printable.
+    /// <para>
+    /// The assertion is deliberately two-sided so the doc cannot drift either way: the
+    /// emitted bytes carry ONLY the NDJSON terminator as a CR/LF (an LF/CR reader sees
+    /// one line), and the payload really does contain the raw separators (a
+    /// Unicode-aware splitter would see more). If a future change escapes them, this
+    /// test fails and the doc must be corrected in the same commit.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Unicode_line_separators_stay_verbatim_inside_a_one_line_payload()
+    {
+        foreach (var separator in new[] { '\u2028', '\u2029', '\u0085' })
+        {
+            var payload = $"{{\"text\":\"a{separator}b\"}}";
+            var bytes = NdjsonFramer.Encode(JsonRpcFrame.Notification("chunk", payload));
+
+            // LF/CR reader: exactly one line, and the ONLY line break is the terminator
+            await Assert.That(Array.IndexOf(bytes, (byte)'\n')).IsEqualTo(bytes.Length - 1);
+            await Assert.That(Array.IndexOf(bytes, (byte)'\r')).IsEqualTo(-1);
+
+            // ...and the separator is still there, raw, in the emitted bytes
+            var text = Encoding.UTF8.GetString(bytes);
+            await Assert.That(text.Contains(separator, StringComparison.Ordinal)).IsTrue();
+
+            // a Unicode-aware splitter would count two lines — the documented limit,
+            // asserted so "one line" is never claimed without its qualification
+            await Assert.That(text.Split(separator).Length).IsEqualTo(2);
+
+            // our own reader still accepts the frame and returns the payload unchanged
+            using var ms = new MemoryStream(bytes);
+            var frames = await NdjsonFramer.ReadAsync(ms, default).ToListAsync();
+            await Assert.That(frames).Count().IsEqualTo(1);
+            await Assert.That(frames[0].Params).IsEqualTo(payload);
+        }
+    }
+
+    /// <summary>
+    /// F2 at the DEEPEST payload position (T7.4 re-review follow-up 2). The T7.4
+    /// report claimed the depth boundary was covered "including <c>error.data</c>",
+    /// but the test only exercised <c>params</c> — mutating
+    /// <c>PayloadEnvelopeDepth</c> to 1 still passed, which means the envelope
+    /// levels the reader must allow for were never pinned.
+    /// <para>
+    /// <c>error.data</c> sits three levels below the line root (root object → error
+    /// object → data value), so a payload nested <c>MaxPayloadDepth</c> deep needs
+    /// <c>MaxPayloadDepth + 3</c> of reader depth. Any envelope level the reader's
+    /// limit forgets, this test fails.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Payload_depth_boundary_holds_in_error_data_too()
+    {
+        // at the limit: the data payload is inlined AND read back identically
+        var payload = NestedObject(JsonRpcWire.MaxPayloadDepth);
+        var bytes = NdjsonFramer.Encode(ErrorWithData(payload));
+        var text = Encoding.UTF8.GetString(bytes).TrimEnd('\n');
+        await Assert.That(text.Contains("\"data\":{", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(Count(text, '\n')).IsEqualTo(0);
+        using (var ms = new MemoryStream(bytes))
+        {
+            var frames = await NdjsonFramer.ReadAsync(ms, default).ToListAsync();
+            await Assert.That(frames).Count().IsEqualTo(1);
+            await Assert.That(frames[0].Error!.Data).IsEqualTo(payload);
+        }
+
+        // one past it: `data` degrades to a JSON string (the ordinary fallback) and
+        // the line is still one frame our own reader accepts
+        var tooDeep = NestedObject(JsonRpcWire.MaxPayloadDepth + 1);
+        using (var ms = new MemoryStream(NdjsonFramer.Encode(ErrorWithData(tooDeep))))
+        {
+            var frames = await NdjsonFramer.ReadAsync(ms, default).ToListAsync();
+            await Assert.That(frames).Count().IsEqualTo(1);
+            await Assert.That(frames[0].Error!.Data![0]).IsEqualTo('"'); // a string
+        }
+
+        // The reader's limit must COVER the deepest line this writer produces, and the
+        // measurement is independent of the constants under test: the payload's own
+        // root is its level 1, and `error.data` puts two envelope objects above it
+        // (the frame root and the error object) — so the line nests MaxPayloadDepth+2.
+        // Forgetting either envelope level in the reader breaks this.
+        var nested = NestingDepth(Encoding.UTF8.GetString(bytes).TrimEnd('\n'));
+        await Assert.That(nested).IsEqualTo(JsonRpcWire.MaxPayloadDepth + 2);
+        await Assert.That(nested).IsLessThanOrEqualTo(JsonRpcWire.MaxFrameDepth);
+    }
+
     /// <summary>F4 (review fix round 1): the PAYLOAD TEXT decides the emitted JSON
     /// type — <c>"7"</c> ships as the number <c>7</c>, <c>"true"</c> as a boolean,
     /// <c>"null"</c> as null, <c>"ok"</c> as the string <c>"ok"</c> — and malformed
@@ -376,6 +467,84 @@ public sealed class WireConformanceTests
         await Assert
             .That(Line(JsonRpcFrame.Response("id-1", "{\"ok\":true")))
             .IsEqualTo("{\"jsonrpc\":\"2.0\",\"id\":\"id-1\",\"result\":\"{\\u0022ok\\u0022:true\"}");
+    }
+
+    /// <summary>
+    /// T7.4 re-review follow-up 1. An unpaired surrogate in CALLER text cannot be
+    /// transcoded to UTF-8, and after T7.4 the hand-written writer let that
+    /// <see cref="ArgumentException"/> escape <see cref="JsonRpcCodec.Serialize"/> —
+    /// where the pre-T7.4 serializer had quietly substituted U+FFFD. A caller's
+    /// malformed STRING must not become an exception out of the codec (the same rule
+    /// that makes malformed JSON text degrade to a quoted string): it is substituted,
+    /// and the frame stays one readable line.
+    /// <para>
+    /// Substitution happens BEFORE the "is it JSON" gate, so payload text that is
+    /// valid JSON apart from the lone surrogate keeps its shape (<c>params</c> stays
+    /// an inline object) instead of degrading to a quoted string.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Unpaired_surrogate_in_caller_text_is_substituted_not_thrown()
+    {
+        // valid JSON apart from one lone surrogate: the payload must stay STRUCTURED
+        var inParams = JsonRpcFrame.Notification("chunk", "{\"text\":\"\uD800\"}");
+        var paramsLine = Line(inParams);
+        await Assert.That(Count(paramsLine, '\n')).IsEqualTo(0);
+        await Assert.That(Count(paramsLine, '\r')).IsEqualTo(0);
+        await Assert.That(paramsLine.Contains("\"params\":{", StringComparison.Ordinal)).IsTrue();
+        await AssertRoundTripIsSingleLine(inParams, "{\"text\":\"\uFFFD\"}");
+
+        // the same payload in the RESULT position — an independent writer call, read
+        // back from `result` rather than `params`
+        using (var ms = new MemoryStream(
+            NdjsonFramer.Encode(JsonRpcFrame.Response("id-1", "{\"text\":\"\uDC00\"}"))
+        ))
+        {
+            var frames = await NdjsonFramer.ReadAsync(ms, default).ToListAsync();
+            await Assert.That(frames).Count().IsEqualTo(1);
+            await Assert.That(frames[0].Result).IsEqualTo("{\"text\":\"\uFFFD\"}");
+        }
+
+        // ...and in `error.data`, the deepest payload position
+        var withData = JsonRpcFrame.Response(
+            "id-2",
+            error: new JsonRpcError
+            {
+                Code = -1,
+                Message = "m",
+                Data = "{\"deep\":\"\uD800\"}",
+            }
+        );
+        using (var ms = new MemoryStream(NdjsonFramer.Encode(withData)))
+        {
+            var frames = await NdjsonFramer.ReadAsync(ms, default).ToListAsync();
+            await Assert.That(frames).Count().IsEqualTo(1);
+            await Assert.That(frames[0].Error!.Data).IsEqualTo("{\"deep\":\"\uFFFD\"}");
+        }
+
+        // text that is not JSON at all takes the quoted-string fallback — also
+        // substituted, also one line
+        var plain = JsonRpcFrame.Notification("chunk", "abc\uD800def");
+        await Assert.That(Count(Line(plain), '\n')).IsEqualTo(0);
+        using (var ms = new MemoryStream(NdjsonFramer.Encode(plain)))
+        {
+            var frames = await NdjsonFramer.ReadAsync(ms, default).ToListAsync();
+            await Assert.That(frames).Count().IsEqualTo(1);
+            var text = System.Text.Json.JsonDocument
+                .Parse(frames[0].Params!)
+                .RootElement.GetString();
+            await Assert.That(text).IsEqualTo("abc\uFFFDdef");
+        }
+
+        // the id goes through WriteStringValue, which substitutes on its own — pinned
+        // here so all three writer entry points share one documented rule. The
+        // substitution arrives ESCAPED (WriteStringValue's default encoder escapes
+        // non-ASCII), unlike the raw inline payload path above: hence the verbatim
+        // escape below.
+        const string escaped = @"\uFFFD";
+        await Assert
+            .That(Line(JsonRpcFrame.Response("\uDC00", "1")))
+            .IsEqualTo($"{{\"jsonrpc\":\"2.0\",\"id\":\"{escaped}\",\"result\":1}}");
     }
 
     /// <summary>F1's other half (review fix round 1): normalisation is HAZARD-SCOPED.
@@ -407,6 +576,58 @@ public sealed class WireConformanceTests
     /// <summary>`{"a":{"a":…1…}}</summary>` nested <paramref name="depth"/> deep.</param>
     private static string NestedObject(int depth) =>
         string.Concat(Enumerable.Repeat("{\"a\":", depth)) + "1" + new string('}', depth);
+
+    /// <summary>An error response carrying <paramref name="data"/> as `error.data` —
+    /// the deepest payload position on the wire.</summary>
+    private static JsonRpcFrame ErrorWithData(string data) =>
+        JsonRpcFrame.Response(
+            "id-1",
+            error: new JsonRpcError
+            {
+                Code = -1,
+                Message = "m",
+                Data = data,
+            }
+        );
+
+    /// <summary>The JSON nesting depth of a line, counted independently of the
+    /// encoder and the reader (every opening brace/bracket opens one level), so a
+    /// wrong envelope constant cannot be self-certified by the code under test.</summary>
+    private static int NestingDepth(string line)
+    {
+        var depth = 0;
+        var deepest = 0;
+        var inString = false;
+        var escaped = false;
+        foreach (var c in line)
+        {
+            if (inString)
+            {
+                if (escaped)
+                    escaped = false;
+                else if (c == '\\')
+                    escaped = true;
+                else if (c == '"')
+                    inString = false;
+                continue;
+            }
+            switch (c)
+            {
+                case '"':
+                    inString = true;
+                    break;
+                case '{' or '[':
+                    depth++;
+                    deepest = Math.Max(deepest, depth);
+                    break;
+                case '}' or ']':
+                    depth--;
+                    break;
+            }
+        }
+        return deepest;
+    }
+
 
     private static async Task AssertRoundTripIsSingleLine(JsonRpcFrame frame, string expectedParams)
     {
