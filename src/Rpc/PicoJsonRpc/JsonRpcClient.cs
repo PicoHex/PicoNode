@@ -166,7 +166,17 @@ public sealed class JsonRpcClient : IAsyncDisposable
             _queueGate.Release();
             var completion = queue.Reader.Completion;
             var completedNormally = completion.IsCompleted && !ct.IsCancellationRequested;
-            if (!completion.IsFaulted && !completedNormally)
+            if (
+                !completion.IsFaulted
+                && !completedNormally
+                // ...but never on a disposed client: WriteAsync re-acquires a
+                // channel, and by now DisposeAsync's RecycleAsync has dropped the
+                // old one — so the acquire would SPAWN a fresh child (plus a
+                // reader) whose reader is cancelled by _disposeCts and therefore
+                // never reaches HandleEof to recycle it. Fail-fast must not
+                // respawn; the abandoned child gets no cancel notice.
+                && Volatile.Read(ref _disposed) == 0
+            )
             {
                 // cancelled/abandoned stream → tell the child (best-effort;
                 // the child may already be gone after a crash).

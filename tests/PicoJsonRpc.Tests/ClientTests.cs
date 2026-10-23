@@ -155,10 +155,12 @@ public sealed class ClientTests
         var (entered, release) = lifecycle.ParkRecycle();
         var disposing = client.DisposeAsync().AsTask();
         await entered.WaitAsync(HangBudget);
+        var acquiresWhileDisposing = lifecycle.Acquires;
         try
         {
-            // a call: AcquireAsync still hands out a channel and the write still
-            // succeeds - only the registration can refuse
+            // a call: AcquireAsync still hands out a channel, but the
+            // registration refuses BEFORE the frame is written - TrackPending
+            // throws ahead of WriteToAsync, so nothing reaches the child
             await Assert
                 .That(async () =>
                     await client
@@ -175,6 +177,13 @@ public sealed class ClientTests
                         .WaitAsync(HangBudget)
                 )
                 .Throws<ObjectDisposedException>();
+
+            // ...and the refused stream must not send its best-effort `cancel`
+            // notification either: that write re-acquires a channel, and dispose
+            // is dropping (or has dropped) the old one - so the acquire SPAWNS a
+            // child (and a reader) that nothing will ever recycle. Two acquires,
+            // one per refused registration - a third one is the respawn.
+            await Assert.That(lifecycle.Acquires).IsEqualTo(acquiresWhileDisposing + 2);
         }
         finally
         {
@@ -218,6 +227,15 @@ public sealed class ClientTests
         private TaskCompletionSource? _release;
         private TaskCompletionSource? _recycleEntered;
         private TaskCompletionSource? _recycleRelease;
+        private int _acquires;
+
+        /// <summary>
+        /// How many times the client asked for a channel. The real lifecycle
+        /// SPAWNS when it has no live channel, so "the client did not acquire" is
+        /// the only way a test can say "no child was spawned" without a real
+        /// child to watch.
+        /// </summary>
+        public int Acquires => Volatile.Read(ref _acquires);
 
         /// <summary>
         /// Block the next <see cref="AcquireAsync"/>: the first task completes
@@ -239,6 +257,7 @@ public sealed class ClientTests
 
         public async Task<JsonRpcChannel> AcquireAsync(CancellationToken ct)
         {
+            Interlocked.Increment(ref _acquires);
             if (_release is { } release)
             {
                 var entered = _entered!;
