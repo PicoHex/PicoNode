@@ -10,32 +10,68 @@ public sealed class JsonRpcException(int code, string message) : Exception(messa
 }
 
 /// <summary>
+/// A call waiting for its response: the completer plus the channel the request
+/// was (or is about to be) written to — the OWNER. The owner is what makes a
+/// channel failure attributable: when <c>ch</c> dies, exactly the calls owned by
+/// <c>ch</c> can no longer be answered, and no other call may be touched.
+/// </summary>
+internal readonly record struct PendingCall(
+    JsonRpcChannel Owner,
+    TaskCompletionSource<JsonRpcFrame> Tcs
+);
+
+/// <summary>A stream subscription: the same ownership rule as
+/// <see cref="PendingCall"/>, with the notification queue as its completer.</summary>
+internal readonly record struct StreamCall(JsonRpcChannel Owner, Channel<JsonRpcFrame> Queue);
+
+/// <summary>
 /// Multiplexed JSON-RPC client over a single stdio channel (spec §9.1):
 /// id-routed responses, in-flight cap (default 64, callers queue via the
 /// gate), cancellation via a `cancel` notification for streams, streaming via
 /// method-tagged notifications consumed as <see cref="IAsyncEnumerable{T}"/>.
 /// <para>
 /// A background reader per spawned channel dispatches frames by id; on child
-/// EOF every pending call and stream is failed with <see cref="IOException"/>,
-/// and — unless the teardown was deliberate (<see cref="JsonRpcChannel.RecycleRequested"/>)
-/// — the crash is counted on the lifecycle (backoff). The first successful
-/// response resets the crash counter (<see cref="ProcessLifecycle.MarkHealthy"/>).
+/// EOF every pending call and stream OWNED BY THAT CHANNEL is failed with
+/// <see cref="IOException"/>, and — unless the teardown was deliberate
+/// (<see cref="JsonRpcChannel.RecycleRequested"/>) — the crash is counted on the
+/// lifecycle (backoff). The first successful response resets the crash counter
+/// (<see cref="ProcessLifecycle.MarkHealthy"/>).
+/// </para>
+/// <para>
+/// Ownership, not currency, decides who gets failed (T7.2). A respawn can
+/// replace the reader before the old channel's EOF is drained — the old calls
+/// still belong to the old channel and must be released, while the calls that
+/// already moved to the new channel must not be. Subscriptions and their reader
+/// are published in one critical section (<see cref="_stateGate"/>), so a
+/// registration can never fall between "what is in the table" and "what gets
+/// failed": it is either in the detached table (drained, owner-checked) or in
+/// its replacement.
 /// </para>
 /// </summary>
 public sealed class JsonRpcClient : IAsyncDisposable
 {
-    private readonly ProcessLifecycle _lifecycle;
+    private readonly IChannelLifecycle _lifecycle;
     private readonly SemaphoreSlim _queueGate;
-    private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonRpcFrame>> _pending =
-        new();
-    private readonly ConcurrentDictionary<string, Channel<JsonRpcFrame>> _streams = new();
-    private readonly object _readerGate = new();
+
+    /// <summary>Guards the reader bookkeeping AND the two registries: registering
+    /// a call and draining the calls of a dead channel are mutually exclusive.</summary>
+    private readonly object _stateGate = new();
+
+    /// <summary>id → its owner channel + completer. Replaced wholesale, never
+    /// cleared in place (a `Clear` would race a registration into oblivion).</summary>
+    private ConcurrentDictionary<string, PendingCall> _pending = new();
+    private ConcurrentDictionary<string, StreamCall> _streams = new();
     private readonly CancellationTokenSource _disposeCts = new();
 
     private JsonRpcChannel? _readerChannel;
     private Task? _readerTask;
 
     public JsonRpcClient(ProcessLifecycle lifecycle, int maxInFlight = 64)
+        : this(new LifecycleChannelSource(lifecycle), maxInFlight) { }
+
+    /// <summary>Test seam — see <see cref="IChannelLifecycle"/>: drives the exact
+    /// channel/EOF interleaving the ownership rule is about.</summary>
+    internal JsonRpcClient(IChannelLifecycle lifecycle, int maxInFlight = 64)
     {
         _lifecycle = lifecycle;
         _queueGate = new SemaphoreSlim(maxInFlight, maxInFlight);
@@ -55,8 +91,15 @@ public sealed class JsonRpcClient : IAsyncDisposable
             var tcs = new TaskCompletionSource<JsonRpcFrame>(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
-            _pending[id] = tcs;
-            await WriteAsync(JsonRpcFrame.Request(id, method, paramsJson), ct);
+            // Order matters: channel first, then the registration (which carries
+            // the owner), then the write. The reader is attached in the same
+            // critical section as the registration, so the reader either sees
+            // this call (it is already in the table) or has not started for this
+            // channel yet — it can never observe the EOF of a channel this call
+            // is registered on without also seeing the call.
+            var ch = await _lifecycle.AcquireAsync(ct);
+            TrackPending(id, ch, tcs);
+            await WriteToAsync(ch, JsonRpcFrame.Request(id, method, paramsJson), ct);
             using var reg = ct.Register(() => tcs.TrySetCanceled(ct));
             var resp = await tcs.Task.WaitAsync(ct);
             if (throwOnError && resp.Error is { } err)
@@ -66,7 +109,7 @@ public sealed class JsonRpcClient : IAsyncDisposable
         finally
         {
             _queueGate.Release();
-            _pending.TryRemove(id, out _);
+            UntrackPending(id);
         }
     }
 
@@ -94,14 +137,15 @@ public sealed class JsonRpcClient : IAsyncDisposable
         var queue = Channel.CreateUnbounded<JsonRpcFrame>(
             new UnboundedChannelOptions { SingleReader = true, SingleWriter = true }
         );
-        _streams[id] = queue;
         try
         {
+            var ch = await _lifecycle.AcquireAsync(ct);
+            TrackStream(id, ch, queue);
             // Consumer cancellation completes the channel GRACEFULLY (no OCE
             // through the enumerator) — the loop below just drains until the
             // channel ends; the cancel notification is sent in finally.
             using var reg = ct.Register(() => queue.Writer.TryComplete());
-            await WriteAsync(JsonRpcFrame.Request(id, method, paramsJson), ct);
+            await WriteToAsync(ch, JsonRpcFrame.Request(id, method, paramsJson), ct);
             while (await queue.Reader.WaitToReadAsync(CancellationToken.None))
             {
                 while (queue.Reader.TryRead(out var frame))
@@ -114,7 +158,7 @@ public sealed class JsonRpcClient : IAsyncDisposable
         }
         finally
         {
-            _streams.TryRemove(id, out _);
+            UntrackStream(id);
             _queueGate.Release();
             var completion = queue.Reader.Completion;
             var completedNormally = completion.IsCompleted && !ct.IsCancellationRequested;
@@ -138,28 +182,76 @@ public sealed class JsonRpcClient : IAsyncDisposable
     }
 
     /// <summary>
-    /// Write a frame to the current channel (re-acquires per write so a
+    /// Write a frame to the CURRENT channel (re-acquires per write so a
     /// respawned process is always targeted) and ensure a reader is attached.
+    /// Used for the cancel notification, where no response is expected.
     /// </summary>
     private async Task WriteAsync(JsonRpcFrame frame, CancellationToken ct)
     {
         var ch = await _lifecycle.AcquireAsync(ct);
-        EnsureReader(ch);
+        AttachReader(ch);
+        await WriteToAsync(ch, frame, ct);
+    }
+
+    private async Task WriteToAsync(JsonRpcChannel ch, JsonRpcFrame frame, CancellationToken ct)
+    {
         var bytes = NdjsonFramer.Encode(frame);
         await ch.Stdin.WriteAsync(bytes, ct);
         await ch.Stdin.FlushAsync(ct);
         _lifecycle.Touch();
     }
 
-    private void EnsureReader(JsonRpcChannel ch)
+    /// <summary>Publish the call — owner included — and attach the owner's reader
+    /// in the same critical section as
+    /// <see cref="HandleEof(JsonRpcChannel)"/>'s drain.</summary>
+    private void TrackPending(
+        string id,
+        JsonRpcChannel owner,
+        TaskCompletionSource<JsonRpcFrame> tcs
+    )
     {
-        lock (_readerGate)
+        lock (_stateGate)
         {
-            if (ReferenceEquals(_readerChannel, ch))
-                return;
-            _readerChannel = ch;
-            _readerTask = Task.Run(() => ReadLoopAsync(ch), CancellationToken.None);
+            _pending[id] = new PendingCall(owner, tcs);
+            EnsureReaderLocked(owner);
         }
+    }
+
+    private void TrackStream(string id, JsonRpcChannel owner, Channel<JsonRpcFrame> queue)
+    {
+        lock (_stateGate)
+        {
+            _streams[id] = new StreamCall(owner, queue);
+            EnsureReaderLocked(owner);
+        }
+    }
+
+    /// <summary>Under the gate: a drain cannot swap the registry out from under
+    /// this removal (which would leave a completed entry behind forever).</summary>
+    private void UntrackPending(string id)
+    {
+        lock (_stateGate)
+            _pending.TryRemove(id, out _);
+    }
+
+    private void UntrackStream(string id)
+    {
+        lock (_stateGate)
+            _streams.TryRemove(id, out _);
+    }
+
+    private void AttachReader(JsonRpcChannel ch)
+    {
+        lock (_stateGate)
+            EnsureReaderLocked(ch);
+    }
+
+    private void EnsureReaderLocked(JsonRpcChannel ch)
+    {
+        if (ReferenceEquals(_readerChannel, ch))
+            return;
+        _readerChannel = ch;
+        _readerTask = Task.Run(() => ReadLoopAsync(ch), CancellationToken.None);
     }
 
     private async Task ReadLoopAsync(JsonRpcChannel ch)
@@ -176,15 +268,15 @@ public sealed class JsonRpcClient : IAsyncDisposable
                 {
                     // notification — fan out to every active stream subscription
                     foreach (var kvp in _streams)
-                        kvp.Value.Writer.TryWrite(frame);
+                        kvp.Value.Queue.Writer.TryWrite(frame);
                     continue;
                 }
                 var id = frame.Id;
                 if (id is null)
                     continue; // unroutable (both-null) frame — ignore
-                if (_pending.TryRemove(id, out var tcs))
+                if (_pending.TryRemove(id, out var call))
                 {
-                    tcs.TrySetResult(frame);
+                    call.Tcs.TrySetResult(frame);
                     _lifecycle.MarkHealthy();
                     continue;
                 }
@@ -197,7 +289,7 @@ public sealed class JsonRpcClient : IAsyncDisposable
                     var fault = frame.Error is { } err
                         ? new JsonRpcException(err.Code, err.Message)
                         : null;
-                    stream.Writer.TryComplete(fault);
+                    stream.Queue.Writer.TryComplete(fault);
                     _lifecycle.MarkHealthy();
                     continue;
                 }
@@ -216,24 +308,82 @@ public sealed class JsonRpcClient : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// The channel's reader ended: fail exactly the calls and streams OWNED by
+    /// <paramref name="ch"/> and drain them out of the registries.
+    /// <para>
+    /// Being the current reader is a lifecycle question only — it decides
+    /// whether the reader bookkeeping is cleared and whether the crash is counted
+    /// (<see cref="IChannelLifecycle.Churn"/>). It must NOT decide whether calls
+    /// fail: a respawn attaches a new reader to a new channel, and the moment it
+    /// does, this channel's EOF looks "stale" — while the calls written to it are
+    /// still unanswered and would wait forever without this drain.
+    /// </para>
+    /// </summary>
     private void HandleEof(JsonRpcChannel ch)
     {
-        lock (_readerGate)
+        List<PendingCall> calls = [];
+        List<StreamCall> streams = [];
+        bool current;
+        lock (_stateGate)
         {
-            if (!ReferenceEquals(_readerChannel, ch))
-                return; // stale reader — a newer channel owns the client
-            _readerChannel = null;
-            _readerTask = null;
+            current = ReferenceEquals(_readerChannel, ch);
+            if (current)
+            {
+                _readerChannel = null;
+                _readerTask = null;
+            }
+            // Atomic swap under the registration lock: the detached tables hold
+            // exactly the entries that existed before this drain, and every one of
+            // them ends up either failed (its owner is this channel) or carried
+            // into the replacement (its owner is still alive).
+            _pending = Detach(_pending, ch, static call => call.Owner, calls);
+            _streams = Detach(_streams, ch, static stream => stream.Owner, streams);
         }
         var ex = new IOException("extension process closed the stream" + DescribeStderr(ch));
-        foreach (var kvp in _pending)
-            kvp.Value.TrySetException(ex);
-        foreach (var kvp in _streams)
-            kvp.Value.Writer.TryComplete(ex);
-        _pending.Clear();
-        _streams.Clear();
-        if (!ch.RecycleRequested)
+        foreach (var call in calls)
+            call.Tcs.TrySetException(ex);
+        foreach (var stream in streams)
+            stream.Queue.Writer.TryComplete(ex);
+        if (current && !ch.RecycleRequested)
             _lifecycle.Churn(ch);
+    }
+
+    /// <summary>
+    /// Publish a replacement registry without the entries owned by
+    /// <paramref name="ch"/>, collecting those into <paramref name="victims"/>.
+    /// Entries owned by anyone else are transferred (removed from the detached
+    /// table, re-published in the replacement) — a snapshot-plus-`Clear` used to
+    /// drop them, and a call dropped from the table can never be completed: its
+    /// response is unroutable and its caller waits on
+    /// <see cref="CancellationToken.None"/> forever.
+    /// <para>
+    /// Every entry is moved with <see cref="ConcurrentDictionary{TKey,TValue}.TryRemove(TKey, out TValue)"/>,
+    /// so the dispatch path (which removes without the gate) and this drain can
+    /// never both own the same entry.
+    /// </para>
+    /// </summary>
+    private static ConcurrentDictionary<string, T> Detach<T>(
+        ConcurrentDictionary<string, T> live,
+        JsonRpcChannel ch,
+        Func<T, JsonRpcChannel> owner,
+        List<T> victims
+    )
+    {
+        var survivors = new ConcurrentDictionary<string, T>();
+        foreach (var kvp in live)
+        {
+            if (ReferenceEquals(owner(kvp.Value), ch))
+            {
+                if (live.TryRemove(kvp.Key, out var victim))
+                    victims.Add(victim);
+            }
+            else if (live.TryRemove(kvp.Key, out var survivor))
+            {
+                survivors[kvp.Key] = survivor;
+            }
+        }
+        return survivors;
     }
 
     /// <summary>
@@ -249,10 +399,7 @@ public sealed class JsonRpcClient : IAsyncDisposable
         if (tail.Length == 0)
             return string.Empty;
         const int maxInMessage = 2048;
-        var body =
-            tail.Length <= maxInMessage
-                ? tail
-                : "…" + tail[^maxInMessage..];
+        var body = tail.Length <= maxInMessage ? tail : "…" + tail[^maxInMessage..];
         return "; child stderr tail:\n" + body;
     }
 
@@ -270,19 +417,28 @@ public sealed class JsonRpcClient : IAsyncDisposable
         {
             // already cancelled
         }
-        var ex = new IOException("jsonrpc client disposed");
-        foreach (var kvp in _pending)
-            kvp.Value.TrySetException(ex);
-        foreach (var kvp in _streams)
-            kvp.Value.Writer.TryComplete(ex);
-        _pending.Clear();
-        _streams.Clear();
+        List<PendingCall> calls = [];
+        List<StreamCall> streams = [];
         JsonRpcChannel? ch;
-        lock (_readerGate)
+        lock (_stateGate)
         {
+            var pending = _pending;
+            var subscriptions = _streams;
+            foreach (var kvp in pending)
+                if (pending.TryRemove(kvp.Key, out var call))
+                    calls.Add(call);
+            foreach (var kvp in subscriptions)
+                if (subscriptions.TryRemove(kvp.Key, out var stream))
+                    streams.Add(stream);
             ch = _readerChannel;
             _readerChannel = null;
+            _readerTask = null;
         }
+        var ex = new IOException("jsonrpc client disposed");
+        foreach (var call in calls)
+            call.Tcs.TrySetException(ex);
+        foreach (var stream in streams)
+            stream.Queue.Writer.TryComplete(ex);
         try
         {
             // close stdin → the child sees EOF and exits on its own

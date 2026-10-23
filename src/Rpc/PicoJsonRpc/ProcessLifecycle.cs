@@ -3,6 +3,52 @@ using System.Diagnostics;
 namespace PicoJsonRpc;
 
 /// <summary>
+/// The slice of the process lifecycle <see cref="JsonRpcClient"/> depends on:
+/// acquire the live channel, report activity, and attribute a channel failure.
+/// <para>
+/// Internal on purpose. Production always passes a <see cref="ProcessLifecycle"/>;
+/// the seam exists because the client's rule "only the calls OWNED by the dead
+/// channel fail" is a rule about a race (a respawn replacing the reader before
+/// the old channel's EOF is drained), and a real child dies on its own
+/// schedule — no external test can produce that interleaving against a real
+/// process without racing the scheduler. A scripted channel source makes the
+/// interleaving explicit instead of probabilistic.
+/// </para>
+/// </summary>
+internal interface IChannelLifecycle
+{
+    Task<JsonRpcChannel> AcquireAsync(CancellationToken ct);
+
+    void Touch();
+
+    void Churn(JsonRpcChannel ch);
+
+    void MarkHealthy();
+
+    Task RecycleAsync();
+}
+
+/// <summary>
+/// Adapts the real lifecycle to the seam above. Kept as a wrapper rather than
+/// `ProcessLifecycle : IChannelLifecycle` on purpose: an implemented interface
+/// lands in the public surface dump (base list + "override" markers), which would
+/// report an API change for a purely internal seam — and the released baseline
+/// would then have to be refreshed for nothing.
+/// </summary>
+internal sealed class LifecycleChannelSource(ProcessLifecycle lifecycle) : IChannelLifecycle
+{
+    public Task<JsonRpcChannel> AcquireAsync(CancellationToken ct) => lifecycle.AcquireAsync(ct);
+
+    public void Touch() => lifecycle.Touch();
+
+    public void Churn(JsonRpcChannel ch) => lifecycle.Churn(ch);
+
+    public void MarkHealthy() => lifecycle.MarkHealthy();
+
+    public Task RecycleAsync() => lifecycle.RecycleAsync();
+}
+
+/// <summary>
 /// A live stdio channel to one child process: process handle + stdin/stdout/stderr
 /// streams. Carries the crash/backoff state the lifecycle manages on behalf
 /// of the client read loop (B3): <see cref="ConsecutiveCrashes"/> /
