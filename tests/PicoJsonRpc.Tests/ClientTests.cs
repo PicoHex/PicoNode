@@ -239,6 +239,50 @@ public sealed class ClientTests
         await stream.WaitAsync(HangBudget);
     }
 
+    /// <summary>
+    /// F3 (review fix round 1): the batch answer the framer produces (<c>-32600</c>,
+    /// null id) is <b>offered but never sent</b> — the client's reader drops a
+    /// frame with a null id, because it has no id to route. This test states the
+    /// behaviour so "answered" cannot be claimed again: the frame is produced, it
+    /// never reaches the child's stdin, the channel stays healthy, and the
+    /// in-flight call that follows is answered normally. Documented in
+    /// <see cref="JsonRpcClient"/> and the README ("batch line is not answered").
+    /// </summary>
+    [Test]
+    public async Task Batch_frame_is_dropped_by_the_client_not_sent_back()
+    {
+        Skip.Unless(
+            NodeRuntime.Present,
+            "node is not installed in PATH - the scripted channels need a real process handle"
+        );
+
+        using var first = new TestChannel("ch-1");
+        var lifecycle = new ScriptedLifecycle(first.Channel);
+        await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
+
+        var call = client.CallAsync("ping", null, CancellationToken.None);
+        var request = await first.NextRequestAsync();
+
+        // the peer offers a batch — the framer turns it into a -32600 frame with a
+        // null id, which the client cannot route: it is dropped (no reply written)
+        first.SendRaw(
+            "[{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"a\"},{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"b\"}]\n"
+        );
+
+        // ...the real call is still answered, so the batch line did not hurt
+        first.Send(JsonRpcFrame.Response(request.Id!, "\"pong\""));
+        var response = await call.WaitAsync(HangBudget);
+        await Assert.That(response.Result).IsEqualTo("\"pong\"");
+
+        // NOTHING was written back: the next thing on stdin is nothing at all.
+        // (the sink is the only writer, so "no second request" == "no reply"; if
+        // the client had sent the -32600 frame it would surface here as a
+        // notification frame with a null id and code -32600)
+        await Assert
+            .That(async () => await first.NextRequestAsync())
+            .Throws<TimeoutException>();
+    }
+
     /// <summary>Consume a stream to its end so its registration and teardown run.</summary>
     private static async Task DrainAsync(IAsyncEnumerable<JsonRpcFrame> frames)
     {
@@ -402,6 +446,10 @@ public sealed class ClientTests
 
         /// <summary>The child answers: one response frame on this channel's stdout.</summary>
         public void Send(JsonRpcFrame frame) => _stdout.Push(NdjsonFramer.Encode(frame));
+
+        /// <summary>Raw bytes on this channel's stdout — for a line the framer must
+        /// interpret (a batch array, a malformed frame) which no frame can produce.</summary>
+        public void SendRaw(string line) => _stdout.Push(Encoding.UTF8.GetBytes(line));
 
         /// <summary>The child's stdout reaches EOF (process death, closed pipe).</summary>
         public void EndStdout() => _stdout.End();

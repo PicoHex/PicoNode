@@ -39,6 +39,25 @@ namespace PicoJsonRpc;
 /// ids (GUIDs) and vanishingly rare for a conformance peer, while the reverse
 /// breakage (number in, string out) breaks numeric-id peers outright.
 /// </para>
+/// <para>
+/// ONE LINE PER FRAME, structurally. NDJSON has no escape for a line break, so no
+/// caller text is copied to the wire unexamined: payloads and numeric ids are
+/// parsed once, and any text carrying CR/LF is RE-EMITTED compactly (text already
+/// on one line keeps its exact bytes), while string fallbacks are escaped by
+/// <see cref="Utf8JsonWriter"/>. A pretty-printed payload is therefore normalised
+/// (same JSON value, no insignificant whitespace) rather than rejected, and a
+/// peer's <c>"id":7⏎</c> cannot split the frame. The line's depth limit
+/// (<see cref="MaxFrameDepth"/>) derives from the payload limit, so a frame we can
+/// emit is always a frame we can read back.
+/// </para>
+/// <para>
+/// What the payload TEXT means (a caller-visible consequence, see
+/// <see cref="JsonRpcFrame.Params"/>/<see cref="JsonRpcFrame.Result"/>): the text
+/// is the value, and its JSON kind is the emitted kind — <c>"7"</c> ships as the
+/// number <c>7</c>, <c>"true"</c> as a boolean, <c>"null"</c> as null, and
+/// <c>"ok"</c> (not JSON) as the string <c>"ok"</c>. Malformed text never breaks
+/// the line: it degrades to a quoted JSON string.
+/// </para>
 /// </summary>
 internal static class JsonRpcWire
 {
@@ -50,9 +69,41 @@ internal static class JsonRpcWire
 
     public const string BatchUnsupportedMessage = "batch unsupported";
 
-    /// <summary>Deep enough for any envelope payload; a payload nested deeper is
-    /// not inlined (it degrades to a JSON string rather than throwing).</summary>
-    private const int MaxPayloadDepth = 256;
+    /// <summary>The deepest payload STRUCTURE (the JSON nesting of the payload
+    /// value itself) that is inlined on the wire. A payload nested deeper is not
+    /// inlined — it degrades to a JSON string (still one readable line) instead of
+    /// throwing.</summary>
+    internal const int MaxPayloadDepth = 256;
+
+    /// <summary>Envelope levels above an inlined payload: the root object, the
+    /// nested <c>error</c> object, and the <c>data</c> member's value inside it
+    /// (<c>error.data</c>) — the deepest position a payload can occupy.
+    /// <para>
+    /// <see cref="ReadFrame"/> parses a whole LINE, so its depth limit must cover
+    /// the payload PLUS these levels. That is the F2 defect this constant closes:
+    /// the encoder's gate used to be 256 while the reader took System.Text.Json's
+    /// default of 64, so a payload nested 65–256 deep was emitted but unreadable by
+    /// us. One limit, and the reader derives from it — a frame we emit is always a
+    /// frame we can read.
+    /// </para></summary>
+    private const int PayloadEnvelopeDepth = 3;
+
+    /// <summary>The maximum JSON nesting of a frame LINE — what
+    /// <see cref="ReadFrame"/> accepts. Exactly `<see cref="MaxPayloadDepth"/> +
+    /// <see cref="PayloadEnvelopeDepth"/>`, so the deepest inline payload we can
+    /// emit still round-trips (pinned by
+    /// <c>Payload_depth_boundary_is_emitted_and_readable</c>).</summary>
+    internal const int MaxFrameDepth = MaxPayloadDepth + PayloadEnvelopeDepth;
+
+    private static readonly JsonDocumentOptions PayloadOptions = new()
+    {
+        MaxDepth = MaxPayloadDepth,
+    };
+
+    private static readonly JsonDocumentOptions FrameOptions = new()
+    {
+        MaxDepth = MaxFrameDepth,
+    };
 
     /// <summary>The frame as UTF-8 JSON, WITHOUT the NDJSON terminator.</summary>
     public static byte[] Encode(JsonRpcFrame frame)
@@ -99,18 +150,19 @@ internal static class JsonRpcWire
 
     /// <summary>
     /// Parse one NDJSON line (no terminator) into a frame. Malformed JSON, a
-    /// non-object root, or a non-string <c>method</c> throw
-    /// <see cref="FormatException"/> — fail-loud protocol discipline. Reading is
-    /// case-insensitive (the pre-T7.4 PicoJetson wire wrote the nested error as
-    /// <c>{"Code":…}</c>), and <c>jsonrpc</c> is NOT validated: a peer that omits
-    /// or misstates it is still parsed here; the writer always emits 2.0.
+    /// non-object root, a frame nested deeper than <see cref="MaxFrameDepth"/>, or
+    /// a non-string <c>method</c> throw <see cref="FormatException"/> — fail-loud
+    /// protocol discipline. Reading is case-insensitive (the pre-T7.4 PicoJetson
+    /// wire wrote the nested error as <c>{"Code":…}</c>), and <c>jsonrpc</c> is NOT
+    /// validated: a peer that omits or misstates it is still parsed here; the
+    /// writer always emits 2.0.
     /// </summary>
     public static JsonRpcFrame ReadFrame(ReadOnlyMemory<byte> utf8)
     {
         JsonDocument document;
         try
         {
-            document = JsonDocument.Parse(utf8);
+            document = JsonDocument.Parse(utf8, FrameOptions);
         }
         catch (JsonException e)
         {
@@ -175,6 +227,16 @@ internal static class JsonRpcWire
         }
     }
 
+    /// <summary>
+    /// Write the id as a JSON number when its text IS one (whitespace tolerated),
+    /// else as a JSON string.
+    /// <para>
+    /// The number is re-emitted from the parsed token, NEVER from the caller's text:
+    /// a peer's <c>"id":7⏎</c> read as raw text used to be written back verbatim,
+    /// putting a line break inside the frame — which our OWN reader then rejected
+    /// (<c>'7' is an invalid end of a number</c>). See <see cref="TryNormalizeNumber"/>.
+    /// </para>
+    /// </summary>
     private static void WriteId(Utf8JsonWriter writer, string? id)
     {
         writer.WritePropertyName("id");
@@ -183,11 +245,16 @@ internal static class JsonRpcWire
             writer.WriteNullValue();
             return;
         }
-        if (IsJsonNumber(id))
+        if (TryNormalizeNumber(id, out var number))
         {
-            writer.WriteRawValue(id, skipInputValidation: true);
+            // validated, not skipped: the id is ONE small token, and paying for the
+            // check is what makes "no line break in this frame" the writer's own
+            // guarantee instead of our reasoning about where the token came from
+            writer.WriteRawValue(number);
             return;
         }
+        // WriteStringValue escapes control characters, so even a pathological id
+        // (a bare CR/LF in the text) cannot break the line
         writer.WriteStringValue(id);
     }
 
@@ -202,66 +269,107 @@ internal static class JsonRpcWire
         writer.WriteEndObject();
     }
 
-    /// <summary>Write raw JSON text as an inline JSON value; text that is not a
-    /// single JSON value degrades to a JSON string instead of producing a broken
-    /// line (or throwing).</summary>
+    /// <summary>
+    /// Write raw payload text as an inline JSON value; text that is not a single
+    /// JSON value degrades to a JSON string instead of producing a broken line (or
+    /// throwing).
+    /// <para>
+    /// NDJSON is one frame per line, so the emitted line must be structurally
+    /// incapable of containing a line break: the caller's text is parsed ONCE (that
+    /// parse is also the "is it JSON" gate), and only text that carries a line break
+    /// is re-emitted — compactly — through <see cref="JsonElement.WriteTo"/>. A
+    /// pretty-printed payload is therefore NORMALISED (same JSON value, no
+    /// insignificant whitespace) rather than rejected, its newlines never reach the
+    /// wire, and a valid one-line payload keeps its exact bytes. The string fallback
+    /// escapes control characters, so it cannot break the line either.
+    /// </para>
+    /// </summary>
     private static void WritePayload(Utf8JsonWriter writer, string name, string raw)
     {
         writer.WritePropertyName(name);
-        if (IsJsonValue(raw))
-        {
-            writer.WriteRawValue(raw, skipInputValidation: true);
+        if (TryWriteCompact(writer, raw))
             return;
-        }
         writer.WriteStringValue(raw);
     }
 
-    /// <summary>True when the text is exactly one JSON value (no trailing junk) —
-    /// the gate that decides "inline" vs "degrade to a string".</summary>
-    private static bool IsJsonValue(string text)
+    /// <summary>
+    /// Parse <paramref name="raw"/> as exactly one JSON value and write it to
+    /// <paramref name="writer"/> — verbatim when it is already one line, compactly
+    /// (via <see cref="JsonElement.WriteTo"/>) when it carries a line break. False
+    /// (nothing written) when the text is not exactly one JSON value: the gate that
+    /// decides "inline" vs "degrade to a string", now the same single parse that
+    /// produces the compact text.
+    /// </summary>
+    private static bool TryWriteCompact(Utf8JsonWriter writer, string raw)
     {
-        if (text.Length == 0)
+        if (raw.Length == 0)
             return false;
+        JsonDocument document;
         try
         {
-            var reader = new Utf8JsonReader(
-                Encoding.UTF8.GetBytes(text),
-                new JsonReaderOptions { MaxDepth = MaxPayloadDepth }
-            );
-            if (!reader.Read())
-                return false;
-            reader.Skip();
-            return !reader.Read();
+            // trailing whitespace/newlines are NOT an error (a value followed by
+            // whitespace is still one value); trailing JUNK is
+            document = JsonDocument.Parse(raw, PayloadOptions);
         }
         catch (JsonException)
         {
             return false;
         }
+        using (document)
+        {
+            // fast path: text that is ALREADY one line goes out verbatim, so a
+            // valid payload's bytes (non-ASCII text included) never move just
+            // because it was parsed. Only text carrying a line break is re-emitted,
+            // and then compactly.
+            if (!ContainsLineBreak(raw))
+                writer.WriteRawValue(raw, skipInputValidation: true);
+            else
+                document.RootElement.WriteTo(writer);
+        }
+        return true;
     }
 
-    /// <summary>True when the text is a single JSON number token — the echo rule
-    /// for a numeric id. The first-character check keeps GUID ids off the parse
-    /// path entirely; an EMPTY id is not a number (the public member is a string,
-    /// so "" is reachable and must stay a JSON string, not an exception).</summary>
-    private static bool IsJsonNumber(string text)
+    /// <summary>
+    /// True when the text is a single JSON number token — the echo rule for a
+    /// numeric id — and yields that token's COMPACT text (surrounding whitespace
+    /// dropped). The first-character check keeps GUID ids off the parse path
+    /// entirely; an EMPTY id is not a number (the public member is a string, so
+    /// <c>""</c> is reachable and must stay a JSON string, not an exception).
+    /// </summary>
+    private static bool TryNormalizeNumber(string text, out string number)
     {
-        if (text.Length == 0)
+        number = string.Empty;
+        var i = 0;
+        while (i < text.Length && IsJsonWhitespace(text[i]))
+            i++;
+        if (i == text.Length)
             return false;
-        var first = text[0];
+        var first = text[i];
         if (first != '-' && (first < '0' || first > '9'))
             return false;
         try
         {
             var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(text));
-            return reader.Read()
-                && reader.TokenType == JsonTokenType.Number
-                && !reader.Read();
+            if (!reader.Read() || reader.TokenType != JsonTokenType.Number)
+                return false;
+            var token = Encoding.UTF8.GetString(reader.ValueSpan);
+            // a second token means trailing junk (whitespace alone produces none)
+            if (reader.Read())
+                return false;
+            number = token;
+            return true;
         }
         catch (JsonException)
         {
             return false;
         }
     }
+
+    private static bool IsJsonWhitespace(char c) => c is ' ' or '\t' or '\r' or '\n';
+
+    private static bool ContainsLineBreak(string text) =>
+        text.Contains('\n', StringComparison.Ordinal)
+        || text.Contains('\r', StringComparison.Ordinal);
 
     private static JsonRpcError ReadError(JsonElement element)
     {

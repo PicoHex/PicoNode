@@ -313,7 +313,20 @@ public sealed class JsonRpcClient : IAsyncDisposable
                 }
                 var id = frame.Id;
                 if (id is null)
-                    continue; // unroutable (both-null) frame — ignore
+                {
+                    // Unroutable: no id means nothing to answer (a response ids
+                    // itself, a notification is fire-and-forget) — so the frame
+                    // is DROPPED.
+                    //
+                    // The one frame this loses is the framer's answer to a peer
+                    // BATCH line ("-32600 batch unsupported", null id): it is
+                    // produced and then dropped here, never written back. That
+                    // is the honest state of the behaviour (README + T7.4 report
+                    // say so) — a peer that offers a batch gets no reply. Routing
+                    // it to a protocol-error sink is a public-API decision, not a
+                    // silent patch.
+                    continue;
+                }
                 if (_pending.TryRemove(id, out var call))
                 {
                     call.Tcs.TrySetResult(frame);

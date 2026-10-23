@@ -12,11 +12,13 @@ namespace PicoJsonRpc;
 /// Malformed lines, over-limit frames, and — per the union discrimination rule —
 /// frames carrying BOTH id and method (the child sent a request) throw
 /// <see cref="FormatException"/> (fail-loud protocol discipline). A BATCH line
-/// (an array) is the one inbound line that is answered instead of throwing:
+/// (an array) is the one inbound line that is ANSWERED instead of throwing:
 /// batching is unsupported (README), so it yields an <c>Invalid Request</c>
-/// (<c>-32600</c>) frame for the caller to send back and the stream keeps
-/// flowing — a throw here would run into the client's <c>HandleEof</c> and kill
-/// the channel for every later call.
+/// (<c>-32600</c>) frame with a null id and the stream keeps flowing — a throw
+/// here would run into the client's <c>HandleEof</c> and kill the channel for
+/// every later call. The framer OFFERS that frame; <see cref="JsonRpcClient"/> has
+/// no id to route it on and drops it, so a peer's batch gets no reply (stated
+/// plainly there and in the README, never claimed as "answered").
 /// </para>
 /// </summary>
 public static class NdjsonFramer
@@ -71,7 +73,8 @@ public static class NdjsonFramer
                     bytes.Clear();
                     if (IsBatchLine(line))
                     {
-                        // batching unsupported — answered, not fatal
+                        // batching unsupported — the -32600 frame is OFFERED to
+                        // the caller and then dropped by the client (no id to route on)
                         yield return BatchUnsupported();
                         continue;
                     }
@@ -103,9 +106,11 @@ public static class NdjsonFramer
         return false;
     }
 
-    /// <summary>The answer to a batch line: a <c>-32600 Invalid Request</c> frame
-    /// with a null id (JSON-RPC 2.0 §5 — an unanswerable request is answered with
-    /// a null id), for the caller to write back.</summary>
+    /// <summary>The OFFERED answer to a batch line: a <c>-32600 Invalid Request</c>
+    /// frame with a null id (JSON-RPC 2.0 §5 — an unanswerable request is answered
+    /// with a null id). A framer cannot write it: it hands the frame to the caller,
+    /// and <see cref="JsonRpcClient"/> drops it (nothing to route on), so a batch is
+    /// answered only by a caller that writes it back itself.</summary>
     private static JsonRpcFrame BatchUnsupported() =>
         new()
         {

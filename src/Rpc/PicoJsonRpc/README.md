@@ -45,10 +45,29 @@ member presence follows the frame kind:
 - A response carries exactly one of `result`/`error`; a null result is written
   as `"result":null`.
 - An `id` that IS a JSON number is echoed as a number (`"id":7`), so a peer that
-  sends numeric ids is answered in kind; a string id stays a string.
+  sends numeric ids is answered in kind. The rule is textual, not typed: any id
+  text that parses as a JSON number is emitted as that number, so the STRING
+  `"7"` also goes out as `7` (unobservable for this library's own GUID ids). An
+  id with surrounding whitespace is normalised to the number's token, never
+  re-emitted verbatim — no id can put a line break in the frame.
+- **One line per frame, always.** Payload text is parsed once; text carrying a
+  line break is re-emitted compactly, so a pretty-printed
+  `params`/`result`/`error.data` is normalised rather than rejected (same JSON
+  value, no insignificant whitespace) and a payload with a trailing newline
+  cannot append a second line. Text already on one line keeps its exact bytes.
+  The payload TEXT also decides the emitted JSON kind: `"7"` → `7`, `"true"` →
+  `true`, `"null"` → `null`, `"ok"` → `"ok"`, and malformed text (`{"ok":true`)
+  degrades to a quoted string instead of a broken line. See the `JsonRpcFrame`
+  remarks.
+- Payload nesting is inlined up to 256 levels; deeper text degrades to a JSON
+  string. The reader's depth limit is derived from that constant, so a frame this
+  writer can emit is always a frame it can read back.
 - **Batching is unsupported.** A line that starts with `[` is not decoded: the
-  framer yields a `-32600 Invalid Request` frame (null id) for the caller to send
-  back, and the stream keeps flowing — the channel is not failed.
+  framer yields a `-32600 Invalid Request` frame (null id), and the stream keeps
+  flowing — the channel is not failed. Note the second half honestly: that frame
+  has **no id, so `JsonRpcClient` drops it** — a peer that offers a batch gets no
+  reply. Answering it would need a protocol-error sink, which is a separate API
+  decision.
 
 ## Quick Start
 

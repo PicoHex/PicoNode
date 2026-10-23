@@ -25,6 +25,24 @@ public sealed class WireConformanceTests
     private static string Line(JsonRpcFrame frame) =>
         Encoding.UTF8.GetString(NdjsonFramer.Encode(frame)).TrimEnd('\n');
 
+    /// <summary>F1 at the STRING face (<see cref="JsonRpcCodec.Serialize"/>): a
+    /// frame's text carries no line break at all, terminator included — so even a
+    /// caller that appends its own <c>\n</c> cannot produce two lines.</summary>
+    [Test]
+    public async Task Serialize_never_contains_a_line_break()
+    {
+        var json = JsonRpcCodec.Serialize(
+            JsonRpcFrame.Request("req-1", "stream", "{\n \"messages\": []\n}")
+        );
+        await Assert.That(Count(json, '\n')).IsEqualTo(0);
+        await Assert.That(Count(json, '\r')).IsEqualTo(0);
+        await Assert
+            .That(json)
+            .IsEqualTo(
+                "{\"jsonrpc\":\"2.0\",\"id\":\"req-1\",\"method\":\"stream\",\"params\":{\"messages\":[]}}"
+            );
+    }
+
     [Test]
     public async Task Request_line_matches_jsonrpc_2_0()
     {
@@ -175,6 +193,227 @@ public sealed class WireConformanceTests
         await Assert
             .That(line)
             .IsEqualTo("{\"jsonrpc\":\"2.0\",\"id\":\"\",\"result\":{\"ok\":true}}");
+    }
+
+    /// <summary>
+    /// F1 (review fix round 1): NDJSON has ONE line per frame, so the encoder
+    /// must be structurally incapable of emitting a line break — a peer-triggered
+    /// payload or id carrying CR/LF used to split one frame into several lines.
+    /// A pretty-printed payload is <em>normalised</em> (re-emitted compactly),
+    /// not rejected: the caller's raw text is still the same JSON value.
+    /// </summary>
+    [Test]
+    public async Task Pretty_printed_payload_is_normalised_to_one_line()
+    {
+        // a NOTE on the round trip below: our reader applies the downlink union
+        // rule (a line with BOTH id and method is a child REQUEST — a protocol
+        // error), so the frame read back has to be a notification/response. The
+        // normalisation under test is the same in either case.
+        var frame = JsonRpcFrame.Notification("stream", "{\n  \"messages\": []\n}");
+        var line = Line(frame);
+        await Assert.That(Count(line, '\n')).IsEqualTo(0);
+        await Assert.That(Count(line, '\r')).IsEqualTo(0);
+        // same value, compact: whitespace between tokens is not information
+        await Assert
+            .That(line)
+            .IsEqualTo("{\"jsonrpc\":\"2.0\",\"method\":\"stream\",\"params\":{\"messages\":[]}}");
+        await AssertRoundTripIsSingleLine(frame, expectedParams: "{\"messages\":[]}");
+
+        // ...and the same text on a REQUEST produces the same single line
+        await Assert
+            .That(Line(JsonRpcFrame.Request("req-1", "stream", "{\n  \"messages\": []\n}")))
+            .IsEqualTo(
+                "{\"jsonrpc\":\"2.0\",\"id\":\"req-1\",\"method\":\"stream\",\"params\":{\"messages\":[]}}"
+            );
+    }
+
+    /// <summary>F1: a payload whose text ends in a newline (or CRLF) — the
+    /// reviewer's reproduction class — must not append a stray line.</summary>
+    [Test]
+    public async Task Payload_with_trailing_whitespace_is_one_line()
+    {
+        foreach (var trailing in new[] { "\n", "\r\n", "  \n  ", "\r" })
+        {
+            var frame = JsonRpcFrame.Notification("chunk", "{\"text\":\"a\"}" + trailing);
+            var line = Line(frame);
+            await Assert.That(Count(line, '\n')).IsEqualTo(0);
+            await Assert.That(Count(line, '\r')).IsEqualTo(0);
+            await Assert
+                .That(line)
+                .IsEqualTo("{\"jsonrpc\":\"2.0\",\"method\":\"chunk\",\"params\":{\"text\":\"a\"}}");
+            await AssertRoundTripIsSingleLine(frame, expectedParams: "{\"text\":\"a\"}");
+        }
+    }
+
+    /// <summary>F1: an <c>id</c> whose raw text carries whitespace used to be
+    /// re-emitted <c>verbatim</c>, producing <c>"id":7⏎</c> — a frame that OUR
+    /// OWN reader rejects (<c>'7' is an invalid end of a number</c>). Re-emitting
+    /// the parsed number keeps the peer's numeric id AND the line intact.</summary>
+    [Test]
+    public async Task Id_text_with_whitespace_is_one_line_and_round_trips()
+    {
+        foreach (var id in new[] { "7\n", " 7 ", "7\r\n", "\n7" })
+        {
+            var line = Line(JsonRpcFrame.Response(id, "\"ok\""));
+            await Assert.That(Count(line, '\n')).IsEqualTo(0);
+            await Assert.That(Count(line, '\r')).IsEqualTo(0);
+            await Assert.That(line).IsEqualTo("{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":\"ok\"}");
+
+            // ...and the round trip through our own reader succeeds
+            using var ms = new MemoryStream(NdjsonFramer.Encode(JsonRpcFrame.Response(id, "\"ok\"")));
+            var frames = await NdjsonFramer.ReadAsync(ms, default).ToListAsync();
+            await Assert.That(frames).Count().IsEqualTo(1);
+            await Assert.That(frames[0].Id).IsEqualTo("7");
+        }
+    }
+
+    /// <summary>F1, stated as the property rather than as cases: no frame kind may
+    /// put a line break in its emitted bytes — the ONLY <c>\n</c> is the NDJSON
+    /// terminator <see cref="NdjsonFramer.Encode"/> appends.</summary>
+    [Test]
+    public async Task No_emitted_frame_contains_a_line_break()
+    {
+        JsonRpcFrame[] frames =
+        [
+            JsonRpcFrame.Request("req-1", "m", "{\n \"a\": 1\n}"),
+            JsonRpcFrame.Request(" 7 ", "m", "\r\n{\"a\":1}\r\n"),
+            JsonRpcFrame.Notification("chunk", "[\n1,\n2\n]"),
+            JsonRpcFrame.Notification("chunk", "not json\nwith a break"),
+            JsonRpcFrame.Notification("chunk", "\r\n\t "),
+            JsonRpcFrame.Response("7\n", "{\n\"ok\": true\n}"),
+            JsonRpcFrame.Response("req-2", error: new JsonRpcError
+            {
+                Code = -32601,
+                Message = "no\nsuch method",
+                Data = "{\n\"method\": \"nope\"\n}",
+            }),
+        ];
+
+        foreach (var frame in frames)
+        {
+            var bytes = NdjsonFramer.Encode(frame);
+            var terminator = bytes[^1];
+            await Assert.That(terminator).IsEqualTo((byte)'\n');
+            // the ONLY line break in the frame is the terminator itself
+            await Assert.That(Array.IndexOf(bytes, (byte)'\n')).IsEqualTo(bytes.Length - 1);
+            await Assert.That(Array.IndexOf(bytes, (byte)'\r')).IsEqualTo(-1);
+        }
+
+        // ...and every frame the DOWNLINK can carry (no id+method union
+        // violation) is still exactly one frame when read back
+        foreach (var frame in frames.Where(f => f.Id is null || f.Method is null))
+        {
+            using var ms = new MemoryStream(NdjsonFramer.Encode(frame));
+            var read = await NdjsonFramer.ReadAsync(ms, default).ToListAsync();
+            await Assert.That(read).Count().IsEqualTo(1);
+        }
+    }
+
+    /// <summary>
+    /// F2 (review fix round 1): the encoder's depth gate and the reader's parse
+    /// options were two different numbers (256 vs STJ's default 64), so a payload
+    /// nested 65–256 deep was <em>emitted inline but unreadable by us</em>. The two
+    /// are now one limit, and this pins the boundary from both sides: at the limit
+    /// the payload stays inline and round-trips; past it, it degrades to a JSON
+    /// string (still one readable line) instead of becoming a poisoned frame.
+    /// </summary>
+    [Test]
+    public async Task Payload_depth_boundary_is_emitted_and_readable()
+    {
+        // inline at and below the limit
+        foreach (var depth in new[] { 2, 8, JsonRpcWire.MaxPayloadDepth })
+        {
+            var payload = NestedObject(depth);
+            var bytes = NdjsonFramer.Encode(JsonRpcFrame.Notification("n", payload));
+            var text = Encoding.UTF8.GetString(bytes).TrimEnd('\n');
+            // inline: the payload sits in `params` as a VALUE (its own `{`), not as
+            // a quoted string containing JSON
+            await Assert.That(text.Contains("\"params\":{", StringComparison.Ordinal)).IsTrue();
+            await Assert.That(text).Contains(payload);
+
+            using var ms = new MemoryStream(bytes);
+            var frames = await NdjsonFramer.ReadAsync(ms, default).ToListAsync();
+            await Assert.That(frames).Count().IsEqualTo(1);
+            await Assert.That(frames[0].Params).IsEqualTo(payload);
+        }
+
+        // ONE past the limit: still a single, readable line (degraded to a string,
+        // the same fallback a non-JSON payload takes) — never an inline payload we
+        // could not parse back
+        var tooDeep = NestedObject(JsonRpcWire.MaxPayloadDepth + 1);
+        var deepBytes = NdjsonFramer.Encode(JsonRpcFrame.Notification("n", tooDeep));
+        var deepText = Encoding.UTF8.GetString(deepBytes).TrimEnd('\n');
+        await Assert.That(Count(deepText, '\n')).IsEqualTo(0);
+        await Assert.That(deepText.Contains("\"a\":{", StringComparison.Ordinal)).IsFalse();
+        using var deepMs = new MemoryStream(deepBytes);
+        var deepFrames = await NdjsonFramer.ReadAsync(deepMs, default).ToListAsync();
+        await Assert.That(deepFrames).Count().IsEqualTo(1);
+        await Assert.That(deepFrames[0].Params![0]).IsEqualTo('"'); // a JSON string, not a value
+    }
+
+    /// <summary>F4 (review fix round 1): the PAYLOAD TEXT decides the emitted JSON
+    /// type — <c>"7"</c> ships as the number <c>7</c>, <c>"true"</c> as a boolean,
+    /// <c>"null"</c> as null, <c>"ok"</c> as the string <c>"ok"</c> — and malformed
+    /// text degrades to a quoted string rather than a broken line. Documented on
+    /// <see cref="JsonRpcFrame"/>; pinned here so the doc cannot drift.</summary>
+    [Test]
+    public async Task Payload_text_decides_the_emitted_json_type()
+    {
+        await Assert
+            .That(Line(JsonRpcFrame.Response("id-1", "7")))
+            .IsEqualTo("{\"jsonrpc\":\"2.0\",\"id\":\"id-1\",\"result\":7}");
+        await Assert
+            .That(Line(JsonRpcFrame.Response("id-1", "true")))
+            .IsEqualTo("{\"jsonrpc\":\"2.0\",\"id\":\"id-1\",\"result\":true}");
+        await Assert
+            .That(Line(JsonRpcFrame.Response("id-1", "null")))
+            .IsEqualTo("{\"jsonrpc\":\"2.0\",\"id\":\"id-1\",\"result\":null}");
+        await Assert
+            .That(Line(JsonRpcFrame.Response("id-1", "ok")))
+            .IsEqualTo("{\"jsonrpc\":\"2.0\",\"id\":\"id-1\",\"result\":\"ok\"}");
+
+        // malformed text does NOT break the line: it degrades to a JSON string
+        await Assert
+            .That(Line(JsonRpcFrame.Response("id-1", "{\"ok\":true")))
+            .IsEqualTo("{\"jsonrpc\":\"2.0\",\"id\":\"id-1\",\"result\":\"{\\u0022ok\\u0022:true\"}");
+    }
+
+    /// <summary>F1's other half (review fix round 1): normalisation is HAZARD-SCOPED.
+    /// A payload that is already one line goes out byte-for-byte — its non-ASCII
+    /// text included — so the fix cannot be a silent re-encoder of every payload
+    /// (round-tripping through <c>JsonElement.WriteTo</c> would turn a CJK payload
+    /// into escapes, changing bytes a peer already validates).</summary>
+    [Test]
+    public async Task One_line_payload_keeps_its_exact_bytes()
+    {
+        const string payload = "{\"text\":\"你好 é😀\",\"n\":1.0}";
+        var line = Line(JsonRpcFrame.Notification("chunk", payload));
+        await Assert
+            .That(line)
+            .IsEqualTo("{\"jsonrpc\":\"2.0\",\"method\":\"chunk\",\"params\":" + payload + "}");
+
+        await AssertRoundTripIsSingleLine(JsonRpcFrame.Notification("chunk", payload), payload);
+    }
+
+    private static int Count(string text, char c)
+    {
+        var n = 0;
+        foreach (var ch in text)
+            if (ch == c)
+                n++;
+        return n;
+    }
+
+    /// <summary>`{"a":{"a":…1…}}</summary>` nested <paramref name="depth"/> deep.</param>
+    private static string NestedObject(int depth) =>
+        string.Concat(Enumerable.Repeat("{\"a\":", depth)) + "1" + new string('}', depth);
+
+    private static async Task AssertRoundTripIsSingleLine(JsonRpcFrame frame, string expectedParams)
+    {
+        using var ms = new MemoryStream(NdjsonFramer.Encode(frame));
+        var frames = await NdjsonFramer.ReadAsync(ms, default).ToListAsync();
+        await Assert.That(frames).Count().IsEqualTo(1);
+        await Assert.That(frames[0].Params).IsEqualTo(expectedParams);
     }
 
     [Test]

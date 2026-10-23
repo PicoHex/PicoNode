@@ -42,6 +42,34 @@ public sealed class EnvelopeTests
             .IsEqualTo("{\"jsonrpc\":\"2.0\",\"method\":\"chunk\",\"params\":{\"text\":\"a\"}}");
     }
 
+    /// <summary>
+    /// F4 (review fix round 1): <c>Response(id, resultJson, error)</c> with BOTH
+    /// payloads cannot be answered — JSON-RPC 2.0 allows exactly one of
+    /// <c>result</c>/<c>error</c>. The factory DISCARDED the result silently; the
+    /// discard is now stated on <see cref="JsonRpcFrame"/> and pinned here, so the
+    /// behaviour is a documented decision instead of a surprise. The error wins.
+    /// </summary>
+    [Test]
+    public async Task Response_factory_drops_the_result_when_an_error_is_set()
+    {
+        var both = JsonRpcFrame.Response(
+            "id-1",
+            "{\"ignored\":true}",
+            new JsonRpcError { Code = -1, Message = "boom" }
+        );
+        await Assert.That(both.Result).IsNull();
+        await Assert.That(both.Error).IsNotNull();
+        await Assert.That(both.Error!.Code).IsEqualTo(-1);
+        await Assert
+            .That(JsonRpcCodec.Serialize(both))
+            .IsEqualTo("{\"jsonrpc\":\"2.0\",\"id\":\"id-1\",\"error\":{\"code\":-1,\"message\":\"boom\"}}");
+
+        // ...and a result-only response keeps its payload
+        var ok = JsonRpcFrame.Response("id-1", "{\"ok\":true}");
+        await Assert.That(ok.Result).IsEqualTo("{\"ok\":true}");
+        await Assert.That(ok.Error).IsNull();
+    }
+
     [Test]
     public async Task JsonRpcCodec_TypedPayloadText_RoundTrips()
     {
