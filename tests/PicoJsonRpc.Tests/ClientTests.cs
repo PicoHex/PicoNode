@@ -192,6 +192,53 @@ public sealed class ClientTests
         }
     }
 
+    /// <summary>
+    /// The POSITIVE side of the same gate: a stream cancelled on a LIVE (not
+    /// disposed) client must still tell the child. The refusal test above only
+    /// proves the disposed case is silent, so without this assertion an
+    /// over-broad gate ("never send the cancel") would pass the whole suite
+    /// even though it silently breaks every cancellation.
+    /// <para>
+    /// The signal is what reached the wire: the request, then the <c>cancel</c>
+    /// notification naming that request's id. Nothing about timing is asserted -
+    /// only the frames the teardown produced.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Cancelled_stream_on_a_live_client_still_writes_its_cancel_notification()
+    {
+        Skip.Unless(
+            NodeRuntime.Present,
+            "node is not installed in PATH - the scripted channels need a real process handle"
+        );
+
+        using var first = new TestChannel("ch-1");
+        var lifecycle = new ScriptedLifecycle(first.Channel);
+        await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
+
+        using var cts = new CancellationTokenSource();
+        var stream = DrainAsync(client.StreamAsync("subscribe", null, cts.Token));
+
+        // the request is on the wire; its id is what the cancel must name
+        var request = await first.NextRequestAsync();
+        await Assert.That(request.Method).IsEqualTo("subscribe");
+        await Assert.That(request.Id).IsNotNull();
+
+        // the caller walks away while the client is alive
+        cts.Cancel();
+
+        // ...and the child is told, over the same live channel - the behaviour
+        // the `_disposed` gate must not widen into a skip
+        var notice = await first.NextRequestAsync();
+        await Assert.That(notice.Method).IsEqualTo("cancel");
+        await Assert.That(notice.Id).IsNull();
+        await Assert.That(notice.Params).IsNotNull();
+        await Assert.That(notice.Params!).Contains(request.Id!);
+
+        // the abandoned enumeration ends without a hang or an exception
+        await stream.WaitAsync(HangBudget);
+    }
+
     /// <summary>Consume a stream to its end so its registration and teardown run.</summary>
     private static async Task DrainAsync(IAsyncEnumerable<JsonRpcFrame> frames)
     {
