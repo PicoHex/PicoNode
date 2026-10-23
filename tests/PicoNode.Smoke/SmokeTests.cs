@@ -730,7 +730,21 @@ public sealed class SmokeTests
         // The give-up path is the one that cancels the handler lifetime, so the parked handler is
         // released by it rather than by this test.
         await handler.Completed.WaitAsync(TimeSpan.FromSeconds(5));
-        await Assert.That(node.State).IsEqualTo(NodeState.Stopped);
+
+        // PRE-EXISTING WART, NOT A CONTRACT (pinned here so a future fix is not read as a regression):
+        // Stopped IS the pretence the comment above denies. UdpNode.StopAsync's finally sets Stopped for
+        // any state that was Stopping, whether or not the drain completed, and its opening guard returns
+        // at once for Stopping - so unlike TcpNode (which keeps Stopping here, see the TCP test below and
+        // TcpNodeBranchTests) an abandoned UDP drain is indistinguishable from a finished one. The
+        // lifetime work (T2.6) and the dispose ordering (T2.7) made the LIFETIMES honest; this state
+        // machine is untouched and is an open audit item. Changing this assertion to Stopping is the
+        // intended fix, so it has to come with the state machine, not with a teardown change.
+        await Assert
+            .That(node.State)
+            .IsEqualTo(NodeState.Stopped)
+            .Because(
+                "UDP reports Stopped even for a drain it abandoned - a pre-existing wart, not this test's contract"
+            );
     }
 
     [Test]

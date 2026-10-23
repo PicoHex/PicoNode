@@ -82,7 +82,7 @@ internal sealed class TcpConnectionLifecycle
         // accepts), and the cap is the timer limit itself, so an ordinary budget keeps exactly the
         // bound it had.
         var half = TimeSpan.FromTicks(drainTimeout.Ticks / 2);
-        return half < DrainBudget.MaxTimerDuration ? half : DrainBudget.MaxTimerDuration;
+        return DrainBudget.Cap(half);
     }
 
     private readonly TcpNode _node;

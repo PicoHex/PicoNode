@@ -26,6 +26,15 @@ internal static class DrainBudget
     internal static readonly TimeSpan MaxTimerDuration = TimeSpan.FromMilliseconds(0xFFFFFFFE);
 
     /// <summary>
+    /// Trims a timeout to the longest one the timer-backed APIs accept and leaves everything at or
+    /// below it alone. This is the ONLY place the cap is expressed: <see cref="Effective"/> and both
+    /// fault-backoff clamps call it, so the timer limit has one rule instead of one rule per reader
+    /// (it used to be written out in four).
+    /// </summary>
+    internal static TimeSpan Cap(TimeSpan configured) =>
+        configured < MaxTimerDuration ? configured : MaxTimerDuration;
+
+    /// <summary>
     /// The budget a stop path hands to its deadline timer, for a given configured
     /// <c>DrainTimeout</c>: <see cref="TimeSpan.Zero"/> ("no deadline at all") is preserved, every
     /// positive value is capped at <see cref="MaxTimerDuration"/>, and anything in between is used
@@ -38,6 +47,6 @@ internal static class DrainBudget
             return TimeSpan.Zero;
         }
 
-        return configured < MaxTimerDuration ? configured : MaxTimerDuration;
+        return Cap(configured);
     }
 }

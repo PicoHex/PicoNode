@@ -9,6 +9,7 @@ public sealed class UdpNode : INode
     private const string OperationQueueDrop = "udp.queue.drop";
     private const string OperationDatagramHandler = "udp.datagram.handler";
     private const string OperationStopHandlers = "udp.stop.handlers";
+    private const string OperationStopReceive = "udp.stop.receive";
     private const long UdpConnectionIdTag = 2L << 56;
     private const string OperationMulticast = "udp.multicast";
     private const int MaxUdpDatagramSize = 65527;
@@ -410,9 +411,7 @@ public sealed class UdpNode : INode
             return ReceiveFaultBackoffFloor;
         }
 
-        return configured < DrainBudget.MaxTimerDuration
-            ? configured
-            : DrainBudget.MaxTimerDuration;
+        return DrainBudget.Cap(configured);
     }
 
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
@@ -446,7 +445,24 @@ public sealed class UdpNode : INode
 
                 if (Options.QueueOverflowMode == UdpOverflowMode.Wait)
                 {
-                    await queue.Writer.WriteAsync(lease, cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await queue
+                            .Writer.WriteAsync(lease, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                    catch (ChannelClosedException)
+                    {
+                        // The queue was completed under this enqueue — StopAsync completes them all, and
+                        // the receive loop is the only writer — so the datagram was received into the
+                        // window between the receive and the enqueue. That is a DELIBERATE drop, not a
+                        // receive failure: letting it fall through to the catch below raised a spurious
+                        // DatagramReceiveFailed fault for every datagram that landed in the window, and
+                        // left the datagram counted received but neither delivered nor dropped.
+                        lease.Dispose();
+                        Interlocked.Increment(ref _totalDropped);
+                        ReportFault(NodeFaultCode.DatagramDropped, OperationQueueDrop);
+                    }
                 }
                 else if (!queue.Writer.TryWrite(lease))
                 {
@@ -676,6 +692,75 @@ public sealed class UdpNode : INode
         // Endpoint, DatagramHandler, Logger, DispatchWorkerCount, DatagramQueueCapacity, MulticastGroup are code-only
     }
 
+    /// <summary>
+    /// How long <see cref="DisposeAsync"/> waits for the receive loop to exit before it gives up on
+    /// releasing the intake lifetime the loop reads.
+    /// </summary>
+    private static readonly TimeSpan ReceiveLoopExitWait = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Cancels the intake lifetime and waits for the receive loop to exit. Returns whether it did.
+    /// </summary>
+    /// <remarks>
+    /// The cancel comes first and is unconditional: <see cref="StopAsync"/> is the usual canceller, but a
+    /// stop that returned early (the node was already Stopping, or never started) leaves the lifetime
+    /// live, and the loop reads it in both its receive and its fault pause.
+    /// <para>
+    /// The wait is bounded. A loop that outlives it is REPORTED and left alone rather than having its
+    /// CancellationTokenSource disposed underneath it - the same trade as the <c>_sendLock</c> the TCP
+    /// connection never disposes. A loop that faulted has FINISHED, so its failure is reported here (this
+    /// is the last observer left) and the release goes ahead.
+    /// </para>
+    /// </remarks>
+    private async Task<bool> StopReceiveLoopAsync()
+    {
+        try
+        {
+            await _receiveCts.CancelAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Cancellation callbacks run user code and one of them threw. The loop still has to be
+            // observed and the socket still has to be closed, so report it and carry on.
+            ReportFault(NodeFaultCode.StopFailed, OperationStopReceive, ex);
+        }
+
+        var loop = _receiveTask;
+        if (loop is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            await loop.WaitAsync(ReceiveLoopExitWait).ConfigureAwait(false);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            // Nobody else reports this one: the stop that abandoned the same task returned quietly by
+            // design (an internal deadline is not the caller's cancellation).
+            ReportFault(
+                NodeFaultCode.StopFailed,
+                OperationStopReceive,
+                new TimeoutException(
+                    $"the datagram receive loop did not exit within {ReceiveLoopExitWait} during dispose"
+                )
+            );
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            // A cancelled loop is an expected exit, not a fault.
+            return loop.IsCompleted;
+        }
+        catch (Exception ex)
+        {
+            ReportFault(NodeFaultCode.StopFailed, OperationStopReceive, ex);
+            return loop.IsCompleted;
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -692,23 +777,41 @@ public sealed class UdpNode : INode
         {
             stopException = ex;
         }
-        finally
-        {
-            _configCts.Cancel();
-            _receiveCts.Dispose();
-            // A handler that outlived the drain (one that ignores its token) must not be left with a
-            // live lifetime, so cancel it. Dispose it only once no worker can be inside a handler: a
-            // disposed source makes Cancel/Register on its token throw, and that throw would land in
-            // user handler code rather than here.
-            await AbortHandlersAsync().ConfigureAwait(false);
-            if (HandlersHaveExited())
-            {
-                _handlerCts.Dispose();
-            }
 
-            _socket.Dispose();
-            _state = NodeState.Disposed;
+        _configCts.Cancel();
+
+        // A handler that outlived the drain (one that ignores its token) must not be left with a live
+        // lifetime, so cancel it first: the workers read this token, and cancelling it is the last thing
+        // that can release a parked handler.
+        await AbortHandlersAsync().ConfigureAwait(false);
+
+        // The receive loop goes next, and the intake lifetime is released only once it is gone. "The stop
+        // returned" is NOT "the loop exited": an expired drain budget (or a caller cancellation) abandons
+        // the wait on the very task the loop is still running.
+        var receiveLoopExited = await StopReceiveLoopAsync().ConfigureAwait(false);
+
+        // The socket is closed unconditionally: it is what makes a parked receive return, so a loop that
+        // outlived the wait above still loses its socket. The ObjectDisposedException that receive then
+        // reads is swallowed by its own filter, because the intake lifetime is cancelled by now.
+        _socket.Dispose();
+
+        if (receiveLoopExited)
+        {
+            // Only now is it safe to release. The loop reads this token in its receive AND in its fault
+            // pause, and a disposed source throws ObjectDisposedException on that read - into a task
+            // nobody awaits any more, i.e. an unobserved exception rather than a visible failure.
+            _receiveCts.Dispose();
         }
+
+        // Dispose _handlerCts only once no worker can be inside a handler: a disposed source makes
+        // Cancel/Register on its token throw, and that throw would land in user handler code rather than
+        // here.
+        if (HandlersHaveExited())
+        {
+            _handlerCts.Dispose();
+        }
+
+        _state = NodeState.Disposed;
 
         if (_configReloadTask is not null)
         {

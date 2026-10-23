@@ -6,6 +6,7 @@ public sealed class TcpNode : INode
     private const string OperationStop = "tcp.stop.listener";
     private const string OperationStopSignal = "tcp.stop.signal";
     private const string OperationStopIdle = "tcp.stop.idle";
+    private const string OperationStopLoops = "tcp.stop.loops";
     private const string OperationAccept = "tcp.accept";
     private const string OperationRejectLimit = "tcp.reject.limit";
     private const string OperationRejectTracking = "tcp.reject.tracking";
@@ -459,9 +460,7 @@ public sealed class TcpNode : INode
             return AcceptFaultBackoffFloor;
         }
 
-        return configured < DrainBudget.MaxTimerDuration
-            ? configured
-            : DrainBudget.MaxTimerDuration;
+        return DrainBudget.Cap(configured);
     }
 
     private async Task AcceptLoopAsync()
@@ -847,6 +846,77 @@ public sealed class TcpNode : INode
         // Endpoint, EnableDualMode, ConnectionHandler, LingerState, Logger, SslOptions are code-only
     }
 
+    /// <summary>
+    /// How long <see cref="DisposeAsync"/> waits for the background loops to exit before it gives up on
+    /// releasing the objects they read. Long enough that only a loop parked in something that ignores
+    /// cancellation can miss it, short enough that a host shutdown is not held indefinitely.
+    /// </summary>
+    private static readonly TimeSpan BackgroundLoopExitWait = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Waits for the background loops to exit, once <see cref="DisposeAsync"/> has stopped them. Returns
+    /// whether they all did.
+    /// </summary>
+    /// <remarks>
+    /// The wait is bounded. A loop that outlives it is REPORTED and its members are left to the GC rather
+    /// than disposed underneath it - the same trade as <c>TcpConnectionLifecycle</c>'s <c>_sendLock</c>,
+    /// which is left alone because a live sender can still touch it. A loop that faulted has finished, so
+    /// its failure is not a reason to skip the release; it is reported here because this is the last
+    /// observer left (a stop that gave up on the same loop never saw it).
+    /// </remarks>
+    private async Task<bool> WaitForBackgroundLoopsAsync()
+    {
+        var loops = new List<Task>(2);
+        if (_acceptTask is not null)
+        {
+            loops.Add(_acceptTask);
+        }
+
+        if (_idleMonitorTask is not null)
+        {
+            loops.Add(_idleMonitorTask);
+        }
+
+        if (loops.Count == 0)
+        {
+            return true;
+        }
+
+        try
+        {
+            await Task.WhenAll(loops).WaitAsync(BackgroundLoopExitWait).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // Nobody else reports this one: the stop that abandoned the same loops returned quietly by
+            // design (an internal deadline is not the caller's cancellation).
+            ReportFault(
+                NodeFaultCode.StopFailed,
+                OperationStopLoops,
+                new TimeoutException(
+                    $"a background loop did not exit within {BackgroundLoopExitWait} during dispose"
+                )
+            );
+        }
+        catch (Exception ex)
+        {
+            // A loop that faulted is a loop that FINISHED, so it is not a reason to skip the release -
+            // but when the stop gave up on it, nothing else observed the failure, and this is the last
+            // observer left.
+            ReportFault(NodeFaultCode.StopFailed, OperationStopLoops, ex);
+        }
+
+        foreach (var loop in loops)
+        {
+            if (!loop.IsCompleted)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -863,14 +933,36 @@ public sealed class TcpNode : INode
         {
             stopException = ex;
         }
-        finally
+
+        _configCts.Cancel();
+
+        // The loops are stopped first and the objects they use are released only once they are gone. "The
+        // stop returned" is NOT "the loops exited": a DrainTimeout expiry or a caller cancellation makes
+        // ObserveBackgroundLoopAsync return on the OperationCanceledException while the loop is still
+        // running, and that is the state this ordering has to be correct for.
+        //
+        // Stopping them takes BOTH of these, and neither may be left to the stop: the node signal is every
+        // loop's own lifetime (and a stop that returned early never cancelled it), and the listening socket
+        // is what makes a pending accept return at all - AcceptAsync takes no token, so the close is the
+        // only thing that wakes it. Cancel comes first so the accept loop's own filter recognises the
+        // ObjectDisposedException the close produces as a shutdown.
+        _ = await CancelNodeSignalAsync().ConfigureAwait(false);
+        _listener.Dispose();
+
+        var loopsExited = await WaitForBackgroundLoopsAsync().ConfigureAwait(false);
+
+        if (loopsExited)
         {
-            _configCts.Cancel();
+            // Only now are these safe to release. Disposing a CancellationTokenSource or the event-args
+            // pool underneath a live loop is precisely the defect this ordering removes: the loop's next
+            // _cts.Token read (the accept-fault pause) or _eventArgsPool.Rent() throws
+            // ObjectDisposedException into a task nobody awaits any more - an UNOBSERVED exception rather
+            // than a failure a caller can see.
             _cts.Dispose();
-            _listener.Dispose();
             _eventArgsPool.Dispose();
-            _state = NodeState.Disposed;
         }
+
+        _state = NodeState.Disposed;
 
         if (_configReloadTask is not null)
         {

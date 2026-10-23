@@ -326,6 +326,74 @@ public sealed class CodingConventionTests
         await Assert.That(doc).Contains("zero");
     }
 
+    [Test]
+    public async Task The_timer_limit_cap_is_expressed_once()
+    {
+        // Single-homing the CONSTANT (DrainBudget.MaxTimerDuration) did not single-home the EXPRESSION:
+        // `value < MaxTimerDuration ? value : MaxTimerDuration` had been written out in
+        // DrainBudget.Effective, TcpNode.EffectiveAcceptFaultBackoff,
+        // UdpNode.EffectiveReceiveFaultBackoff and TcpConnectionLifecycle.HandlerLoopTimeoutFor, so one
+        // timer-limit rule had four homes and could drift in three of them. DrainBudget.Cap is now the
+        // only place the cap is expressed; every other source line has to go through it.
+        var offenders = new List<string>();
+
+        foreach (var file in Directory.EnumerateFiles(SrcPath, "*.cs", SearchOption.AllDirectories))
+        {
+            if (
+                file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+            )
+            {
+                continue;
+            }
+
+            var name = Path.GetFileName(file);
+            if (string.Equals(name, "DrainBudget.cs", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var lines = await File.ReadAllLinesAsync(file);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].TrimStart();
+                // XML doc comments may still cref the constant: that documents the limit, it is not a
+                // second copy of the rule.
+                if (line.StartsWith("//", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (line.Contains("MaxTimerDuration", StringComparison.Ordinal))
+                {
+                    offenders.Add($"{name}:{i + 1}");
+                }
+            }
+        }
+
+        await Assert
+            .That(offenders.Count)
+            .IsEqualTo(0)
+            .Because(
+                $"the cap is expressed once, in DrainBudget.Cap(...): {string.Join(", ", offenders)}"
+            );
+
+        var budget = await File.ReadAllTextAsync(
+            Path.Combine(SrcPath, "Network", "PicoNode", "DrainBudget.cs")
+        );
+        await Assert.That(budget).Contains("internal static TimeSpan Cap(");
+
+        // ...and the readers consume it, so removing the duplication cannot be done by dropping the cap
+        // instead of sharing it.
+        foreach (var reader in new[] { "TcpNode.cs", "UdpNode.cs" })
+        {
+            var source = await File.ReadAllTextAsync(
+                Path.Combine(SrcPath, "Network", "PicoNode", reader)
+            );
+            await Assert.That(source).Contains("DrainBudget.Cap(");
+        }
+    }
+
     /// <summary>
     /// The <c>///</c> block immediately above a declaration, joined into one string, so a doc
     /// assertion cannot be satisfied by wording that lives somewhere else in the file.

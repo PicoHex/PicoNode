@@ -386,6 +386,155 @@ public sealed class UdpNodeDatagramFlowTests
     }
 
     [Test]
+    public async Task DisposeAsync_waits_for_a_still_running_receive_loop_before_releasing_the_intake_lifetime()
+    {
+        // Same rule as the TCP node, on the intake lifetime: a stop whose drain deadline expires leaves
+        // the receive loop's task abandoned (WaitAsync gives up while the task still runs), so "the stop
+        // returned" does not mean "the loop exited". The receive task is replaced with a GATED stand-in
+        // so that a loop which has not exited yet is a certainty rather than a race.
+        var node = new UdpNode(
+            new UdpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                DatagramHandler = new CapturingUdpHandler(),
+                DrainTimeout = TimeSpan.FromMilliseconds(1),
+            }
+        );
+        var intake = GetReceiveCancellation(node);
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Exception? memberFault = null;
+        var standIn = Task.Run(async () =>
+        {
+            entered.TrySetResult();
+            await gate.Task.ConfigureAwait(false);
+            try
+            {
+                // What the real loop's fault pause does with the source the dispose used to release
+                // underneath it: reading Token on a disposed source throws.
+                _ = intake.Token;
+            }
+            catch (Exception ex)
+            {
+                memberFault = ex;
+            }
+        });
+
+        await node.StartAsync();
+        var realReceiveLoop = ReplaceReceiveTask(node, standIn);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var dispose = node.DisposeAsync().AsTask();
+
+        await Assert
+            .That(await CompletesWithinAsync(dispose, TimeSpan.FromMilliseconds(250)))
+            .IsFalse()
+            .Because(
+                "the dispose has to wait for the receive loop, not release what it is still using"
+            );
+
+        gate.TrySetResult();
+        await dispose.WaitAsync(TimeSpan.FromSeconds(10));
+
+        await Assert
+            .That(memberFault)
+            .IsNull()
+            .Because(
+                "an ObjectDisposedException here is exactly the unobserved task exception the ordering removes"
+            );
+        await Assert.That(standIn.IsCompletedSuccessfully).IsTrue();
+        await Assert.That(node.State).IsEqualTo(NodeState.Disposed);
+
+        // Proof the wait did not turn into a leak: once the loop was gone, its lifetime WAS released.
+        await Assert.That(() => _ = intake.Token).Throws<ObjectDisposedException>();
+
+        await realReceiveLoop.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Test]
+    public async Task A_datagram_that_arrives_after_its_dispatch_queue_closed_is_counted_dropped()
+    {
+        // The window UdpOverflowMode.Wait leaves open, and StopAsync opens it by design: the receive loop
+        // is the only queue WRITER, and the stop completes the queues. A datagram received just before
+        // that point makes WriteAsync throw ChannelClosedException, which the generic catch reported as a
+        // receive FAILURE - a spurious DatagramReceiveFailed fault, with the datagram counted received but
+        // neither delivered nor dropped. The queue is completed here from the test (the same seam, minus
+        // the stop) so the window is hit every run instead of once in a while.
+        var receiveFailures = 0;
+        var dropped = 0;
+        var node = new UdpNode(
+            new UdpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
+                DatagramHandler = new CapturingUdpHandler(),
+                QueueOverflowMode = UdpOverflowMode.Wait,
+                DispatchWorkerCount = 1,
+            }
+        );
+        node.OnFault += fault =>
+        {
+            if (fault.Code == NodeFaultCode.DatagramReceiveFailed)
+            {
+                Interlocked.Increment(ref receiveFailures);
+            }
+            else if (fault.Code == NodeFaultCode.DatagramDropped)
+            {
+                Interlocked.Increment(ref dropped);
+            }
+        };
+
+        await node.StartAsync();
+        GetDatagramQueue(node, 0).Writer.TryComplete();
+
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Dgram,
+            ProtocolType.Udp
+        );
+        client.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+        var server = (IPEndPoint)node.LocalEndPoint;
+
+        await client.SendToAsync(new byte[] { 1 }, SocketFlags.None, server);
+
+        var settled = await PollUntilAsync(
+            () => Volatile.Read(ref receiveFailures) > 0 || Volatile.Read(ref dropped) > 0,
+            TimeSpan.FromSeconds(10)
+        );
+        await Assert
+            .That(settled)
+            .IsTrue()
+            .Because("the receive loop has to dispose of the datagram one way or the other");
+
+        await Assert
+            .That(Volatile.Read(ref receiveFailures))
+            .IsEqualTo(0)
+            .Because("a queue closed under the write is a deliberate drop, not a receive failure");
+        await Assert
+            .That(Volatile.Read(ref dropped))
+            .IsEqualTo(1)
+            .Because("the datagram is dropped, so it has to be counted as dropped");
+        await Assert.That(node.GetMetrics().TotalDatagramsReceived).IsEqualTo(1);
+        await Assert
+            .That(node.GetMetrics().TotalDatagramsDropped)
+            .IsEqualTo(1)
+            .Because("counted received AND dropped - never neither");
+
+        // A closed queue must not end the loop: the next datagram is still received (and dropped).
+        await client.SendToAsync(new byte[] { 2 }, SocketFlags.None, server);
+        var second = await PollUntilAsync(
+            () => node.GetMetrics().TotalDatagramsReceived == 2,
+            TimeSpan.FromSeconds(10)
+        );
+        await Assert
+            .That(second)
+            .IsTrue()
+            .Because("a completed dispatch queue is not a reason to leave the socket unread");
+
+        await node.DisposeAsync();
+    }
+
+    [Test]
     public async Task A_zero_receive_fault_backoff_cannot_spin_the_receive_loop()
     {
         // The same bug T2.5 fixed on the TCP accept loop, in the sibling node: a non-positive backoff
@@ -547,6 +696,46 @@ public sealed class UdpNodeDatagramFlowTests
 
             await Task.Delay(20);
         }
+    }
+
+    /// <summary>
+    /// Bounded observation of "this task completed". The regression shows up immediately, whereas the
+    /// correct behaviour is parked on a gate the test owns and cannot complete inside the window.
+    /// </summary>
+    private static async Task<bool> CompletesWithinAsync(Task task, TimeSpan timeout)
+    {
+        try
+        {
+            await task.WaitAsync(timeout);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+    }
+
+    private static CancellationTokenSource GetReceiveCancellation(UdpNode node) =>
+        (CancellationTokenSource)
+            typeof(UdpNode)
+                .GetField("_receiveCts", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(node)!;
+
+    /// <summary>
+    /// Swaps the receive-loop TASK for a stand-in and returns the task it replaced. The node only ever
+    /// holds the Task, so a dispose path cannot tell a gated stand-in from a loop that has not finished
+    /// yet - which is the state the ordering has to be correct for.
+    /// </summary>
+    private static Task ReplaceReceiveTask(UdpNode node, Task replacement)
+    {
+        var field = typeof(UdpNode).GetField(
+            "_receiveTask",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+
+        var previous = (Task?)field.GetValue(node);
+        field.SetValue(node, replacement);
+        return previous ?? Task.CompletedTask;
     }
 
     private static Channel<UdpDatagramLease> GetDatagramQueue(UdpNode node, int worker)

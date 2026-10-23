@@ -545,6 +545,166 @@ public sealed class TcpNodeBranchTests
     }
 
     [Test]
+    public async Task DisposeAsync_waits_for_a_still_running_loop_before_releasing_its_members()
+    {
+        // A stop abandons its background-loop waits when DrainTimeout expires: ObserveBackgroundLoopAsync
+        // returns on the OperationCanceledException while the loop is still running, so "the stop
+        // returned" does not mean "the loops exited". The loop task is replaced with a GATED stand-in so
+        // that "a loop which has not exited yet" is a certainty rather than a race — the dispose path
+        // holds the Task, not the loop body, and cannot tell the two apart.
+        var node = CreateNode(new NoOpTcpHandler(), drainTimeout: TimeSpan.FromMilliseconds(1));
+        var cts = GetNodeCancellation(node);
+        var pool = GetEventArgsPool(node);
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Exception? memberFault = null;
+        var standIn = Task.Run(async () =>
+        {
+            entered.TrySetResult();
+            await gate.Task.ConfigureAwait(false);
+            try
+            {
+                // What a real loop does with the members the dispose used to release underneath it: the
+                // accept loop's fault pause reads _cts.Token and the loop's first act is a Rent().
+                _ = cts.Token;
+                _ = pool.Rent();
+            }
+            catch (Exception ex)
+            {
+                memberFault = ex;
+            }
+        });
+
+        await node.StartAsync();
+        var realAcceptLoop = ReplaceAcceptTask(node, standIn);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var dispose = node.DisposeAsync().AsTask();
+
+        await Assert
+            .That(await HasCompletedWithinAsync(dispose, TimeSpan.FromMilliseconds(250)))
+            .IsFalse()
+            .Because("the dispose has to wait for the loop, not release what it is still using");
+
+        gate.TrySetResult();
+        await dispose.WaitAsync(TimeSpan.FromSeconds(10));
+
+        await Assert
+            .That(memberFault)
+            .IsNull()
+            .Because(
+                "an ObjectDisposedException here is exactly the unobserved task exception the ordering removes"
+            );
+        await Assert.That(standIn.IsCompletedSuccessfully).IsTrue();
+        await Assert.That(node.State).IsEqualTo(NodeState.Disposed);
+
+        // Proof the wait did not turn into a leak: once the loop was gone, its members WERE released.
+        await Assert.That(() => pool.Rent()).Throws<ObjectDisposedException>();
+
+        await realAcceptLoop.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Test]
+    public async Task DisposeAsync_cancels_the_node_signal_even_when_the_stop_was_skipped()
+    {
+        // The bounded wait in DisposeAsync can only end early because the loops OBSERVE a cancellation, so
+        // the cancel has to be unconditional rather than inherited from the stop. StopAsync returns at once
+        // for a node it considers already stopped - and the state is not always the stop's own doing (a
+        // repeat stop after a drained one returns without touching the signal; the concurrent-stop tests
+        // force the state outright). A dispose that relied on the stop would then sit out the whole wait and
+        // report a loop that never exited.
+        var node = CreateNode(new NoOpTcpHandler());
+        var faults = new List<NodeFault>();
+        node.OnFault += faults.Add;
+
+        await node.StartAsync();
+        typeof(TcpNode)
+            .GetField("_state", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(node, NodeState.Stopped);
+
+        var completed = await HasCompletedWithinAsync(
+            node.DisposeAsync().AsTask(),
+            TimeSpan.FromSeconds(1)
+        );
+
+        await Assert
+            .That(completed)
+            .IsTrue()
+            .Because("the accept loop has to be cancelled out of its wait, not waited out");
+        await Assert
+            .That(faults.Count)
+            .IsEqualTo(0)
+            .Because("nothing had to be abandoned, so nothing is reported");
+        await Assert.That(node.State).IsEqualTo(NodeState.Disposed);
+    }
+
+    [Test]
+    public async Task DisposeAsync_does_not_release_members_a_loop_is_still_running()
+    {
+        // The other half of the same rule: when the bounded wait expires the members are NOT released.
+        // A disposed source is precisely what the still-running loop would then hit, and giving up is
+        // reported instead of passing silently.
+        var node = CreateNode(new NoOpTcpHandler(), drainTimeout: TimeSpan.FromMilliseconds(1));
+        Exception? giveUp = null;
+        node.OnFault += fault =>
+        {
+            if (fault.Code == NodeFaultCode.StopFailed)
+            {
+                giveUp = fault.Exception;
+            }
+        };
+
+        var cts = GetNodeCancellation(node);
+        var pool = GetEventArgsPool(node);
+
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var standIn = Task.Run(async () =>
+        {
+            entered.TrySetResult();
+            await gate.Task.ConfigureAwait(false);
+        });
+
+        await node.StartAsync();
+        var realAcceptLoop = ReplaceAcceptTask(node, standIn);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await node.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(30));
+
+        await Assert.That(node.State).IsEqualTo(NodeState.Disposed);
+        await Assert
+            .That(giveUp)
+            .IsAssignableTo<TimeoutException>()
+            .Because(
+                "a loop that outlived the bounded wait is a reported give-up, not a silent one"
+            );
+
+        // Still usable: the loop that is still running is the reason they were left alone.
+        Exception? memberFault = null;
+        try
+        {
+            _ = cts.Token;
+            _ = pool.Rent();
+        }
+        catch (Exception ex)
+        {
+            memberFault = ex;
+        }
+
+        await Assert
+            .That(memberFault)
+            .IsNull()
+            .Because(
+                "releasing a member a live loop still reads is the ObjectDisposedException to avoid"
+            );
+
+        gate.TrySetResult();
+        await standIn.WaitAsync(TimeSpan.FromSeconds(5));
+        await realAcceptLoop.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Test]
     public async Task StopAsync_swallows_the_drain_timeout_and_reaches_Stopped()
     {
         var handler = new RecordingTcpHandler(blockClose: true);
@@ -625,6 +785,32 @@ public sealed class TcpNodeBranchTests
             .That(TcpConnectionLifecycle.HandlerLoopTimeoutFor(defaults.DrainTimeout))
             .IsLessThan(defaults.DrainTimeout)
             .Because("the default node must not sit on the 5 s == 5 s collision");
+    }
+
+    [Test]
+    public async Task DrainBudget_Cap_only_trims_the_upper_end()
+    {
+        // The timer limit used to be re-derived at every reader (four copies of
+        // `value < MaxTimerDuration ? value : MaxTimerDuration`). DrainBudget.Cap is that expression's one
+        // home, and its contract is deliberately narrow: it is an UPPER bound only. Values at or below the
+        // limit pass through untouched - including TimeSpan.Zero, whose "no deadline at all" meaning is
+        // each caller's own business, not the cap's.
+        var limit = DrainBudget.MaxTimerDuration;
+        await Assert.That(limit).IsGreaterThan(TimeSpan.Zero);
+
+        await Assert.That(DrainBudget.Cap(TimeSpan.Zero)).IsEqualTo(TimeSpan.Zero);
+        await Assert
+            .That(DrainBudget.Cap(TimeSpan.FromMilliseconds(-1)))
+            .IsEqualTo(TimeSpan.FromMilliseconds(-1));
+        await Assert
+            .That(DrainBudget.Cap(TimeSpan.FromSeconds(5)))
+            .IsEqualTo(TimeSpan.FromSeconds(5));
+        await Assert.That(DrainBudget.Cap(limit)).IsEqualTo(limit);
+        await Assert
+            .That(DrainBudget.Cap(limit + TimeSpan.FromTicks(1)))
+            .IsEqualTo(limit)
+            .Because("one tick past the limit is exactly what the timer APIs reject");
+        await Assert.That(DrainBudget.Cap(TimeSpan.MaxValue)).IsEqualTo(limit);
     }
 
     [Test]
@@ -1295,6 +1481,36 @@ public sealed class TcpNodeBranchTests
         )!;
 
         await (Task)method.Invoke(node, [socket])!;
+    }
+
+    private static CancellationTokenSource GetNodeCancellation(TcpNode node) =>
+        (CancellationTokenSource)
+            typeof(TcpNode)
+                .GetField("_cts", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(node)!;
+
+    private static SocketIoEventArgsPool GetEventArgsPool(TcpNode node) =>
+        (SocketIoEventArgsPool)
+            typeof(TcpNode)
+                .GetField("_eventArgsPool", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(node)!;
+
+    /// <summary>
+    /// Swaps the accept-loop TASK for a stand-in and returns the task it replaced, so the test can still
+    /// observe the real loop. The node only ever holds the Task, so a dispose path cannot tell a gated
+    /// stand-in from a loop that has not finished yet — which is the state the ordering has to be
+    /// correct for.
+    /// </summary>
+    private static Task ReplaceAcceptTask(TcpNode node, Task replacement)
+    {
+        var field = typeof(TcpNode).GetField(
+            "_acceptTask",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+
+        var previous = (Task?)field.GetValue(node);
+        field.SetValue(node, replacement);
+        return previous ?? Task.CompletedTask;
     }
 
     private static Socket GetListener(TcpNode node)
