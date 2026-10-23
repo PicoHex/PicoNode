@@ -55,6 +55,7 @@ public sealed class TcpNode : INode
     private long _prevAccepted;
     private long _prevSent;
     private long _prevReceived;
+    private long _acceptFaultBackoffs;
     private DateTime _metricsTime = DateTime.UtcNow;
 
     public TcpNode(TcpNodeOptions options)
@@ -407,6 +408,54 @@ public sealed class TcpNode : INode
         }
     }
 
+    /// <summary>
+    /// How many accept-fault backoffs the accept loop has COMPLETED (one per accept fault that
+    /// reached the pause, counted only after the pause elapsed). Diagnostics for the one thing a
+    /// test cannot otherwise observe without consulting a wall clock: that the loop suspends between
+    /// two failed accepts instead of re-entering the accept wait immediately. At every instant it is
+    /// <c>faults - 1</c> or <c>faults</c> — the next fault cannot be reported before its pause ran.
+    /// </summary>
+    internal long AcceptFaultBackoffs => Interlocked.Read(ref _acceptFaultBackoffs);
+
+    /// <summary>
+    /// The smallest pause the accept loop takes after a failed accept — see
+    /// <see cref="EffectiveAcceptFaultBackoff"/>.
+    /// </summary>
+    internal static readonly TimeSpan AcceptFaultBackoffFloor = TimeSpan.FromMilliseconds(1);
+
+    /// <summary>
+    /// The pause the accept loop takes after a failed accept, for a given
+    /// <see cref="TcpNodeOptions.AcceptFaultBackoff"/>: the configured value clamped into
+    /// [<see cref="AcceptFaultBackoffFloor"/>, <see cref="TcpConnectionLifecycle.MaxTimerDuration"/>].
+    /// </summary>
+    /// <remarks>
+    /// A NON-POSITIVE value is the case that matters, and the reason the loop no longer branches on
+    /// one. It used to `continue` with no suspension at all, so a persistently failing accept —
+    /// WSAENOBUFS, EMFILE, an exhausted handle table — pinned a core and flooded the logger and every
+    /// <see cref="OnFault"/> subscriber for as long as the condition lasted. The option keeps its
+    /// documented meaning ("how long to pause after a failed accept"); a value that would switch the
+    /// pause off is raised to the floor instead of switching it off.
+    /// <para>
+    /// The clamp lives HERE — where the loop reads the option — and not in the constructor, because
+    /// the option is hot-reloadable and <see cref="ApplyConfigReload"/> takes whatever
+    /// <see cref="TimeSpan.TryParse(string, out TimeSpan)"/> accepts: <c>00:00:00</c> and negative
+    /// values included. The upper end is the timer limit for the same kind of reason: a pause
+    /// <see cref="Task.Delay(TimeSpan, CancellationToken)"/> rejects would throw out of the accept
+    /// loop's catch and end the loop for good, instead of pacing it.
+    /// </para>
+    /// </remarks>
+    internal static TimeSpan EffectiveAcceptFaultBackoff(TimeSpan configured)
+    {
+        if (configured <= TimeSpan.Zero)
+        {
+            return AcceptFaultBackoffFloor;
+        }
+
+        return configured < TcpConnectionLifecycle.MaxTimerDuration
+            ? configured
+            : TcpConnectionLifecycle.MaxTimerDuration;
+    }
+
     private async Task AcceptLoopAsync()
     {
         var acceptArgs = _eventArgsPool.Rent();
@@ -446,15 +495,22 @@ public sealed class TcpNode : INode
                 catch (Exception ex)
                 {
                     ReportFault(NodeFaultCode.AcceptFailed, OperationAccept, ex);
-                    if (Options.AcceptFaultBackoff <= TimeSpan.Zero)
-                    {
-                        continue;
-                    }
 
+                    // Never re-enter the accept wait without suspending: see
+                    // EffectiveAcceptFaultBackoff. A non-positive backoff used to `continue` from
+                    // here with no yield at all, so a persistently failing accept — WSAENOBUFS,
+                    // EMFILE, an exhausted handle table — pinned a core and flooded the logger and
+                    // every OnFault subscriber for as long as the condition lasted.
                     try
                     {
-                        await Task.Delay(Options.AcceptFaultBackoff, _cts.Token)
+                        await Task.Delay(
+                                EffectiveAcceptFaultBackoff(Options.AcceptFaultBackoff),
+                                _cts.Token
+                            )
                             .ConfigureAwait(false);
+                        // Counted only once the pause has actually elapsed, so the counter can
+                        // never claim a suspension that did not happen.
+                        Interlocked.Increment(ref _acceptFaultBackoffs);
                     }
                     catch (OperationCanceledException) when (_cts.IsCancellationRequested)
                     {

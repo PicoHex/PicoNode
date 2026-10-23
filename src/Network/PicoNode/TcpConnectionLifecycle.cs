@@ -18,6 +18,13 @@ internal sealed class TcpConnectionLifecycle
     internal const string OperationCloseTeardown = "tcp.close.teardown";
 
     /// <summary>
+    /// The longest timeout the timer-backed waits accept: <c>Task.WaitAsync(TimeSpan)</c>,
+    /// <c>Task.Delay</c> and <c>CancellationTokenSource.CancelAfter</c> share one validation and
+    /// throw <see cref="ArgumentOutOfRangeException"/> above it — 0xFFFFFFFE ms, i.e. ~49.7 days.
+    /// </summary>
+    internal static readonly TimeSpan MaxTimerDuration = TimeSpan.FromMilliseconds(0xFFFFFFFE);
+
+    /// <summary>
     /// Upper bound on a wait for a connection's handler loop before the pipe ends and the
     /// socket are torn down, as a fraction of the node's <see cref="TcpNodeOptions.DrainTimeout"/>
     /// (see <see cref="HandlerLoopTimeoutFor"/>). The bound is what keeps a handler that never
@@ -59,11 +66,31 @@ internal sealed class TcpConnectionLifecycle
     /// that case keeps the historic 5 s. Halving is strictly less for every budget above one tick;
     /// a one-tick budget degenerates to a zero wait (give up at once) rather than to a wait that
     /// spends the entire budget.
+    /// <para>
+    /// The result is also capped at <see cref="MaxTimerDuration"/>: it is handed to
+    /// <c>Task.WaitAsync(TimeSpan)</c>, which throws <see cref="ArgumentOutOfRangeException"/> above
+    /// that, and the throw happens synchronously inside the wait's own <c>try</c> — so an uncapped
+    /// bound did not shorten the wait, it silently skipped it.
+    /// </para>
     /// </remarks>
-    internal static TimeSpan HandlerLoopTimeoutFor(TimeSpan drainTimeout) =>
-        drainTimeout > TimeSpan.Zero
-            ? TimeSpan.FromTicks(drainTimeout.Ticks / 2)
-            : UnboundedDrainHandlerLoopTimeout;
+    internal static TimeSpan HandlerLoopTimeoutFor(TimeSpan drainTimeout)
+    {
+        if (drainTimeout <= TimeSpan.Zero)
+        {
+            // "No deadline at all" — see the remarks.
+            return UnboundedDrainHandlerLoopTimeout;
+        }
+
+        // The bound is handed to Task.WaitAsync verbatim, and a timeout above the timer limit makes
+        // THAT throw ArgumentOutOfRangeException — synchronously, inside the try that reads it as "the
+        // loop's own failure", so the bound was skipped in silence: the close ran OnClosedAsync
+        // underneath the live handler the bound exists to wait out. A DrainTimeout above ~99 days is
+        // the only way to get here (an absurd value, but a reload parses whatever TimeSpan.TryParse
+        // accepts), and the cap is the timer limit itself, so an ordinary budget keeps exactly the
+        // bound it had.
+        var half = TimeSpan.FromTicks(drainTimeout.Ticks / 2);
+        return half < MaxTimerDuration ? half : MaxTimerDuration;
+    }
 
     private readonly TcpNode _node;
     private readonly Socket _socket;

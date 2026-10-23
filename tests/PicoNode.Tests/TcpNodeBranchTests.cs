@@ -673,6 +673,170 @@ public sealed class TcpNodeBranchTests
     }
 
     [Test]
+    public async Task Zero_accept_backoff_yields_between_faults()
+    {
+        // A zero AcceptFaultBackoff used to mean "no pause at all": the accept loop's catch did a bare
+        // `continue`, so a persistently failing accept (WSAENOBUFS, EMFILE, an exhausted handle table)
+        // re-entered the accept wait with no suspension — a pinned core, and every fault logged and
+        // raised to every OnFault subscriber as fast as the loop could go round. The option still
+        // means "how long to pause"; a value that would switch the pause off is raised to a floor.
+        await using var node = CreateNode(
+            new NoOpTcpHandler(),
+            logger: null,
+            acceptFaultBackoff: TimeSpan.Zero
+        );
+
+        var probe = await ObserveAcceptFaultsAsync(node, faultsToObserve: 3);
+
+        await AssertAcceptLoopSuspendedAsync(
+            probe,
+            "a configured zero backoff must not switch the pause off"
+        );
+    }
+
+    [Test]
+    public async Task A_hot_reloaded_zero_accept_backoff_is_clamped_too()
+    {
+        // The option is hot-reloadable and ApplyConfigReload parses it with TimeSpan.TryParse, which
+        // accepts `00:00:00` (and negative values) — so the clamp has to sit where the loop READS the
+        // option, not in the constructor, which is the only place that rejects a negative today.
+        await using var node = CreateNode(new NoOpTcpHandler(), logger: null);
+
+        var probe = await ObserveAcceptFaultsAsync(
+            node,
+            faultsToObserve: 3,
+            // What ApplyConfigReload assigns for `AcceptFaultBackoff = 00:00:00`.
+            afterStart: started => started.Options.AcceptFaultBackoff = TimeSpan.Zero
+        );
+
+        await AssertAcceptLoopSuspendedAsync(
+            probe,
+            "a reloaded zero backoff must be clamped exactly like a configured one"
+        );
+    }
+
+    [Test]
+    public async Task The_accept_fault_backoff_is_clamped_into_a_legal_range()
+    {
+        // Zero is what the audit measured. A negative value only arrives through a hot reload (the
+        // constructor rejects it), and an absurdly large one would make Task.Delay itself throw — which
+        // would end the accept loop for good instead of pacing it — so the clamp is two-sided.
+        var floor = TcpNode.AcceptFaultBackoffFloor;
+        await Assert.That(floor).IsGreaterThan(TimeSpan.Zero);
+        await Assert.That(TcpNode.EffectiveAcceptFaultBackoff(TimeSpan.Zero)).IsEqualTo(floor);
+        await Assert
+            .That(TcpNode.EffectiveAcceptFaultBackoff(TimeSpan.FromMilliseconds(-1)))
+            .IsEqualTo(floor);
+        await Assert.That(TcpNode.EffectiveAcceptFaultBackoff(TimeSpan.MinValue)).IsEqualTo(floor);
+
+        // A positive value keeps its meaning: the option is "how long to pause", not a suggestion.
+        await Assert
+            .That(TcpNode.EffectiveAcceptFaultBackoff(TimeSpan.FromMilliseconds(50)))
+            .IsEqualTo(TimeSpan.FromMilliseconds(50));
+        await Assert
+            .That(TcpNode.EffectiveAcceptFaultBackoff(TimeSpan.FromMilliseconds(0.5)))
+            .IsEqualTo(TimeSpan.FromMilliseconds(0.5));
+
+        // The upper end is the timer limit, so the pause the loop schedules is always legal.
+        var capped = TcpNode.EffectiveAcceptFaultBackoff(TimeSpan.MaxValue);
+        await Assert.That(capped).IsEqualTo(TcpConnectionLifecycle.MaxTimerDuration);
+        await Assert
+            .That(IsLegalWaitTimeout(capped))
+            .IsTrue()
+            .Because("Task.Delay has to accept the pause the loop derives from the option");
+    }
+
+    [Test]
+    public async Task A_huge_drain_budget_still_yields_a_legal_handler_loop_bound()
+    {
+        // The derived bound is handed to Task.WaitAsync verbatim, and WaitAsync rejects a timeout above
+        // ~49.7 days (0xFFFFFFFE ms) with ArgumentOutOfRangeException — thrown SYNCHRONOUSLY, inside the
+        // try that reads it as "the loop's own failure", which silently skipped the bound altogether.
+        // DrainTimeout is reloadable, so a huge value is reachable from configuration.
+        TimeSpan[] hugeBudgets =
+        [
+            TimeSpan.FromDays(90), // half already fits: must stay unclamped
+            TimeSpan.FromDays(100),
+            TimeSpan.FromDays(365),
+            TimeSpan.FromDays(36500),
+            TimeSpan.MaxValue,
+        ];
+
+        foreach (var budget in hugeBudgets)
+        {
+            var bound = TcpConnectionLifecycle.HandlerLoopTimeoutFor(budget);
+            await Assert
+                .That(bound)
+                .IsGreaterThan(TimeSpan.Zero)
+                .Because($"a {budget} drain budget still bounds the wait");
+            await Assert
+                .That(bound)
+                .IsLessThan(budget)
+                .Because($"a {budget} drain budget has to leave room for the close steps after it");
+            await Assert.That(bound).IsLessThanOrEqualTo(TcpConnectionLifecycle.MaxTimerDuration);
+            await Assert
+                .That(IsLegalWaitTimeout(bound))
+                .IsTrue()
+                .Because($"Task.WaitAsync has to accept the bound derived from a {budget} budget");
+        }
+
+        // The cap IS the timer limit — not a smaller arbitrary number — and the derivation is untouched
+        // below it, so an ordinary budget keeps exactly the bound it had.
+        await Assert
+            .That(TcpConnectionLifecycle.HandlerLoopTimeoutFor(TimeSpan.MaxValue))
+            .IsEqualTo(TcpConnectionLifecycle.MaxTimerDuration);
+        await Assert
+            .That(TcpConnectionLifecycle.HandlerLoopTimeoutFor(TimeSpan.FromDays(90)))
+            .IsEqualTo(TimeSpan.FromDays(45));
+    }
+
+    [Test]
+    public async Task A_huge_drain_budget_does_not_skip_the_handler_loop_bound()
+    {
+        var handler = new ParkedConnectHandler();
+        var node = CreateNode(handler, drainTimeout: TimeSpan.FromDays(365));
+        using var client = new Socket(
+            AddressFamily.InterNetwork,
+            SocketType.Stream,
+            ProtocolType.Tcp
+        );
+
+        await node.StartAsync();
+        await client.ConnectAsync((IPEndPoint)node.LocalEndPoint);
+        await handler.Connected.Task.WaitAsync(TimeSpan.FromSeconds(3));
+
+        try
+        {
+            var connection = GetConnections(node).Values.First();
+            // An external close, so CloseCoreAsync has to wait the handler loop out — with the bound
+            // derived from a 365-day budget, i.e. the clamped 49.7 days.
+            connection.Close(TcpCloseReason.NodeStopping);
+
+            // The regression is unmissable in one direction only: a skipped bound releases the close
+            // (OnClosedAsync runs) within microseconds, whereas the correct behaviour is parked on a
+            // handler the test owns and cannot complete inside the window.
+            var releasedWithoutWaiting = await HasCompletedWithinAsync(
+                handler.Closed.Task,
+                TimeSpan.FromSeconds(1)
+            );
+            await Assert
+                .That(releasedWithoutWaiting)
+                .IsFalse()
+                .Because(
+                    "a huge DrainTimeout must bound the wait for the handler loop, not skip it"
+                );
+        }
+        finally
+        {
+            // A 365-day budget also makes StopAsync's own CancelAfter throw (recorded as a separate
+            // concern — this task clamps the derived bound), so give the node a usable budget before
+            // it is stopped: the same assignment a config reload performs.
+            node.Options.DrainTimeout = TimeSpan.FromMilliseconds(250);
+            await node.DisposeAsync();
+        }
+    }
+
+    [Test]
     public async Task TryTrackConnection_returns_false_when_node_is_stopping()
     {
         var pair = await CreateConnectedSocketsAsync();
@@ -830,6 +994,168 @@ public sealed class TcpNodeBranchTests
         }
     }
 
+    /// <summary>
+    /// The observations that together mean "the accept loop suspended between faults", taken on
+    /// counters that stopping the loop has already frozen.
+    /// </summary>
+    /// <remarks>
+    /// PRIMARY and deliberately timer-free: the loop cannot report fault N+1 before the pause for
+    /// fault N has elapsed, so #backoffs is faults-1 or faults at every instant. A loop that "backs
+    /// off" by not waiting keeps #backoffs at 0 while the fault count climbs — the audit's spin,
+    /// observed with no clock involved.
+    /// <para>
+    /// SECONDARY, and the reason the primary is not enough on its own: a "pause" that costs nothing —
+    /// <c>Task.Delay(TimeSpan.Zero)</c> completes immediately — would be counted just as faithfully, so
+    /// the two &gt;= 1 ms pauses between three faults are also required to have taken at least a
+    /// millisecond. That is a lower bound on a wait that provably cannot return early, not a race.
+    /// </para>
+    /// </remarks>
+    private static async Task AssertAcceptLoopSuspendedAsync(
+        AcceptFaultProbe probe,
+        string expectation
+    )
+    {
+        await Assert.That(probe.Faults).IsGreaterThanOrEqualTo(3);
+        await Assert
+            .That(probe.Backoffs)
+            .IsGreaterThanOrEqualTo(probe.Faults - 1)
+            .Because(
+                $"every accept fault after the first must be preceded by a completed pause: {expectation}"
+            );
+        await Assert
+            .That(probe.Backoffs)
+            .IsLessThanOrEqualTo(probe.Faults)
+            .Because("a pause is counted once it elapsed, never ahead of the fault that caused it");
+        await Assert
+            .That(probe.FirstToNthFault)
+            .IsGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(1))
+            .Because($"the pause has to be one the loop actually waits out: {expectation}");
+    }
+
+    /// <summary>
+    /// Breaks the node's listening socket so that every accept from here on fails, and reports what
+    /// the accept loop did before <paramref name="faultsToObserve" /> such faults had been raised. The
+    /// listener is disposed behind the node's back: it is the one way a test can make
+    /// <c>AcceptAsync</c> fail persistently without the node's own stop, which cancels the loop out of
+    /// the picture. The loop is stopped before the counters are read, so both of them are final.
+    /// </summary>
+    private static async Task<AcceptFaultProbe> ObserveAcceptFaultsAsync(
+        TcpNode node,
+        int faultsToObserve,
+        Action<TcpNode>? afterStart = null
+    )
+    {
+        var faults = 0;
+        long firstFault = 0;
+        long nthFault = 0;
+        node.OnFault += fault =>
+        {
+            if (fault.Code != NodeFaultCode.AcceptFailed)
+            {
+                return;
+            }
+
+            var raised = Interlocked.Increment(ref faults);
+            var stamp = Stopwatch.GetTimestamp();
+            if (raised == 1)
+            {
+                Volatile.Write(ref firstFault, stamp);
+            }
+            else if (raised == faultsToObserve)
+            {
+                Volatile.Write(ref nthFault, stamp);
+            }
+        };
+
+        await node.StartAsync();
+        afterStart?.Invoke(node);
+        GetListener(node).Dispose();
+
+        var observedInTime = await PollUntilAsync(
+            () => Volatile.Read(ref faults) >= faultsToObserve,
+            TimeSpan.FromSeconds(10)
+        );
+
+        // Freeze the loop, and with it both counters, before reading them.
+        await node.StopAsync();
+
+        var raisedFaults = Volatile.Read(ref faults);
+        await Assert
+            .That(observedInTime)
+            .IsTrue()
+            .Because(
+                $"a permanently broken listener should raise {faultsToObserve} accept faults, saw {raisedFaults}"
+            );
+
+        return new AcceptFaultProbe(
+            raisedFaults,
+            node.AcceptFaultBackoffs,
+            Stopwatch.GetElapsedTime(Volatile.Read(ref firstFault), Volatile.Read(ref nthFault))
+        );
+    }
+
+    /// <summary>
+    /// Bounded observation of a side effect that has no task to await. The delay is only the poll
+    /// interval on a positive observation, never an order the test relies on, and the deadline is on a
+    /// <see cref="Stopwatch" /> so a wall clock that steps cannot expire the window early.
+    /// </summary>
+    private static async Task<bool> PollUntilAsync(Func<bool> probe, TimeSpan timeout)
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (true)
+        {
+            if (probe())
+            {
+                return true;
+            }
+
+            if (elapsed.Elapsed >= timeout)
+            {
+                return false;
+            }
+
+            await Task.Delay(20);
+        }
+    }
+
+    /// <summary>
+    /// Bounded observation of "this task completed", used to assert the ABSENCE of an event: the
+    /// regression is unblocked and shows up immediately, whereas the correct behaviour is parked on a
+    /// seam the test owns and cannot complete inside the window.
+    /// </summary>
+    private static async Task<bool> HasCompletedWithinAsync(Task task, TimeSpan timeout)
+    {
+        try
+        {
+            await task.WaitAsync(timeout);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// True when <see cref="Task.WaitAsync(TimeSpan)" /> accepts the timeout. It validates the value
+    /// synchronously — even for an already-completed task, so this needs no wait — and that is exactly
+    /// the call the close makes with the derived handler-loop bound.
+    /// </summary>
+    private static bool IsLegalWaitTimeout(TimeSpan timeout)
+    {
+        try
+        {
+            _ = Task.CompletedTask.WaitAsync(timeout);
+            return true;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+    }
+
+    private sealed record AcceptFaultProbe(long Faults, long Backoffs, TimeSpan FirstToNthFault);
+
     private static TcpNode CreateNode(ILogger? logger) => CreateNode(new NoOpTcpHandler(), logger);
 
     private static TcpNode CreateNode(
@@ -839,7 +1165,8 @@ public sealed class TcpNodeBranchTests
         bool enableDualMode = false,
         TimeSpan? idleTimeout = null,
         TimeSpan? idleScanInterval = null,
-        TimeSpan? drainTimeout = null
+        TimeSpan? drainTimeout = null,
+        TimeSpan? acceptFaultBackoff = null
     )
     {
         var options = new TcpNodeOptions
@@ -854,6 +1181,11 @@ public sealed class TcpNodeBranchTests
         if (drainTimeout is { } timeout)
         {
             options.DrainTimeout = timeout;
+        }
+
+        if (acceptFaultBackoff is { } backoff)
+        {
+            options.AcceptFaultBackoff = backoff;
         }
 
         return new TcpNode(options);
