@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace PicoJsonRpc.Tests;
 
 public sealed class LifecycleTests
@@ -6,6 +8,12 @@ public sealed class LifecycleTests
         AppContext.BaseDirectory,
         "Fixtures",
         "echo_server.mjs"
+    );
+
+    private static readonly string ChattyJs = Path.Combine(
+        AppContext.BaseDirectory,
+        "Fixtures",
+        "chatty_server.mjs"
     );
 
     [Test]
@@ -110,6 +118,73 @@ public sealed class LifecycleTests
         var ch3 = await lc.AcquireAsync(default); // no backoff armed
         await Assert.That(ch3).IsSameReferenceAs(ch2);
         await lc.RecycleAsync();
+    }
+
+    /// <summary>
+    /// T7.1: a child that writes ≫ one pipe buffer to stderr BEFORE it serves
+    /// its first request must still complete the round trip quickly. Without a
+    /// reader on stderr the child parks inside write(2) — the call never
+    /// returns, with no error and no diagnostic.
+    /// </summary>
+    [Test]
+    public async Task Chatty_child_does_not_deadlock()
+    {
+        Skip.Unless(NodePresent, "node is not installed in PATH - the chatty fixture needs it");
+        var lc = new ProcessLifecycle(
+            "chatty",
+            ["node", ChattyJs],
+            idleTimeout: TimeSpan.FromMinutes(1)
+        );
+        await using var client = new JsonRpcClient(lc);
+        try
+        {
+            // the 5 s budget is the assertion: on a blocked child AcquireAsync
+            // succeeds (spawn never blocks) but the call is cancelled, so the
+            // test fails instead of hanging the run.
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var ch = await lc.AcquireAsync(cts.Token);
+            var resp = await client.CallAsync("ping", "{}", cts.Token);
+            await Assert.That(resp.Error).IsNull();
+
+            // the tail keeps the LAST bytes of 200 KB and stays bounded
+            var deadline = DateTime.UtcNow.AddSeconds(2);
+            while (
+                DateTime.UtcNow < deadline && !ch.StderrTail.EndsWith("CHATTY-STDERR-END\n")
+            )
+                await Task.Delay(20);
+            await Assert.That(ch.StderrTail).EndsWith("CHATTY-STDERR-END\n");
+            await Assert.That(ch.StderrTail.Length).IsLessThanOrEqualTo(8 * 1024);
+        }
+        finally
+        {
+            await lc.RecycleAsync();
+        }
+    }
+
+    private static readonly bool NodePresent = ProbeNode();
+
+    private static bool ProbeNode()
+    {
+        try
+        {
+            using var p = Process.Start(
+                new ProcessStartInfo("node", "--version")
+                {
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                }
+            );
+            if (p is null)
+                return false;
+            var version = p.StandardOutput.ReadToEnd();
+            p.WaitForExit(5000);
+            return version.Trim().Length > 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     [Test]

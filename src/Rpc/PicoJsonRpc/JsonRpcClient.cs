@@ -225,7 +225,7 @@ public sealed class JsonRpcClient : IAsyncDisposable
             _readerChannel = null;
             _readerTask = null;
         }
-        var ex = new IOException("extension process closed the stream");
+        var ex = new IOException("extension process closed the stream" + DescribeStderr(ch));
         foreach (var kvp in _pending)
             kvp.Value.TrySetException(ex);
         foreach (var kvp in _streams)
@@ -234,6 +234,26 @@ public sealed class JsonRpcClient : IAsyncDisposable
         _streams.Clear();
         if (!ch.RecycleRequested)
             _lifecycle.Churn(ch);
+    }
+
+    /// <summary>
+    /// Attach the child's own last words to a channel failure (T7.1): a stdio
+    /// extension that dies of a stack trace, an OOM or a bad config usually says
+    /// so on stderr, and an `IOException` with no cause is undebuggable. Bounded
+    /// to 2 KB in the message — the full 8 KB tail stays on
+    /// <see cref="JsonRpcChannel.StderrTail"/> for a caller that wants it.
+    /// </summary>
+    private static string DescribeStderr(JsonRpcChannel ch)
+    {
+        var tail = ch.CaptureStderrTail(TimeSpan.FromMilliseconds(250)).TrimEnd();
+        if (tail.Length == 0)
+            return string.Empty;
+        const int maxInMessage = 2048;
+        var body =
+            tail.Length <= maxInMessage
+                ? tail
+                : "…" + tail[^maxInMessage..];
+        return "; child stderr tail:\n" + body;
     }
 
     private int _disposed;

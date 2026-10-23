@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace PicoJsonRpc;
 
 /// <summary>
-/// A live stdio channel to one child process: process handle + stdin/stdout
+/// A live stdio channel to one child process: process handle + stdin/stdout/stderr
 /// streams. Carries the crash/backoff state the lifecycle manages on behalf
 /// of the client read loop (B3): <see cref="ConsecutiveCrashes"/> /
 /// <see cref="NextRetryAtUtc"/> are bumped via <see cref="ProcessLifecycle.Churn"/>
@@ -13,12 +13,89 @@ namespace PicoJsonRpc;
 /// </summary>
 public sealed class JsonRpcChannel : IDisposable
 {
+    /// <summary>How much of the child's stderr tail is retained (per channel).</summary>
+    internal const int StderrTailLimit = 8 * 1024;
+
+    private readonly byte[] _stderrWindow = new byte[StderrTailLimit];
+    private readonly object _stderrGate = new();
+    private int _stderrLen;
+
     public required Process Process { get; init; }
     public required Stream Stdin { get; init; }
     public required Stream Stdout { get; init; }
+
+    /// <summary>The child's stderr stream. Redirected pipes have a finite OS
+    /// buffer (4-64 KB), so <see cref="ProcessLifecycle"/> drains this from
+    /// spawn to dispose — an unread pipe deadlocks a chatty child inside
+    /// write(2), with no error, no timeout and no diagnostic.</summary>
+    public required Stream Stderr { get; init; }
     public required string Name { get; init; }
     public int ConsecutiveCrashes { get; set; }
     public DateTime NextRetryAtUtc { get; set; }
+
+    /// <summary>
+    /// The last <see cref="StderrTailLimit"/> bytes the child wrote to stderr,
+    /// decoded as UTF-8 (empty when it wrote nothing). Live view — readable at
+    /// any time, so a channel failure can carry the child's own account of why
+    /// it died. Starts at a byte boundary, not a code-point one: a truncated
+    /// multi-byte sequence shows up as U+FFFD.
+    /// </summary>
+    internal string StderrTail
+    {
+        get
+        {
+            lock (_stderrGate)
+                return _stderrLen == 0
+                    ? string.Empty
+                    : Encoding.UTF8.GetString(_stderrWindow, 0, _stderrLen);
+        }
+    }
+
+    /// <summary>The background stderr drain (owned by <see cref="ProcessLifecycle"/>).</summary>
+    internal Task StderrDrain { get; set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// The stderr tail for a FAILURE report, after giving the drain a short
+    /// bounded moment to catch up (the child may have closed stdout a beat
+    /// before it finished writing its dying words). Never blocks a caller for
+    /// longer than <paramref name="maxWait"/>.
+    /// </summary>
+    internal string CaptureStderrTail(TimeSpan maxWait)
+    {
+        try
+        {
+            StderrDrain.Wait(maxWait);
+        }
+        catch
+        {
+            // a faulted/aborted drain has nothing more to contribute
+        }
+        return StderrTail;
+    }
+
+    /// <summary>Keep only the newest bytes: shift out as much of the old window
+    /// as the incoming chunk needs. Bounded memory regardless of how much the
+    /// child logs.</summary>
+    internal void AppendStderr(ReadOnlySpan<byte> bytes)
+    {
+        lock (_stderrGate)
+        {
+            if (bytes.Length >= _stderrWindow.Length)
+            {
+                bytes[^StderrTailLimit..].CopyTo(_stderrWindow);
+                _stderrLen = StderrTailLimit;
+                return;
+            }
+            var overflow = _stderrLen + bytes.Length - _stderrWindow.Length;
+            if (overflow > 0)
+            {
+                Buffer.BlockCopy(_stderrWindow, overflow, _stderrWindow, 0, _stderrLen - overflow);
+                _stderrLen -= overflow;
+            }
+            bytes.CopyTo(_stderrWindow.AsSpan(_stderrLen));
+            _stderrLen += bytes.Length;
+        }
+    }
 
     /// <summary>Intentional recycle/idle reclaim flag — the client read loop
     /// uses it to distinguish a crash (churn) from a deliberate teardown.</summary>
@@ -35,6 +112,16 @@ public sealed class JsonRpcChannel : IDisposable
         catch
         {
             // kill races are best-effort; the process is already gone or will be
+        }
+        try
+        {
+            // the stderr pipe reaches EOF once the child is gone, so the drain
+            // is settling — bound the wait, never block the caller on it
+            StderrDrain.Wait(1000);
+        }
+        catch
+        {
+            // a faulted/aborted drain has nothing more to contribute
         }
         try
         {
@@ -225,9 +312,50 @@ public sealed class ProcessLifecycle
             Process = p,
             Stdin = p.StandardInput.BaseStream,
             Stdout = p.StandardOutput.BaseStream,
+            Stderr = p.StandardError.BaseStream,
             Name = _name,
         };
+        // T7.1: start draining immediately — the child owns a finite stderr
+        // pipe and blocks inside write(2) the moment it fills, so there is no
+        // safe window to defer this to the first read.
+        ch.StderrDrain = DrainStderrAsync(ch);
         return ch;
+    }
+
+    /// <summary>
+    /// Read the child's stderr until EOF (process exit / pipe closed), keeping
+    /// only the newest <see cref="JsonRpcChannel.StderrTailLimit"/> bytes in the
+    /// channel's ring. Reads in fixed chunks rather than `ReadToEndAsync` on
+    /// purpose: the point is a BOUNDED sink, and an unbounded string would just
+    /// trade a deadlock for a memory leak on a chatty extension. Failures are
+    /// swallowed — a broken pipe means the child is gone anyway, and the tail
+    /// already holds whatever it managed to say.
+    /// </summary>
+    private static async Task DrainStderrAsync(JsonRpcChannel ch)
+    {
+        var chunk = new byte[4096];
+        try
+        {
+            while (true)
+            {
+                var n = await ch.Stderr.ReadAsync(chunk).ConfigureAwait(false);
+                if (n == 0)
+                    break; // EOF — the child closed stderr or exited
+                ch.AppendStderr(chunk.AsSpan(0, n));
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            // Dispose closed the pipe under us — nothing left to drain
+        }
+        catch (IOException)
+        {
+            // broken pipe: the child died mid-write, keep the tail we have
+        }
+        catch (OperationCanceledException)
+        {
+            // async read aborted by teardown
+        }
     }
 
     /// <summary>
