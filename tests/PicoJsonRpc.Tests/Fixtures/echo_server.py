@@ -1,6 +1,7 @@
 # NDJSON echo fixture (Python parity of echo_server.mjs) — reads request
 # frames on stdin, replies a response frame per line with the request id
-# preserved and the request echoed as raw JSON text in `result`.
+# preserved and the request echoed inside `result` as a JSON string (the
+# reader still yields it as raw payload text).
 import json
 import sys
 

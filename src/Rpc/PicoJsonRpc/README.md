@@ -1,8 +1,9 @@
 # PicoJsonRpc
 
 **AOT-first JSON-RPC 2.0 protocol core** — NDJSON framing, child-process
-lifecycle management, and an id-routed multiplexed client. Serialized with
-PicoJetson (compile-time shapes only, zero reflection).
+lifecycle management, and an id-routed multiplexed client. The envelope is
+hand-written UTF-8 JSON (`Utf8JsonWriter`); typed payloads are PicoJetson
+compile-time shapes (zero reflection).
 
 ## Positioning
 
@@ -23,7 +24,31 @@ PicoJetson (compile-time shapes only, zero reflection).
 | `NdjsonFramer` | Newline-delimited JSON framing over a stream (`Encode` / `ReadAsync`) |
 | `JsonRpcClient` | Multiplexed client: unique id per call, concurrent in-flight (bounded), response routing |
 | `ProcessLifecycle` | Child-process lifecycle over stdio (spawn, idle recycling, crash backoff) |
-| `JsonRpcEnvelopes` | `JsonRpcFrame` request/response/notification/error shapes + PicoJetson `Serialize/Deserialize` |
+| `JsonRpcEnvelopes` | `JsonRpcFrame` request/response/notification/error shapes + `JsonRpcCodec.Serialize/Deserialize` |
+
+## Wire
+
+One JSON-RPC 2.0 object per line (NDJSON). Every frame carries
+`"jsonrpc":"2.0"`, `params`/`result`/`error.data` are **inline JSON values**
+(raw payload text in the API, inlined here — not a string containing JSON), and
+member presence follows the frame kind:
+
+```text
+{"jsonrpc":"2.0","id":"req-1","method":"stream","params":{"messages":[]}}   request
+{"jsonrpc":"2.0","method":"chunk","params":{"text":"a"}}                    notification — no id
+{"jsonrpc":"2.0","id":"req-2","result":{"ok":true}}                        response — one of …
+{"jsonrpc":"2.0","id":"req-2","error":{"code":-32601,"message":"no such method"}}   … result / error
+```
+
+- `params` is omitted when a caller passes `null` (JSON-RPC 2.0 requires a
+  structured value; `"params":null` would be non-conforming).
+- A response carries exactly one of `result`/`error`; a null result is written
+  as `"result":null`.
+- An `id` that IS a JSON number is echoed as a number (`"id":7`), so a peer that
+  sends numeric ids is answered in kind; a string id stays a string.
+- **Batching is unsupported.** A line that starts with `[` is not decoded: the
+  framer yields a `-32600 Invalid Request` frame (null id) for the caller to send
+  back, and the stream keeps flowing — the channel is not failed.
 
 ## Quick Start
 
@@ -37,8 +62,8 @@ var lifecycle = new ProcessLifecycle(
 );
 await using var client = new JsonRpcClient(lifecycle);
 
-// Id-routed call: params/result are raw JSON (PicoJetson shapes via
-// JsonRpcFrame.Serialize/Deserialize<T>)
+// Id-routed call: params/result are raw JSON text, inlined on the wire
+// (typed payloads: JsonRpcCodec.Serialize/Deserialize<T>, compile-time shapes)
 var frame = await client.CallAsync(
     "tools/list",
     paramsJson: null,
@@ -46,10 +71,11 @@ var frame = await client.CallAsync(
 );
 if (frame.Error is { } err)
     throw new JsonRpcException(err.Code, err.Message);
-var result = JsonRpcFrame.Deserialize<ToolsListResult>(frame.Result!); // compile-time shape
+var result = JsonRpcCodec.Deserialize<ToolsListResult>(frame.Result!); // compile-time shape
 ```
 
 ## AOT Contract
 
-Zero reflection, zero runtime code generation — all serialization is
-compile-time PicoJetson shapes. No IL2xxx exception list.
+Zero reflection, zero runtime code generation — the frame envelope is
+hand-written `Utf8JsonWriter`/`JsonDocument` code and every typed payload is a
+compile-time PicoJetson shape. No IL2xxx exception list.

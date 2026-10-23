@@ -5,36 +5,41 @@ public sealed class EnvelopeTests
     [Test]
     public async Task Envelope_RoundTrip()
     {
-        var req = JsonRpcFrame.Request("1", "ping", "{\"a\":1}");
-        // A0 probe: PicoJetson Serialize<T> returns string; Deserialize<T> takes ReadOnlySpan<byte>.
-        var json = JsonSerializer.Serialize(req, JsonRpcCodec.Camel);
-        var back = JsonSerializer.Deserialize<JsonRpcFrame>(
-            Encoding.UTF8.GetBytes(json),
-            JsonRpcCodec.Camel
-        );
-        await Assert.That(back).IsEquivalentTo(req);
+        var req = JsonRpcFrame.Request("req-1", "ping", "{\"a\":1}");
+        // the STRING face of the codec (what a frame looks like as text) must
+        // round-trip: inline payload → raw payload text
+        var json = JsonRpcCodec.Serialize(req);
+        var back = JsonRpcCodec.Deserialize<JsonRpcFrame>(json);
+        await Assert.That(back).IsNotNull();
+        await Assert.That(back!.Id).IsEqualTo(req.Id);
+        await Assert.That(back.Method).IsEqualTo(req.Method);
+        await Assert.That(back.Params).IsEqualTo(req.Params);
+        await Assert.That(back.Result).IsNull();
+        await Assert.That(back.Error).IsNull();
     }
 
-    /// <summary>Wire contract lock: JSON-RPC 2.0 reserved members are camelCase
-    /// (id/method/params/result/error) and params/result embed raw JSON text as
-    /// JSON strings (spec §9.8) — the fixtures and thin packages depend on this.</summary>
+    /// <summary>Wire contract lock (T7.4 / D2 = A): a frame is a JSON-RPC 2.0
+    /// object — <c>jsonrpc</c> always present, <c>params</c>/<c>result</c> inlined as
+    /// JSON <em>values</em> (not strings containing JSON), and only the members the
+    /// frame kind uses (a notification has no <c>id</c>). The framer-level byte
+    /// snapshot lives in <see cref="WireConformanceTests"/>; this is the string
+    /// face of the same contract. The id below is NOT numeric-looking on purpose:
+    /// a numeric id's raw text is echoed back as a JSON number (see
+    /// <see cref="WireConformanceTests.Inbound_numeric_id_is_routed"/>), a string
+    /// id stays a JSON string.</summary>
     [Test]
-    public async Task Wire_Shape_IsCamelCase_WithStringPayloads()
+    public async Task Wire_Shape_Is_JsonRpc_2_0_WithInlinedPayloads()
     {
-        var req = JsonRpcFrame.Request("1", "stream", "{\"messages\":[]}");
+        var req = JsonRpcFrame.Request("req-1", "stream", "{\"messages\":[]}");
         var json = JsonRpcCodec.Serialize(req);
         await Assert
             .That(json)
-            .IsEqualTo(
-                "{\"id\":\"1\",\"method\":\"stream\",\"result\":null,\"params\":\"{\\\"messages\\\":[]}\",\"error\":null}"
-            );
+            .IsEqualTo("{\"jsonrpc\":\"2.0\",\"id\":\"req-1\",\"method\":\"stream\",\"params\":{\"messages\":[]}}");
 
         var notif = JsonRpcFrame.Notification("chunk", "{\"text\":\"a\"}");
         await Assert
             .That(JsonRpcCodec.Serialize(notif))
-            .IsEqualTo(
-                "{\"id\":null,\"method\":\"chunk\",\"result\":null,\"params\":\"{\\\"text\\\":\\\"a\\\"}\",\"error\":null}"
-            );
+            .IsEqualTo("{\"jsonrpc\":\"2.0\",\"method\":\"chunk\",\"params\":{\"text\":\"a\"}}");
     }
 
     [Test]

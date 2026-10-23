@@ -1,6 +1,7 @@
-// NDJSON echo fixture — mirrors the A0 string-embedded wire contract: reads
-// request frames on stdin, replies a response frame per line with the request
-// id preserved and the request echoed as raw JSON text in `result`.
+// NDJSON echo fixture — reads request frames on stdin, replies a response frame
+// per line with the request id preserved and the request echoed inside
+// `result` as a JSON STRING (the reader still yields it as raw payload text,
+// and the request itself arrives with `params` inlined as a JSON value).
 import readline from "node:readline";
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 rl.on("line", (line) => {
