@@ -1,22 +1,17 @@
-using System.Diagnostics;
-
 namespace PicoJsonRpc.Tests;
 
 public sealed class LifecycleTests
 {
-    private static readonly string FixtureJs = Path.Combine(
-        AppContext.BaseDirectory,
-        "Fixtures",
-        "echo_server.mjs"
-    );
+    // Resolved per USE, not in a static initializer: a missing fixture must fail the
+    // test that wanted it, with NodeFixture's "this is a broken copy rule" message -
+    // not blow up every test in the class as a TypeInitializationException, and not
+    // touch Acquire_UnknownRuntime_Throws, which needs no fixture at all.
+    private static string FixtureJs => NodeFixture.PathFor(NodeFixture.Echo);
 
-    private static readonly string ChattyJs = Path.Combine(
-        AppContext.BaseDirectory,
-        "Fixtures",
-        "chatty_server.mjs"
-    );
+    private static string ChattyJs => NodeFixture.PathFor(NodeFixture.Chatty);
 
     [Test]
+    [SkipUnlessNode]
     public async Task Acquire_SpawndNode_AndRecycle_Kills()
     {
         var lc = new ProcessLifecycle(
@@ -37,6 +32,7 @@ public sealed class LifecycleTests
     }
 
     [Test]
+    [SkipUnlessNode]
     public async Task Acquire_Concurrent_ReusesSingleInstance()
     {
         var lc = new ProcessLifecycle(
@@ -51,6 +47,7 @@ public sealed class LifecycleTests
     }
 
     [Test]
+    [SkipUnlessNode]
     public async Task Acquire_ThreeCrashes_EntersBackoff()
     {
         var lc = new ProcessLifecycle(
@@ -70,6 +67,7 @@ public sealed class LifecycleTests
     }
 
     [Test]
+    [SkipUnlessNode]
     public async Task Acquire_SuccessResetsBackoff()
     {
         var lc = new ProcessLifecycle(
@@ -100,6 +98,7 @@ public sealed class LifecycleTests
     }
 
     [Test]
+    [SkipUnlessNode]
     public async Task Churn_StaleChannel_DoesNotCorruptCurrent()
     {
         // regression-lock for the review #4 guard: a stale-reader EOF must not
@@ -133,12 +132,9 @@ public sealed class LifecycleTests
     /// </para>
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Second_acquire_after_crash_still_respects_backoff()
     {
-        Skip.Unless(
-            NodePresent,
-            "node is not installed in PATH - the backoff flow needs a real child"
-        );
         var lc = new ProcessLifecycle(
             "echo",
             ["node", FixtureJs],
@@ -171,9 +167,9 @@ public sealed class LifecycleTests
     /// returns, with no error and no diagnostic.
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Chatty_child_does_not_deadlock()
     {
-        Skip.Unless(NodePresent, "node is not installed in PATH - the chatty fixture needs it");
         var lc = new ProcessLifecycle(
             "chatty",
             ["node", ChattyJs],
@@ -200,32 +196,6 @@ public sealed class LifecycleTests
         finally
         {
             await lc.RecycleAsync();
-        }
-    }
-
-    private static readonly bool NodePresent = ProbeNode();
-
-    private static bool ProbeNode()
-    {
-        try
-        {
-            using var p = Process.Start(
-                new ProcessStartInfo("node", "--version")
-                {
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                }
-            );
-            if (p is null)
-                return false;
-            var version = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(5000);
-            return version.Trim().Length > 0;
-        }
-        catch
-        {
-            return false;
         }
     }
 

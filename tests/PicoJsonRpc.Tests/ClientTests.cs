@@ -16,6 +16,13 @@ namespace PicoJsonRpc.Tests;
 /// belong to the test — that is what lets it say exactly when a frame arrives
 /// and when the child's stdout ends.
 /// </para>
+/// <para>
+/// That real handle is the only thing here that needs a runtime, so every test in
+/// this class carries <see cref="SkipUnlessNodeAttribute"/>: they skip together on a
+/// node-less machine (see <see cref="NodeFixture"/> for the exact loss), and the one
+/// test that does NOT — <c>Route_flags_a_dropped_frame_...</c>, pure bookkeeping —
+/// runs either way.
+/// </para>
 /// </summary>
 public sealed class ClientTests
 {
@@ -34,13 +41,9 @@ public sealed class ClientTests
     /// caller holds <see cref="CancellationToken.None"/> and waits forever.
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Pending_call_fails_when_its_own_channel_dies_after_a_respawn()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         using var second = new TestChannel("ch-2");
         var lifecycle = new ScriptedLifecycle(first.Channel, second.Channel);
@@ -81,13 +84,9 @@ public sealed class ClientTests
     /// table (failed, or silently dropped), leaving the caller waiting forever.
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Call_registered_during_handle_eof_is_not_lost()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         using var second = new TestChannel("ch-2");
         var lifecycle = new ScriptedLifecycle(first.Channel, second.Channel);
@@ -139,13 +138,9 @@ public sealed class ClientTests
     /// </para>
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Call_and_stream_registered_during_dispose_fail_instead_of_hanging()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         var lifecycle = new ScriptedLifecycle(first.Channel);
         var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
@@ -205,13 +200,9 @@ public sealed class ClientTests
     /// </para>
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Cancelled_stream_on_a_live_client_still_writes_its_cancel_notification()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         var lifecycle = new ScriptedLifecycle(first.Channel);
         await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
@@ -256,13 +247,9 @@ public sealed class ClientTests
     /// </para>
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Two_concurrent_streams_do_not_cross_talk()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         var lifecycle = new ScriptedLifecycle(first.Channel);
         await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
@@ -309,13 +296,9 @@ public sealed class ClientTests
     /// </para>
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Uncorrelated_notification_reaches_a_lone_stream()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         var lifecycle = new ScriptedLifecycle(first.Channel);
         await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
@@ -346,13 +329,9 @@ public sealed class ClientTests
     /// </para>
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Trailing_uncorrelated_chunk_after_its_stream_ended_reaches_the_next_stream()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         var lifecycle = new ScriptedLifecycle(first.Channel);
         await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
@@ -393,13 +372,9 @@ public sealed class ClientTests
     /// </para>
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Dropped_notifications_are_counted_at_both_drop_sites()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         var lifecycle = new ScriptedLifecycle(first.Channel);
         await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
@@ -496,13 +471,9 @@ public sealed class ClientTests
     /// to, and "give it to everyone" is the interleaving defect itself.
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Uncorrelated_notification_is_dropped_when_several_streams_are_live()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         var lifecycle = new ScriptedLifecycle(first.Channel);
         await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
@@ -535,13 +506,9 @@ public sealed class ClientTests
     /// same cross-talk in a rarer costume.
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Notification_for_an_unknown_stream_id_is_dropped()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         var lifecycle = new ScriptedLifecycle(first.Channel);
         await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
@@ -565,13 +532,9 @@ public sealed class ClientTests
     /// reach its own stream.
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Deeply_nested_chunk_is_still_routed_by_its_stream_id()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         var lifecycle = new ScriptedLifecycle(first.Channel);
         await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
@@ -608,13 +571,9 @@ public sealed class ClientTests
     /// <see cref="JsonRpcClient"/> and the README ("batch line is not answered").
     /// </summary>
     [Test]
+    [SkipUnlessNode]
     public async Task Batch_frame_is_dropped_by_the_client_not_sent_back()
     {
-        Skip.Unless(
-            NodeRuntime.Present,
-            "node is not installed in PATH - the scripted channels need a real process handle"
-        );
-
         using var first = new TestChannel("ch-1");
         var lifecycle = new ScriptedLifecycle(first.Channel);
         await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
@@ -988,36 +947,5 @@ public sealed class ClientTests
             throw new NotSupportedException();
 
         protected override void Dispose(bool disposing) { }
-    }
-
-    /// <summary>Is there a `node` runtime to give the scripted channels a real
-    /// process handle? Missing → the tests skip, they never fail.</summary>
-    private static class NodeRuntime
-    {
-        public static readonly bool Present = Probe();
-
-        private static bool Probe()
-        {
-            try
-            {
-                using var p = Process.Start(
-                    new ProcessStartInfo("node", "--version")
-                    {
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                    }
-                );
-                if (p is null)
-                    return false;
-                var version = p.StandardOutput.ReadToEnd();
-                p.WaitForExit(5000);
-                return version.Trim().Length > 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
     }
 }

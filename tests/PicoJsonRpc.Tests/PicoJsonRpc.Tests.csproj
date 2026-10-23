@@ -16,11 +16,24 @@
     <PackageReference Include="TUnit" />
   </ItemGroup>
 
+  <!--
+    Every fixture under Fixtures/ lands beside the test assembly, because that is the
+    only place the tests look (NodeFixture.PathFor resolves against
+    AppContext.BaseDirectory).
+
+    Update, not Include: the SDK's default None glob ALREADY carries these files, so
+    Include added a second item per fixture and the copy depended on which duplicate
+    won. Update configures the item the SDK created - the rule we actually mean
+    (`dotnet msbuild -getItem:None` then shows one item per fixture, with the copy
+    metadata, instead of two).
+
+    A missing fixture is NOT silent: NodeFixture.PathFor throws FileNotFoundException,
+    and NodeFixtureTests.Every_named_fixture_is_copied_to_the_output_directory asserts
+    every name in NodeFixture.Named is present - on every run, node or no node.
+  -->
   <ItemGroup>
-    <None
-      Include="Fixtures\**"
-      CopyToOutputDirectory="PreserveNewest"
-      CopyToPublishDirectory="PreserveNewest"
-    />
+    <None Update="Fixtures/**"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
