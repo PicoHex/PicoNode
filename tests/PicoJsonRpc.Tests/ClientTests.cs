@@ -298,8 +298,15 @@ public sealed class ClientTests
     /// T7.5, fallback 1 — an UNCORRELATED notification (no <c>params._streamId</c>)
     /// still reaches the one live stream. A peer that predates the convention, or a
     /// method that carries no stream correlation, must not go silent just because
-    /// the client learned to route: with a single subscription there is nobody to
-    /// cross-talk with, so the pre-T7.5 delivery is preserved verbatim.
+    /// the client learned to route: the pre-T7.5 delivery is preserved for the
+    /// single-stream peer.
+    /// <para>
+    /// This is BEST EFFORT, not a safety guarantee — one live stream says nothing
+    /// about whose frame arrived, and a trailing chunk of a stream that already
+    /// completed reaches the next one (pinned by
+    /// <see cref="Trailing_uncorrelated_chunk_after_its_stream_ended_reaches_the_next_stream"/>
+    /// below).
+    /// </para>
     /// </summary>
     [Test]
     public async Task Uncorrelated_notification_reaches_a_lone_stream()
@@ -322,6 +329,165 @@ public sealed class ClientTests
         var frames = await only.WaitAsync(HangBudget);
         await Assert.That(frames.Count).IsEqualTo(1);
         await Assert.That(TextOf(frames[0])).IsEqualTo("uncorrelated");
+    }
+
+    /// <summary>
+    /// T7.5 fix round 1 (merge condition) — the fallback's edge, pinned. The doc
+    /// used to claim the lone-stream fallback is SAFE because "with one subscription
+    /// there is nothing to cross-talk with". That is false: "one stream is live" is
+    /// not a fact about WHOSE frame arrived. Stream A completes, stream B opens, and a
+    /// TRAILING uncorrelated chunk of A's still arrives — it is delivered to B. That
+    /// is the pre-T7.5 cross-talk, sequential instead of concurrent.
+    /// <para>
+    /// The behaviour is pinned as-is (the cheapest honest fix): the fallback is BEST
+    /// EFFORT against an uncorrelated peer, and the doc says so now. If a future change
+    /// makes the client remember that a stream has ended and stop falling back, this
+    /// test fails and the doc must move with it — which is the point of pinning it.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Trailing_uncorrelated_chunk_after_its_stream_ended_reaches_the_next_stream()
+    {
+        Skip.Unless(
+            NodeRuntime.Present,
+            "node is not installed in PATH - the scripted channels need a real process handle"
+        );
+
+        using var first = new TestChannel("ch-1");
+        var lifecycle = new ScriptedLifecycle(first.Channel);
+        await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
+
+        // stream A opens and COMPLETES: its subscription is gone (the enumeration
+        // below cannot return before UntrackStream ran)
+        var a = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var aRequest = await first.NextRequestAsync();
+        first.Send(JsonRpcFrame.Response(aRequest.Id!, "\"done\""));
+        await Assert.That((await a.WaitAsync(HangBudget)).Count).IsEqualTo(0);
+
+        // B opens — now A's trailing chunk is uncorrelated with exactly ONE stream
+        // live, which is all the fallback ever asked for
+        var b = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var bRequest = await first.NextRequestAsync();
+        first.Send(JsonRpcFrame.Notification("stream", "{\"text\":\"late-from-a\"}"));
+        first.Send(JsonRpcFrame.Response(bRequest.Id!, "\"done\""));
+
+        // ...and it lands in B: the measured misdelivery, i.e. why the fallback may
+        // never be described as safe
+        var bFrames = await b.WaitAsync(HangBudget);
+        await Assert.That(Labels(bFrames)).IsEqualTo("late-from-a");
+    }
+
+    /// <summary>
+    /// T7.5 fix round 1 — drops are COUNTED, not logged. `PicoJsonRpc` has no logging
+    /// dependency (taking one for a debug line is an API decision, not a side effect),
+    /// so the two places that lose an unattributable chunk were completely silent: a
+    /// `_streamId` naming no live stream, and an uncorrelated notification while
+    /// several streams are live. Both now move
+    /// <see cref="JsonRpcClient.DroppedNotifications"/>.
+    /// <para>
+    /// The counter is asserted to stay put for the frames that are DELIVERED — a
+    /// correlated chunk and the lone-stream fallback — so "increment on every
+    /// notification" cannot pass. Each phase is observed through a stream that runs to
+    /// completion, so no assertion depends on timing: the reader dispatches frames in
+    /// order, and a completed stream proves every earlier frame was handled.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Dropped_notifications_are_counted_at_both_drop_sites()
+    {
+        Skip.Unless(
+            NodeRuntime.Present,
+            "node is not installed in PATH - the scripted channels need a real process handle"
+        );
+
+        using var first = new TestChannel("ch-1");
+        var lifecycle = new ScriptedLifecycle(first.Channel);
+        await using var client = new JsonRpcClient(lifecycle, maxInFlight: 8);
+        await Assert.That(Volatile.Read(ref client.DroppedNotifications)).IsEqualTo(0);
+
+        // A) ONE stream live: an unknown _streamId is drop site 1
+        var only = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var request = await first.NextRequestAsync();
+        first.Send(JsonRpcFrame.Notification("stream", "{\"text\":\"uncorrelated\"}"));
+        first.Send(Chunk(request.Id!, "mine", 0));
+        first.Send(Chunk("not-a-live-stream", "ghost", 0));
+        first.Send(Chunk(request.Id!, "mine", 1));
+        first.Send(JsonRpcFrame.Response(request.Id!, "\"done\""));
+
+        var lone = await only.WaitAsync(HangBudget);
+        await Assert.That(Labels(lone)).IsEqualTo("uncorrelated,mine-0,mine-1");
+        // the fallback delivery and the correlated chunks moved nothing; the ghost did
+        await Assert.That(Volatile.Read(ref client.DroppedNotifications)).IsEqualTo(1);
+
+        // B) SEVERAL streams live: an uncorrelated chunk is drop site 2
+        var left = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var leftRequest = await first.NextRequestAsync();
+        var right = CollectAsync(client.StreamAsync("stream", null, CancellationToken.None));
+        var rightRequest = await first.NextRequestAsync();
+
+        first.Send(JsonRpcFrame.Notification("stream", "{\"text\":\"ambiguous\"}"));
+        first.Send(Chunk(leftRequest.Id!, "left", 0));
+        first.Send(Chunk(rightRequest.Id!, "right", 0));
+        first.Send(JsonRpcFrame.Response(leftRequest.Id!, "\"done\""));
+        first.Send(JsonRpcFrame.Response(rightRequest.Id!, "\"done\""));
+
+        var leftFrames = await left.WaitAsync(HangBudget);
+        var rightFrames = await right.WaitAsync(HangBudget);
+        await Assert.That(Labels(leftFrames)).IsEqualTo("left-0");
+        await Assert.That(Labels(rightFrames)).IsEqualTo("right-0");
+        await Assert.That(Volatile.Read(ref client.DroppedNotifications)).IsEqualTo(2);
+    }
+
+    /// <summary>
+    /// The COUNTING rule itself, pinned without a race: <c>Route</c> reports whether
+    /// a frame that could not be delivered is a LOSS. It is one for the two drop
+    /// sites (an unknown <c>_streamId</c>; uncorrelated with several subscriptions
+    /// live) and NOT one when no subscription is live at all — nobody is listening
+    /// and no delivery decision was made, so counting it would inflate the number with
+    /// frames that were never anyone's. The counter test above can only observe the
+    /// two counted paths through a running reader; this one states the boundary
+    /// deterministically, so the doc line about it cannot drift.
+    /// </summary>
+    [Test]
+    public async Task Route_flags_a_dropped_frame_only_when_a_subscription_could_have_had_it()
+    {
+        var queue = Channel.CreateUnbounded<JsonRpcFrame>();
+        var live = new Dictionary<string, StreamCall>
+        {
+            ["a"] = new StreamCall(default!, queue),
+            ["b"] = new StreamCall(default!, queue),
+        };
+        static JsonRpcFrame ChunkFor(string id) =>
+            JsonRpcFrame.Notification("stream", $"{{\"_streamId\":\"{id}\",\"text\":\"x\"}}");
+        var uncorrelated = JsonRpcFrame.Notification("stream", "{\"text\":\"x\"}");
+        var none = new Dictionary<string, StreamCall>();
+        var lone = new Dictionary<string, StreamCall> { ["a"] = new StreamCall(default!, queue) };
+
+        // no subscription live: undeliverable, but NOT a loss
+        await Assert.That(StreamCorrelation.Route(none, ChunkFor("a"), out var noneLive)).IsNull();
+        await Assert.That(noneLive).IsFalse();
+
+        // drop site 1: an id nobody is subscribed to
+        await Assert
+            .That(StreamCorrelation.Route(live, ChunkFor("gone"), out var unknownId))
+            .IsNull();
+        await Assert.That(unknownId).IsTrue();
+
+        // drop site 2: uncorrelated, with several subscriptions live
+        await Assert
+            .That(StreamCorrelation.Route(live, uncorrelated, out var ambiguous))
+            .IsNull();
+        await Assert.That(ambiguous).IsTrue();
+
+        // delivered: a live id, and the lone-stream fallback — neither is a drop
+        await Assert
+            .That(StreamCorrelation.Route(live, ChunkFor("a"), out var hit))
+            .IsEqualTo(queue);
+        await Assert.That(hit).IsFalse();
+        await Assert
+            .That(StreamCorrelation.Route(lone, uncorrelated, out var guess))
+            .IsEqualTo(queue);
+        await Assert.That(guess).IsFalse();
     }
 
     /// <summary>

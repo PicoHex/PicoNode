@@ -81,6 +81,21 @@ member presence follows the frame kind:
   other's text). A notification with **no** `_streamId` is delivered only when
   exactly one stream is open, and dropped when several are — guessing is the
   interleaving defect itself. A `_streamId` that names no open stream is dropped.
+  The single-stream delivery is **best effort, not safe**: "one stream is open"
+  says nothing about whose frame arrived, so a chunk trailing a stream that
+  already **completed** reaches the next stream instead of the dead one (the
+  pre-T7.5 cross-talk, sequential rather than concurrent). A peer that keeps a
+  single stream open for its lifetime is fine; a peer that opens streams one
+  after another must tag its chunks.
+- **Lost notifications are counted, not logged.** Both drops above — an
+  unattributable `_streamId`, and an uncorrelated chunk while several streams are
+  open — increment `JsonRpcClient.DroppedNotifications` — an `Interlocked`
+  counter that is deliberately **`internal`**, so the public surface (and
+  `api/`) does not move and the tests observe it through `InternalsVisibleTo`.
+  This library takes **no logging dependency**, so a drop used to be completely
+  silent; it is now a number a test (or a friend assembly) can assert on. A
+  chunk arriving with no subscription open at all is not counted: nobody was
+  listening.
 - **Batching is unsupported.** A line that starts with `[` is not decoded: the
   framer yields a `-32600 Invalid Request` frame (null id), and the stream keeps
   flowing — the channel is not failed. Note the second half honestly: that frame

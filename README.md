@@ -557,6 +557,12 @@ Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
 // (UdpNode tracks datagrams, bytes, and drops internally)
 ```
 
+The JSON-RPC client (`PicoJsonRpc`) counts rather than logs the stream notifications it
+cannot attribute to an open subscription: `JsonRpcClient.DroppedNotifications` (an
+`Interlocked` counter, `internal`) records both cases — a chunk naming a stream that is no
+longer open, and an uncorrelated chunk while several streams are open. The package takes
+**no logging dependency**, so a drop is a number, not a silent loss.
+
 ## Projects
 
 | Project | Target | Description |

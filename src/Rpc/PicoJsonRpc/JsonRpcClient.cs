@@ -65,6 +65,16 @@ public sealed class JsonRpcClient : IAsyncDisposable
     /// id because that is what a chunk names in <c>params._streamId</c> — the one
     /// correlation a JSON-RPC notification can carry (T7.5).</summary>
     private ConcurrentDictionary<string, StreamCall> _streams = new();
+
+    /// <summary>How many downlink notifications have been DROPPED because nothing said
+    /// whose they were (T7.5 fix round 1). Two sites count here: a <c>params._streamId</c>
+    /// naming no live subscription, and an UNcorrelated notification while several
+    /// streams are live. This is deliberately a counter and not a log line —
+    /// <c>PicoJsonRpc</c> has no logging dependency and taking one for a debug message
+    /// would be an API decision, while a silent drop is invisible to everyone.
+    /// Internal so the public surface (and <c>api/</c>) does not move; the tests observe
+    /// it through <c>InternalsVisibleTo</c>.</summary>
+    internal long DroppedNotifications;
     private readonly CancellationTokenSource _disposeCts = new();
 
     /// <summary>1 once <see cref="DisposeAsync"/> has started. Registration checks
@@ -137,6 +147,21 @@ public sealed class JsonRpcClient : IAsyncDisposable
     /// <c>params</c>; a chunk with no <c>_streamId</c> is delivered while exactly
     /// one stream is open and dropped once several are, and a <c>_streamId</c>
     /// naming no open stream is dropped.
+    /// </para>
+    /// <para>
+    /// That single-stream delivery is BEST EFFORT, not a safety guarantee: "one
+    /// stream is open" is not a fact about whose frame arrived. A chunk trailing a
+    /// stream that ALREADY completed is uncorrelated, finds the next stream alone,
+    /// and is delivered to it — the pre-T7.5 cross-talk, sequential instead of
+    /// concurrent. A peer that keeps one stream open for its whole life is fine; a
+    /// peer that opens streams one after another must tag its chunks (see
+    /// <see cref="StreamCorrelation"/>, which states it, and pinned by the
+    /// <c>ClientTests</c> test for a trailing chunk of a completed stream).
+    /// </para>
+    /// <para>
+    /// An undeliverable notification is COUNTED, never logged: see
+    /// <see cref="DroppedNotifications"/>. <c>PicoJsonRpc</c> takes no logging
+    /// dependency, so a lost chunk used to be invisible to the caller.
     /// </para>
     /// <para>
     /// Lifecycle note (review #6): `await foreach` disposes the enumerator on
@@ -324,8 +349,16 @@ public sealed class JsonRpcClient : IAsyncDisposable
                     // notification — routed to the subscription it NAMES
                     // (`params._streamId`), never broadcast: two concurrent
                     // streams used to receive each other's chunks (T7.5).
-                    if (StreamCorrelation.Route(_streams, frame) is { } queue)
+                    // A frame that had a plausible destination and was thrown
+                    // away instead is COUNTED (never logged — this library has
+                    // no logging dependency); a frame no stream is waiting for
+                    // is not a loss and is not counted.
+                    if (
+                        StreamCorrelation.Route(_streams, frame, out var dropped) is { } queue
+                    )
                         queue.Writer.TryWrite(frame);
+                    else if (dropped)
+                        Interlocked.Increment(ref DroppedNotifications);
                     continue;
                 }
                 var id = frame.Id;

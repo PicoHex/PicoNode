@@ -34,12 +34,26 @@ namespace PicoJsonRpc;
 /// a stranger is the defect this class exists to prevent);</item>
 /// <item>NO <c>_streamId</c> at all (an uncorrelated notification, including one
 /// from a peer that never learned the convention, or a payload that is not a
-/// JSON object) → the frame goes to the ACTIVE STREAM only when exactly ONE
-/// subscription is live, and is dropped when there are several. With one
-/// subscription there is nothing to cross-talk with, so the pre-T7.5 behaviour
-/// is preserved for the single-stream peer; with several, guessing would
-/// re-introduce exactly the interleaving this task removes.</item>
+/// JSON object) → BEST EFFORT: the frame goes to the ONE live subscription when
+/// exactly one is live, and is dropped when there are several. This is a
+/// courtesy for a peer that predates the convention, NOT a safe route — "one
+/// stream is live" is not a fact about whose frame arrived. Stream A completes,
+/// stream B opens, and a TRAILING uncorrelated chunk of A's arrives: it is
+/// delivered to B. That is the pre-T7.5 cross-talk, sequential instead of
+/// concurrent, and it is pinned by
+/// <c>ClientTests.Trailing_uncorrelated_chunk_after_its_stream_ended_reaches_the_next_stream</c>
+/// so this paragraph cannot drift back into a safety claim. Uncorrelated
+/// delivery is only ever correct for a peer that keeps a single stream open for
+/// its whole life.</item>
 /// </list>
+/// </para>
+/// <para>
+/// Both drop paths (an unknown <c>_streamId</c>, and an uncorrelated frame with
+/// several subscriptions live) are COUNTED on
+/// <see cref="JsonRpcClient.DroppedNotifications"/> — never logged: this library
+/// has no logging dependency and a lost chunk was previously invisible. A frame
+/// arriving with NO subscription at all is not counted: nobody is listening, and
+/// no delivery decision was made.
 /// </para>
 /// </summary>
 internal static class StreamCorrelation
@@ -93,23 +107,44 @@ internal static class StreamCorrelation
 
     /// <summary>
     /// The queue a downlink notification belongs to, or <c>null</c> when it
-    /// belongs to no live subscription and must be dropped.
+    /// belongs to no live subscription.
     /// <paramref name="streams"/> is the live subscription table.
+    /// <para>
+    /// <paramref name="dropped"/> says whether the <c>null</c> is a LOSS worth
+    /// counting: it is <c>true</c> for the two paths where a subscription could
+    /// have been the destination and the frame was thrown away instead — a
+    /// <c>_streamId</c> naming no live subscription, and an uncorrelated frame
+    /// while several subscriptions are live. It is <c>false</c> when no stream is
+    /// live at all (nobody is listening; no delivery decision was made) and, of
+    /// course, when a queue is returned.
+    /// </para>
     /// </summary>
     public static Channel<JsonRpcFrame>? Route(
         IReadOnlyDictionary<string, StreamCall> streams,
-        JsonRpcFrame notification
+        JsonRpcFrame notification,
+        out bool dropped
     )
     {
+        dropped = false;
         if (streams.Count == 0)
             return null;
         var streamId = StreamIdOf(notification.Params);
         if (streamId is not null)
-            return streams.TryGetValue(streamId, out var named) ? named.Queue : null;
-        // uncorrelated: unambiguous only when a single stream is live
+        {
+            if (streams.TryGetValue(streamId, out var named))
+                return named.Queue;
+            // the owner ended or never existed — nothing may receive this frame
+            dropped = true;
+            return null;
+        }
+        // uncorrelated: BEST EFFORT. Unambiguous only when a single stream is
+        // live — and even then it is a guess (see the class remarks: a trailing
+        // chunk of a COMPLETED stream lands here and reaches the new stream).
         if (streams.Count == 1)
             foreach (var only in streams.Values)
                 return only.Queue;
+        // several live subscriptions and no fact saying whose frame this is
+        dropped = true;
         return null;
     }
 }
