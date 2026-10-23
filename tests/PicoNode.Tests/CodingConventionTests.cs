@@ -52,11 +52,14 @@ public sealed class CodingConventionTests
                 "/// <summary>User-provided connection handler or close-sequence callback threw an unhandled exception.</summary>"
             );
         await Assert.That(content).Contains("/// <summary>UDP socket receive failed.</summary>");
-        await Assert
-            .That(content)
-            .Contains(
-                "/// <summary>UDP datagram dropped due to channel overflow (<see cref=\"UdpOverflowMode.DropNewest\"/>).</summary>"
-            );
+        // DatagramDropped covers TWO causes: the drop-newest overflow, and the datagram that lands in
+        // the window between its receive and StopAsync closing the queue. The sentence has to name
+        // both - a summary that still said "channel overflow" only would describe half of what the
+        // node reports with this code.
+        var dropped = DocBlockAbove(content, "DatagramDropped,");
+        await Assert.That(dropped).Contains("UDP datagram dropped instead of delivered");
+        await Assert.That(dropped).Contains("UdpOverflowMode.DropNewest");
+        await Assert.That(dropped).Contains("shutdown had already closed it");
         await Assert
             .That(content)
             .Contains("/// <summary>UDP datagram handler threw an unhandled exception.</summary>");

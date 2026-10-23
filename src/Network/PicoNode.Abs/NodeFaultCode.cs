@@ -34,7 +34,10 @@ public enum NodeFaultCode
     /// <summary>UDP socket receive failed.</summary>
     DatagramReceiveFailed,
 
-    /// <summary>UDP datagram dropped due to channel overflow (<see cref="UdpOverflowMode.DropNewest"/>).</summary>
+    /// <summary>
+    /// UDP datagram dropped instead of delivered: the dispatch queue was full
+    /// (<see cref="UdpOverflowMode.DropNewest"/>) or a shutdown had already closed it.
+    /// </summary>
     DatagramDropped,
 
     /// <summary>UDP datagram handler threw an unhandled exception.</summary>

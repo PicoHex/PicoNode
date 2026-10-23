@@ -7,6 +7,14 @@ public sealed class UdpNodeOptions
 
     public required IPEndPoint Endpoint { get; init; }
     public IUdpDatagramHandler DatagramHandler { get; init; } = null!;
+
+    /// <summary>Optional log sink for node diagnostics.</summary>
+    /// <remarks>
+    /// The only sink for a fault nothing else observes: a loop that outlives <c>DisposeAsync</c>'s
+    /// bounded wait is reported as <see cref="NodeFaultCode.StopFailed"/> through this logger and
+    /// <see cref="INode.OnFault"/>, and through nothing else — with neither wired the node simply
+    /// retains the member that loop was using and returns.
+    /// </remarks>
     public ILogger? Logger { get; init; }
     public ICfgRoot? Config { get; init; }
     public int ReceiveSocketBufferSize { get; set; } = 1 << 20;

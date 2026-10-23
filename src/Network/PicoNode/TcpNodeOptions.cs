@@ -4,6 +4,14 @@ public sealed class TcpNodeOptions
 {
     public required IPEndPoint Endpoint { get; init; }
     public ITcpConnectionHandler ConnectionHandler { get; init; } = null!;
+
+    /// <summary>Optional log sink for node diagnostics.</summary>
+    /// <remarks>
+    /// The only sink for a fault nothing else observes: a loop that outlives <c>DisposeAsync</c>'s
+    /// bounded wait is reported as <see cref="NodeFaultCode.StopFailed"/> through this logger and
+    /// <see cref="INode.OnFault"/>, and through nothing else — with neither wired the node simply
+    /// retains the member that loop was using and returns.
+    /// </remarks>
     public ILogger? Logger { get; init; }
     public ICfgRoot? Config { get; init; }
     public int MaxConnections { get; set; } = 1000;
