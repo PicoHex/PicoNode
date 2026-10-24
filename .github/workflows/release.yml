@@ -39,6 +39,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: 10.0.x }
 
+      # Same reason as ci.yml: the verify gate runs PicoJsonRpc.Tests, which needs
+      # `node` for its 20 child-process tests. A release that skipped them while
+      # calling the version verified is worse than a red run.
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+
       # No PACKAGE_VERSION write here: jobs do not share $GITHUB_ENV, so a write in
       # `verify` is dead code in `publish` — `publish` resolves the version itself.
       - name: Assert the release version shape

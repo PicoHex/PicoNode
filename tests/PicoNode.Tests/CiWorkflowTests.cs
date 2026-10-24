@@ -218,6 +218,68 @@ public sealed class CiWorkflowTests
     }
 
     [Test]
+    public async Task Every_workflow_that_runs_the_rpc_suite_installs_node()
+    {
+        // PicoJsonRpc.Tests drives REAL children (`node <fixture>`), and its guard
+        // answers a missing runtime with a loud skip naming the 20 tests it loses.
+        // Loud is not enough in CI: a runner without node reports the same green
+        // run with a fifth of the suite skipped - the silent coverage loss the node
+        // guard exists to prevent, merely relocated from "no guard at all" to
+        // "guard plus no runtime". The rule is DERIVED, not hard-coded to one file:
+        // any workflow that names the suite must install the runtime before running
+        // it (ci.yml validates a branch, release.yml gates a NuGet publish - both
+        // run the suite, so both need the step; a release that skipped 20 tests
+        // while calling the version verified is the worse of the two).
+        var workflowDir = Path.Combine(RepoRoot, ".github", "workflows");
+        var runsSuite = Directory
+            .EnumerateFiles(workflowDir, "*.yml")
+            .Order(StringComparer.Ordinal)
+            .Where(static w =>
+                File.ReadAllText(w).Contains("tests/PicoJsonRpc.Tests/", StringComparison.Ordinal)
+            )
+            .ToArray();
+
+        // Non-vacuity: if the suite path were renamed (or this walk regressed) the
+        // lists below would be empty and the test would prove nothing.
+        await Assert
+            .That(runsSuite.Select(Path.GetFileName).ToArray())
+            .IsNotEmpty()
+            .Because("at least one workflow is expected to run the JSON-RPC suite");
+
+        var withoutNode = runsSuite
+            .Where(static w =>
+                !File.ReadAllText(w).Contains("uses: actions/setup-node@", StringComparison.Ordinal)
+            )
+            .Select(static w => Path.GetFileName(w))
+            .ToArray();
+
+        await Assert
+            .That(withoutNode)
+            .IsEmpty()
+            .Because(
+                "a workflow that runs PicoJsonRpc.Tests must install node first, otherwise "
+                    + "its 20 node-dependent tests skip in CI instead of running"
+            );
+
+        // ...and the major is PINNED to a number: `latest` or `lts/*` would move the
+        // runtime under the suite between runs, so a wire regression would be
+        // indistinguishable from a runtime change.
+        var unpinned = runsSuite
+            .SelectMany(static w =>
+                File.ReadAllLines(w)
+                    .Where(static line => line.Contains("node-version:", StringComparison.Ordinal))
+                    .Where(static line => !Regex.IsMatch(line, @"node-version:\s*'?\d+(\.\d+)*'?"))
+                    .Select(line => $"{Path.GetFileName(w)}: {line.Trim()}")
+            )
+            .ToArray();
+
+        await Assert
+            .That(unpinned)
+            .IsEmpty()
+            .Because("the node major must be a pinned number, not `latest` or `lts/*`");
+    }
+
+    [Test]
     public async Task E2e_sse_script_is_wired_into_ci()
     {
         // The Python SSE end-to-end harness must run in CI — it exercises the
@@ -410,7 +472,6 @@ public sealed class CiWorkflowTests
         );
 
         var unreferenced = pythonFiles
-            .Where(static path => !IsTestFixture(path))
             .Where(path => !IsReferenced(corpus, Path.GetFileName(path)))
             .Select(path => Path.GetRelativePath(RepoRoot, path))
             .Order(StringComparer.Ordinal)
@@ -497,23 +558,6 @@ public sealed class CiWorkflowTests
                 pending.Push(child);
             }
         }
-    }
-
-    /// <summary>
-    /// Python fixtures are wired by the owning test project's
-    /// <c>&lt;None Include="Fixtures\**"&gt;</c> glob rather than by name, so they
-    /// cannot be matched against the corpus (the last one, <c>echo_server.py</c>, is
-    /// scheduled for deletion by the JSON-RPC conformance plan). Scoped to
-    /// <c>tests/</c>: a <c>Fixtures</c> directory anywhere else is ordinary source
-    /// and must still be referenced by name.
-    /// </summary>
-    private static bool IsTestFixture(string path)
-    {
-        var relative = Path.GetRelativePath(RepoRoot, path);
-        var separator = Path.DirectorySeparatorChar;
-
-        return relative.StartsWith($"tests{separator}", StringComparison.Ordinal)
-            && relative.Contains($"{separator}Fixtures{separator}", StringComparison.Ordinal);
     }
 
     /// <summary>

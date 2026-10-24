@@ -99,10 +99,12 @@ public sealed class NodeFixtureTests
     /// cover, so the list would silently stop describing the suite. Failing here is
     /// what keeps "add a fixture" and "get it checked" the same action.
     /// <para>
-    /// Scoped to <c>*.mjs</c> on purpose: <c>echo_server.py</c> is copied by the same
-    /// glob but is never started by any test, and settling it (wire it up or delete
-    /// it) is T7.6b's decision, not this task's. A future fixture in ANY language that
-    /// a test names belongs in <see cref="NodeFixture.Named"/> regardless.
+    /// EVERY language, not <c>*.mjs</c>: the <c>Fixtures/**</c> glob copies whatever
+    /// is in the directory, so a language-scoped filter is a hole a new fixture can
+    /// fall through. It used to be <c>*.mjs</c> so that <c>echo_server.py</c> — copied
+    /// by the glob but started by nobody — would not fail the run; that file is now
+    /// deleted (T7.6b), so the check covers the whole directory and the next unnamed
+    /// fixture is caught whichever runtime it targets.
     /// </para>
     /// </summary>
     [Test]
@@ -110,15 +112,15 @@ public sealed class NodeFixtureTests
     {
         var fixtures = System.IO.Path.Combine(AppContext.BaseDirectory, "Fixtures");
         var copied = Directory.Exists(fixtures)
-            ? Directory.GetFiles(fixtures, "*.mjs").Select(System.IO.Path.GetFileName)
+            ? Directory.GetFiles(fixtures).Select(System.IO.Path.GetFileName)
             : [];
         var unnamed = copied.Except(NodeFixture.Named).ToArray();
         await Assert
             .That(unnamed)
             .IsEmpty()
             .Because(
-                "every '.mjs' fixture in the output directory must be listed in "
-                    + "NodeFixture.Named so the copy rule is asserted for it; add it there."
+                "every fixture in the output directory must be listed in NodeFixture.Named so "
+                    + "the copy rule is asserted for it, in any language; add it there."
             );
     }
 

@@ -25,7 +25,7 @@ namespace PicoJsonRpc.Tests;
 /// <item><b>The copy rule is checked on every run</b>, node or no node:
 /// <see cref="Named"/> lists the fixtures the suite names, and
 /// <c>NodeFixtureTests</c> asserts each one is in the output directory (and that
-/// the output directory holds no unnamed <c>.mjs</c> fixture).</item>
+/// the output directory holds no unnamed fixture, in any language).</item>
 /// </list>
 /// </para>
 /// <para>
@@ -71,7 +71,23 @@ internal static class NodeFixture
     /// <summary>
     /// Every fixture a test in this assembly names. The copy-rule test iterates
     /// this list, so adding a fixture here is what gets it copy-checked; its
-    /// reverse check makes the list and the output directory agree both ways.
+    /// reverse check makes the list and the output directory agree both ways — in
+    /// ANY language, so a fixture nobody names cannot sit in the output unnoticed.
+    /// <para>
+    /// <c>echo_server.py</c> used to sit beside these two: copied by the same
+    /// <c>Fixtures/**</c> glob, started by nobody. T7.6b deleted it rather than
+    /// wiring it. It was a byte-for-byte SHAPE duplicate of
+    /// <see cref="Echo"/> (same <c>{jsonrpc,id,result}</c> frame, same
+    /// string-embedded <c>{"echo": &lt;request&gt;}</c> payload), so it proved nothing
+    /// about the wire that the node fixture does not; its only differences were
+    /// incidental (json.dumps' <c>" ",</c> separators, and <c>ensure_ascii</c>
+    /// escaping a CJK reply where node echoes raw UTF-8) — neither of which our
+    /// reader is sensitive to (it parses JSON, not bytes), and the escaped form is
+    /// already pinned by <c>Unpaired_surrogate_in_caller_text_is_substituted_not_thrown</c>.
+    /// Keeping it would have cost a second runtime (and its own probe, its own
+    /// skip reason, and a <c>python3</c>-vs-<c>python</c> divergence on Windows,
+    /// where <c>python3</c> is a Store stub) to test the same bytes twice.
+    /// </para>
     /// </summary>
     public static readonly IReadOnlyList<string> Named = [Echo, Chatty];
 
