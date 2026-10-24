@@ -158,25 +158,34 @@ internal sealed class Http2StreamState
     /// Throws <see cref="Http2HeaderTooLargeException"/> if the total exceeds
     /// <see cref="MaxCompressedHeaderBlockSize"/>.
     /// </summary>
-    public ArraySegment<byte>? AppendHeaderData(ReadOnlyMemory<byte> payload, bool endHeaders)
+    /// <remarks>
+    /// The returned block is NOT a copy of the frame payload when the whole block arrived
+    /// in that one frame: decoding it happens before the next await, inside the caller's
+    /// frame iteration, so the view is alive exactly as long as the frame is. A block that
+    /// needed CONTINUATION frames lives in the buffer this method owned anyway. Neither
+    /// result is retained past HpackDecoder.Decode - a copy here was pure garbage.
+    /// </remarks>
+    public ReadOnlyMemory<byte>? AppendHeaderData(ReadOnlyMemory<byte> payload, bool endHeaders)
     {
         if (endHeaders)
         {
             if (HeaderBlockBuffer is null)
             {
-                // No prior CONTINUATION; return the frame payload directly.
+                // No prior CONTINUATION: hand back the frame payload itself.
                 if (payload.Length == 0)
                     return null;
                 if (payload.Length > MaxCompressedHeaderBlockSize)
                     throw new Http2HeaderTooLargeException(payload.Length);
-                return new ArraySegment<byte>(payload.ToArray());
+                return payload;
             }
 
-            // Flush buffered data + final payload.
+            // Flush buffered data + final payload. The writer is dropped in favour of the
+            // memory it owns, so nobody can overwrite the block afterwards and no copy is
+            // needed to read it.
             HeaderBlockBuffer.Write(payload.Span);
             if (HeaderBlockBuffer.WrittenCount > MaxCompressedHeaderBlockSize)
                 throw new Http2HeaderTooLargeException(HeaderBlockBuffer.WrittenCount);
-            var result = HeaderBlockBuffer.WrittenMemory.ToArray();
+            var result = HeaderBlockBuffer.WrittenMemory;
             HeaderBlockBuffer = null;
             return result;
         }

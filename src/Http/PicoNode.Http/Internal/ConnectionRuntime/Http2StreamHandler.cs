@@ -115,7 +115,7 @@ internal static partial class Http2StreamHandler
         }
 
         // CONTINUATION buffering: if END_HEADERS is not set, buffer and return.
-        ArraySegment<byte>? payloadData;
+        ReadOnlyMemory<byte>? payloadData;
         try
         {
             var headerPayload = frame.Payload;
@@ -228,7 +228,7 @@ internal static partial class Http2StreamHandler
         // them cannot make us build a multi-megabyte header list from a 16 KiB block.
         var dynamicTable = runtimeStateForLimit?.HpackTable;
         var decodeStatus = HpackDecoder.Decode(
-            payloadData.Value.AsSpan(),
+            payloadData.Value.Span,
             out var headerFields,
             dynamicTable,
             ConnectionRuntimeState.LocalHeaderTableSize,
@@ -255,7 +255,7 @@ internal static partial class Http2StreamHandler
         {
             logger?.Log(
                 LogLevel.Debug,
-                $"[H2] HPACK decode failed: StreamId={frame.StreamId} payloadLen={payloadData.Value.Count}, sending GOAWAY COMPRESSION_ERROR",
+                $"[H2] HPACK decode failed: StreamId={frame.StreamId} payloadLen={payloadData.Value.Length}, sending GOAWAY COMPRESSION_ERROR",
                 null
             );
             await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.CompressionError, ct)
