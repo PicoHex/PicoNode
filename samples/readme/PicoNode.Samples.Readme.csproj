@@ -16,6 +16,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The logging sample wires a real PicoLog sink; the sink types live in PicoLog, which
+         the transport only references through PicoLog.Abs. -->
+    <PackageReference Include="PicoLog" />
     <ProjectReference Include="..\..\src\Network\PicoNode\PicoNode.csproj" />
+    <!-- The built-in middleware samples (compression, static files) need the web layer. -->
+    <ProjectReference Include="..\..\src\Web\PicoNode.Web\PicoNode.Web.csproj" />
   </ItemGroup>
 </Project>

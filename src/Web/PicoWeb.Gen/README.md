@@ -8,6 +8,7 @@ PicoWeb build-time diagnostics generator. It emits **no source**; it reports `PW
 
 - **Embedded in**: `PicoWeb`
 - **TFM**: `netstandard2.0`
+- **Dependencies**: none from PicoHex — the Roslyn compiler API is a build-time reference of the analyzer, not a dependency of anything that consumes it
 - **Type**: Roslyn Incremental Source Generator (diagnostics only)
 
 ## Rules

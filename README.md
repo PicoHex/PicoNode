@@ -132,6 +132,7 @@ sealed class EchoHandler : ITcpConnectionHandler
 
 ### HTTP Server (Low-Level)
 
+<!-- readme-fragment: needs its own entry point: the block opens with using directives and ends in top-level await, so no method can hold it -->
 ```csharp
 using System.Net;
 using PicoNode;
@@ -166,6 +167,7 @@ await node.DisposeAsync();
 
 ### Web Application (DI First + Delegate)
 
+<!-- readme-fragment: binds the application's own IUserService/UserService behind a console entry point; samples/PicoWeb.Samples wires the same builder against real services -->
 ```csharp
 using PicoNode.Web;
 using PicoWeb;
@@ -200,6 +202,7 @@ await api.RunAsync("http://+:8080");
 
 ### Web Application (Controller-based)
 
+<!-- readme-fragment: two files in one block (Controllers/UsersController.cs and Program.cs) plus the generated EndpointRegistrar, so no single file can hold it -->
 ```csharp
 // Controllers/UsersController.cs
 using PicoJetson;
@@ -236,6 +239,7 @@ var node = new TcpNode(options);
 
 ### PicoCfg Binding (AOT-safe, source-generated)
 
+<!-- readme-fragment: declares the AppSettings class inside the block, so it is file content rather than a fragment a method can hold; CfgBindSmokeTest compiles the same calls -->
 ```csharp
 var config = await Cfg.CreateBuilder()
     .Add(new Dictionary<string, string>
@@ -311,7 +315,7 @@ var options = new TcpNodeOptions
 PicoNode uses PicoLog for structured diagnostics. All non-fatal errors are logged with operation context:
 
 ```csharp
-var logger = new LoggerFactory([new ConsoleSink()])
+var logger = new LoggerFactory([new ColoredConsoleSink(new ConsoleFormatter())])
     .CreateLogger("PicoNode.Tcp");
 
 var node = new TcpNode(new TcpNodeOptions
@@ -338,6 +342,7 @@ PicoNode.Web requires `ISvcContainer` at construction time (DI First). Scopes ar
 
 ### Manual DI resolution in handlers
 
+<!-- readme-fragment: depends on the application's own IDatabase/SqlDatabase implementations and on a top-level await -->
 ```csharp
 using PicoNode.Web;
 using PicoWeb;
@@ -364,6 +369,7 @@ Handlers always use the `WebRequestHandler` signature
 `(WebContext, CancellationToken)`. Services come from the request scope via
 `ctx.Services` — there is no parameter injection:
 
+<!-- readme-fragment: declares a handler that resolves the application's own IUserService, so it cannot compile in isolation; the WebApiBuilder block shows the same handler -->
 ```csharp
 app.MapGet("/users/{id}", async (WebContext ctx, CancellationToken _) =>
 {
@@ -378,6 +384,7 @@ app.MapGet("/users/{id}", async (WebContext ctx, CancellationToken _) =>
 
 PicoJetson source generators run at compile time. Handlers must call `SerializeToUtf8Bytes<T>()` directly in user code to trigger generator:
 
+<!-- readme-fragment: the block is two comments, not code: it contrasts the attribute path with the PCW003 failure, so there is nothing to compile -->
 ```csharp
 // ✅ Triggers PicoJetson.Gen — UserDto serializer generated
 var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
@@ -390,6 +397,7 @@ var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
 
 ### WebApiBuilder (convenience)
 
+<!-- readme-fragment: binds the application's own IUserService/UserService behind a console entry point, exactly like the builder sample above it -->
 ```csharp
 using PicoNode.Web;
 using PicoWeb;
@@ -412,6 +420,7 @@ await api.RunAsync("http://+:5000");
 
 ### WebApiBuilder with Controllers (endpoint registration)
 
+<!-- readme-fragment: contains `{ ... }` placeholders for the DTO bodies - a sketch of the contract the generator consumes, not C# -->
 ```csharp
 // 1. Controller in Controllers/ folder (convention)
 //    Controllers/UsersController.cs
@@ -445,7 +454,6 @@ from explicit `SerializeToUtf8Bytes<T>()` call sites.
 
 > **Note:** The controller-based pattern requires PicoJetson.Gen for automatic DTO serialization registration.
 > For the MapXX pattern, call `PicoJetson.JsonSerializer.SerializeToUtf8Bytes<T>()` explicitly in your handler.
-```
 
 ## Built-in Middleware
 

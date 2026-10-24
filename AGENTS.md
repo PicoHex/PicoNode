@@ -16,9 +16,12 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 - TUnit exits **2** (not 1) on failure and colourises its output: strip ANSI before matching.
 - NativeAOT check: `scripts/test-aot-publish.ps1 -RuntimeIdentifier linux-x64` (CI runs it once per matrix RID — win-x64,
   win-arm64, linux-x64, linux-arm64, osx-arm64).
-- README samples: `dotnet test tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj` compiles the README's
-  rate-limiting samples and fails when a README drifts from the marked region in `ReadmeSamples.cs` —
-  change a sample in both places, in all ten READMEs.
+- README samples: `dotnet test tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj` compiles the README code
+  blocks and measures them. Eleven of the twenty blocks are compiled samples (`#region readme:*` in
+  `samples/readme/*.cs` and `ReadmeSamples.cs`) and must match their region byte for byte in all ten READMEs;
+  a block that is deliberately not compilable carries `<!-- readme-fragment: reason -->` on the line above it,
+  so an uncompiled snippet is a decision in review rather than an omission. `ReadmeAccuracyTests` measures the
+  rest of the prose (line count, TFMs, dependency chains, package tables, `tests/README.md` counts).
 - Zero external dependencies and AOT-first: no reflection, no `dynamic`, no runtime attribute consumption,
   no per-request LINQ or closures on hot paths. A new dependency or a trim-unsafe construct is a design
   change, not a detail.

@@ -311,7 +311,7 @@ var options = new TcpNodeOptions
 PicoNode는 구조적 진단을 위해 PicoLog를 사용합니다. 모든 치명적이지 않은 오류는 작업 컨텍스트와 함께 기록됩니다:
 
 ```csharp
-var logger = new LoggerFactory([new ConsoleSink()])
+var logger = new LoggerFactory([new ColoredConsoleSink(new ConsoleFormatter())])
     .CreateLogger("PicoNode.Tcp");
 
 var node = new TcpNode(new TcpNodeOptions

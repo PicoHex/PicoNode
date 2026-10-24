@@ -15,27 +15,59 @@ public sealed class CiWorkflowTests
 
     private static string CiPath => Path.Combine(RepoRoot, ".github", "workflows", "ci.yml");
 
-    private static readonly string[] TestProjects =
-    [
-        "tests/PicoNode.Tests/PicoNode.Tests.csproj",
-        "tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj",
-        "tests/PicoJsonRpc.Tests/PicoJsonRpc.Tests.csproj",
-        "tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj",
-        "tests/PicoWeb.DI.Tests/PicoWeb.DI.Tests.csproj",
-        "tests/PicoNode.Smoke/PicoNode.Smoke.csproj",
-        "tests/PicoNode.PerfHarness/PicoNode.PerfHarness.csproj",
-        "tests/PicoWeb.Tests/PicoWeb.Tests.csproj",
-        "tests/PicoWeb.Integration.Tests/PicoWeb.Integration.Tests.csproj",
-    ];
+    /// <summary>
+    /// The test projects under <c>tests/</c>, DERIVED from the csprojs rather than listed: a hand
+    /// list is a second copy of the tree, and this one had already fallen behind —
+    /// <c>PicoNode.Docs.Tests</c> was missing from it while <c>ci.yml</c> was running the suite, so
+    /// the rule that was supposed to notice an unwired suite was satisfied by the copy, not by CI.
+    /// A csproj is a test project when it references the test framework or says so itself.
+    /// </summary>
+    private static string[] TestProjects =>
+        Directory
+            .EnumerateFiles(Path.Combine(RepoRoot, "tests"), "*.csproj", SearchOption.AllDirectories)
+            .Where(static path => IsTestProject(path))
+            .Select(static path => Path.GetRelativePath(RepoRoot, path).Replace(Path.DirectorySeparatorChar, '/'))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+    private static bool IsTestProject(string csprojPath)
+    {
+        var text = File.ReadAllText(csprojPath);
+
+        return text.Contains("TUnit", StringComparison.Ordinal)
+            || text.Contains("Microsoft.NET.Test.Sdk", StringComparison.Ordinal)
+            || text.Contains("<IsTestProject>true", StringComparison.Ordinal);
+    }
 
     [Test]
     public async Task Every_test_project_has_a_ci_step()
     {
-        var ci = File.ReadAllText(CiPath);
+        // Both directions: a suite with no step loses its coverage silently, and a step naming a
+        // project that is not a test project is a command nobody maintains. The steps are read out
+        // of ci.yml, so this compares two measurements instead of a list against a file.
+        var ci = WithoutComments(File.ReadAllText(CiPath));
 
-        var missing = TestProjects.Where(p => !ci.Contains(p, StringComparison.Ordinal)).ToArray();
+        var called = Regex
+            .Matches(ci, @"dotnet test --project (\S+\.csproj)")
+            .Select(static match => match.Groups[1].Value)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
 
-        await Assert.That(missing.Length).IsEqualTo(0);
+        await Assert
+            .That(TestProjects.Length)
+            .IsGreaterThanOrEqualTo(10)
+            .Because("the walk must see every test project csproj under tests/");
+
+        await Assert
+            .That(TestProjects.Except(called, StringComparer.Ordinal).ToArray())
+            .IsEmpty()
+            .Because("every test project must be executed by ci.yml");
+
+        await Assert
+            .That(called.Except(TestProjects, StringComparer.Ordinal).ToArray())
+            .IsEmpty()
+            .Because("a ci.yml test step that names no test project is a step nobody maintains");
     }
 
     [Test]
@@ -215,6 +247,40 @@ public sealed class CiWorkflowTests
         var ci = File.ReadAllText(CiPath);
 
         await Assert.That(ci).Contains("scripts/test-aot-publish.ps1");
+    }
+
+    private static string AutobahnScriptPath =>
+        Path.Combine(RepoRoot, "scripts", "run-autobahn.ps1");
+
+    [Test]
+    public async Task Autobahn_gate_fails_when_the_fuzzing_client_exits_nonzero()
+    {
+        // The conformance gate parses the report the fuzzing client writes; when the client
+        // itself dies (docker missing the image, a crash mid-run) it printed a ::error:: and then
+        // carried on to the report step, which can still find a stale `index.json` and pass. An
+        // advertised error that does not fail the run is not a gate: the nonzero exit has to stop
+        // the script BEFORE the verdict is computed.
+        var lines = CodeLines(File.ReadAllText(AutobahnScriptPath)).ToArray();
+
+        var guard = Array.FindIndex(
+            lines,
+            static line => line.Contains("if ($exitCode -ne 0)", StringComparison.Ordinal)
+        );
+
+        await Assert
+            .That(guard)
+            .IsGreaterThanOrEqualTo(0)
+            .Because("the script must still check the fuzzing client's exit code");
+
+        var after = lines.Skip(guard).Take(6).ToArray();
+
+        await Assert
+            .That(after.Any(static line => line.Trim() == "exit 1"))
+            .IsTrue()
+            .Because(
+                "a nonzero fuzzing-client exit must end the run with exit 1, before the report is parsed; "
+                    + $"the guard block reads: {string.Join(" / ", after.Select(static line => line.Trim()))}"
+            );
     }
 
     [Test]
@@ -994,24 +1060,6 @@ public sealed class CiWorkflowTests
     private static string ReleasePath =>
         Path.Combine(RepoRoot, ".github", "workflows", "release.yml");
 
-    /// <summary>
-    /// The ten test projects the release gate must execute — the same set
-    /// <c>ci.yml</c> runs, so a version can never ship while a suite is red.
-    /// </summary>
-    private static readonly string[] ReleaseTestProjects =
-    [
-        "tests/PicoNode.Tests/PicoNode.Tests.csproj",
-        "tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj",
-        "tests/PicoJsonRpc.Tests/PicoJsonRpc.Tests.csproj",
-        "tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj",
-        "tests/PicoWeb.Tests/PicoWeb.Tests.csproj",
-        "tests/PicoWeb.Integration.Tests/PicoWeb.Integration.Tests.csproj",
-        "tests/PicoWeb.DI.Tests/PicoWeb.DI.Tests.csproj",
-        "tests/PicoNode.Smoke/PicoNode.Smoke.csproj",
-        "tests/PicoNode.PerfHarness/PicoNode.PerfHarness.csproj",
-        "tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj",
-    ];
-
     [Test]
     public async Task Release_workflow_verifies_before_publishing()
     {
@@ -1068,7 +1116,9 @@ public sealed class CiWorkflowTests
         var release = File.ReadAllText(ReleasePath);
         var verify = WithoutComments(TopLevelBlock(release, "verify") ?? string.Empty);
 
-        var missing = ReleaseTestProjects
+        // Same derived set as ci.yml: a version can never ship while a suite is red, and the
+        // suites to run are the ones the tree declares, not a list kept in step by hand.
+        var missing = TestProjects
             .Where(p => !verify.Contains(p, StringComparison.Ordinal))
             .ToArray();
 

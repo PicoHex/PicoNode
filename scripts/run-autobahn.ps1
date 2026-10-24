@@ -134,7 +134,10 @@ try {
     Log "fuzzing client exit code: $exitCode"
     if ($exitCode -ne 0) {
         $tail = (Get-Content $LogFile -Tail 25) -join "`n"
+        # A crashed client still leaves the PREVIOUS run's report on disk, so parsing it
+        # would grade a run that never happened. Fail here, before the verdict.
         Write-Host "::error title=autobahn fuzzing client failed (exit $exitCode)::$tail"
+        exit 1
     }
 
     # ── 5. Parse the report and fail on any FAILED case ───────────────
