@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
     <PackageId>PicoNode.Abs</PackageId>
     <Description>Core abstractions for PicoNode networking framework: INode, ITcpConnectionHandler, IUdpDatagramHandler, and fault contracts. Targets net10.0 (PicoHex AOT-first ecosystem baseline).</Description>
     <PackageTags>PicoHex;PicoNode;AOT;Networking;Abstractions</PackageTags>
