@@ -370,6 +370,21 @@ try {
         }
     }
 
+    # -- the wire half of the version decision -------------------------------
+    # Measured BEFORE the version is decided (fix round 1): the hash used to be
+    # computed after `next-version` had already answered, which made it impossible to
+    # move a check in front of the bump - and a number printed after the decision it
+    # is supposed to inform is exactly the wrong order. The API diff above answers
+    # "did the C# surface move"; it cannot answer "did the BYTES a peer reads move",
+    # and a y bump is precisely the promise that nothing a consumer can observe
+    # changed. The snapshot carries that answer. This still only WARNS (see below):
+    # moving it earlier changes when it is known, not whether it can veto.
+    $wireHash = Get-WireHash $RepoRoot
+    $wireChange = "not pinned"
+    if ($wireHash -and $lastTag) {
+        $wireChange = Test-WireSnapshotChangedSince $lastTag
+    }
+
     $apiChanged = "false"
     if ($changed) { $apiChanged = "true" }
     $versionArgs = @("next-version", "--api-changed", $apiChanged, "--year", (Get-Date).Year)
@@ -377,16 +392,6 @@ try {
     if ($ResetOnYearChange) { $versionArgs += "--reset-on-year-change" }
     $nextVersion = @(Invoke-Tool $versionArgs)[-1].Trim()
     if ($script:ToolExit -ne 0) { Fail "next-version failed" }
-
-    # -- the wire half of the version decision -------------------------------
-    # The API diff above answers "did the C# surface move". It cannot answer "did the
-    # BYTES a peer reads move", and a y bump is exactly the promise that nothing a
-    # consumer can observe changed. The snapshot carries that answer.
-    $wireHash = Get-WireHash $RepoRoot
-    $wireChange = "not pinned"
-    if ($wireHash -and $lastTag) {
-        $wireChange = Test-WireSnapshotChangedSince $lastTag
-    }
 
     Write-Host ""
     Write-Step "Decision"

@@ -29,7 +29,18 @@ namespace PicoJsonRpc.Tests;
 /// blocks — a release script that refuses to run is a release script people work
 /// around; the failing test above is what actually blocks a silent change. The
 /// hash this test prints in its failure message is the same hash the release dry
-/// run prints, so the two halves name the same thing.
+/// run prints, so the two halves name the same thing. That half is asserted in
+/// <see cref="WireReleaseScriptTests"/>, by RUNNING the script against a throwaway
+/// repository and comparing the lines it prints — not by matching text in its
+/// source, which the block's own header comment made useless (T7.7 fix round 1).
+/// </para>
+/// <para>
+/// <b>What this file does NOT cover:</b> the 12 frames the corpus names are not
+/// "every frame the encoder emits". The quoted-string <c>params</c> fallback, the
+/// unpaired-surrogate substitution, multi-line normalisation and a <c>result</c> of
+/// <c>null</c> are pinned by <see cref="WireConformanceTests"/> instead. A shape no
+/// corpus frame reaches is unpinned here; adding one is a line in the corpus plus a
+/// line in the fixture.
 /// </para>
 /// <para>
 /// The corpus extends the eight frame kinds T7.4 pinned inline with the shapes it
@@ -167,48 +178,6 @@ public sealed class WireSnapshotTests
         // neither branch may be vacuous: the corpus is supposed to hold both kinds
         await Assert.That(roundTripped).IsGreaterThan(0);
         await Assert.That(rejected).IsGreaterThan(0);
-    }
-
-    /// <summary>
-    /// The version half of the guard, checked where it lives. A snapshot nobody
-    /// reads at release time pins nothing about the version: the whole point is that
-    /// when the snapshot hash moves, the release says so. This asserts
-    /// <c>scripts/release.ps1</c> hashes the very file this class pins, prints the
-    /// hash, and names the <c>wire-change:</c> obligation — so deleting the block,
-    /// moving the snapshot, or dropping the message turns the suite red instead of
-    /// silently returning the wire to "invisible to the version rule".
-    /// <para>
-    /// String-matching a script is a weak assertion in general; here it is the only
-    /// mechanical one available (the script is a developer tool, not part of the
-    /// solution), and it is paired with the real coverage: the campaign verified the
-    /// dry run by executing it.
-    /// </para>
-    /// </summary>
-    [Test]
-    public async Task Release_script_reports_the_wire_hash_and_the_wire_change_obligation()
-    {
-        var repoRoot = FindRepoRoot();
-        await Assert
-            .That(repoRoot)
-            .IsNotNull()
-            .Because("scripts/release.ps1 must be reachable from the test output directory");
-
-        var script = await File.ReadAllTextAsync(
-            System.IO.Path.Combine(repoRoot!, "scripts", "release.ps1")
-        );
-
-        await Assert
-            .That(script)
-            .Contains(SnapshotRelativePath)
-            .Because("the release helper must hash the snapshot this test pins");
-        await Assert.That(script).Contains("Get-FileHash");
-        await Assert.That(script).Contains("wire hash");
-        await Assert
-            .That(script)
-            .Contains("wire-change:")
-            .Because(
-                "a moved wire hash has to be announced; the version number cannot express it"
-            );
     }
 
     // -- the corpus ----------------------------------------------------------
@@ -377,19 +346,4 @@ public sealed class WireSnapshotTests
             """;
     }
 
-    /// <summary>Walk up from the test output directory to the repository root — the
-    /// directory that holds <c>scripts/release.ps1</c>. Robust to Debug/Release and
-    /// to the output path's depth, and <c>null</c> (a loud assertion failure) if the
-    /// test assembly is somehow running outside the repository.</summary>
-    private static string? FindRepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null)
-        {
-            if (File.Exists(System.IO.Path.Combine(directory.FullName, "scripts", "release.ps1")))
-                return directory.FullName;
-            directory = directory.Parent;
-        }
-        return null;
-    }
 }

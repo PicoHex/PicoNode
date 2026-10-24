@@ -57,12 +57,20 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
   `y` bumps when it did not.
 - **The version rule cannot see the wire.** `api-surface` diffs assemblies, so a change to the JSON a peer reads
   (identical C# surface, different bytes) is invisible to it and would ship as a `y` bump with nothing announcing it.
-  `tests/PicoJsonRpc.Tests/Fixtures/wire-v1.ndjson` is the golden snapshot of every frame the JSON-RPC encoder emits,
-  compared byte for byte by `WireSnapshotTests`; it is marked `-text` in `.gitattributes` so no checkout rewrites its
-  LF terminators. If you change the emitted bytes: regenerate the snapshot in the **same** commit, put a
-  `wire-change:` line in the commit message, and ship a consumer pinned to the old shape (`PicoAgent.Binding`) in
-  lockstep. `scripts/release.ps1 -DryRun` prints `wire hash` and `wire changed` (a warning, never a block - the test
-  is what blocks).
+  `tests/PicoJsonRpc.Tests/Fixtures/wire-v1.ndjson` is a golden snapshot of 12 frames of the JSON-RPC encoder's output
+  - the corpus `WireSnapshotTests` names, not a sweep of the encoder (`"result":null`, the quoted-string `params`
+  fallback, surrogate substitution and multi-line normalisation are pinned by `WireConformanceTests` instead) -
+  compared byte for byte; it is marked `-text` in `.gitattributes` so no checkout rewrites its LF terminators.
+  If you change the emitted bytes: regenerate the snapshot in the **same** commit, put a `wire-change:` line in the
+  commit message, and ship a consumer pinned to the old shape (`PicoAgent.Binding`) in lockstep.
+- **What that snapshot enforces, exactly.** It forces a **file edit and a visible diff**: the bytes cannot move
+  without the fixture moving in the same commit, so a wire change is always reviewable. It **does not force a
+  version bump** - the version comes from the API diff only. `scripts/release.ps1 -DryRun` prints `wire hash` and
+  `wire changed`; it measures the wire *before* it asks for the next version (fix round 1 moved it there), but it is
+  warn-only and does not feed the version, the release workflow's `verify` job has no wire step at all (it just runs
+  the tests), and a hand `git tag` skips the script entirely while still passing `verify`. So the `wire-change:` line
+  and the lockstep release are **discipline, checked by a human** - nothing in this repository can fail a release
+  that changed the bytes and bumped only `y`.
 
 ## Working rules
 
