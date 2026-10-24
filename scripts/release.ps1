@@ -16,10 +16,20 @@ The public API of every packable project is compared against the committed
 baseline in <RepoRoot>/api/<PackageId>.public.txt. A baseline always holds the
 surface of the LAST RELEASE, so it is refreshed as part of the release commit.
 
-A release warns when the committed baselines match this worktree but differ from the
+A release refuses when the committed baselines match this worktree but differ from the
 last tag: they were then refreshed before the release, which hides the API delta since
 that tag and would ship a y bump where an x bump is due. Restore them first
-(git checkout <last-tag> -- api/) so the comparison sees the real delta.
+(git checkout <last-tag> -- api/) so the comparison sees the real delta, or pass
+-ForceBaselineDrift to acknowledge the hidden delta and release anyway.
+
+A baseline that did not exist at the last tag is a BOOTSTRAP, not drift - that is every
+baseline of the first release after `-Bootstrap`. There is no released surface to compare
+against, so it is skipped instead of refusing that release.
+
+A package that was released at the last tag and is no longer packed here is a public API
+change - consumers lose it - so the version rule takes its x branch. The API diff cannot
+see this on its own: it walks the projects that exist now, so a deleted project never
+reaches the comparison.
 
 The API diff cannot see the WIRE. tests/PicoJsonRpc.Tests/Fixtures/wire-v1.ndjson pins
 the exact frames the JSON-RPC encoder emits, and WireSnapshotTests fails when they move
@@ -69,6 +79,11 @@ Release the current branch even though it is not the release mainline. A deliber
 override (e.g. re-tagging a historical commit): the tag still publishes whatever
 commit it points at.
 
+.PARAMETER ForceBaselineDrift
+Release even though the committed baselines were refreshed over the last release's, which
+hides the API delta since that tag. The delta being overridden is printed either way; this
+switch is the explicit acknowledgement of it.
+
 .PARAMETER ResetOnYearChange
 Reset x and y when the year changes instead of carrying them forward.
 
@@ -96,6 +111,7 @@ param(
     [string]$BaselineDir = "api",
     [switch]$Push,
     [switch]$AllowBranch,
+    [switch]$ForceBaselineDrift,
     [switch]$ResetOnYearChange
 )
 
@@ -221,6 +237,22 @@ function Get-ReleasedBaseline([string]$tag, [string]$relativePath) {
     return (@($result.Output) | ForEach-Object { $_.TrimEnd() }) -join "`n"
 }
 
+function Get-ReleasedBaselinePackages([string]$tag, [string]$relativeDirectory) {
+    # The package ids whose baseline existed at $tag - i.e. what that release SHIPPED.
+    # Comparing that SET with the projects packed today is the only way a deleted package
+    # becomes visible: the API diff above walks the projects that still exist, so a
+    # package that is gone is not "unchanged", it is simply not looked at.
+    $path = $relativeDirectory
+    if (-not $path) { $path = "." }
+    $result = Invoke-GitRaw @("ls-tree", "--name-only", "-r", $tag, "--", $path)
+    if ($result.ExitCode -ne 0) { return @() }
+    return @(@($result.Output) |
+            ForEach-Object { "$_".Trim() } |
+            Where-Object { $_ -like "*.public.txt" } |
+            ForEach-Object { [System.IO.Path]::GetFileName($_) -replace '\.public\.txt$', '' } |
+            Sort-Object)
+}
+
 # The golden WIRE snapshot: the exact frames the JSON-RPC encoder emits, byte for byte
 # (T7.7). api/ describes the assembly surface and cannot see the pipe, so this file is
 # the only thing that would notice a JSON shape change - and the only thing that can put
@@ -341,6 +373,26 @@ try {
 
     $lastTag = Get-LastTag
 
+    # -- a package that disappeared is a breaking change ----------------------
+    # The diff above walks the projects that exist NOW, so a deleted package cannot appear
+    # in it: its baseline simply stops being compared and its stale file is removed at tag
+    # time with a note. The release would then go out as a y bump - the version rule's
+    # promise that nothing a consumer can observe changed - while one of their packages
+    # ceased to exist. So this compares the baseline SET at the last tag (what that release
+    # SHIPPED) with the packages packed today: anything released there and missing here is
+    # gone, which is an x bump whichever way the baseline file went - deleted with the
+    # project, or left behind as an orphan.
+    if ($lastTag -and $baselineRoot.StartsWith($RepoRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        $baselineRelativeDirectory = ($baselineRoot.Substring($RepoRoot.Length).TrimStart('\', '/')) -replace '\\', '/'
+        $releasedPackages = Get-ReleasedBaselinePackages -tag $lastTag -relativeDirectory $baselineRelativeDirectory
+        $packedNow = @($currentSurfaces.Keys)
+        $droppedPackages = @($releasedPackages | Where-Object { $packedNow -notcontains $_ })
+        foreach ($packageId in $droppedPackages) {
+            $changed = $true
+            Write-Note "${packageId}: released at $lastTag but nothing is packed here now -> API changed (the package is gone)"
+        }
+    }
+
     # -- a baseline holds the LAST RELEASE's surface --------------------------
     # Baselines that match this worktree but not the last tag were refreshed for unreleased
     # work: the comparison above then reports only what changed since that refresh, so a
@@ -348,24 +400,51 @@ try {
     # way (see docs/specs/rate-limit-policy-design.md, section 8).
     if ($lastTag -and -not $changed -and $baselineRoot.StartsWith($RepoRoot, [StringComparison]::OrdinalIgnoreCase)) {
         $refreshed = @()
+        $bootstrapPackages = @()
         foreach ($packageId in ($currentSurfaces.Keys | Sort-Object)) {
             $baseline = Join-Path $baselineRoot "$packageId.public.txt"
             if (-not (Test-Path $baseline)) { continue }
 
             $relative = ($baseline.Substring($RepoRoot.Length).TrimStart('\', '/')) -replace '\\', '/'
             $released = Get-ReleasedBaseline -tag $lastTag -relativePath $relative
-            if ($null -eq $released) { $refreshed += "$packageId (absent at $lastTag)"; continue }
+            if ($null -eq $released) {
+                # No baseline at that tag = the package was not released there. That is a
+                # BOOTSTRAP, not drift: there is no released surface that could have been
+                # hidden, so there is nothing to refuse. Counting it as drift made the first
+                # release after every `-Bootstrap` impossible, and a guard that refuses the
+                # correct case is what teaches an operator to release by hand.
+                $bootstrapPackages += $packageId
+                continue
+            }
 
             $current = (@(Get-Content -LiteralPath $baseline) | ForEach-Object { $_.TrimEnd() }) -join "`n"
-            if ($current -ne $released) { $refreshed += "$packageId (differs from $lastTag)" }
+            if ($current -ne $released) {
+                # Print what is being overridden, not just that something was: the count of
+                # moved baseline lines is what an operator acknowledges with -ForceBaselineDrift.
+                $delta = @(Compare-Object -ReferenceObject ($released -split "`n") -DifferenceObject ($current -split "`n"))
+                $addedLines = @($delta | Where-Object { $_.SideIndicator -eq '=>' }).Count
+                $removedLines = @($delta | Where-Object { $_.SideIndicator -eq '<=' }).Count
+                $refreshed += "$packageId (+$addedLines/-$removedLines lines since $lastTag)"
+            }
+        }
+        if ($bootstrapPackages.Count -gt 0) {
+            Write-Ok "$($bootstrapPackages -join ', '): no baseline at $lastTag - BOOTSTRAP, not drift"
+            Write-Note "  a package that was not released at $lastTag has no released surface to compare"
+            Write-Note "  against, so it is skipped here instead of being called drift."
         }
         if ($refreshed.Count -gt 0) {
             Write-Note "baselines already match this worktree, but not $lastTag ($($refreshed -join '; '))"
             Write-Note "  they were refreshed before this run, so 'API changed : false' understates the delta since"
             Write-Note "  $lastTag and the packages would ship with a y bump where an x bump is due."
             Write-Note "  Restore them first: git checkout $lastTag -- $BaselineDir"
-            if (-not $DryRun) {
-                Fail "baselines are ahead of $lastTag; restore them before releasing (see the notes above)"
+            if ($ForceBaselineDrift) {
+                Write-Note "  -ForceBaselineDrift: the delta above is acknowledged - releasing over it anyway."
+            }
+            else {
+                Write-Note "  or pass -ForceBaselineDrift to acknowledge the delta and release anyway."
+                if (-not $DryRun) {
+                    Fail "baselines are ahead of $lastTag; restore them before releasing (see the notes above)"
+                }
             }
         }
     }

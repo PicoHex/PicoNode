@@ -365,6 +365,11 @@ internal sealed class ReleaseScriptProbe : IDisposable
     /// is deterministic.</summary>
     internal const string StubNextVersion = "2026.8.0";
 
+    /// <summary>What the stub answers when the script passes <c>--api-changed true</c>
+    /// — the <c>x</c> branch. A dropped package has to reach the version rule, and
+    /// the printed version is how a test sees that it did.</summary>
+    internal const string StubNextVersionWhenApiChanged = "2026.9.0";
+
     /// <summary>The tag the sandbox starts from. The NAME is the real last release so the
     /// printed lines look like the ones an operator sees, but it is a synthetic tag inside
     /// the throwaway repository: it points at a commit that PREDATES the snapshot, which is
@@ -484,13 +489,94 @@ internal sealed class ReleaseScriptProbe : IDisposable
     /// script must print.</summary>
     internal string SnapshotHash() => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(SandboxSnapshot)));
 
+    // -- packages and baselines (the x-bump half of the decision) -------------
+
+    /// <summary>Add a second packable project, optionally with a committed baseline
+    /// — the shape of a package that either existed at the last tag (add, then
+    /// <see cref="Retag"/>) or is brand new (add, do not retag: the baseline is then
+    /// absent at the tag, which is what <c>-Bootstrap</c> produces).</summary>
+    internal void AddPackableProject(string packageId, bool withBaseline)
+    {
+        var directory = Path.Combine(_repo, "src", packageId);
+        Directory.CreateDirectory(Path.Combine(directory, "bin", "Release", "net10.0"));
+        File.WriteAllText(
+            Path.Combine(directory, packageId + ".csproj"),
+            """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <IsPackable>true</IsPackable>
+                <PackageId>__PACKAGE_ID__</PackageId>
+                <AssemblyName>__PACKAGE_ID__</AssemblyName>
+              </PropertyGroup>
+            </Project>
+
+            """.Replace("__PACKAGE_ID__", packageId)
+        );
+        File.WriteAllBytes(Path.Combine(directory, "bin", "Release", "net10.0", packageId + ".dll"), []);
+        if (withBaseline)
+            WriteBaseline(packageId, $"M: {packageId}.Types.{packageId}\n");
+    }
+
+    /// <summary>Write <c>api/&lt;packageId&gt;.public.txt</c> — a refreshed baseline when
+    /// the tag already holds one, a bootstrap baseline when it does not.</summary>
+    internal void WriteBaseline(string packageId, string content)
+    {
+        Directory.CreateDirectory(Path.Combine(_repo, "api"));
+        File.WriteAllText(Path.Combine(_repo, "api", packageId + ".public.txt"), content.ReplaceLineEndings("\n"));
+    }
+
+    /// <summary>Delete a packable project (and, at the caller's choice, its baseline)
+    /// — a dropped package.</summary>
+    internal void DropPackableProject(string packageId, bool alsoDeleteBaseline)
+    {
+        var directory = Path.Combine(_repo, "src", packageId);
+        if (Directory.Exists(directory))
+        {
+            foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+                File.SetAttributes(file, FileAttributes.Normal);
+            Directory.Delete(directory, recursive: true);
+        }
+        if (alsoDeleteBaseline)
+            File.Delete(Path.Combine(_repo, "api", packageId + ".public.txt"));
+    }
+
+    /// <summary>Commit everything, so a REAL (non-dry) run passes the clean-worktree check.</summary>
+    internal void Commit(string message)
+    {
+        Git("add", "-A");
+        Git("commit", "-qm", message);
+    }
+
+    /// <summary>The tags in the sandbox — the evidence that a release actually went
+    /// through, or that a refused one wrote nothing.</summary>
+    internal string[] TagNames() =>
+        GitOutput("tag", "--list")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     // -- running -------------------------------------------------------------
 
     /// <summary>Run <c>release.ps1 -DryRun</c> against the sandbox.</summary>
     /// <param name="environment">Extra variables for the child — the stub reads them, so
     /// a test can make the script's own <c>next-version</c> call have an observable side
     /// effect.</param>
-    internal ScriptRun Run(IReadOnlyDictionary<string, string>? environment = null)
+    internal ScriptRun Run(IReadOnlyDictionary<string, string>? environment = null) =>
+        RunScript(dryRun: true, [], environment);
+
+    /// <summary>
+    /// Run <c>release.ps1</c> for REAL against the sandbox: no <c>-DryRun</c>, so the
+    /// guards that only bite a real release (the baseline-drift refusal, the branch
+    /// guard, the tag) actually fire. Safe here and nowhere else: the sandbox is a
+    /// throwaway repository on <c>main</c> with a stubbed <c>dotnet</c>, no <c>-Push</c>,
+    /// and every write lands in the temp directory.
+    /// </summary>
+    internal ScriptRun RunRelease(params string[] extraArguments) =>
+        RunScript(dryRun: false, extraArguments, null);
+
+    private ScriptRun RunScript(
+        bool dryRun,
+        IReadOnlyList<string> extraArguments,
+        IReadOnlyDictionary<string, string>? environment
+    )
     {
         var psi = new ProcessStartInfo(_executable)
         {
@@ -504,9 +590,12 @@ internal sealed class ReleaseScriptProbe : IDisposable
         psi.ArgumentList.Add("-NonInteractive");
         psi.ArgumentList.Add("-File");
         psi.ArgumentList.Add(ScriptPath);
-        psi.ArgumentList.Add("-DryRun");
+        if (dryRun)
+            psi.ArgumentList.Add("-DryRun");
         psi.ArgumentList.Add("-RepoRoot");
         psi.ArgumentList.Add(_repo);
+        foreach (var argument in extraArguments)
+            psi.ArgumentList.Add(argument);
         UseStubDotnet(psi);
         if (environment is not null)
         {
@@ -514,8 +603,10 @@ internal sealed class ReleaseScriptProbe : IDisposable
                 psi.Environment[key] = value;
         }
 
-        var outcome = Execute(psi, TimeSpan.FromMinutes(2), $"release.ps1 -DryRun ({HostDescription})");
-        return new ScriptRun(outcome.Exit, Strip(outcome.Out), Strip(outcome.Err), this);
+        var what = dryRun ? "release.ps1 -DryRun" : "release.ps1";
+        var command = extraArguments.Count == 0 ? what : $"{what} {string.Join(' ', extraArguments)}";
+        var outcome = Execute(psi, TimeSpan.FromMinutes(2), $"{command} ({HostDescription})");
+        return new ScriptRun(outcome.Exit, Strip(outcome.Out), Strip(outcome.Err), this, command);
     }
 
     // -- seeding -------------------------------------------------------------
@@ -568,6 +659,14 @@ internal sealed class ReleaseScriptProbe : IDisposable
         // Hermetic bytes: the script's own git calls inherit this repository config, so
         // no global core.autocrlf can make `git diff` warn about (or rewrite) the snapshot.
         Git("config", "core.autocrlf", "false");
+        // A REAL run commits the baseline refresh and creates the tag with the script's
+        // own `git commit` / `git tag` — which carry no `-c` flags. Without a repository
+        // identity and with a global gpgsign default, that legitimately fails, so the
+        // sandbox configures itself instead of borrowing the machine's settings.
+        Git("config", "user.name", "release-script-probe");
+        Git("config", "user.email", "release-script-probe@example.invalid");
+        Git("config", "commit.gpgsign", "false");
+        Git("config", "tag.gpgsign", "false");
         Git("add", "-A");
         Git("commit", "-qm", "probe: seed");
         // The tag predates the snapshot - the shape of EVERY release cut before T7.7,
@@ -605,13 +704,18 @@ internal sealed class ReleaseScriptProbe : IDisposable
                 @echo off
                 if "%2"=="next-version" goto next
                 if "%2"=="diff" goto diff
+                if "%2"=="dump" goto dump
                 exit /b 0
                 :next
                 if not "%WIRE_PROBE_SWAP%"=="" copy /y "%WIRE_PROBE_CONTENT%" "%WIRE_PROBE_SWAP%" >nul 2>&1
-                echo {{StubNextVersion}}
+                if "%4"=="true" echo {{StubNextVersionWhenApiChanged}}
+                if not "%4"=="true" echo {{StubNextVersion}}
                 exit /b 0
                 :diff
                 echo added=0 removed=0
+                exit /b 0
+                :dump
+                echo M: Fake.Types.Surface> "%5"
                 exit /b 0
 
                 """".ReplaceLineEndings()
@@ -625,8 +729,9 @@ internal sealed class ReleaseScriptProbe : IDisposable
                 case "$2" in
                   next-version)
                     if [ -n "$WIRE_PROBE_SWAP" ]; then cp "$WIRE_PROBE_CONTENT" "$WIRE_PROBE_SWAP"; fi
-                    echo {{StubNextVersion}} ;;
+                    if [ "$4" = "true" ]; then echo {{StubNextVersionWhenApiChanged}}; else echo {{StubNextVersion}}; fi ;;
                   diff) echo "added=0 removed=0" ;;
+                  dump) echo "M: Fake.Types.Surface" > "$5" ;;
                 esac
                 exit 0
 
@@ -642,7 +747,12 @@ internal sealed class ReleaseScriptProbe : IDisposable
     private void WriteSnapshot(string content) =>
         File.WriteAllBytes(SandboxSnapshot, System.Text.Encoding.UTF8.GetBytes(content));
 
-    private void Git(params string[] arguments)
+    /// <inheritdoc cref="RunGit"/>
+    private void Git(params string[] arguments) => RunGit(arguments);
+
+    private string GitOutput(params string[] arguments) => RunGit(arguments);
+
+    private string RunGit(string[] arguments)
     {
         var psi = new ProcessStartInfo("git") { WorkingDirectory = _repo, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         // Deterministic, hermetic history: no user/system config beyond what is
@@ -671,6 +781,7 @@ internal sealed class ReleaseScriptProbe : IDisposable
                 $"the sandbox repository could not be built: git {string.Join(' ', arguments)} "
                     + $"exited {outcome.Exit}.{Environment.NewLine}{outcome.Out}{outcome.Err}"
             );
+        return outcome.Out;
     }
 
     /// <summary>Put the stub first on <c>PATH</c> for the child, and drop the git
@@ -775,7 +886,16 @@ internal sealed class ReleaseScriptProbe : IDisposable
 }
 
 /// <summary>One run's output, already stripped of ANSI colour.</summary>
-internal sealed record ScriptRun(int ExitCode, string StandardOutput, string StandardError, ReleaseScriptProbe Probe)
+/// <param name="Command">What was actually run, e.g. <c>release.ps1 -DryRun</c> or
+/// <c>release.ps1 -ForceBaselineDrift</c> — a failure message that always says
+/// "-DryRun" describes a command the suite did not run, which is its own small lie.</param>
+internal sealed record ScriptRun(
+    int ExitCode,
+    string StandardOutput,
+    string StandardError,
+    ReleaseScriptProbe Probe,
+    string Command
+)
 {
     /// <summary>
     /// The <c>== Decision</c> block: everything the script prints between that header
@@ -800,7 +920,7 @@ internal sealed record ScriptRun(int ExitCode, string StandardOutput, string Sta
     /// <summary>The whole output plus both streams — the failure detail, so a red test
     /// says what the script actually printed.</summary>
     internal string Explain =>
-        $"`release.ps1 -DryRun` (host {Probe.HostDescription}) exited {ExitCode}.{Environment.NewLine}"
+        $"`{Command}` (host {Probe.HostDescription}) exited {ExitCode}.{Environment.NewLine}"
         + $"stdout:{Environment.NewLine}{StandardOutput}{Environment.NewLine}"
         + $"stderr:{Environment.NewLine}{StandardError}";
 }
