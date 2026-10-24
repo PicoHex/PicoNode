@@ -107,6 +107,94 @@ public sealed class GeneratedCodeCompilesTests
         await Assert.That(Describe(errors)).IsEmpty();
     }
 
+    /// <summary>
+    /// A <c>static</c> controller has no instance to resolve — the generator deliberately
+    /// never registers it in DI (<c>ControllersGeneratorTests.StaticController_NotRegisteredInDI</c>),
+    /// so the endpoint must call the type directly:
+    /// <c>global::TestApp.Controllers.StatusController.Get()</c>.
+    /// <para>
+    /// <b>This is F-52's regression test.</b> The instance shape
+    /// <c>var __controller = ctx.Services.GetService(typeof(StatusController))!;</c> followed
+    /// by <c>((StatusController)__controller).Get()</c> is two defects in one line: CS0716
+    /// (a static type cannot be the target of a cast) makes the emitted tree uncompilable,
+    /// and the resolve would answer <c>null</c> at run time precisely because the type is
+    /// never registered.
+    /// </para>
+    /// <para>
+    /// The second shape below is the same bug one level down and is pinned here on purpose:
+    /// a <c>static</c> method on an ordinary (instance) controller was also emitted against
+    /// <c>__controller</c>, which is CS0176 ("cannot be accessed with an instance
+    /// reference"). Fixing F-52 on <c>ClassDeclarationSymbol.IsStatic</c> alone leaves that
+    /// half broken and this half untested, so the discriminator is the member
+    /// (<c>IMethodSymbol.IsStatic</c>) and both shapes are asserted from one generator run
+    /// each.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Static_controller_compiles_and_is_invoked_statically()
+    {
+        var staticClassSource = """
+            using PicoNode.Web;
+
+            namespace TestApp.Controllers;
+
+            public static class StatusController
+            {
+                [HttpGet("status")]
+                public static string Get() => "ok";
+            }
+            """;
+
+        // One run, two views of it: the emitted text and the compilation of that same text
+        // must never come from two different generator runs.
+        var run = GeneratorHarness.RunGeneratorRun(
+            staticClassSource,
+            "Controllers/StatusController.cs"
+        );
+
+        // The compile comes first so a regression reports CS0716 — the actual defect —
+        // instead of a missing-substring assertion standing in for it.
+        var errors = await GeneratorHarness.CompileGeneratedAsync(run);
+        await Assert.That(Describe(errors)).IsEmpty();
+
+        var generated = run.Generated;
+        await Assert
+            .That(generated)
+            .Contains("global::TestApp.Controllers.StatusController.Get();");
+        // The two halves of the shape, asserted separately so a regression names which one
+        // came back: the cast, and the DI resolve of an instance that never exists.
+        await Assert
+            .That(generated)
+            .DoesNotContain("(global::TestApp.Controllers.StatusController)");
+        await Assert
+            .That(generated)
+            .DoesNotContain("GetService(typeof(global::TestApp.Controllers.StatusController))");
+
+        // Same discriminator, one level down: a static action on an instance controller.
+        var staticMethodSource = """
+            using PicoNode.Web;
+
+            namespace TestApp.Controllers;
+
+            public sealed class MiscController
+            {
+                [HttpGet("ping")]
+                public static string Ping() => "pong";
+            }
+            """;
+
+        var staticMethodRun = GeneratorHarness.RunGeneratorRun(
+            staticMethodSource,
+            "Controllers/MiscController.cs"
+        );
+
+        var staticMethodErrors = await GeneratorHarness.CompileGeneratedAsync(staticMethodRun);
+        await Assert.That(Describe(staticMethodErrors)).IsEmpty();
+        await Assert
+            .That(staticMethodRun.Generated)
+            .Contains("global::TestApp.Controllers.MiscController.Ping();");
+    }
+
     private static string Describe(ImmutableArray<Diagnostic> errors) =>
         errors.IsEmpty
             ? ""

@@ -618,6 +618,22 @@ public sealed class ControllersGeneratorTests
             );
         // But should still generate endpoint
         await Assert.That(result).Contains("MapGet");
+
+        // ...and it must call the static type directly (audit F-52). The instance shape
+        // is CS0716 for a static class — and the DI resolve it rests on would return
+        // null, since the assertion above is exactly what keeps the type unregistered.
+        // The compile-side witness is GeneratedCodeCompilesTests
+        // .Static_controller_compiles_and_is_invoked_statically; this keeps the text
+        // assertion beside the DI one so the two halves of the shape stay together.
+        await Assert
+            .That(result)
+            .Contains("global::TestApp.Controllers.StaticController.GetPage();");
+        await Assert
+            .That(result)
+            .DoesNotContain("(global::TestApp.Controllers.StaticController)__controller");
+        await Assert
+            .That(result)
+            .DoesNotContain("GetService(typeof(global::TestApp.Controllers.StaticController))");
     }
 
     [Test]

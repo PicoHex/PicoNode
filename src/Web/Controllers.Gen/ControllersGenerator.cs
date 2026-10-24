@@ -409,17 +409,47 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                     callArgs.Add($"__{paramName}");
                 }
 
-                // Collect and resolve the controller
-                endpointsCode.AppendLine(
-                    $"                var __controller = ctx.Services.GetService(typeof({controller.FullName}))!;"
-                );
+                // A static member needs no instance, and cannot have one (audit F-52).
+                // A `static class` controller used to be treated as an instance: the
+                // emitted `((StatusController)__controller).Get()` is CS0716 (cannot
+                // convert to static type), and the `GetService` beside it would return
+                // null, because a static controller is deliberately never registered in
+                // DI (see the IsStatic skip in the registrations block below). A `static`
+                // method on an ordinary controller produces the same defect as CS0176
+                // ("cannot be accessed with an instance reference"), so the discriminator
+                // is the member, not the class: `Symbol.IsStatic` is true for both shapes
+                // and false for every instance action.
+                var invokeStatically = method.Symbol.IsStatic;
+
+                // No DI decision to make for a static target: a `static class` cannot
+                // declare an instance constructor (CS0710/CS0711 — reported in the user's
+                // own file before any generation), so there is no constructor injection to
+                // honour and no instance to resolve. Action parameters are unaffected: a
+                // complex parameter still resolves from DI below, which does not depend on
+                // the controller instance. A static controller that needs a service must
+                // therefore take it as an action parameter (or be made an instance
+                // controller) — constructor injection is a compile error in its own source,
+                // never something this generator silently drops.
+                if (!invokeStatically)
+                {
+                    endpointsCode.AppendLine(
+                        $"                var __controller = ctx.Services.GetService(typeof({controller.FullName}))!;"
+                    );
+                }
+
+                // The instance target keeps the long-standing shape (every use site
+                // re-casts the untyped `__controller`); a static target is qualified by its
+                // full name and called directly — no DI resolve, no `new`, no cast.
+                var invocationTarget = invokeStatically
+                    ? controller.FullName
+                    : $"(({controller.FullName})__controller)";
 
                 var awaitPrefix = isAsync ? "await " : "";
 
                 if (isVoid || isAsyncVoid)
                 {
                     endpointsCode.AppendLine(
-                        $"                {awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});"
+                        $"                {awaitPrefix}{invocationTarget}.{method.Symbol.Name}({string.Join(", ", callArgs)});"
                     );
                     if (isAsync)
                         endpointsCode.AppendLine(
@@ -433,7 +463,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 else if (returnsIWebResult)
                 {
                     endpointsCode.AppendLine(
-                        $"                var __result = ({resultTypeName}){awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});"
+                        $"                var __result = ({resultTypeName}){awaitPrefix}{invocationTarget}.{method.Symbol.Name}({string.Join(", ", callArgs)});"
                     );
                     if (isAsync)
                         endpointsCode.AppendLine("                return __result.Execute(ctx);");
@@ -445,7 +475,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 else
                 {
                     endpointsCode.AppendLine(
-                        $"                var __result = ({resultTypeName}){awaitPrefix}(({controller.FullName})__controller).{method.Symbol.Name}({string.Join(", ", callArgs)});"
+                        $"                var __result = ({resultTypeName}){awaitPrefix}{invocationTarget}.{method.Symbol.Name}({string.Join(", ", callArgs)});"
                     );
                     endpointsCode.AppendLine(
                         "                var __bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(__result);"
