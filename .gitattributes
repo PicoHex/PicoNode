@@ -1,0 +1,12 @@
+# The golden wire snapshot (T7.7) is compared BYTE FOR BYTE against what the
+# encoder emits, so a checkout must not rewrite it: core.autocrlf=true would hand
+# the test CRLF on Windows and LF on Linux, and the guard would then be pinning one
+# wire on one platform and a different one on the other. -text disables both
+# normalisation directions AND the EOL conversion for that file only.
+#
+# Nothing else is listed here on purpose: this file is the repository's first, so
+# adding `* text=auto` alongside it would silently change the EOL handling of every
+# tracked file (the worktree currently mixes CRLF and LF working-tree files over an
+# LF index, decided by core.autocrlf). The wire snapshot is the one file whose bytes
+# ARE the contract; leave the rest as they were.
+*.ndjson -text

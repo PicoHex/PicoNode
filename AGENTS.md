@@ -55,6 +55,14 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
   (`-AllowBranch` is the deliberate override for re-tagging cases).
 - Version rule: `<four-digit year>.<x>.<y>` — `x` bumps (and `y` resets to 0) when the public API changed;
   `y` bumps when it did not.
+- **The version rule cannot see the wire.** `api-surface` diffs assemblies, so a change to the JSON a peer reads
+  (identical C# surface, different bytes) is invisible to it and would ship as a `y` bump with nothing announcing it.
+  `tests/PicoJsonRpc.Tests/Fixtures/wire-v1.ndjson` is the golden snapshot of every frame the JSON-RPC encoder emits,
+  compared byte for byte by `WireSnapshotTests`; it is marked `-text` in `.gitattributes` so no checkout rewrites its
+  LF terminators. If you change the emitted bytes: regenerate the snapshot in the **same** commit, put a
+  `wire-change:` line in the commit message, and ship a consumer pinned to the old shape (`PicoAgent.Binding`) in
+  lockstep. `scripts/release.ps1 -DryRun` prints `wire hash` and `wire changed` (a warning, never a block - the test
+  is what blocks).
 
 ## Working rules
 

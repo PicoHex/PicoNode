@@ -21,6 +21,17 @@ last tag: they were then refreshed before the release, which hides the API delta
 that tag and would ship a y bump where an x bump is due. Restore them first
 (git checkout <last-tag> -- api/) so the comparison sees the real delta.
 
+The API diff cannot see the WIRE. tests/PicoJsonRpc.Tests/Fixtures/wire-v1.ndjson pins
+the exact frames the JSON-RPC encoder emits, and WireSnapshotTests fails when they move
+- api-surface only reads assemblies, so a pure JSON shape change (identical C# surface,
+different bytes on the pipe) would otherwise ship as a y bump with nothing in the
+version, the tag or the baseline to announce it. That is how the JSON-RPC 2.0 wire
+change went out. So this script prints the snapshot's sha256 as `wire hash` and reports
+whether it moved since the last tag. A moved hash WARNS and never blocks: the commit
+that carried the new bytes must have a `wire-change:` line, and a consumer pinned to the
+old shape (PicoAgent.Binding) must ship in lockstep. The blocking half of the guard is
+WireSnapshotTests in the release workflow's verify job, not this script.
+
 The tag is the release trigger: the release workflow gates the publish on a
 `verify` job (restore + build, all ten test projects, the version-shape assertion)
 and `publish` depends on it through `needs: verify`; only then does it pack every
@@ -66,7 +77,7 @@ Reset x and y when the year changes instead of carrying them forward.
 ./scripts/release.ps1 -Bootstrap -FromTag v2026.9.0
 
 .EXAMPLE
-# inspect the decision without writing anything
+# inspect the decision without writing anything (also prints the wire hash)
 ./scripts/release.ps1 -DryRun
 
 .EXAMPLE
@@ -210,6 +221,33 @@ function Get-ReleasedBaseline([string]$tag, [string]$relativePath) {
     return (@($result.Output) | ForEach-Object { $_.TrimEnd() }) -join "`n"
 }
 
+# The golden WIRE snapshot: the exact frames the JSON-RPC encoder emits, byte for byte
+# (T7.7). api/ describes the assembly surface and cannot see the pipe, so this file is
+# the only thing that would notice a JSON shape change - and the only thing that can put
+# a number on one at release time.
+$script:WireSnapshotRelativePath = "tests/PicoJsonRpc.Tests/Fixtures/wire-v1.ndjson"
+
+function Get-WireHash([string]$root) {
+    # sha256 of the snapshot as it sits in the worktree - the SAME digest
+    # WireSnapshotTests prints when it fails, so the two halves of this guard name the
+    # same number. $null when the file is missing (deleted, or a tree predating it).
+    $path = Join-Path $root $script:WireSnapshotRelativePath
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Test-WireSnapshotChangedSince([string]$tag) {
+    # git compares BLOBs, so this is byte-exact - no line-ending or encoding round trip
+    # through PowerShell strings, which is also why the file is marked -text in
+    # .gitattributes. Returns: absent | changed | unchanged.
+    $atTag = Invoke-GitRaw @("cat-file", "-e", "${tag}:$($script:WireSnapshotRelativePath)")
+    if ($atTag.ExitCode -ne 0) { return "absent" }
+    $diff = Invoke-GitRaw @("diff", "--quiet", $tag, "--", $script:WireSnapshotRelativePath)
+    if ($diff.ExitCode -eq 0) { return "unchanged" }
+    if ($diff.ExitCode -eq 1) { return "changed" }
+    throw "git diff against $tag failed: $($diff.Output)"
+}
+
 # -- locate and build the api-surface tool ------------------------------------
 
 $toolDirectory = Join-Path $PSScriptRoot "api-surface"
@@ -340,11 +378,48 @@ try {
     $nextVersion = @(Invoke-Tool $versionArgs)[-1].Trim()
     if ($script:ToolExit -ne 0) { Fail "next-version failed" }
 
+    # -- the wire half of the version decision -------------------------------
+    # The API diff above answers "did the C# surface move". It cannot answer "did the
+    # BYTES a peer reads move", and a y bump is exactly the promise that nothing a
+    # consumer can observe changed. The snapshot carries that answer.
+    $wireHash = Get-WireHash $RepoRoot
+    $wireChange = "not pinned"
+    if ($wireHash -and $lastTag) {
+        $wireChange = Test-WireSnapshotChangedSince $lastTag
+    }
+
     Write-Host ""
     Write-Step "Decision"
     if ($lastTag) { Write-Host "   last release : $lastTag" } else { Write-Host "   last release : (none)" }
     Write-Host "   API changed  : $apiChanged"
+    if ($wireHash) {
+        Write-Host "   wire hash    : $wireHash"
+        if ($lastTag) { Write-Host "   wire changed : $wireChange (vs $lastTag)" }
+        else { Write-Host "   wire changed : (no last tag to compare)" }
+    }
+    else {
+        Write-Note "wire hash    : (no snapshot at $($script:WireSnapshotRelativePath)) - the wire is UNPINNED"
+    }
     Write-Host "   next version : v$nextVersion" -ForegroundColor Green
+
+    # WARN, never block. A release script that refuses to run is a release script people
+    # work around; WireSnapshotTests in the release workflow's verify job is what
+    # actually blocks a silent wire change. What this adds is the part a version number
+    # cannot express - that the bytes moved - so it belongs in a commit message.
+    if ($wireChange -eq "changed") {
+        Write-Note "the wire shape MOVED since ${lastTag}: 'API changed : $apiChanged' does not cover it"
+        Write-Note "  the commit that carried the new bytes must have a line starting with 'wire-change:'"
+        Write-Note "  describing them, and any consumer pinned to the old shape (PicoAgent.Binding)"
+        Write-Note "  must ship in lockstep. Announce it in the FEATURE commit: 'chore(release):' is a"
+        Write-Note "  baseline refresh and cannot carry the description."
+    }
+    elseif ($wireChange -eq "absent") {
+        Write-Note "the wire was not pinned at $lastTag (the snapshot post-dates it), so any shape change"
+        Write-Note "  between $lastTag and here is UNMEASURABLE: check the commits since that tag for a"
+        Write-Note "  'wire-change:' line - the JSON-RPC 2.0 conformance change is exactly such a commit,"
+        Write-Note "  and 'API changed : $apiChanged' does not describe it. From the next release on, this"
+        Write-Note "  comparison is exact."
+    }
 
     $branchName = @((Invoke-GitRaw @("rev-parse", "--abbrev-ref", "HEAD")).Output)[0].Trim()
     $onReleaseBranch = $branchName -eq $script:ReleaseBranch

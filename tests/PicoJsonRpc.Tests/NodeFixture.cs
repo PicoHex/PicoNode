@@ -77,6 +77,14 @@ internal static class NodeFixture
     public const string Crash = "crash_server.mjs";
 
     /// <summary>
+    /// The golden WIRE SNAPSHOT (T7.7): the exact bytes the encoder emits for the
+    /// <c>WireSnapshotTests</c> corpus. Not a runtime fixture — no child is started —
+    /// but it is copied by the same <c>Fixtures/**</c> rule, so it belongs in
+    /// <see cref="Named"/> or the reverse copy-rule check would fail on it.
+    /// </summary>
+    public const string WireSnapshot = "wire-v1.ndjson";
+
+    /// <summary>
     /// Every fixture a test in this assembly names. The copy-rule test iterates
     /// this list, so adding a fixture here is what gets it copy-checked; its
     /// reverse check makes the list and the output directory agree both ways — in
@@ -97,7 +105,7 @@ internal static class NodeFixture
     /// where <c>python3</c> is a Store stub) to test the same bytes twice.
     /// </para>
     /// </summary>
-    public static readonly IReadOnlyList<string> Named = [Echo, Chatty, Crash];
+    public static readonly IReadOnlyList<string> Named = [Echo, Chatty, Crash, WireSnapshot];
 
     /// <summary>
     /// The node probe, evaluated at most once per test run: a skip decision is
