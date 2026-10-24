@@ -199,6 +199,49 @@ public sealed class LifecycleTests
         }
     }
 
+    /// <summary>
+    /// T7.1's failure path, made permanent (T7.6c): a child that writes to stderr
+    /// and exits NON-ZERO must surface those last words IN THE ERROR THE CALLER
+    /// SEES.
+    /// <para>
+    /// A dead child answers nothing, so the stderr tail is the only account of why
+    /// it died; an <see cref="IOException"/> saying "closed the stream" and nothing
+    /// else is undebuggable. The assertion is deliberately NOT "it threw": it
+    /// throws with the marker <b>in the message</b>, which is the half a
+    /// drain-without-report implementation would pass and this would catch.
+    /// </para>
+    /// <para>
+    /// Reached through <see cref="NodeFixture.StartAsync(string)"/>, so the fixture
+    /// is copy-rule-checked and the exit is OUT of process (the child is the one
+    /// exiting non-zero, not a simulated EOF). The fixture writes its marker with a
+    /// blocking <c>write(2)</c> before <c>process.exit(3)</c>, so the bytes are
+    /// already in the pipe when stdout EOFs — there is no race to lose here.
+    /// </para>
+    /// </summary>
+    [Test]
+    [SkipUnlessNode]
+    public async Task Dead_child_stderr_tail_reaches_the_caller()
+    {
+        await using var client = await NodeFixture.StartAsync(NodeFixture.Crash);
+        var ex = await Assert
+            .That(async () => await client.CallAsync("ping", "{}", CancellationToken.None))
+            .Throws<IOException>();
+
+        var message = ex!.Message;
+        // the marker AND the exit-reason line: the tail arrives whole, not clipped to
+        // its first byte, and not emptied by the drain losing a race with the exit.
+        await Assert
+            .That(message)
+            .Contains("DEAD-CHILD-STDERR-MARKER-7c41e0")
+            .Because(
+                "the caller's IOException must carry the child's stderr tail — a dead "
+                    + "child's last words are the only account of why it died. Actual "
+                    + "message: "
+                    + message
+            );
+        await Assert.That(message).Contains("failed on purpose (exit 3)");
+    }
+
     [Test]
     public async Task Acquire_UnknownRuntime_Throws()
     {

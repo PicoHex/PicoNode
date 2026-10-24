@@ -90,5 +90,5 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
   `*.py` file in the tree must be named by a CI workflow, a `scripts/*.ps1` or this file. Delete it or wire it.
   There is no `Fixtures/` carve-out any more: a Python fixture counts too, so wire it by name or delete it.
 - Any workflow that runs `PicoJsonRpc.Tests` must install `node` first (pinned major, `actions/setup-node@v4`);
-  guarded by `CiWorkflowTests.Every_workflow_that_runs_the_rpc_suite_installs_node`. Without it the 20
-  child-process tests skip loudly in CI — a green run covering a fifth less than it claims.
+  guarded by `CiWorkflowTests.Every_workflow_that_runs_the_rpc_suite_installs_node`. Without it the 21
+  child-process tests skip loudly in CI — a green run covering a third less than it claims.

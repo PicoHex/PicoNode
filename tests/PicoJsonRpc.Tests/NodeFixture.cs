@@ -29,15 +29,16 @@ namespace PicoJsonRpc.Tests;
 /// </list>
 /// </para>
 /// <para>
-/// <b>Exactly what a node-less run loses — 20 of 58, measured</b> (a PATH with no
-/// <c>node</c>: 38 passed, 20 skipped, 0 failed):
+/// <b>Exactly what a node-less run loses — 21 of 59, measured</b> (a PATH with no
+/// <c>node</c>: 38 passed, 21 skipped, 0 failed):
 /// <list type="bullet">
-/// <item><see cref="LifecycleTests"/> — <b>7 of 8</b>: <c>Acquire_SpawndNode_AndRecycle_Kills</c>,
+/// <item><see cref="LifecycleTests"/> — <b>8 of 9</b>: <c>Acquire_SpawndNode_AndRecycle_Kills</c>,
 /// <c>Acquire_Concurrent_ReusesSingleInstance</c>, <c>Acquire_ThreeCrashes_EntersBackoff</c>,
 /// <c>Acquire_SuccessResetsBackoff</c>, <c>Churn_StaleChannel_DoesNotCorruptCurrent</c>,
 /// <c>Second_acquire_after_crash_still_respects_backoff</c>,
-/// <c>Chatty_child_does_not_deadlock</c>. Each one spawns, kills or recycles a real
-/// child, so there is nothing to observe without a runtime. The 8th,
+/// <c>Chatty_child_does_not_deadlock</c>, <c>Dead_child_stderr_tail_reaches_the_caller</c>.
+/// Each one spawns, kills or recycles a real
+/// child, so there is nothing to observe without a runtime. The 9th,
 /// <c>Acquire_UnknownRuntime_Throws</c>, asserts a MISSING runtime's error and
 /// therefore still runs — it is the only test that is meaningful precisely because
 /// something cannot be started.</item>
@@ -69,12 +70,19 @@ internal static class NodeFixture
     public const string Chatty = "chatty_server.mjs";
 
     /// <summary>
+    /// Writes two lines to stderr, then exits <b>3</b> before reading any request
+    /// (T7.6c). The failure path's fixture: nothing can be answered, so the child's
+    /// stderr tail is the whole of what the caller can learn.
+    /// </summary>
+    public const string Crash = "crash_server.mjs";
+
+    /// <summary>
     /// Every fixture a test in this assembly names. The copy-rule test iterates
     /// this list, so adding a fixture here is what gets it copy-checked; its
     /// reverse check makes the list and the output directory agree both ways — in
     /// ANY language, so a fixture nobody names cannot sit in the output unnoticed.
     /// <para>
-    /// <c>echo_server.py</c> used to sit beside these two: copied by the same
+    /// <c>echo_server.py</c> used to sit beside these: copied by the same
     /// <c>Fixtures/**</c> glob, started by nobody. T7.6b deleted it rather than
     /// wiring it. It was a byte-for-byte SHAPE duplicate of
     /// <see cref="Echo"/> (same <c>{jsonrpc,id,result}</c> frame, same
@@ -89,7 +97,7 @@ internal static class NodeFixture
     /// where <c>python3</c> is a Store stub) to test the same bytes twice.
     /// </para>
     /// </summary>
-    public static readonly IReadOnlyList<string> Named = [Echo, Chatty];
+    public static readonly IReadOnlyList<string> Named = [Echo, Chatty, Crash];
 
     /// <summary>
     /// The node probe, evaluated at most once per test run: a skip decision is
@@ -228,11 +236,12 @@ internal sealed class SkipUnlessNodeAttribute() : SkipAttribute(NodeLessRunReaso
 {
     /// <summary>
     /// The loud reason. It deliberately repeats the loss count: a node-less run
-    /// must be readable evidence that 19 tests did not run, not a footnote.
+    /// must be readable evidence that 21 tests did not run, not a footnote.
     /// </summary>
     public const string NodeLessRunReason =
-        "SKIPPED - no 'node' runtime on PATH. This run loses 20 node-dependent tests: "
-        + "LifecycleTests 7/8 (spawn, recycle, crash-backoff, chatty stderr), "
+        "SKIPPED - no 'node' runtime on PATH. This run loses 21 node-dependent tests: "
+        + "LifecycleTests 8/9 (spawn, recycle, crash-backoff, chatty stderr, the dead "
+        + "child's stderr tail), "
         + "ClientTests 12/13 (scripted channels still need a real process handle) and "
         + "NodeFixtureTests 1/6 (the helper's round trip). Fixture/copy-rule and wire tests "
         + "still ran. Install node to recover the coverage; a missing FIXTURE is a "

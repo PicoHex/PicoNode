@@ -258,7 +258,7 @@ public sealed class CiWorkflowTests
             .IsEmpty()
             .Because(
                 "a workflow that runs PicoJsonRpc.Tests must install node first, otherwise "
-                    + "its 20 node-dependent tests skip in CI instead of running"
+                    + "its 21 node-dependent tests skip in CI instead of running"
             );
 
         // ...and the major is PINNED to a number: `latest` or `lts/*` would move the
