@@ -19,14 +19,14 @@ public sealed class GeneratedCodeCompilesTests
     /// <summary>
     /// The controller from the audit: a POST action taking a DTO and returning one.
     /// <para>
-    /// <b>RED on purpose.</b> <c>Create(CreatePostDto dto)</c> takes a complex type, so
-    /// the generator binds it with an uncast
-    /// <c>var __dto = ctx.Services.GetService(typeof(…));</c> — <c>object</c> passed to a
-    /// <c>CreatePostDto</c> parameter is CS1503. The constructor path
-    /// (<c>ControllersGenerator.cs</c>, the <c>scope.GetService</c> branch) already
-    /// casts, and the fix is the same one-line cast on the action-parameter path
-    /// (F-51 → the next task). This test is that task's RED and is deliberately not
-    /// skipped.
+    /// <b>This is F-51's regression test.</b> <c>Create(CreatePostDto dto)</c> takes a
+    /// complex type, and <c>ISvcScope.GetService</c> returns <c>object?</c> — so the
+    /// generator must cast the resolved service before handing it to the typed
+    /// parameter, or the emitted line is
+    /// <c>var __dto = ctx.Services.GetService(…);</c> followed by
+    /// <c>Create(__dto)</c>, i.e. <c>object</c> to <c>CreatePostDto</c>: CS1503. The
+    /// constructor path already cast; the action-parameter path now does too. Removing
+    /// that cast turns this test red again — that mutation is the proof it still bites.
     /// </para>
     /// </summary>
     [Test]

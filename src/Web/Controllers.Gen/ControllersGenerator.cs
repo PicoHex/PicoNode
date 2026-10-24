@@ -396,9 +396,14 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                     }
                     else
                     {
-                        // Complex type — resolve from DI
+                        // Complex type — resolve from DI. The cast is mandatory:
+                        // ISvcScope.GetService returns object?, so an uncast result is
+                        // CS1503 the moment it is passed to the action's typed parameter
+                        // (audit F-51). Same shape as the constructor-parameter path
+                        // below (:536) — that path always cast, which is why ctor
+                        // injection compiled while an action parameter did not.
                         endpointsCode.AppendLine(
-                            $"                var __{paramName} = ctx.Services.GetService(typeof({typeName}));"
+                            $"                var __{paramName} = ({typeName})ctx.Services.GetService(typeof({typeName}))!;"
                         );
                     }
                     callArgs.Add($"__{paramName}");
