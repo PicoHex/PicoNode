@@ -30,7 +30,6 @@ public sealed class Http2Tests
     [Test]
     public async Task Http1_works_as_baseline()
     {
-        var port = TestSupport.GetRandomPort();
         var app = new WebApp(new DummyContainer());
         app.MapGet(
             "/api/health",
@@ -38,13 +37,15 @@ public sealed class Http2Tests
                 ValueTask.FromResult(WebResults.Json(200, """{"ok":true}""", "OK"))
         );
 
-        await using var server = new WebServer(
-            app,
-            new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+        await using var server = await TestSupport.StartServerAsync(
+            port =>
+                new WebServer(
+                    app,
+                    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+                )
         );
-        await server.StartAsync();
 
-        using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+        using var client = new HttpClient { BaseAddress = server.BaseUri };
         var response = await client.GetAsync("/api/health");
         var body = await response.Content.ReadAsStringAsync();
 
@@ -55,7 +56,6 @@ public sealed class Http2Tests
     [Test]
     public async Task Http2_h2c_upgrade_works()
     {
-        var port = TestSupport.GetRandomPort();
         var app = new WebApp(new DummyContainer());
         app.MapGet(
             "/api/health",
@@ -63,16 +63,18 @@ public sealed class Http2Tests
                 ValueTask.FromResult(WebResults.Json(200, """{"ok":true}""", "OK"))
         );
 
-        await using var server = new WebServer(
-            app,
-            new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+        await using var server = await TestSupport.StartServerAsync(
+            port =>
+                new WebServer(
+                    app,
+                    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+                )
         );
-        await server.StartAsync();
 
         using var handler = new SocketsHttpHandler { EnableMultipleHttp2Connections = true };
         using var client = new HttpClient(handler)
         {
-            BaseAddress = new Uri($"http://127.0.0.1:{port}"),
+            BaseAddress = server.BaseUri,
             DefaultRequestVersion = System.Net.HttpVersion.Version20,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact,
         };
@@ -88,7 +90,6 @@ public sealed class Http2Tests
     [Test]
     public async Task Http2_multipart_body_parses_from_the_buffered_body()
     {
-        var port = TestSupport.GetRandomPort();
         var app = new WebApp(new DummyContainer());
         app.MapPost(
             "/api/upload",
@@ -109,16 +110,18 @@ public sealed class Http2Tests
             }
         );
 
-        await using var server = new WebServer(
-            app,
-            new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+        await using var server = await TestSupport.StartServerAsync(
+            port =>
+                new WebServer(
+                    app,
+                    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+                )
         );
-        await server.StartAsync();
 
         using var handler = new SocketsHttpHandler { EnableMultipleHttp2Connections = true };
         using var client = new HttpClient(handler)
         {
-            BaseAddress = new Uri($"http://127.0.0.1:{port}"),
+            BaseAddress = server.BaseUri,
             DefaultRequestVersion = System.Net.HttpVersion.Version20,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact,
         };
@@ -147,7 +150,6 @@ public sealed class Http2Tests
         if (cert is null)
             return;
 
-        var port = TestSupport.GetRandomPort();
         var app = new WebApp(new DummyContainer());
         app.MapGet(
             "/api/health",
@@ -155,24 +157,26 @@ public sealed class Http2Tests
                 ValueTask.FromResult(WebResults.Json(200, """{"ok":true}""", "OK"))
         );
 
-        await using var server = new WebServer(
-            app,
-            new WebServerOptions
-            {
-                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
-                SslOptions = new()
-                {
-                    ServerCertificate = cert,
-                    EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
-                    ApplicationProtocols =
-                    [
-                        SslApplicationProtocol.Http2,
-                        SslApplicationProtocol.Http11,
-                    ],
-                },
-            }
+        await using var server = await TestSupport.StartServerAsync(
+            port =>
+                new WebServer(
+                    app,
+                    new WebServerOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                        SslOptions = new()
+                        {
+                            ServerCertificate = cert,
+                            EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+                            ApplicationProtocols =
+                            [
+                                SslApplicationProtocol.Http2,
+                                SslApplicationProtocol.Http11,
+                            ],
+                        },
+                    }
+                )
         );
-        await server.StartAsync();
 
         using var handler = new SocketsHttpHandler
         {
@@ -185,7 +189,7 @@ public sealed class Http2Tests
         };
         using var client = new HttpClient(handler)
         {
-            BaseAddress = new Uri($"https://localhost:{port}"),
+            BaseAddress = server.HttpsBaseUri,
             DefaultRequestVersion = System.Net.HttpVersion.Version20,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact,
         };
@@ -201,7 +205,6 @@ public sealed class Http2Tests
     [Test]
     public async Task Http2_upgrade_header_path_works()
     {
-        var port = TestSupport.GetRandomPort();
         var app = new WebApp(new DummyContainer());
         app.MapGet(
             "/api/health",
@@ -209,19 +212,21 @@ public sealed class Http2Tests
                 ValueTask.FromResult(WebResults.Json(200, """{"ok":true}""", "OK"))
         );
 
-        await using var server = new WebServer(
-            app,
-            new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+        await using var server = await TestSupport.StartServerAsync(
+            port =>
+                new WebServer(
+                    app,
+                    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+                )
         );
-        await server.StartAsync();
 
         using var client = new TcpClient();
-        await client.ConnectAsync(IPAddress.Loopback, port);
+        await client.ConnectAsync(IPAddress.Loopback, server.Port);
         var stream = client.GetStream();
 
         var upgrade = Encoding.ASCII.GetBytes(
             "GET /api/health HTTP/1.1\r\n"
-                + $"Host: 127.0.0.1:{port}\r\n"
+                + $"Host: 127.0.0.1:{server.Port}\r\n"
                 + "Connection: Upgrade, HTTP2-Settings\r\n"
                 + "Upgrade: h2c\r\n"
                 + "HTTP2-Settings: \r\n"

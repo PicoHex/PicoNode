@@ -58,15 +58,16 @@ public sealed class RemoteAddressTests
     [Test]
     public async Task Http1_Request_Carries_The_Peer_Endpoint()
     {
-        var port = TestSupport.GetRandomPort();
         var (app, captured) = BuildApp();
-        await using var server = new WebServer(
-            app,
-            new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+        await using var server = await TestSupport.StartServerAsync(
+            port =>
+                new WebServer(
+                    app,
+                    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+                )
         );
-        await server.StartAsync();
 
-        using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}") };
+        using var client = new HttpClient { BaseAddress = server.BaseUri };
         var response = await client.GetAsync("/peer");
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
@@ -76,15 +77,16 @@ public sealed class RemoteAddressTests
     [Test]
     public async Task Http2_Request_Carries_The_Peer_Endpoint()
     {
-        var port = TestSupport.GetRandomPort();
         var (app, captured) = BuildApp();
-        await using var server = new WebServer(
-            app,
-            new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+        await using var server = await TestSupport.StartServerAsync(
+            port =>
+                new WebServer(
+                    app,
+                    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+                )
         );
-        await server.StartAsync();
 
-        using var client = H2Client(port);
+        using var client = H2Client(server.Port);
         var response = await client.GetAsync("/peer");
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
@@ -97,15 +99,16 @@ public sealed class RemoteAddressTests
     {
         // The body defers completion to CompleteDeferredRequest — the second
         // H2 assignment site.
-        var port = TestSupport.GetRandomPort();
         var (app, captured) = BuildApp();
-        await using var server = new WebServer(
-            app,
-            new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+        await using var server = await TestSupport.StartServerAsync(
+            port =>
+                new WebServer(
+                    app,
+                    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+                )
         );
-        await server.StartAsync();
 
-        using var client = H2Client(port);
+        using var client = H2Client(server.Port);
         var response = await client.PostAsync("/peer", new StringContent("hello"));
 
         await Assert.That(response.StatusCode).IsEqualTo(HttpStatusCode.OK);
@@ -121,16 +124,17 @@ public sealed class RemoteAddressTests
         // once-per-connection, cached, or dropped with the first HttpResponse would show up
         // here. The port is compared against the client's own local endpoint, which also
         // pins that the value is that peer rather than any default.
-        var port = TestSupport.GetRandomPort();
         var (app, captured) = BuildApp();
-        await using var server = new WebServer(
-            app,
-            new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+        await using var server = await TestSupport.StartServerAsync(
+            port =>
+                new WebServer(
+                    app,
+                    new WebServerOptions { Endpoint = new IPEndPoint(IPAddress.Loopback, port) }
+                )
         );
-        await server.StartAsync();
 
         using var tcp = new TcpClient();
-        await tcp.ConnectAsync(IPAddress.Loopback, port);
+        await tcp.ConnectAsync(IPAddress.Loopback, server.Port);
         var localPort = ((IPEndPoint)tcp.Client.LocalEndPoint!).Port;
         var stream = tcp.GetStream();
 

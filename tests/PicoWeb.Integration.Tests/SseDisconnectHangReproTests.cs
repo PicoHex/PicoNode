@@ -30,11 +30,10 @@ public sealed class SseDisconnectHangReproTests
     public async Task Http1_disconnect_releases_connection_and_disposes_body_stream()
     {
         DisposeTrackingStream? tracker = null;
-        var (node, port) = StartServer(
+        var (node, port) = await StartServerAsync(
             idleTimeout: TimeSpan.FromMilliseconds(500),
             trackerCapture: t => tracker = t
         );
-        await node.StartAsync();
 
         try
         {
@@ -82,11 +81,10 @@ public sealed class SseDisconnectHangReproTests
         // Same as above with a well-behaved producer (awaits ct). Guards the
         // drain/cancel ordering: the close must cancel the token even though
         // the close sequence runs after the processing task.
-        var (node, port) = StartServer(
+        var (node, port) = await StartServerAsync(
             idleTimeout: TimeSpan.FromMilliseconds(500),
             ctAwareHandler: true
         );
-        await node.StartAsync();
 
         try
         {
@@ -122,8 +120,7 @@ public sealed class SseDisconnectHangReproTests
         // (classic half-close pattern, e.g. HTTP/1.0-style clients) must still
         // receive the full response — remote close must not cancel requests
         // that were already buffered.
-        var (node, port) = StartServer();
-        await node.StartAsync();
+        var (node, port) = await StartServerAsync();
 
         try
         {
@@ -150,8 +147,7 @@ public sealed class SseDisconnectHangReproTests
     [Test]
     public async Task Http1_stuck_connection_does_not_block_new_connections()
     {
-        var (node, port) = StartServer();
-        await node.StartAsync();
+        var (node, port) = await StartServerAsync();
 
         try
         {
@@ -185,8 +181,7 @@ public sealed class SseDisconnectHangReproTests
     [Test]
     public async Task Http2_stuck_stream_wedges_all_requests_on_the_connection()
     {
-        var (node, port) = StartServer();
-        await node.StartAsync();
+        var (node, port) = await StartServerAsync();
 
         try
         {
@@ -400,13 +395,12 @@ public sealed class SseDisconnectHangReproTests
         await pipe.Writer.CompleteAsync();
     }
 
-    private static (TcpNode Node, int Port) StartServer(
+    private static Task<(TcpNode Node, int Port)> StartServerAsync(
         TimeSpan? idleTimeout = null,
         bool ctAwareHandler = false,
         Action<DisposeTrackingStream>? trackerCapture = null
     )
     {
-        var port = TestSupport.GetRandomPort();
         var handler = new PicoNode.Http.HttpConnectionHandler(
             new PicoNode.Http.HttpConnectionHandlerOptions
             {
@@ -414,19 +408,21 @@ public sealed class SseDisconnectHangReproTests
             }
         );
 
-        var options = new TcpNodeOptions
+        return TestSupport.StartNodeAsync(port =>
         {
-            Endpoint = new IPEndPoint(IPAddress.Loopback, port),
-            ConnectionHandler = handler,
-        };
-        if (idleTimeout is { } timeout)
-        {
-            options.IdleTimeout = timeout;
-            options.IdleScanInterval = TimeSpan.FromMilliseconds(200);
-        }
+            var options = new TcpNodeOptions
+            {
+                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                ConnectionHandler = handler,
+            };
+            if (idleTimeout is { } timeout)
+            {
+                options.IdleTimeout = timeout;
+                options.IdleScanInterval = TimeSpan.FromMilliseconds(200);
+            }
 
-        var node = new TcpNode(options);
-        return (node, port);
+            return new TcpNode(options);
+        });
     }
 
     /// <summary>Tracks whether the HTTP layer disposed the streaming body.</summary>
