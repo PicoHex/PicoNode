@@ -10,4 +10,26 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Web\PicoWeb\PicoWeb.csproj" />
   </ItemGroup>
+
+  <!--
+    Source generators: a ProjectReference does not propagate <Analyzer> items, so a
+    NuGet consumer gets these through PicoWeb's buildTransitive/PicoWeb.props while
+    this project has to name them itself (the same shape and the same reason as
+    samples/PicoWeb.Samples). They are referenced here because the gate is meant to
+    publish the code they emit: a controller under Controllers/ becomes routes through
+    Controllers.Gen, and PicoWeb.Gen's PWR001 is the build-time witness a real
+    consumer would see too.
+  -->
+  <ItemGroup>
+    <ProjectReference
+      Include="..\..\src\Web\Controllers.Gen\Controllers.Gen.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+    />
+    <ProjectReference
+      Include="..\..\src\Web\PicoWeb.Gen\PicoWeb.Gen.csproj"
+      OutputItemType="Analyzer"
+      ReferenceOutputAssembly="false"
+    />
+  </ItemGroup>
 </Project>

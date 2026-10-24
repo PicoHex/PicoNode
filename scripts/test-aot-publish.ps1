@@ -53,9 +53,22 @@ Write-Host "AOT publish verification project: tests/PicoWeb.AotVerify ($RuntimeI
 # into the netstandard2.0 generator projects and override the PublishAot=false
 # guard in Directory.Build.targets (NETSDK1207). The repo baseline already
 # defaults the minimal AOT tier (PublishAot + TrimMode=full).
-dotnet publish $projectPath -c Release -r $RuntimeIdentifier --self-contained
+# The publish output is captured because ILC's trim/AOT analysis is part of the
+# verdict, not decoration. The generated controller endpoints are what this gate
+# exists for, and a reflection-dependent path inside them can still answer a probe
+# (a preserved type activates fine) while the publish names the offending line with
+# IL2026/IL3050. The baseline is ZERO such warnings, so one of them is a regression
+# and is reported with the line that caused it rather than left in a passing log.
+dotnet publish $projectPath -c Release -r $RuntimeIdentifier --self-contained 2>&1 |
+    Tee-Object -Variable publishOutput
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed for $RuntimeIdentifier with exit code $LASTEXITCODE"
+}
+
+$trimWarnings = @($publishOutput | Select-String -Pattern 'warning IL[23][0-9]{3}')
+if ($trimWarnings.Count -gt 0) {
+    $trimWarnings | ForEach-Object { Write-Host $_ }
+    throw "AOT publish emitted $($trimWarnings.Count) trim/AOT warning(s) for ${RuntimeIdentifier} - a reflection-dependent path survived the compile (IL2026/IL3050 name it). Fix the path; do not suppress the warning."
 }
 
 # Run the native binary (exit code carries the verdict).

@@ -217,6 +217,43 @@ public sealed class CiWorkflowTests
         await Assert.That(ci).Contains("scripts/test-aot-publish.ps1");
     }
 
+    [Test]
+    public async Task Aot_verifier_publishes_and_runs_generated_controller_endpoints()
+    {
+        // The gate is only evidence about GENERATED code while it still contains some.
+        // Until T5.8 it contained no controller at all: every route it probed was
+        // hand-written, so the emitted endpoint map — the code the reflection-free claim
+        // exists for — had never been through ILC. Three pieces make that coverage real
+        // and each is easy to delete by accident: a controller under Controllers/, the
+        // analyzer that turns it into routes (a ProjectReference does not propagate
+        // <Analyzer> items), and the call that mounts the emitted map.
+        var verifierDir = Path.Combine(RepoRoot, "tests", "PicoWeb.AotVerify");
+
+        var controllers = Directory.EnumerateFiles(
+            Path.Combine(verifierDir, "Controllers"),
+            "*.cs",
+            SearchOption.AllDirectories
+        );
+        await Assert
+            .That(controllers.Any())
+            .IsTrue()
+            .Because(
+                "without a controller below Controllers/ the generator emits an empty registrar"
+            );
+
+        var csproj = File.ReadAllText(Path.Combine(verifierDir, "PicoWeb.AotVerify.csproj"));
+        await Assert.That(csproj).Contains("Controllers.Gen.csproj");
+        await Assert.That(csproj).Contains("OutputItemType=\"Analyzer\"");
+
+        var program = File.ReadAllText(AotVerifierProgramPath);
+        await Assert.That(program).Contains("EndpointRegistrar.RegisterAll(app)");
+        await Assert.That(program).Contains("/api/aot/health");
+        await Assert
+            .That(File.ReadAllText(AotScriptPath))
+            .Contains("warning IL")
+            .Because("the publish's trim/AOT analysis is part of the gate's verdict");
+    }
+
     /// <summary>
     /// The project path that means "this job runs the JSON-RPC suite". The rule is
     /// answered from this ONE string, matched against the workflow text <b>and</b>
