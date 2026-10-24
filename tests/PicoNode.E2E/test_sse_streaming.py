@@ -1,6 +1,6 @@
 """
 E2E test for P0 SSE streaming fix.
-Tests: HTTP headers, event delivery, cancellation cleanup, Playwright EventSource.
+Tests: HTTP headers, event delivery, cancellation observed by the server, Playwright EventSource.
 """
 import json
 import os
@@ -14,6 +14,7 @@ from pathlib import Path
 
 SERVER_PORT = 18789
 SERVER_URL = f"http://localhost:{SERVER_PORT}"
+CANCEL_PROBE_URL = f"{SERVER_URL}/sse/cancel-test/probe"
 SERVER_DIR = str(Path(__file__).resolve().parent / "SseTestServer")
 
 
@@ -79,20 +80,92 @@ def test_streaming():
     return True
 
 
+def read_cancel_probe():
+    """Read the server's own account of what the /sse/cancel-test handler did."""
+    with urllib.request.urlopen(CANCEL_PROBE_URL, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def wait_for_cancel_probe(predicate, timeout=5.0):
+    """Poll the server-side probe until `predicate` holds, then return the last sample."""
+    deadline = time.time() + timeout
+    probe = read_cancel_probe()
+    while not predicate(probe) and time.time() < deadline:
+        time.sleep(0.05)
+        probe = read_cancel_probe()
+    return probe
+
+
 def test_cancellation():
-    print("\n[Test 3] SSE cancellation cleanup...", flush=True)
+    print("\n[Test 3] SSE cancellation observed by the server...", flush=True)
+
+    before = read_cancel_probe()
+
     sock = socket.create_connection(("localhost", SERVER_PORT), timeout=10)
     sock.sendall(
         f"GET /sse/cancel-test HTTP/1.1\r\nHost: localhost:{SERVER_PORT}\r\nAccept: text/event-stream\r\n\r\n".encode()
     )
     sock.settimeout(3)
+
+    # (1) The stream is genuinely live before we hang up.
+    received = b""
+    opened = False
     try:
-        while sock.recv(4096):
-            pass
+        while b"event: start" not in received:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            received += chunk
+        opened = b"event: start" in received
     except socket.timeout:
-        pass
-    sock.close()
-    print("  [OK] Connection closed without hang", flush=True)
+        opened = False
+
+    assert opened, "no 'event: start' reached the client: the stream never became live"
+    print("  [OK] client received 'event: start'", flush=True)
+
+    # (2) Half-close: the client stops sending but keeps reading. From here on the only
+    # thing worth asserting is what the SERVER saw — that our own socket ends proves
+    # nothing about whether the handler ever noticed.
+    sock.shutdown(socket.SHUT_WR)
+
+    try:
+        # (3) The server-side handler itself must have observed the disconnect (its token
+        # fired) and unwound. This is the probe endpoint's whole purpose.
+        probe = wait_for_cancel_probe(
+            lambda p: p["cancel_observed"] > before["cancel_observed"] or p["exited"] > before["exited"],
+            timeout=5.0,
+        )
+        assert probe["entered"] == before["entered"] + 1, (
+            f"the /sse/cancel-test handler never ran for this request: {before} -> {probe}"
+        )
+        assert probe["cancel_observed"] > before["cancel_observed"], (
+            f"server-side handler never observed the client disconnect: {before} -> {probe}"
+        )
+        assert probe["exited"] > before["exited"], (
+            f"server-side handler never unwound after the disconnect: {before} -> {probe}"
+        )
+        print(f"  [OK] server handler observed the disconnect and unwound: {probe}", flush=True)
+
+        # (4) The client-visible consequence: the response ends instead of hanging on the
+        # dangling pipe. If the disconnect is never propagated, this read blocks until the
+        # 3s timeout.
+        tail = b""
+        timed_out = False
+        try:
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                tail += chunk
+        except socket.timeout:
+            timed_out = True
+        assert not timed_out, "server did not end the SSE response within 3s of the client half-close"
+        print(
+            f"  [OK] server ended the response after the client hung up ({len(received) + len(tail)} bytes)",
+            flush=True,
+        )
+    finally:
+        sock.close()
     return True
 
 
