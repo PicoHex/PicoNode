@@ -813,6 +813,215 @@ public sealed class ControllersGeneratorTests
         await Assert.That(result).DoesNotContain("JsonSerializer.SerializeToUtf8Bytes");
     }
 
+    // ─────────────────────────── incrementality (task T5.6) ───────────────────────
+
+    /// <summary>
+    /// "Incremental" is not visible in the generated text: a generator can emit exactly the
+    /// same output every time and still re-run everything on every keystroke. It is visible in
+    /// the driver's <em>step reasons</em>, so that is what is asserted here — run twice, change
+    /// a file no controller lives in, and the model step (the transform's output, tracked as
+    /// <c>Controllers</c>) must come back <c>Cached</c>/<c>Unchanged</c>.
+    /// <para>
+    /// Before T5.6 this test was red: <c>ControllerModel</c> held
+    /// <c>ISymbol</c> values and <c>MethodModel</c> held an <c>IMethodSymbol</c>, none of them
+    /// comparable, so every run produced a "different" model and everything below it re-ran —
+    /// the text was rebuilt from scratch for a keystroke in any file of the project.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Generator_output_is_cached_across_an_unrelated_edit()
+    {
+        var controllers = Tree("Controllers/PostsController.cs", PostsControllerSource);
+        var unrelated = Tree("Unrelated.cs", UnrelatedSource);
+        var compilation = CompilationOf(controllers, unrelated);
+
+        GeneratorDriver driver = CreateTrackedDriver();
+        driver = driver.RunGenerators(compilation);
+
+        // The first run really did build a model: without this, "nothing re-ran" would also be
+        // satisfied by a pipeline that never ran at all.
+        await Assert.That(ControllerStep(driver).Length).IsEqualTo(1);
+
+        // A keystroke in a file that has nothing to do with any controller — the edit that used
+        // to trigger a full regeneration.
+        var edited = Tree("Unrelated.cs", UnrelatedSource + "\n// a comment, nothing more\n");
+        driver = driver.RunGenerators(compilation.ReplaceSyntaxTree(unrelated, edited));
+
+        await Assert.That(RerunDescription(driver, "Controllers")).IsEmpty();
+
+        // The compilation is still read — that is how the project-level questions are answered —
+        // but the answer is a value, so this step is not forced either.
+        await Assert.That(RerunDescription(driver, "CompilationState")).IsEmpty();
+
+        // The strongest form: the source output itself did not re-execute, i.e. no text was
+        // regenerated for this edit.
+        await Assert.That(SourceOutputRerunDescription(driver)).IsEmpty();
+    }
+
+    /// <summary>
+    /// The other half of the property: caching must not be so coarse that one edited controller
+    /// throws away the work for all of them. Two controllers in two files; edit one; exactly
+    /// that one is rebuilt.
+    /// </summary>
+    [Test]
+    public async Task Only_the_changed_controller_is_rebuilt()
+    {
+        var posts = Tree("Controllers/PostsController.cs", PostsControllerSource);
+        var comments = Tree("Controllers/CommentsController.cs", CommentsControllerSource);
+        var compilation = CompilationOf(posts, comments);
+
+        GeneratorDriver driver = CreateTrackedDriver();
+        driver = driver.RunGenerators(compilation);
+        await Assert.That(ControllerStep(driver).Length).IsEqualTo(2);
+
+        // Change one controller's route, and nothing else.
+        var editedPosts = Tree(
+            "Controllers/PostsController.cs",
+            PostsControllerSource.Replace("\"posts\"", "\"articles\"", StringComparison.Ordinal)
+        );
+        driver = driver.RunGenerators(compilation.ReplaceSyntaxTree(posts, editedPosts));
+
+        var rebuilt = ControllerStep(driver)
+            .Where(static o =>
+                o.Reason
+                    is not (IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged)
+            )
+            .ToArray();
+
+        // Exactly one model was rebuilt — not both (over-invalidating), and not none (the edit
+        // would have been lost). This fails as `Modified: …PostsController…` if the assertion
+        // below is ever wrong about which one.
+        await Assert.That(rebuilt.Length).IsEqualTo(1);
+        await Assert.That(rebuilt[0].Value).Contains("PostsController");
+
+        // …and the untouched controller's output is `Cached`: the driver did not treat it as
+        // a change to propagate. (The syntax transform still re-runs — Roslyn does not
+        // cache it, measured and noted in ControllersGenerator's class remarks; what value
+        // equality buys is that its output is not seen as a modification.)
+        await Assert
+            .That(
+                ControllerStep(driver)
+                    .Any(static o =>
+                        o.Value.Contains("CommentsController", StringComparison.Ordinal)
+                        && o.Reason == IncrementalStepRunReason.Cached
+                    )
+            )
+            .IsTrue();
+    }
+
+    private const string PostsControllerSource = """
+        using PicoNode.Web;
+
+        namespace TestApp.Controllers;
+
+        public sealed class PostsController
+        {
+            [HttpGet("posts")]
+            public string Get() => "posts";
+        }
+        """;
+
+    private const string CommentsControllerSource = """
+        using PicoNode.Web;
+
+        namespace TestApp.Controllers;
+
+        public sealed class CommentsController
+        {
+            [HttpGet("comments")]
+            public string Get() => "comments";
+        }
+        """;
+
+    private const string UnrelatedSource = """
+        namespace TestApp;
+
+        public sealed class Unrelated
+        {
+            public int Value => 1;
+        }
+        """;
+
+    private static SyntaxTree Tree(string path, string source) =>
+        CSharpSyntaxTree.ParseText(source, path: path);
+
+    private static CSharpCompilation CompilationOf(params SyntaxTree[] trees) =>
+        CSharpCompilation.Create(
+            "IncrementalAssembly",
+            trees,
+            GeneratorHarness.BaseReferences,
+            new CSharpCompilationOptions(OutputKind.ConsoleApplication)
+        );
+
+    /// <summary>
+    /// A driver that <em>tracks step run reasons</em>, which is the only way to observe whether
+    /// a generator is incremental: <c>GetRunResult().Results[0].TrackedSteps</c> stays empty
+    /// unless this option is set. Same generator, same references as every other test here —
+    /// only the bookkeeping is switched on.
+    /// </summary>
+    private static GeneratorDriver CreateTrackedDriver() =>
+        CSharpGeneratorDriver.Create(
+            new ISourceGenerator[] { new ControllersGenerator().AsSourceGenerator() },
+            driverOptions: new GeneratorDriverOptions(
+                IncrementalGeneratorOutputKind.None,
+                trackIncrementalGeneratorSteps: true
+            )
+        );
+
+    /// <summary>
+    /// Every output of the <c>Controllers</c> step as <c>(reason, the model's text)</c>. The
+    /// text is what names <em>which</em> controller a reason belongs to.
+    /// </summary>
+    private static (IncrementalStepRunReason Reason, string Value)[] ControllerStep(
+        GeneratorDriver driver
+    ) => Step(driver, "Controllers");
+
+    private static (IncrementalStepRunReason Reason, string Value)[] Step(
+        GeneratorDriver driver,
+        string name
+    )
+    {
+        var tracked = driver.GetRunResult().Results[0].TrackedSteps;
+        if (!tracked.TryGetValue(name, out var steps))
+            throw new InvalidOperationException(
+                $"the generator tracks no step named '{name}', so its cache behaviour cannot be "
+                    + "observed — the pipeline must mark it with WithTrackingName"
+            );
+
+        return
+        [
+            .. steps
+                .SelectMany(static step => step.Outputs)
+                .Select(static o => (o.Reason, o.Value?.ToString() ?? "<null>")),
+        ];
+    }
+
+    /// <summary>
+    /// "" when every output of the named step was <c>Cached</c> or <c>Unchanged</c>, otherwise
+    /// one entry per rebuilt output — so a failure names the reason and the model instead of
+    /// only saying "expected empty".
+    /// </summary>
+    private static string RerunDescription(GeneratorDriver driver, string name) =>
+        string.Join(
+            " | ",
+            Step(driver, name)
+                .Where(static o =>
+                    o.Reason
+                        is not (
+                            IncrementalStepRunReason.Cached
+                            or IncrementalStepRunReason.Unchanged
+                        )
+                )
+                .Select(static o => $"{o.Reason}: {o.Value}")
+        );
+
+    /// <summary>
+    /// The <c>SourceOutput</c> step is where the text is generated; if it re-executes, the point
+    /// of the cache is lost even when the models above it were reused.
+    /// </summary>
+    private static string SourceOutputRerunDescription(GeneratorDriver driver) =>
+        RerunDescription(driver, "SourceOutput");
+
     // The generator spine lives in GeneratorHarness so that a string assertion and a
     // compile assertion run the *same* driver over the *same* reference set: they must
     // not be able to disagree about what the generator emitted.

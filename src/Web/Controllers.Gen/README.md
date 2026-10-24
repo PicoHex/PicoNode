@@ -43,6 +43,13 @@ Complex-typed parameters and `WebContext`/`CancellationToken` are resolved at ru
 
 ## Notes
 
+- **Genuinely incremental**: the value the pipeline caches is the controller model — strings,
+  bools and `EquatableArray<T>`, with no `ISymbol` or `Compilation` in it — so a run whose
+  models come out equal does not re-enter the emitters. The syntax transform itself is not
+  cached by Roslyn (it re-runs per class declaration on each pass); what value equality
+  saves is the generated text. Pinned by
+  `ControllersGeneratorTests.Generator_output_is_cached_across_an_unrelated_edit` and
+  `...Only_the_changed_controller_is_rebuilt`, which assert the driver's step reasons.
 - The generator emits **no `[PicoJsonSerializable]` markers** — apply the attribute to DTOs
   directly for PicoJetson.Gen serialization.
 - `EndpointRegistrar` lives in the **global namespace** — do not declare your own type
