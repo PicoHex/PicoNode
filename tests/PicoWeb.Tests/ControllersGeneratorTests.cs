@@ -797,11 +797,14 @@ public sealed class ControllersGeneratorTests
         await Assert.That(result).DoesNotContain("JsonSerializer.SerializeToUtf8Bytes");
     }
 
+    // The generator spine lives in GeneratorHarness so that a string assertion and a
+    // compile assertion run the *same* driver over the *same* reference set: they must
+    // not be able to disagree about what the generator emitted.
     private static string RunGenerator(
         string source,
         string fileName,
         IReadOnlyList<MetadataReference>? extraReferences = null
-    ) => RunGeneratorCore(source, fileName, extraReferences ?? []).Generated;
+    ) => GeneratorHarness.RunGenerator(source, fileName, extraReferences).Generated;
 
     private static (
         string Generated,
@@ -810,79 +813,14 @@ public sealed class ControllersGeneratorTests
         string source,
         string fileName,
         IReadOnlyList<MetadataReference> extraReferences
-    ) => RunGeneratorCore(source, fileName, extraReferences);
-
-    private static (string Generated, IReadOnlyList<Diagnostic> Cs0436Diagnostics) RunGeneratorCore(
-        string source,
-        string fileName,
-        IReadOnlyList<MetadataReference> extraReferences
-    )
-    {
-        var syntaxTree = CSharpSyntaxTree.ParseText(
-            source,
-            CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest),
-            path: fileName
-        );
-
-        var references = BaseReferences().Concat(extraReferences).ToArray();
-
-        var compilation = CSharpCompilation.Create(
-            "TestAssembly",
-            [syntaxTree],
-            references,
-            new CSharpCompilationOptions(OutputKind.ConsoleApplication)
-        );
-
-        var driver = CSharpGeneratorDriver.Create(new ControllersGenerator());
-        var runResult = driver.RunGenerators(compilation).GetRunResult();
-
-        if (runResult.Results.Length == 0 || runResult.Results[0].GeneratedSources.IsEmpty)
-            return ("", []);
-
-        var sources = runResult.Results[0].GeneratedSources;
-        var generated = string.Join("\n", sources.Select(s => s.SourceText.ToString()));
-
-        var updated = compilation.AddSyntaxTrees(sources.Select(s => s.SyntaxTree));
-        var cs0436 = updated.GetDiagnostics().Where(d => d.Id == "CS0436").ToArray();
-
-        return (generated, cs0436);
-    }
-
-    private static MetadataReference[] BaseReferences() =>
-        [
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(
-                typeof(System.Collections.Generic.List<>).Assembly.Location
-            ),
-            MetadataReference.CreateFromFile(
-                typeof(PicoJetson.PicoJsonSerializableAttribute).Assembly.Location
-            ),
-            MetadataReference.CreateFromFile(typeof(PicoJetson.JsonSerializer).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(PicoNode.Web.WebApp).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(PicoNode.Web.WebContext).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(PicoNode.Web.WebResults).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(PicoWeb.Results).Assembly.Location),
-        ];
+    ) => GeneratorHarness.RunGenerator(source, fileName, extraReferences);
 
     /// <summary>
     /// Builds a referenced assembly that already exports EndpointRegistrar — the
-    /// "Exe B references Exe A (with controllers)" shape.
+    /// "Exe B references Exe A (with controllers)" shape. Shared with
+    /// <see cref="GeneratorHarness"/> so the CS0436 exemption is exercised by the same
+    /// reference the string assertions use.
     /// </summary>
-    private static MetadataReference CreateAssemblyWithEndpointRegistrar()
-    {
-        var tree = CSharpSyntaxTree.ParseText(
-            "public static class EndpointRegistrar { public static void RegisterAll(object app) { } }"
-        );
-        var compilation = CSharpCompilation.Create(
-            "ImportedApp",
-            [tree],
-            [MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-        );
-        using var stream = new MemoryStream();
-        var emit = compilation.Emit(stream);
-        if (!emit.Success)
-            throw new InvalidOperationException("failed to emit the imported registrar assembly");
-        return MetadataReference.CreateFromImage(stream.ToArray());
-    }
+    private static MetadataReference CreateAssemblyWithEndpointRegistrar() =>
+        GeneratorHarness.ImportedRegistrarReference();
 }
