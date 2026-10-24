@@ -205,9 +205,12 @@ internal static class WebSocketMessageProcessor
                         header.MaskKey
                     );
 
+                    // RFC 6455 §7.4.1: the reassembled message exceeded the
+                    // configured limit — that is 1009 (Message Too Big), not a
+                    // protocol error.
                     if (currentState.PayloadBuffer.WrittenCount > currentState.MaxMessageSize)
                     {
-                        await CloseWithProtocolError(connection, cancellationToken)
+                        await CloseWithCodeAsync(connection, 1009, cancellationToken)
                             .ConfigureAwait(false);
                         return consumed;
                     }
@@ -266,9 +269,12 @@ internal static class WebSocketMessageProcessor
                         header.MaskKey
                     );
 
+                    // RFC 6455 §7.4.1: the reassembled message exceeded the
+                    // configured limit — that is 1009 (Message Too Big), not a
+                    // protocol error.
                     if (currentState.PayloadBuffer.WrittenCount > currentState.MaxMessageSize)
                     {
-                        await CloseWithProtocolError(connection, cancellationToken)
+                        await CloseWithCodeAsync(connection, 1009, cancellationToken)
                             .ConfigureAwait(false);
                         return consumed;
                     }
@@ -357,10 +363,12 @@ internal static class WebSocketMessageProcessor
             return false;
         }
 
-        // RFC 6455 §8.1: Text messages must be valid UTF-8
+        // RFC 6455 §8.1: Text messages must be valid UTF-8. §7.4.1: a payload
+        // that is not valid data is 1007 (Invalid frame payload data), not a
+        // protocol error (1002).
         if (currentState.MessageOpCode == WebSocketOpCode.Text && !IsValidUtf8(messageBytes))
         {
-            await CloseWithProtocolError(connection, ct).ConfigureAwait(false);
+            await CloseWithCodeAsync(connection, 1007, ct).ConfigureAwait(false);
             currentState.MessageOpCode = null;
             currentState.PayloadBuffer.Clear();
             return false;
@@ -417,24 +425,14 @@ internal static class WebSocketMessageProcessor
         connection.Close();
     }
 
-    private static async ValueTask CloseWithProtocolError(
+    /// <summary>
+    /// Fails the WebSocket connection for a protocol error (RFC 6455 §5.1, §5.2,
+    /// §5.4, §5.5). §7.4.1: the close frame must carry 1002 (Protocol Error) —
+    /// an empty close body signals "no status", which the Autobahn fuzzing
+    /// suite reports as a missing close code (case 3.x).
+    /// </summary>
+    private static ValueTask CloseWithProtocolError(
         ITcpConnectionContext connection,
         CancellationToken ct
-    )
-    {
-        var size = WebSocketFrameCodec.MeasureFrameSize(0);
-        var rented = ArrayPool<byte>.Shared.Rent(size);
-        try
-        {
-            WebSocketFrameCodec.WriteFrame(rented, WebSocketOpCode.Close, []);
-            await connection
-                .SendAsync(new ReadOnlySequence<byte>(rented.AsMemory(0, size)), ct)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(rented);
-        }
-        connection.Close();
-    }
+    ) => CloseWithCodeAsync(connection, 1002, ct);
 }
