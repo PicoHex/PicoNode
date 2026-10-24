@@ -464,6 +464,12 @@ internal sealed class ReleaseScriptProbe : IDisposable
     /// a tag that contains the snapshot.</summary>
     internal void Retag(string tag) => Git("tag", "-f", "-a", tag, "-m", tag);
 
+    /// <summary>Put the sandbox on <paramref name="name"/> — a feature branch, for the
+    /// branch guard. The seed leaves HEAD on <c>main</c>, which is what every other
+    /// test relies on (a real run there passes the branch guard: its own output says
+    /// <c>== Branch guard / on main</c>).</summary>
+    internal void Branch(string name) => Git("checkout", "-q", "-b", name);
+
     /// <summary>Change the snapshot in the WORKTREE only — the shape of a developer
     /// regenerating the fixture before committing it, which is the moment the release
     /// dry run has to speak up.</summary>

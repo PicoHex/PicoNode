@@ -30,6 +30,11 @@ namespace PicoJsonRpc.Tests;
 /// statement about a release <i>going through</i>, which only a real run can show. The
 /// real runs are safe here: the sandbox is a throwaway repository on <c>main</c> with a
 /// stubbed <c>dotnet</c>, no <c>-Push</c>, and every write lands under the temp directory.
+/// <para>
+/// T6.4 added a fifth test that pins the OTHER real rule this script enforces — a release
+/// is cut from <c>main</c>, and <c>-AllowBranch</c> is the deliberate override. It ran
+/// nowhere before, which is how a bare exit 1 from the script came to be read as a branch
+/// refusal it never was.
 /// </para>
 /// </summary>
 public sealed class ReleaseGuardHolesTests
@@ -107,16 +112,30 @@ public sealed class ReleaseGuardHolesTests
     /// so the acknowledged run fails parameter binding (exit 1) — the second assertion below
     /// is the one that is red first.
     /// </para>
+    /// <para>
+    /// <b>Two sandboxes, one scenario each (T6.4 flake round).</b> These two halves used to
+    /// share one repository, which chained them: when the refusal half failed to refuse the
+    /// tag existed before the second half ran, and the acknowledged half then died in
+    /// <c>Invoke-Git</c> with "git tag -a v2026.8.0 … already exists" — <b>exit 1</b>, an
+    /// unhandled <c>throw</c>, which reads exactly like the script refusing for a reason the
+    /// test does not name (the branch guard's "pass -AllowBranch to override" line is the
+    /// natural guess, and it was the wrong one). Each half now gets its own throwaway
+    /// repository, so a broken refusal can only turn the refusal half red, with the drift
+    /// verdict it actually printed.
+    /// </para>
+    /// <para>
+    /// Both runs pass <c>-AllowBranch</c>. The branch rule is a real rule and it is pinned by
+    /// <see cref="A_real_release_refuses_a_feature_branch_unless_AllowBranch"/>; this test is
+    /// about the drift guard, so the branch guard must not be able to be the reason it fails.
+    /// </para>
     /// </summary>
     [Test]
     [SkipUnlessReleaseScriptHost]
     public async Task A_released_baseline_that_was_edited_is_still_refused_unless_acknowledged()
     {
-        using var probe = ReleaseScriptProbe.Create();
-        probe.WriteBaseline("Fake", "M: Fake.Types.Fake\nM: Fake.Types.HandEditedAfterTheTag\n");
-        probe.Commit("probe: a baseline refreshed before the release");
+        using var refusedProbe = DriftedBaseline();
 
-        var refused = probe.RunRelease();
+        var refused = refusedProbe.RunRelease("-AllowBranch");
         await Assert.That(refused.ExitCode).IsEqualTo(2).Because(refused.Explain);
         await Assert
             .That(refused.StandardOutput)
@@ -127,11 +146,13 @@ public sealed class ReleaseGuardHolesTests
                     + refused.Explain
             );
         await Assert
-            .That(probe.TagNames())
+            .That(refusedProbe.TagNames())
             .DoesNotContain("v" + ReleaseScriptProbe.StubNextVersion)
             .Because("a refused release must not tag anything. " + refused.Explain);
 
-        var acknowledged = probe.RunRelease("-ForceBaselineDrift");
+        using var acknowledgedProbe = DriftedBaseline();
+
+        var acknowledged = acknowledgedProbe.RunRelease("-AllowBranch", "-ForceBaselineDrift");
         await Assert.That(acknowledged.ExitCode).IsEqualTo(0).Because(acknowledged.Explain);
         await Assert
             .That(acknowledged.StandardOutput)
@@ -142,11 +163,90 @@ public sealed class ReleaseGuardHolesTests
                     + acknowledged.Explain
             );
         await Assert
-            .That(probe.TagNames())
+            .That(acknowledgedProbe.TagNames())
             .Contains("v" + ReleaseScriptProbe.StubNextVersion)
             .Because(
                 "-ForceBaselineDrift is the explicit ack that lets the release proceed. "
                     + acknowledged.Explain
+            );
+    }
+
+    /// <summary>A sandbox holding the drift scenario: a baseline that WAS at the last tag
+    /// and has been edited in a commit since (the shape of a refresh before the release).</summary>
+    private static ReleaseScriptProbe DriftedBaseline()
+    {
+        var probe = ReleaseScriptProbe.Create();
+        probe.WriteBaseline("Fake", "M: Fake.Types.Fake\nM: Fake.Types.HandEditedAfterTheTag\n");
+        probe.Commit("probe: a baseline refreshed before the release");
+        return probe;
+    }
+
+    /// <summary>
+    /// The branch guard, on its own (T6.4 flake round). "A release is cut from <c>main</c>"
+    /// is a real rule — a tag publishes whatever commit it points at — and it had no
+    /// behavioural test: the drift test above ran on <c>main</c> and the only place the rule
+    /// was ever observed was the refusal it prints in prose. That gap is why a bare exit 1
+    /// from the release script could be mistaken for a branch refusal (see the drift test).
+    /// <para>
+    /// Three runs, all of them real launches of the script against the throwaway repository:
+    /// a DRY run on a feature branch must still exit 0 (it writes nothing and only names the
+    /// switch), a REAL run must refuse with exit 2 and a tag-free repository, and
+    /// <c>-AllowBranch</c> must be the deliberate override — printing the branch it is
+    /// tagging and actually creating the tag.
+    /// </para>
+    /// </summary>
+    [Test]
+    [SkipUnlessReleaseScriptHost]
+    public async Task A_real_release_refuses_a_feature_branch_unless_AllowBranch()
+    {
+        using var probe = ReleaseScriptProbe.Create();
+        probe.Branch("fix/not-main");
+        // The probe copies the script into the sandbox AFTER seeding it, so the copy is
+        // untracked until something commits it — and a REAL run refuses a dirty tree
+        // before it reaches the branch guard.
+        probe.Commit("probe: track the sandbox's script copy on the feature branch");
+
+        var dry = probe.Run();
+        await Assert.That(dry.ExitCode).IsEqualTo(0).Because(dry.Explain);
+        await Assert
+            .That(dry.StandardOutput)
+            .Contains("a real run would refuse (pass -AllowBranch to override)")
+            .Because(
+                "a dry run writes nothing, so a branch it would refuse must not fail it — it "
+                    + "names the switch instead. "
+                    + dry.Explain
+            );
+
+        var refused = probe.RunRelease();
+        await Assert.That(refused.ExitCode).IsEqualTo(2).Because(refused.Explain);
+        await Assert
+            .That(refused.StandardOutput)
+            .Contains("releases are cut from 'main', but HEAD is on 'fix/not-main'")
+            .Because(
+                "the refusal has to name the branch it is on and the branch it wants; a bare "
+                    + "exit code is what made this rule unreadable. "
+                    + refused.Explain
+            );
+        await Assert
+            .That(probe.TagNames())
+            .DoesNotContain("v" + ReleaseScriptProbe.StubNextVersion)
+            .Because("a branch-guard refusal must not tag. " + refused.Explain);
+
+        var allowed = probe.RunRelease("-AllowBranch");
+        await Assert.That(allowed.ExitCode).IsEqualTo(0).Because(allowed.Explain);
+        await Assert
+            .That(allowed.StandardOutput)
+            .Contains("overriding the branch guard (-AllowBranch): tagging 'fix/not-main'")
+            .Because(
+                "the override is deliberate, so it says so — a release cut from a feature "
+                    + "branch must be visible in the log. "
+                    + allowed.Explain
+            );
+        await Assert
+            .That(probe.TagNames())
+            .Contains("v" + ReleaseScriptProbe.StubNextVersion)
+            .Because(
+                "-AllowBranch is the override; without the tag it is not one. " + allowed.Explain
             );
     }
 

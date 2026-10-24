@@ -215,11 +215,29 @@ public sealed class LifecycleTests
     /// is copy-rule-checked and the exit is OUT of process (the child is the one
     /// exiting non-zero, not a simulated EOF). The fixture writes its marker with a
     /// blocking <c>write(2)</c> before <c>process.exit(3)</c>, so the bytes are
-    /// already in the pipe when stdout EOFs — there is no race to lose here.
+    /// already in the pipe when stdout EOFs — no child-side race can lose them.
+    /// </para>
+    /// <para>
+    /// <b>Why this test runs alone.</b> The bytes being in the pipe is only half of
+    /// the path: <see cref="JsonRpcClient"/> reads them through
+    /// <c>CaptureStderrTail(250 ms)</c>, which waits on the channel's stderr DRAIN
+    /// task — and that drain is an async <c>Read</c> whose continuation needs a
+    /// thread-pool thread. Under a busy pool the continuation can be scheduled
+    /// after the 250 ms budget expires, and the capture then returns the empty
+    /// window even though the child's last words were written before it exited.
+    /// That is exactly how this test used to flake (observed: the message was
+    /// <c>The pipe is being closed.</c> with NO tail, while the suite was spawning
+    /// the <c>pwsh</c>/<c>git</c> children of <c>ReleaseGuardHolesTests</c> and
+    /// <c>WireReleaseScriptTests</c>). No constant fixes that — a bigger budget is
+    /// the same bet against a scheduler — so the load COUPLING is what is removed:
+    /// <see cref="NotInParallelAttribute"/> here (no constraint key) makes this test
+    /// the only test running in its process, which is the strongest form of
+    /// "serialise the heavy release-script tests against the tail test".
     /// </para>
     /// </summary>
     [Test]
     [SkipUnlessNode]
+    [NotInParallel]
     public async Task Dead_child_stderr_tail_reaches_the_caller()
     {
         await using var client = await NodeFixture.StartAsync(NodeFixture.Crash);
