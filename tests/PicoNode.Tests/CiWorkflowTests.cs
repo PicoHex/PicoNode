@@ -217,66 +217,434 @@ public sealed class CiWorkflowTests
         await Assert.That(ci).Contains("scripts/test-aot-publish.ps1");
     }
 
+    /// <summary>
+    /// The project path that means "this job runs the JSON-RPC suite". The rule is
+    /// answered from this ONE string, matched against the workflow text <b>and</b>
+    /// against the solution files, so a job that selects the suite through a
+    /// <c>.slnx</c> is covered without the path ever appearing in the workflow.
+    /// </summary>
+    private const string RpcSuitePath = "tests/PicoJsonRpc.Tests/";
+
     [Test]
     public async Task Every_workflow_that_runs_the_rpc_suite_installs_node()
     {
         // PicoJsonRpc.Tests drives REAL children (`node <fixture>`), and its guard
-        // answers a missing runtime with a loud skip naming the 20 tests it loses.
-        // Loud is not enough in CI: a runner without node reports the same green
-        // run with a fifth of the suite skipped - the silent coverage loss the node
-        // guard exists to prevent, merely relocated from "no guard at all" to
-        // "guard plus no runtime". The rule is DERIVED, not hard-coded to one file:
-        // any workflow that names the suite must install the runtime before running
-        // it (ci.yml validates a branch, release.yml gates a NuGet publish - both
-        // run the suite, so both need the step; a release that skipped 20 tests
-        // while calling the version verified is the worse of the two).
+        // answers a missing runtime with a loud skip naming the node-dependent tests
+        // it loses (SkipUnlessNodeAttribute.NodeDependentTestCount - do NOT restate
+        // that number here: it has drifted four times). Loud is not enough in CI: a
+        // runner without node reports the same green run with a third of the suite
+        // skipped - the silent coverage loss the node guard exists to prevent,
+        // merely relocated from "no guard at all" to "guard plus no runtime".
+        //
+        // The rule is DERIVED, and it is JOB-scoped, because the first version got
+        // both wrong in the direction that passes green:
+        //
+        //  - FILE scope credited `setup-node` in an UNRELATED job (h2spec, autobahn)
+        //    to the job that runs the tests, so a test job with no runtime passed the
+        //    rule on a neighbour's step. Credit has to be in the job that runs them.
+        //  - PROJECT-path scope missed the other way to run the suite: `dotnet test
+        //    PicoNode.slnx` runs PicoJsonRpc.Tests (PicoNode.slnx lists it) without
+        //    naming it, so such a workflow was filtered out and passed green while
+        //    losing the node-dependent tests. A job "runs the suite" when it invokes
+        //    `dotnet test` and either names the project path or selects a solution
+        //    that CONTAINS it - derived from the .slnx files, not from a list here.
         var workflowDir = Path.Combine(RepoRoot, ".github", "workflows");
-        var runsSuite = Directory
+        var workflows = Directory
             .EnumerateFiles(workflowDir, "*.yml")
             .Order(StringComparer.Ordinal)
-            .Where(static w =>
-                File.ReadAllText(w).Contains("tests/PicoJsonRpc.Tests/", StringComparison.Ordinal)
-            )
+            .Select(static p => (Name: Path.GetFileName(p), Text: File.ReadAllText(p)))
             .ToArray();
 
-        // Non-vacuity: if the suite path were renamed (or this walk regressed) the
-        // lists below would be empty and the test would prove nothing.
         await Assert
-            .That(runsSuite.Select(Path.GetFileName).ToArray())
-            .IsNotEmpty()
-            .Because("at least one workflow is expected to run the JSON-RPC suite");
+            .That(workflows.Length)
+            .IsGreaterThan(0)
+            .Because($"the workflow walk must see '.github/workflows/*.yml' under '{RepoRoot}'");
 
-        var withoutNode = runsSuite
-            .Where(static w =>
-                !File.ReadAllText(w).Contains("uses: actions/setup-node@", StringComparison.Ordinal)
-            )
-            .Select(static w => Path.GetFileName(w))
+        // Non-vacuity, first: a workflow whose `jobs:` mapping this rule cannot read
+        // would contribute no jobs and be silently excluded from every assertion
+        // below, so an unreadable shape is a failure rather than a quiet pass.
+        var unreadable = workflows
+            .Where(static w => !JobBlocks(w.Text).Any())
+            .Select(static w => w.Name)
+            .ToArray();
+
+        await Assert
+            .That(unreadable)
+            .IsEmpty()
+            .Because("every workflow declares jobs, and each must be visible to the rule");
+
+        var solutions = SolutionsRunningTheRpcSuite();
+
+        await Assert
+            .That(solutions)
+            .IsNotEmpty()
+            .Because(
+                $"a solution that builds '{RpcSuitePath}' is how a workflow can run the "
+                    + "suite without naming it"
+            );
+
+        var suiteJobs = workflows.SelectMany(w => SuiteJobs(w.Name, w.Text, solutions)).ToArray();
+
+        await Assert
+            .That(suiteJobs)
+            .IsNotEmpty()
+            .Because("at least one CI job is expected to run the JSON-RPC suite");
+
+        var withoutNode = workflows
+            .SelectMany(w => SuiteJobsWithoutNode(w.Name, w.Text, solutions))
             .ToArray();
 
         await Assert
             .That(withoutNode)
             .IsEmpty()
             .Because(
-                "a workflow that runs PicoJsonRpc.Tests must install node first, otherwise "
-                    + "its 21 node-dependent tests skip in CI instead of running"
+                "a job that runs PicoJsonRpc.Tests must install node in THAT job, otherwise "
+                    + "the node-dependent tests skip in CI instead of running; offenders: "
+                    + string.Join(", ", withoutNode)
             );
 
         // ...and the major is PINNED to a number: `latest` or `lts/*` would move the
         // runtime under the suite between runs, so a wire regression would be
         // indistinguishable from a runtime change.
-        var unpinned = runsSuite
-            .SelectMany(static w =>
-                File.ReadAllLines(w)
-                    .Where(static line => line.Contains("node-version:", StringComparison.Ordinal))
-                    .Where(static line => !Regex.IsMatch(line, @"node-version:\s*'?\d+(\.\d+)*'?"))
-                    .Select(line => $"{Path.GetFileName(w)}: {line.Trim()}")
-            )
+        var unpinned = workflows
+            .SelectMany(w => UnpinnedNodeVersions(w.Name, w.Text, solutions))
             .ToArray();
 
         await Assert
             .That(unpinned)
             .IsEmpty()
             .Because("the node major must be a pinned number, not `latest` or `lts/*`");
+    }
+
+    /// <summary>
+    /// The permanent RED proof for the rule above: a job that runs the suite ONLY
+    /// through the solution must be SEEN by the rule (so it cannot be filtered out)
+    /// and must FAIL it without <c>setup-node</c> in the same job.
+    /// <para>
+    /// The first version of the rule failed every case here: it selected workflows by
+    /// the literal project path, so <c>dotnet test PicoNode.slnx</c> - which does run
+    /// the suite - was invisible, and file scope let a neighbour job's
+    /// <c>setup-node</c> satisfy the check. Both directions are pinned against
+    /// workflow TEXT rather than a file in the tree: a probe workflow committed to
+    /// <c>.github/workflows</c> would run in CI (and a `.yml.bak` in that directory
+    /// would be a fixture nobody runs), so the proof lives in the rule's own tests.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task A_job_that_runs_the_whole_solution_needs_node_in_that_job()
+    {
+        string[] solutions = ["PicoNode.slnx"];
+
+        const string solutionOnly = """
+            name: probe
+            on: [push]
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+                  - run: dotnet test PicoNode.slnx -c Release
+            """;
+
+        // 1. the rule SEES the job - it is not filtered out for failing to name the project
+        await Assert
+            .That(SuiteJobs("probe.yml", solutionOnly, solutions))
+            .IsEquivalentTo(["probe.yml: test"])
+            .Because("`dotnet test PicoNode.slnx` runs the suite through the solution");
+
+        // 2. and it FAILS the rule without a runtime in the job. This calls the SAME
+        //    helper the real rule aggregates over - its final assertion iterates
+        //    SelectMany(w => SuiteJobsWithoutNode(w.Name, w.Text, solutions)) - so a
+        //    job returned here is a job the rule reports.
+        await Assert
+            .That(SuiteJobsWithoutNode("probe.yml", solutionOnly, solutions))
+            .IsEquivalentTo(["probe.yml: test"])
+            .Because("a solution-wide test run needs node, exactly like a project-scoped one");
+
+        // 3. positive control: the same job WITH the step passes - the rule is not
+        //    "always red", which would make 1 and 2 worthless.
+        const string withNode = """
+            name: probe
+            on: [push]
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/checkout@v4
+                  - uses: actions/setup-node@v4
+                    with:
+                      node-version: 24
+                  - run: dotnet test PicoNode.slnx -c Release
+            """;
+
+        await Assert.That(SuiteJobsWithoutNode("probe.yml", withNode, solutions)).IsEmpty();
+        await Assert.That(UnpinnedNodeVersions("probe.yml", withNode, solutions)).IsEmpty();
+
+        // 4. JOB scope: a neighbour job's `setup-node` is not credit for the test job.
+        const string neighbour = """
+            name: probe
+            on: [push]
+            jobs:
+              h2spec:
+                runs-on: ubuntu-latest
+                steps:
+                  - uses: actions/setup-node@v4
+                    with:
+                      node-version: 24
+                  - run: ./scripts/run-h2spec.ps1
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: |
+                      for p in tests/PicoNode.Tests/PicoNode.Tests.csproj \
+                               tests/PicoJsonRpc.Tests/PicoJsonRpc.Tests.csproj; do
+                        dotnet test --project "$p" --no-build -c Release
+                      done
+            """;
+
+        await Assert
+            .That(SuiteJobsWithoutNode("probe.yml", neighbour, solutions))
+            .IsEquivalentTo(["probe.yml: test"])
+            .Because("the runtime must be installed in the job that runs the tests");
+
+        // 5. an unrelated job that only BUILDS the solution does not run the suite.
+        const string buildOnly = """
+            name: probe
+            on: [push]
+            jobs:
+              build:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: dotnet build PicoNode.slnx -c Release
+                  - run: dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj
+              conformance:
+                runs-on: ubuntu-latest
+                steps:
+                  - run: ./scripts/run-autobahn.ps1
+            """;
+
+        await Assert
+            .That(SuiteJobs("probe.yml", buildOnly, solutions))
+            .IsEmpty()
+            .Because(
+                "`dotnet build` on the solution, a non-RPC test run and a conformance job "
+                    + "do not run the suite"
+            );
+
+        // 6. a prose mention in a comment is not an invocation.
+        const string commentedOut = """
+            name: probe
+            on: [push]
+            jobs:
+              test:
+                runs-on: ubuntu-latest
+                steps:
+                  # dotnet test PicoNode.slnx - the suite lives in there
+                  - run: dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj
+            """;
+
+        await Assert
+            .That(SuiteJobs("probe.yml", commentedOut, solutions))
+            .IsEmpty()
+            .Because("a commented-out command runs nothing");
+
+        // 7. an unreadable workflow is not a silent pass: no `jobs:` mapping at all
+        //    yields no jobs, which the caller turns into a failure.
+        await Assert.That(JobBlocks("name: probe\non: [push]\n").Any()).IsFalse();
+
+        // 8. ...and the real repository satisfies the rule through BOTH doors: the
+        //    solution runner (release.yml/ci.yml name the projects explicitly, so the
+        //    solution door is proven above) and, in ci.yml, the job that runs the RPC
+        //    project by path.
+        var ci = File.ReadAllText(CiPath);
+        await Assert
+            .That(SuiteJobs(Path.GetFileName(CiPath), ci, solutions))
+            .IsNotEmpty()
+            .Because("ci.yml runs the RPC project by path, so the project door must match");
+    }
+
+    /// <summary>
+    /// Every <c>.slnx</c> that builds the JSON-RPC suite — derived from the solution
+    /// files themselves, so renaming a project, or adding a solution that includes
+    /// it, moves this set with the source of truth instead of with a list here.
+    /// </summary>
+    private static string[] SolutionsRunningTheRpcSuite() =>
+        Directory
+            .EnumerateFiles(RepoRoot, "*.slnx")
+            .Where(static p => File.ReadAllText(p).Contains(RpcSuitePath, StringComparison.Ordinal))
+            .Select(static p => Path.GetFileName(p))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+    /// <summary>
+    /// The jobs of <paramref name="yaml"/> as (name, body) pairs: the keys of its
+    /// <c>jobs:</c> mapping, split by indentation — a job name at two spaces under
+    /// <c>jobs:</c>, its body at four or more, the mapping over at the next
+    /// top-level key. This is a SCOPE, not a YAML parser (the repository's workflows
+    /// share one shape), so callers assert the list is never empty: a shape this
+    /// cannot read must fail loudly instead of making every rule above vacuous.
+    /// </summary>
+    private static IEnumerable<(string Name, string Body)> JobBlocks(string yaml)
+    {
+        var lines = yaml.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var start = Array.FindIndex(lines, static line => line == "jobs:");
+
+        if (start < 0)
+        {
+            yield break;
+        }
+
+        string? name = null;
+        var body = new List<string>();
+
+        for (var i = start + 1; i < lines.Length; i++)
+        {
+            var line = lines[i];
+            var indent = line.Length - line.TrimStart(' ').Length;
+
+            if (line.Length == 0)
+            {
+                if (name is not null)
+                {
+                    body.Add(line);
+                }
+                continue;
+            }
+
+            if (indent == 0)
+            {
+                break; // the `jobs:` mapping ended
+            }
+
+            if (indent == 2)
+            {
+                var trimmed = line.Trim();
+
+                if (trimmed.StartsWith('#'))
+                {
+                    continue; // a comment between jobs is not a job
+                }
+
+                if (name is not null)
+                {
+                    yield return (name, string.Join('\n', body));
+                    body.Clear();
+                    name = null;
+                }
+
+                var colon = trimmed.IndexOf(':', StringComparison.Ordinal);
+                if (colon <= 0)
+                {
+                    continue; // a list item under `jobs:` is not a job key
+                }
+
+                name = trimmed[..colon];
+                continue;
+            }
+
+            if (name is not null)
+            {
+                body.Add(line);
+            }
+        }
+
+        if (name is not null)
+        {
+            yield return (name, string.Join('\n', body));
+        }
+    }
+
+    /// <summary>
+    /// True when this job RUNS the JSON-RPC suite: one of its code lines invokes
+    /// <c>dotnet test</c>, and the job either names the project path or selects a
+    /// solution that contains it. Comment lines never count (a commented-out command,
+    /// or prose naming the suite, runs nothing), and neither does <c>dotnet build</c>
+    /// on a solution.
+    /// </summary>
+    private static bool RunsTheRpcSuite(string jobBody, IReadOnlyCollection<string> solutions)
+    {
+        var code = WithoutCommentLines(jobBody).ToArray();
+
+        if (!code.Any(static line => line.Contains("dotnet test", StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        // The project path is matched over the whole JOB, not one line: release.yml
+        // lists its projects in a `for` loop and invokes `dotnet test --project "$p"`
+        // two lines later, so the path and the command are deliberately not adjacent.
+        return code.Any(static line => line.Contains(RpcSuitePath, StringComparison.Ordinal))
+            || code.Any(line =>
+                line.Contains("dotnet test", StringComparison.Ordinal)
+                && solutions.Any(solution => line.Contains(solution, StringComparison.Ordinal))
+            );
+    }
+
+    /// <summary>The jobs that run the suite, labelled <c>file: job</c>.</summary>
+    private static string[] SuiteJobs(
+        string workflowName,
+        string yaml,
+        IReadOnlyCollection<string> solutions
+    ) =>
+        JobBlocks(yaml)
+            .Where(job => RunsTheRpcSuite(job.Body, solutions))
+            .Select(job => $"{workflowName}: {job.Name}")
+            .ToArray();
+
+    /// <summary>
+    /// The jobs that run the suite and do NOT install node in THAT job — the
+    /// offenders the rule reports. This replaces file-scope credit, where a
+    /// neighbour job's <c>setup-node</c> satisfied the check.
+    /// </summary>
+    private static string[] SuiteJobsWithoutNode(
+        string workflowName,
+        string yaml,
+        IReadOnlyCollection<string> solutions
+    ) =>
+        JobBlocks(yaml)
+            .Where(job => RunsTheRpcSuite(job.Body, solutions))
+            .Where(job =>
+                !WithoutCommentLines(job.Body)
+                    .Any(static line =>
+                        line.Contains("uses: actions/setup-node@", StringComparison.Ordinal)
+                    )
+            )
+            .Select(job => $"{workflowName}: {job.Name}")
+            .ToArray();
+
+    /// <summary>
+    /// Findings for the node MAJOR in every suite-running job: a job with no
+    /// <c>node-version</c> at all pins nothing, and <c>latest</c> / <c>lts/*</c> moves
+    /// the runtime under the suite between runs.
+    /// </summary>
+    private static string[] UnpinnedNodeVersions(
+        string workflowName,
+        string yaml,
+        IReadOnlyCollection<string> solutions
+    )
+    {
+        var findings = new List<string>();
+
+        foreach (var job in JobBlocks(yaml).Where(job => RunsTheRpcSuite(job.Body, solutions)))
+        {
+            var versions = WithoutCommentLines(job.Body)
+                .Where(static line => line.Contains("node-version:", StringComparison.Ordinal))
+                .ToArray();
+
+            if (versions.Length == 0)
+            {
+                findings.Add($"{workflowName}: {job.Name} declares no node-version");
+                continue;
+            }
+
+            findings.AddRange(
+                versions
+                    .Where(static line => !Regex.IsMatch(line, @"node-version:\s*'?\d+(\.\d+)*'?"))
+                    .Select(line => $"{workflowName}: {job.Name}: {line.Trim()}")
+            );
+        }
+
+        return [.. findings];
     }
 
     [Test]

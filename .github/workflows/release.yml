@@ -40,8 +40,10 @@ jobs:
         with: { dotnet-version: 10.0.x }
 
       # Same reason as ci.yml: the verify gate runs PicoJsonRpc.Tests, which needs
-      # `node` for its 20 child-process tests. A release that skipped them while
-      # calling the version verified is worse than a red run.
+      # `node` for its 21 child-process tests. A release that skipped them while
+      # calling the version verified is worse than a red run. That number has ONE
+      # home (SkipUnlessNodeAttribute.NodeDependentTestCount) and is guarded by
+      # NodeLessLossCountTests, so it cannot drift here again.
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
 

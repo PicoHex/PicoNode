@@ -29,8 +29,16 @@ namespace PicoJsonRpc.Tests;
 /// </list>
 /// </para>
 /// <para>
-/// <b>Exactly what a node-less run loses — 21 of 59, measured</b> (a PATH with no
-/// <c>node</c>: 38 passed, 21 skipped, 0 failed):
+/// <b>Exactly what a node-less run loses — <see cref="SkipUnlessNodeAttribute.NodeDependentTestCount"/>
+/// of the suite, measured</b> (a PATH with no <c>node</c>, the built assembly run
+/// directly: 0 failed, and one skip per <c>[SkipUnlessNode]</c> test).
+/// That sentence quotes the count by NAME on purpose: the number drifted four times
+/// while it was spelled out in prose, so it lives in ONE constant
+/// (<see cref="SkipUnlessNodeAttribute.NodeDependentTestCount"/>), the skip reason is
+/// built from it, and <c>NodeLessLossCountTests</c> fails when the constant, the
+/// decoration count or any prose that restates it disagree. The per-class breakdown
+/// below is checked the same way — against the attribute metadata, not against this
+/// paragraph:
 /// <list type="bullet">
 /// <item><see cref="LifecycleTests"/> — <b>8 of 9</b>: <c>Acquire_SpawndNode_AndRecycle_Kills</c>,
 /// <c>Acquire_Concurrent_ReusesSingleInstance</c>, <c>Acquire_ThreeCrashes_EntersBackoff</c>,
@@ -48,12 +56,12 @@ namespace PicoJsonRpc.Tests;
 /// they need a real child. The 13th,
 /// <c>Route_flags_a_dropped_frame_only_when_a_subscription_could_have_had_it</c>, is
 /// pure registry bookkeeping and still runs.</item>
-/// <item><see cref="NodeFixtureTests"/> — <b>1 of 6</b>:
+/// <item><see cref="NodeFixtureTests"/> — <b>1 of 7</b>:
 /// <c>StartAsync_round_trips_a_call_through_the_echo_fixture</c>, the helper's own
-/// success path (it spawns a child, so it cannot run either). The other five
-/// cover the loud contract and the copy rule, and they must run precisely when
-/// node is missing — a contract test that skips along with the thing it checks is
-/// the hole this task closes.</item>
+/// success path (it spawns a child, so it cannot run either). The other six
+/// cover the loud contract, the copy rule and the reverse check's depth — and they
+/// must run precisely when node is missing: a contract test that skips along with
+/// the thing it checks is the hole this task closes.</item>
 /// <item><see cref="EnvelopeTests"/>, <see cref="FramerTests"/>,
 /// <see cref="WireConformanceTests"/> — none: no child, no fixture.</item>
 /// </list>
@@ -92,25 +100,49 @@ internal static class NodeFixture
     /// <para>
     /// <c>echo_server.py</c> used to sit beside these: copied by the same
     /// <c>Fixtures/**</c> glob, started by nobody. T7.6b deleted it rather than
-    /// wiring it. It was a byte-for-byte SHAPE duplicate of
-    /// <see cref="Echo"/> (same <c>{jsonrpc,id,result}</c> frame, same
-    /// string-embedded <c>{"echo": &lt;request&gt;}</c> payload), so it proved nothing
-    /// about the wire that the node fixture does not; its only differences were
-    /// incidental (json.dumps' <c>" ",</c> separators, and <c>ensure_ascii</c>
-    /// escaping a CJK reply where node echoes raw UTF-8) — neither of which our
-    /// reader is sensitive to (it parses JSON, not bytes), and the escaped form is
-    /// already pinned by <c>Unpaired_surrogate_in_caller_text_is_substituted_not_thrown</c>.
-    /// Keeping it would have cost a second runtime (and its own probe, its own
-    /// skip reason, and a <c>python3</c>-vs-<c>python</c> divergence on Windows,
-    /// where <c>python3</c> is a Store stub) to test the same bytes twice.
+    /// wiring it. It was SHAPE-identical to <see cref="Echo"/> but not
+    /// byte-identical — same <c>{jsonrpc,id,result}</c> frame, same
+    /// string-embedded <c>{"echo": &lt;request&gt;}</c> payload, different bytes
+    /// (json.dumps' <c>" ",</c> separators, and <c>ensure_ascii</c> escaping a CJK
+    /// reply where node writes raw UTF-8) — so it proved nothing about the wire that
+    /// the node fixture does not. Our reader parses JSON rather than bytes, so it is
+    /// insensitive to BOTH differences, and the difference that is a wire fact (the
+    /// escape) is already pinned, for the id and the string-fallback positions, by
+    /// <c>WireConformanceTests.Unpaired_surrogate_in_caller_text_is_substituted_not_thrown</c>
+    /// — which pins the <c>\uFFFD</c> WE emit, not a decoded inbound CJK payload.
+    /// Keeping the python fixture would have cost a second runtime (and its own probe,
+    /// its own skip reason, and a <c>python3</c>-vs-<c>python</c> divergence on Windows,
+    /// where <c>python3</c> is a Store stub) to re-cover the same shapes.
     /// </para>
     /// </summary>
     public static readonly IReadOnlyList<string> Named = [Echo, Chatty, Crash, WireSnapshot];
 
     /// <summary>
+    /// Every fixture file in the COPY OUTPUT — the names the reverse copy-rule check
+    /// compares against <see cref="Named"/>, relative to the Fixtures root and with
+    /// <c>/</c> separators so a nested fixture reads the same on every platform.
+    /// <para>
+    /// ALL DIRECTORIES, because the rule it checks is all directories: the csproj
+    /// copies <c>Fixtures/**</c> RECURSIVELY, so <c>Fixtures/sub/x.mjs</c> lands in
+    /// the output directory and would never be enumerated by a top-level walk — it
+    /// would be copied, unnamed and ungoverned, which is exactly the hole the reverse
+    /// check exists to close.
+    /// </para>
+    /// </summary>
+    /// <param name="fixturesRoot">The Fixtures directory to enumerate.</param>
+    internal static IReadOnlyList<string> CopiedFixtures(string fixturesRoot) =>
+        !Directory.Exists(fixturesRoot)
+            ? []
+            : Directory
+                .GetFiles(fixturesRoot, "*", SearchOption.AllDirectories)
+                .Select(path => Path.GetRelativePath(fixturesRoot, path).Replace('\\', '/'))
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+
+    /// <summary>
     /// The node probe, evaluated at most once per test run: a skip decision is
-    /// made per test at registration, and 19 probes per run would be 19 child
-    /// processes for one boolean.
+    /// made per test at registration, so an uncached probe would spawn one child
+    /// process per node-dependent test to answer one boolean.
     /// </summary>
     private static readonly Lazy<bool> NodeProbe = new(ProbeNode);
 
@@ -243,15 +275,33 @@ internal static class NodeFixture
 internal sealed class SkipUnlessNodeAttribute() : SkipAttribute(NodeLessRunReason)
 {
     /// <summary>
-    /// The loud reason. It deliberately repeats the loss count: a node-less run
-    /// must be readable evidence that 21 tests did not run, not a footnote.
+    /// How many tests a node-less run loses — the ONE place the number is written.
+    /// It is a string constant, not an <see cref="int"/>, because the skip reason is
+    /// an attribute argument and therefore has to be a compile-time constant: a
+    /// string is the only form that can be concatenated into it.
+    /// <para>
+    /// Add a <c>[SkipUnlessNode]</c> test and this constant is what you bump —
+    /// <c>NodeLessLossCountTests</c> fails until its value, the number of decorated
+    /// test methods, the rendered skip reason and every document that quotes the
+    /// number agree. Spelled-out prose is what drifted four times; this is the fix
+    /// for that class of bug, not a fifth correction.
+    /// </para>
+    /// </summary>
+    public const string NodeDependentTestCount = "21";
+
+    /// <summary>
+    /// The loud reason. It interpolates <see cref="NodeDependentTestCount"/> rather
+    /// than restating it, so the sentence cannot drift from the constant: a node-less
+    /// run must be readable evidence that those tests did not run, not a footnote.
     /// </summary>
     public const string NodeLessRunReason =
-        "SKIPPED - no 'node' runtime on PATH. This run loses 21 node-dependent tests: "
+        "SKIPPED - no 'node' runtime on PATH. This run loses "
+        + NodeDependentTestCount
+        + " node-dependent tests: "
         + "LifecycleTests 8/9 (spawn, recycle, crash-backoff, chatty stderr, the dead "
         + "child's stderr tail), "
         + "ClientTests 12/13 (scripted channels still need a real process handle) and "
-        + "NodeFixtureTests 1/6 (the helper's round trip). Fixture/copy-rule and wire tests "
+        + "NodeFixtureTests 1/7 (the helper's round trip). Fixture/copy-rule and wire tests "
         + "still ran. Install node to recover the coverage; a missing FIXTURE is a "
         + "different, loud failure and never skips.";
 
