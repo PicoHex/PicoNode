@@ -30,7 +30,7 @@
 | **AOT-Support** | ✅ Nativ — alle net10.0-Bibliotheken | ⚠️ Erfordert Trimming |
 | **DI / Logging / Config** | PicoDI + PicoLog + PicoCfg (PicoHex-nativ) | Microsoft.Extensions.* |
 | **WebSocket** | RFC-6455-Frame-Codec mit Message-Handler-Abstraktion | Transparent via Middleware |
-| **Codezeilen** | ~18K für den gesamten Stack | ~1M+ für ASP.NET Core |
+| **Codezeilen** | 25.125 Zeilen C# (178 Dateien in `src/`, ohne `bin/`/`obj/`) | in diesem Repository nicht gemessen |
 
 > **Entwurfspriorität:** PicoNode legt Wert auf Allokationseffizienz und AOT-Kompatibilität. `ValueTask` auf Hot-Path-Delegates, ArrayPool-basiertes Puffermanagement und optionale Delegates (keine erzwungenen Allokationen) sind bewusste Kompromisse. Sie halten die Transportschicht kompakt und vorhersagbar.
 
@@ -75,7 +75,9 @@ PicoNode wird als geschichtete NuGet-Pakete ausgeliefert. Wähle genau die Abstr
 |---------|--------------|-------------|
 | **PicoWeb** | Du einen startbereiten Webserver willst | WebServer + WebApp + HTTP + TCP (alles transitiv) |
 | **PicoNode.Web** | Du das Webframework ohne Hosting-Umgebung willst | WebApp, Routing, Middleware, statische Dateien, DI |
+| **PicoNode.Web.Session.Abs** | Du einen Session-Store schreibst | `ISession` / `ISessionStore` — die Session-Abstraktionen, die `PicoNode.Web` nutzt |
 | **PicoNode.Http** | Du rohes HTTP-Protokoll-Handling brauchst | HTTP/1.1 + HTTP/2 + WebSocket, HttpRouter |
+| **PicoJsonRpc** | Du sprichst JSON-RPC 2.0 mit einem Kindprozess | `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode** | Du rohe TCP/UDP-Transporte brauchst | TcpNode, UdpNode, Socket-Lebenszyklus, Metriken |
 | **PicoNode.Abs** | Du einen Handler oder eine Erweiterung schreibst | INode, ITcpConnectionHandler, Kernverträge |
 
@@ -235,12 +237,20 @@ var node = new TcpNode(options);
 
 ```csharp
 var config = await Cfg.CreateBuilder()
-    .AddEnvironmentVariables("PICONODE_")
+    .Add(new Dictionary<string, string>
+    {
+        ["App:Name"] = "PicoCfg",
+        ["App:Enabled"] = "true",
+    })
     .BuildAsync();
 
 var settings = CfgBind.Bind<AppSettings>(config, "App");
-options.Endpoint = new IPEndPoint(IPAddress.Any, 8080); // erforderlich
-var node = new TcpNode(options);
+
+public sealed class AppSettings
+{
+    public string? Name { get; set; }
+    public bool Enabled { get; set; }
+}
 ```
 
 ### Laufzeit-Neuladen
@@ -369,8 +379,10 @@ Die PicoJetson-Source-Generatoren laufen zur Kompilierzeit. Handler müssen `Ser
 // ✅ Triggers PicoJetson.Gen — UserDto serializer generated
 var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
 
-// ❌ Does NOT trigger generator (cross-assembly generic)
-Results.Json<UserDto>(200, user);
+// ❌ Does NOT trigger the generator: a controller's DTO is serialised by Controllers.Gen's
+//    GENERATED code, which PicoJetson.Gen never sees — an unmarked DTO still compiles and
+//    then throws on every request (NativeAOT cannot fall back to reflection). Mark it
+//    [PicoJsonSerializable]; forgetting it surfaces as PCW003.
 ```
 
 ### WebApiBuilder (Komfort)
@@ -451,7 +463,7 @@ var staticFiles = new StaticFileMiddleware(
 app.Use(staticFiles.InvokeAsync);
 ```
 
-Liefert Dateien aus einem Stammverzeichnis aus. Verhindert Directory Traversal. Bildet über 30 Dateierweiterungen auf MIME-Typen ab.
+Liefert Dateien aus einem Stammverzeichnis aus. Verhindert Directory Traversal. Bildet 28 Dateierweiterungen auf MIME-Typen ab.
 
 ### CORS
 
@@ -566,7 +578,9 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 | **PicoNode.Abs** | net10.0 | Kern-Interfaces: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, Fehlercodes, Enums |
 | **PicoNode** | net10.0 | `TcpNode` und `UdpNode` — produktionsreife asynchrone Socket-Transporte |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
+| **PicoJsonRpc** | net10.0 | JSON-RPC-2.0-Protokollkern: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, Middleware, statische Dateien, Kompression, CORS, DI |
+| **PicoNode.Web.Session.Abs** | net10.0 | Session-Abstraktionen: `ISession`, `ISessionStore` |
 | **PicoWeb** | net10.0 | `WebServer` — schlanker Host, der `WebApp` mit `TcpNode` verbindet |
 
 ## Beispiele

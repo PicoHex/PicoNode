@@ -30,7 +30,7 @@
 | **Support AOT** | ✅ Natif — toutes les bibliothèques net10.0 | ⚠️ Nécessite du trimming |
 | **DI / Journalisation / Configuration** | PicoDI + PicoLog + PicoCfg (natifs PicoHex) | Microsoft.Extensions.* |
 | **WebSocket** | Codec de trames RFC 6455 avec abstraction de gestionnaire de messages | Transparent via middleware |
-| **Nombre de lignes** | ~18K pour toute la stack | ~1M+ pour ASP.NET Core |
+| **Nombre de lignes** | 25 125 lignes de C# (178 fichiers dans `src/`, hors `bin/`/`obj/`) | non mesuré dans ce dépôt |
 
 > **Priorité de conception :** PicoNode privilégie l'efficacité d'allocation et la compatibilité AOT. `ValueTask` sur les delegates à chaud, la gestion des buffers basée sur ArrayPool et les delegates optionnels (pas d'allocation forcée) sont des compromis délibérés — ils maintiennent la couche de transport compacte et prévisible.
 
@@ -75,7 +75,9 @@ PicoNode est distribué sous forme de paquets NuGet en couches. Choisissez exact
 |--------|------------------|---------------------|
 | **PicoWeb** | Vous voulez un serveur Web prêt à l'emploi | WebServer + WebApp + HTTP + TCP (tout transitif) |
 | **PicoNode.Web** | Vous voulez le framework Web sans hébergement | WebApp, routage, middleware, fichiers statiques, DI |
+| **PicoNode.Web.Session.Abs** | Vous écrivez un store de session | `ISession` / `ISessionStore` — les abstractions de session consommées par `PicoNode.Web` |
 | **PicoNode.Http** | Vous voulez la gestion brute du protocole HTTP | HTTP/1.1 + HTTP/2 + WebSocket, HttpRouter |
+| **PicoJsonRpc** | Vous parlez JSON-RPC 2.0 avec un processus enfant | `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode** | Vous voulez les transports bruts TCP/UDP | TcpNode, UdpNode, cycle de vie des sockets, métriques |
 | **PicoNode.Abs** | Vous écrivez un gestionnaire ou une extension | INode, ITcpConnectionHandler, contrats de base |
 
@@ -235,12 +237,20 @@ var node = new TcpNode(options);
 
 ```csharp
 var config = await Cfg.CreateBuilder()
-    .AddEnvironmentVariables("PICONODE_")
+    .Add(new Dictionary<string, string>
+    {
+        ["App:Name"] = "PicoCfg",
+        ["App:Enabled"] = "true",
+    })
     .BuildAsync();
 
 var settings = CfgBind.Bind<AppSettings>(config, "App");
-options.Endpoint = new IPEndPoint(IPAddress.Any, 8080); // required
-var node = new TcpNode(options);
+
+public sealed class AppSettings
+{
+    public string? Name { get; set; }
+    public bool Enabled { get; set; }
+}
 ```
 
 ### Rechargement à l'Exécution
@@ -369,8 +379,10 @@ Les générateurs de source PicoJetson s'exécutent à la compilation. Les gesti
 // ✅ Triggers PicoJetson.Gen — UserDto serializer generated
 var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
 
-// ❌ Does NOT trigger generator (cross-assembly generic)
-Results.Json<UserDto>(200, user);
+// ❌ Does NOT trigger the generator: a controller's DTO is serialised by Controllers.Gen's
+//    GENERATED code, which PicoJetson.Gen never sees — an unmarked DTO still compiles and
+//    then throws on every request (NativeAOT cannot fall back to reflection). Mark it
+//    [PicoJsonSerializable]; forgetting it surfaces as PCW003.
 ```
 
 ### WebApiBuilder (pratique)
@@ -451,7 +463,7 @@ var staticFiles = new StaticFileMiddleware(
 app.Use(staticFiles.InvokeAsync);
 ```
 
-Sert les fichiers depuis un répertoire racine. Empêche le parcours de répertoires. Mappe plus de 30 extensions de fichiers vers des types MIME.
+Sert les fichiers depuis un répertoire racine. Empêche le parcours de répertoires. Mappe 28 extensions de fichiers vers des types MIME.
 
 ### CORS
 
@@ -566,7 +578,9 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 | **PicoNode.Abs** | net10.0 | Interfaces de base : `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, codes d'erreur, enums |
 | **PicoNode** | net10.0 | `TcpNode` et `UdpNode` — transports socket asynchrones de qualité production |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
+| **PicoJsonRpc** | net10.0 | Cœur du protocole JSON-RPC 2.0 : `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, middleware, fichiers statiques, compression, CORS, DI |
+| **PicoNode.Web.Session.Abs** | net10.0 | Abstractions de session : `ISession`, `ISessionStore` |
 | **PicoWeb** | net10.0 | `WebServer` — hôte léger reliant `WebApp` à `TcpNode` |
 
 ## Exemples

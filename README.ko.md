@@ -30,7 +30,7 @@
 | **AOT 지원** | ✅ 네이티브 — 모든 net10.0 라이브러리 | ⚠️ 트리밍 필요 |
 | **DI / 로깅 / 구성** | PicoDI + PicoLog + PicoCfg (PicoHex 네이티브) | Microsoft.Extensions.* |
 | **WebSocket** | 메시지 핸들러 추상화를 갖춘 RFC 6455 프레임 코덱 | 미들웨어를 통한 투명 처리 |
-| **코드 라인 수** | 전체 스택 약 18K | ASP.NET Core 약 1M+ |
+| **코드 라인 수** | C# 25,125줄 (`src/` 178개 파일, `bin/`/`obj/` 제외) | 이 저장소에서는 측정하지 않음 |
 
 > **설계 우선순위:** PicoNode는 할당 효율성과 AOT 호환성을 우선합니다. 핫 패스 델리게이트의 `ValueTask`, ArrayPool 기반 버퍼 관리, 선택적 델리게이트(강제 할당 없음)는 의도적인 트레이드오프로, 전송 계층을 작고 예측 가능하게 유지합니다.
 
@@ -75,7 +75,9 @@ PicoNode는 계층형 NuGet 패키지로 제공됩니다. 필요한 추상화 �
 |---------|--------------|-------------|
 | **PicoWeb** | 바로 실행 가능한 웹 서버가 필요할 때 | WebServer + WebApp + HTTP + TCP (모두 전이 포함) |
 | **PicoNode.Web** | 호스팅 없이 웹 프레임워크만 필요할 때 | WebApp, 라우팅, 미들웨어, 정적 파일, DI |
+| **PicoNode.Web.Session.Abs** | 세션 저장소를 작성할 때 | `ISession` / `ISessionStore` — `PicoNode.Web`이 사용하는 세션 추상화 |
 | **PicoNode.Http** | 원시 HTTP 프로토콜 처리가 필요할 때 | HTTP/1.1 + HTTP/2 + WebSocket, HttpRouter |
+| **PicoJsonRpc** | 자식 프로세스와 JSON-RPC 2.0으로 통신할 때 | `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode** | 원시 TCP/UDP 전송이 필요할 때 | TcpNode, UdpNode, 소켓 수명 주기, 메트릭 |
 | **PicoNode.Abs** | 핸들러나 확장을 작성할 때 | INode, ITcpConnectionHandler, 코어 계약 |
 
@@ -379,8 +381,10 @@ PicoJetson 소스 생성기는 컴파일 타임에 실행됩니다. 생성기를
 // ✅ Triggers PicoJetson.Gen — UserDto serializer generated
 var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
 
-// ❌ Does NOT trigger generator (cross-assembly generic)
-Results.Json<UserDto>(200, user);
+// ❌ Does NOT trigger the generator: a controller's DTO is serialised by Controllers.Gen's
+//    GENERATED code, which PicoJetson.Gen never sees — an unmarked DTO still compiles and
+//    then throws on every request (NativeAOT cannot fall back to reflection). Mark it
+//    [PicoJsonSerializable]; forgetting it surfaces as PCW003.
 ```
 
 ### WebApiBuilder (편의)
@@ -461,7 +465,7 @@ var staticFiles = new StaticFileMiddleware(
 app.Use(staticFiles.InvokeAsync);
 ```
 
-루트 디렉터리에서 파일을 제공합니다. 디렉터리 트래버설을 차단합니다. 30개 이상의 파일 확장자를 MIME 타입에 매핑합니다.
+루트 디렉터리에서 파일을 제공합니다. 디렉터리 트래버설을 차단합니다. 28개의 파일 확장자를 MIME 타입에 매핑합니다.
 
 ### CORS
 
@@ -576,7 +580,9 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 | **PicoNode.Abs** | net10.0 | 코어 인터페이스: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, 폴트 코드, 열거형 |
 | **PicoNode** | net10.0 | `TcpNode`와 `UdpNode` — 프로덕션급 비동기 소켓 전송 |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
+| **PicoJsonRpc** | net10.0 | JSON-RPC 2.0 프로토콜 코어: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, 미들웨어, 정적 파일, 압축, CORS, DI |
+| **PicoNode.Web.Session.Abs** | net10.0 | 세션 추상화: `ISession`, `ISessionStore` |
 | **PicoWeb** | net10.0 | `WebServer` — `WebApp`을 `TcpNode`에 연결하는 얇은 호스트 |
 
 ## 샘플

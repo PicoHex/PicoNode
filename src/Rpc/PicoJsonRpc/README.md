@@ -5,6 +5,13 @@ lifecycle management, and an id-routed multiplexed client. The envelope is
 hand-written UTF-8 JSON (`Utf8JsonWriter`); typed payloads are PicoJetson
 compile-time shapes (zero reflection).
 
+## Package Info
+
+- **NuGet**: `PicoJsonRpc`
+- **TFM**: `net10.0`
+- **AOT**: ✅ (`IsAotCompatible` + `IsTrimmable`)
+- **Dependencies**: `PicoJetson`
+
 ## Positioning
 
 - **Protocol core only** — no transport opinion beyond stdio/sockets/pipes:
@@ -24,7 +31,7 @@ compile-time shapes (zero reflection).
 | `NdjsonFramer` | Newline-delimited JSON framing over a stream (`Encode` / `ReadAsync`) |
 | `JsonRpcClient` | Multiplexed client: unique id per call, concurrent in-flight (bounded), response routing |
 | `ProcessLifecycle` | Child-process lifecycle over stdio (spawn, idle recycling, crash backoff) |
-| `JsonRpcEnvelopes` | `JsonRpcFrame` request/response/notification/error shapes + `JsonRpcCodec.Serialize/Deserialize` |
+| `JsonRpcFrame`, `JsonRpcCodec` | The frame shapes (`Request` / `Response` / `Notification` factories, `JsonRpcError`) and typed payloads (`JsonRpcCodec.Serialize<T>` / `Deserialize<T>`) |
 
 ## Wire
 

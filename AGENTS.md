@@ -8,12 +8,14 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 ## Build & test
 
 - Whole solution (samples included): `dotnet build PicoNode.slnx -c Release --nologo`.
-- One project: `dotnet test tests/<Project>/<Project>.csproj -c Release`.
+- One project: `dotnet test --project tests/<Project>/<Project>.csproj -c Release` — `--project` is the
+  form `dotnet test --help` documents (SDK 10); a bare path is accepted but is not in its usage line.
 - **Never pass `--nologo` to `dotnet test`** on SDK 10 — it makes the run report zero tests.
   `dotnet build --nologo` is fine.
-- Runner arguments go **after** `--` (TUnit), e.g. `dotnet test tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj -c Release -- --treenode-filter '/*/*/Name'`.
+- Runner arguments go **after** `--` (TUnit), e.g. `dotnet test --project tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj -c Release -- --treenode-filter '/*/*/Name'`.
 - TUnit exits **2** (not 1) on failure and colourises its output: strip ANSI before matching.
-- NativeAOT check: `scripts/test-aot-publish.ps1 -RuntimeIdentifier linux-x64` (CI runs it for the linux RIDs).
+- NativeAOT check: `scripts/test-aot-publish.ps1 -RuntimeIdentifier linux-x64` (CI runs it once per matrix RID — win-x64,
+  win-arm64, linux-x64, linux-arm64, osx-arm64).
 - README samples: `dotnet test tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj` compiles the README's
   rate-limiting samples and fails when a README drifts from the marked region in `ReadmeSamples.cs` —
   change a sample in both places, in all ten READMEs.
@@ -37,8 +39,9 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 
 - Dry run first: `./scripts/release.ps1 -DryRun` prints `last release`, `API changed : true|false` and the
   next version. Read it **before** touching the baselines.
-- `./scripts/release.ps1 -Push` refreshes the baselines, commits `chore(release): vX.Y.Z`, creates an
-  annotated tag and pushes branch + tag.
+- `./scripts/release.ps1 -Push` refreshes the baselines and commits `chore(release): vX.Y.Z` **only when
+  the refresh changed them** (an unchanged API tags the current commit instead); then it creates an
+  annotated tag and pushes branch and tag.
 - **The tag is the release trigger**: `.github/workflows/release.yml` gates the publish on a **`verify` job**
   (restore + build, all ten test projects, the version-shape assertion) and `publish` reaches NuGet only
   through `needs: verify`. It then packs every package at the tag version and publishes to NuGet; a version

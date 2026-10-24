@@ -17,7 +17,7 @@ PicoNode transport layer implementation. Provides TcpNode and UdpNode with TLS, 
 | `TcpNodeOptions` | TCP node config: Endpoint, SslOptions, maxConnections, drainTimeout |
 | `UdpNode` | UDP transport node: receive loop, datagram dispatch |
 | `TcpNodeMetrics` | TCP transport metrics: accept/reject/close counts, byte rates |
-| `TcpConnection` | Single TCP connection lifecycle management |
+| `TcpConnectionContext` | Per-connection context — the public `ITcpConnectionContext` implementation; `TcpConnection`, the lifecycle behind it, is `internal` |
 
 ## TLS
 

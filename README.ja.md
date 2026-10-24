@@ -30,7 +30,7 @@
 | **AOT対応** | ✅ ネイティブ — 全net10.0ライブラリで対応 | ⚠️ トリミングが必要 |
 | **DI / ログ / 設定** | PicoDI + PicoLog + PicoCfg (PicoHexネイティブ) | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 フレームコーデック + メッセージハンドラ抽象化 | ミドルウェア経由で透過的 |
-| **コード行数** | フルスタックで約18K行 | ASP.NET Coreは約100万行以上 |
+| **コード行数** | C# 25,125 行（`src/` 配下 178 ファイル、`bin/`/`obj/` を除く） | このリポジトリでは未計測 |
 
 > **設計方針:** PicoNodeはアロケーション効率とAOT互換性を優先します。ホットパスデリゲートでの`ValueTask`、ArrayPoolベースのバッファ管理、オプショナルデリゲート（強制アロケーションなし）は意図的なトレードオフであり、トランスポート層をコンパクトで予測可能な状態に保ちます。
 
@@ -75,7 +75,9 @@ PicoNodeはレイヤ化されたNuGetパッケージとして提供されます�
 |---------|--------------|-------------|
 | **PicoWeb** | 即時実行可能なWebサーバーが必要な場合 | WebServer + WebApp + HTTP + TCP (すべて推移的に含む) |
 | **PicoNode.Web** | ホスティングなしでWebフレームワークが必要な場合 | WebApp、ルーティング、ミドルウェア、静的ファイル、DI |
+| **PicoNode.Web.Session.Abs** | セッションストアを実装する場合 | `ISession` / `ISessionStore` — `PicoNode.Web` が利用するセッション抽象化 |
 | **PicoNode.Http** | 生のHTTPプロトコル処理が必要な場合 | HTTP/1.1 + HTTP/2 + WebSocket、HttpRouter |
+| **PicoJsonRpc** | 子プロセスとJSON-RPC 2.0で通信する場合 | `NdjsonFramer`、`JsonRpcClient`、`ProcessLifecycle` |
 | **PicoNode** | 生のTCP/UDPトランスポートが必要な場合 | TcpNode、UdpNode、ソケットライフサイクル、メトリクス |
 | **PicoNode.Abs** | ハンドラや拡張機能を書く場合 | INode、ITcpConnectionHandler、コアコントラクト |
 
@@ -235,12 +237,20 @@ var node = new TcpNode(options);
 
 ```csharp
 var config = await Cfg.CreateBuilder()
-    .AddEnvironmentVariables("PICONODE_")
+    .Add(new Dictionary<string, string>
+    {
+        ["App:Name"] = "PicoCfg",
+        ["App:Enabled"] = "true",
+    })
     .BuildAsync();
 
 var settings = CfgBind.Bind<AppSettings>(config, "App");
-options.Endpoint = new IPEndPoint(IPAddress.Any, 8080); // 必須
-var node = new TcpNode(options);
+
+public sealed class AppSettings
+{
+    public string? Name { get; set; }
+    public bool Enabled { get; set; }
+}
 ```
 
 ### 実行時リロード
@@ -369,8 +379,10 @@ PicoJetsonソースジェネレーターはコンパイル時に実行されま�
 // ✅ Triggers PicoJetson.Gen — UserDto serializer generated
 var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
 
-// ❌ Does NOT trigger generator (cross-assembly generic)
-Results.Json<UserDto>(200, user);
+// ❌ Does NOT trigger the generator: a controller's DTO is serialised by Controllers.Gen's
+//    GENERATED code, which PicoJetson.Gen never sees — an unmarked DTO still compiles and
+//    then throws on every request (NativeAOT cannot fall back to reflection). Mark it
+//    [PicoJsonSerializable]; forgetting it surfaces as PCW003.
 ```
 
 ### WebApiBuilder（便利版）
@@ -451,7 +463,7 @@ var staticFiles = new StaticFileMiddleware(
 app.Use(staticFiles.InvokeAsync);
 ```
 
-ルートディレクトリからファイルを配信します。ディレクトリトラバーサルを防止します。30以上のファイル拡張子をMIMEタイプにマッピングします。
+ルートディレクトリからファイルを配信します。ディレクトリトラバーサルを防止します。28個のファイル拡張子をMIMEタイプにマッピングします。
 
 ### CORS
 
@@ -566,7 +578,9 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 | **PicoNode.Abs** | net10.0 | コアインターフェース：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、フォルトコード、列挙型 |
 | **PicoNode** | net10.0 | `TcpNode` と `UdpNode` — 本番品質の非同期ソケットトランスポート |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
+| **PicoJsonRpc** | net10.0 | JSON-RPC 2.0 プロトコルコア: `NdjsonFramer`、`JsonRpcClient`、`ProcessLifecycle` |
 | **PicoNode.Web** | net10.0 | `WebApp`、`WebRouter`、ミドルウェア、静的ファイル、圧縮、CORS、DI |
+| **PicoNode.Web.Session.Abs** | net10.0 | セッション抽象化: `ISession`、`ISessionStore` |
 | **PicoWeb** | net10.0 | `WebServer` — `WebApp` を `TcpNode` に接続する軽量ホスト |
 
 ## サンプル

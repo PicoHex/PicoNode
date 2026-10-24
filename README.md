@@ -30,7 +30,7 @@
 | **AOT Support** | ✅ Native — all net10.0 libraries | ⚠️ Requires trimming |
 | **DI / Logging / Config** | PicoDI + PicoLog + PicoCfg (PicoHex native) | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 frame codec with message handler abstraction | Transparent via middleware |
-| **Line count** | ~18K for the full stack | ~1M+ for ASP.NET Core |
+| **Line count** | 25,125 lines of C# (178 files under `src/`, `bin/`/`obj/` excluded) | not measured in this repository |
 
 > **Design priority:** PicoNode prioritizes allocation efficiency and AOT compatibility. `ValueTask` on hot-path delegates, ArrayPool-based buffer management, and optional delegates (no forced allocations) are deliberate trade-offs — they keep the transport layer compact and predictable.
 
@@ -75,7 +75,9 @@ PicoNode ships as layered NuGet packages. Pick exactly the abstraction level you
 |---------|--------------|-------------|
 | **PicoWeb** | You want a ready-to-run web server | WebServer + WebApp + HTTP + TCP (all transitive) |
 | **PicoNode.Web** | You want the web framework without hosting | WebApp, routing, middleware, static files, DI |
+| **PicoNode.Web.Session.Abs** | You're writing a session store | `ISession` / `ISessionStore` — the session abstractions `PicoNode.Web` consumes |
 | **PicoNode.Http** | You want raw HTTP protocol handling | HTTP/1.1 + HTTP/2 + WebSocket, HttpRouter |
+| **PicoJsonRpc** | You're talking JSON-RPC 2.0 to a child process | `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode** | You want raw TCP/UDP transports | TcpNode, UdpNode, socket lifecycle, metrics |
 | **PicoNode.Abs** | You're writing a handler or extension | INode, ITcpConnectionHandler, core contracts |
 
@@ -380,8 +382,10 @@ PicoJetson source generators run at compile time. Handlers must call `SerializeT
 // ✅ Triggers PicoJetson.Gen — UserDto serializer generated
 var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
 
-// ❌ Does NOT trigger generator (cross-assembly generic)
-Results.Json<UserDto>(200, user);
+// ❌ Does NOT trigger the generator: a controller's DTO is serialised by Controllers.Gen's
+//    GENERATED code, which PicoJetson.Gen never sees — an unmarked DTO still compiles and
+//    then throws on every request (NativeAOT cannot fall back to reflection). Mark it
+//    [PicoJsonSerializable]; forgetting it surfaces as PCW003.
 ```
 
 ### WebApiBuilder (convenience)
@@ -463,7 +467,7 @@ var staticFiles = new StaticFileMiddleware(
 app.Use(staticFiles.InvokeAsync);
 ```
 
-Serves files from a root directory. Prevents directory traversal. Maps 30+ file extensions to MIME types.
+Serves files from a root directory. Prevents directory traversal. Maps 28 file extensions to MIME types.
 
 ### CORS
 
@@ -584,7 +588,9 @@ longer open, and an uncorrelated chunk while several streams are open. The packa
 | **PicoNode.Abs** | net10.0 | Core interfaces: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, fault codes, enums |
 | **PicoNode** | net10.0 | `TcpNode` and `UdpNode` — production-grade async socket transports |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
+| **PicoJsonRpc** | net10.0 | JSON-RPC 2.0 protocol core: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, middleware, static files, compression, CORS, DI |
+| **PicoNode.Web.Session.Abs** | net10.0 | Session abstractions: `ISession`, `ISessionStore` |
 | **PicoWeb** | net10.0 | `WebServer` — thin host wiring `WebApp` to `TcpNode` |
 
 ## Samples

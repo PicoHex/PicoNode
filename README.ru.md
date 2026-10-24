@@ -30,7 +30,7 @@
 | **AOT-поддержка** | ✅ Нативно — все библиотеки net10.0 | ⚠️ Требует trimming |
 | **DI / Логирование / Конфиг** | PicoDI + PicoLog + PicoCfg (родные PicoHex) | Microsoft.Extensions.* |
 | **WebSocket** | Кодек фреймов RFC 6455 с абстракцией обработчика сообщений | Прозрачно через middleware |
-| **Строк кода** | ~18K на весь стек | ~1M+ для ASP.NET Core |
+| **Строк кода** | 25 125 строк C# (178 файлов в `src/`, без `bin/`/`obj/`) | в этом репозитории не измеряется |
 
 > **Приоритет дизайна:** PicoNode ставит во главу угла эффективность выделения памяти и AOT-совместимость. `ValueTask` в горячих делегатах, управление буферами через ArrayPool и опциональные делегаты (без принудительных аллокаций) — это осознанные компромиссы, которые делают транспортный уровень компактным и предсказуемым.
 
@@ -75,7 +75,9 @@ PicoNode поставляется в виде уровневых NuGet-паке�
 |-------|-----------------|-------------|
 | **PicoWeb** | Нужен готовый веб-сервер | WebServer + WebApp + HTTP + TCP (всё транзитивно) |
 | **PicoNode.Web** | Нужен веб-фреймворк без хостинга | WebApp, маршрутизация, middleware, статика, DI |
+| **PicoNode.Web.Session.Abs** | Пишешь хранилище сессий | `ISession` / `ISessionStore` — абстракции сессий, которые использует `PicoNode.Web` |
 | **PicoNode.Http** | Нужна работа с HTTP на уровне протокола | HTTP/1.1 + HTTP/2 + WebSocket, HttpRouter |
+| **PicoJsonRpc** | Общаешься с дочерним процессом по JSON-RPC 2.0 | `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode** | Нужны сырые TCP/UDP транспорты | TcpNode, UdpNode, жизненный цикл сокетов, метрики |
 | **PicoNode.Abs** | Пишешь обработчик или расширение | INode, ITcpConnectionHandler, базовые контракты |
 
@@ -235,12 +237,20 @@ var node = new TcpNode(options);
 
 ```csharp
 var config = await Cfg.CreateBuilder()
-    .AddEnvironmentVariables("PICONODE_")
+    .Add(new Dictionary<string, string>
+    {
+        ["App:Name"] = "PicoCfg",
+        ["App:Enabled"] = "true",
+    })
     .BuildAsync();
 
 var settings = CfgBind.Bind<AppSettings>(config, "App");
-options.Endpoint = new IPEndPoint(IPAddress.Any, 8080); // required
-var node = new TcpNode(options);
+
+public sealed class AppSettings
+{
+    public string? Name { get; set; }
+    public bool Enabled { get; set; }
+}
 ```
 
 ### Перезагрузка в рантайме
@@ -369,8 +379,10 @@ app.MapGet("/users/{id}", async (WebContext ctx, CancellationToken _) =>
 // ✅ Triggers PicoJetson.Gen — UserDto serializer generated
 var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
 
-// ❌ Does NOT trigger generator (cross-assembly generic)
-Results.Json<UserDto>(200, user);
+// ❌ Does NOT trigger the generator: a controller's DTO is serialised by Controllers.Gen's
+//    GENERATED code, which PicoJetson.Gen never sees — an unmarked DTO still compiles and
+//    then throws on every request (NativeAOT cannot fall back to reflection). Mark it
+//    [PicoJsonSerializable]; forgetting it surfaces as PCW003.
 ```
 
 ### WebApiBuilder (удобный способ)
@@ -451,7 +463,7 @@ var staticFiles = new StaticFileMiddleware(
 app.Use(staticFiles.InvokeAsync);
 ```
 
-Раздаёт файлы из корневой директории. Предотвращает directory traversal. Сопоставляет 30+ расширений файлов с MIME-типами.
+Раздаёт файлы из корневой директории. Предотвращает directory traversal. Сопоставляет 28 расширений файлов с MIME-типами.
 
 ### CORS
 
@@ -566,7 +578,9 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 | **PicoNode.Abs** | net10.0 | Основные интерфейсы: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, коды ошибок, перечисления |
 | **PicoNode** | net10.0 | `TcpNode` и `UdpNode` — асинхронные сокетные транспорты production-уровня |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
+| **PicoJsonRpc** | net10.0 | Ядро протокола JSON-RPC 2.0: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, middleware, статические файлы, сжатие, CORS, DI |
+| **PicoNode.Web.Session.Abs** | net10.0 | Абстракции сессий: `ISession`, `ISessionStore` |
 | **PicoWeb** | net10.0 | `WebServer` — тонкий хост, подключающий `WebApp` к `TcpNode` |
 
 ## Примеры
