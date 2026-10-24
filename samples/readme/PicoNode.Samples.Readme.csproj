@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The README code samples, in the only form that cannot rot: compiled.
+
+    Each `#region readme:<name>` below is mirrored verbatim into all ten READMEs, and
+    tests/PicoNode.Docs.Tests fails when a README drifts from its region. A sample that stops
+    compiling fails this project's build (which Docs.Tests references), so the doc cannot publish
+    code that does not build.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Network\PicoNode\PicoNode.csproj" />
+  </ItemGroup>
+</Project>

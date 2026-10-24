@@ -11,5 +11,9 @@
     <PackageReference Include="TUnit" />
 
     <ProjectReference Include="..\..\src\Web\PicoNode.Web\PicoNode.Web.csproj" />
+
+    <!-- Compiles samples/readme/*.cs (the README code blocks) as part of this project's build: a
+         doc sample that no longer compiles breaks the docs test build, not just a solution build. -->
+    <ProjectReference Include="..\..\samples\readme\PicoNode.Samples.Readme.csproj" />
   </ItemGroup>
 </Project>

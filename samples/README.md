@@ -9,6 +9,7 @@ PicoNode sample projects:
 | `PicoNode.Samples.Https` | HTTPS server (TLS) |
 | `PicoWeb.Samples` | Web API server (PicoWeb + DI) |
 | `PicoWeb.Samples.Abs` | Web API abstraction sample |
+| `readme` | Not runnable: compiles the README code blocks (`#region readme:*`) that `PicoNode.Docs.Tests` guards |
 
 ### Run
 

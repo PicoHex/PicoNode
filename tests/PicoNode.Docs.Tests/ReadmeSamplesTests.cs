@@ -1,10 +1,11 @@
 namespace PicoNode.Docs.Tests;
 
 /// <summary>
-/// Anti-drift check for the README code samples: every README's rate-limiting block must equal
-/// the marked region in <see cref="ReadmeSamples"/> - the copy that actually compiles - and all
-/// ten READMEs must agree (only the prose is translated). A doc edit that is not mirrored here
-/// fails here; a sample edit that no longer compiles fails the build.
+/// Anti-drift check for the README code samples: every README's block must equal the marked
+/// region of the sample it documents - the copy that actually compiles - and all ten READMEs must
+/// agree (only the prose is translated). A doc edit that is not mirrored in the sample fails here;
+/// a sample that stops compiling fails the build, because this project references the sample
+/// project that compiles <c>samples/readme/*.cs</c>.
 /// </summary>
 public sealed class ReadmeSamplesTests
 {
@@ -36,14 +37,40 @@ public sealed class ReadmeSamplesTests
         await Assert.That(string.Join("; ", mismatches)).IsEqualTo("");
     }
 
-    /// <summary>Returns the READMEs whose block differs from the region (empty when in sync).</summary>
-    private static List<string> Compare(string region, string marker)
+    [Test]
+    public async Task Echo_sample_matches_every_README()
+    {
+        var mismatches = Compare(
+            "readme:echo",
+            "EchoHandler : ITcpConnectionHandler",
+            "EchoSample.cs"
+        );
+        await Assert.That(string.Join("; ", mismatches)).IsEqualTo("");
+    }
+
+    [Test]
+    public async Task Metrics_sample_matches_every_README()
+    {
+        var mismatches = Compare(
+            "readme:metrics",
+            "udpMetrics.TotalDatagramsSent",
+            "MetricsSample.cs"
+        );
+        await Assert.That(string.Join("; ", mismatches)).IsEqualTo("");
+    }
+
+    /// <summary>
+    /// Returns the READMEs whose block differs from the region (empty when in sync).
+    /// <paramref name="sampleFile"/> resolves under <c>samples/readme/</c>; null means the region
+    /// lives in <c>ReadmeSamples.cs</c> beside this test.
+    /// </summary>
+    private static List<string> Compare(string region, string marker, string? sampleFile = null)
     {
         var root = FindRepoRoot();
-        var source = File.ReadAllText(
-            Path.Combine(root, "tests", "PicoNode.Docs.Tests", "ReadmeSamples.cs")
-        );
-        var expected = Normalize(ExtractRegion(source, region));
+        var samplePath = sampleFile is null
+            ? Path.Combine(root, "tests", "PicoNode.Docs.Tests", "ReadmeSamples.cs")
+            : Path.Combine(root, "samples", "readme", sampleFile);
+        var expected = Normalize(ExtractRegion(File.ReadAllText(samplePath), region, samplePath));
 
         var mismatches = new List<string>();
         foreach (var readme in Readmes)
@@ -59,16 +86,16 @@ public sealed class ReadmeSamplesTests
         return mismatches;
     }
 
-    private static string ExtractRegion(string source, string region)
+    private static string ExtractRegion(string source, string region, string path)
     {
         var lines = source.Replace("\r\n", "\n").Split('\n');
         var start = Array.FindIndex(lines, line => line.Trim() == $"// #region {region}");
         if (start < 0)
-            throw new InvalidOperationException($"// #region {region} not found in ReadmeSamples.cs");
+            throw new InvalidOperationException($"// #region {region} not found in {path}");
 
         var end = Array.FindIndex(lines, start + 1, line => line.Trim() == "// #endregion");
         if (end < 0)
-            throw new InvalidOperationException($"// #region {region} is never closed");
+            throw new InvalidOperationException($"// #region {region} is never closed in {path}");
 
         return string.Join('\n', lines[(start + 1)..end]);
     }
@@ -102,10 +129,14 @@ public sealed class ReadmeSamplesTests
         while (lines.Count > 0 && lines[^1].Length == 0)
             lines.RemoveAt(lines.Count - 1);
 
-        var indent = lines.Where(line => line.Trim().Length > 0)
+        var indent = lines
+            .Where(line => line.Trim().Length > 0)
             .Min(line => line.Length - line.TrimStart().Length);
 
-        return string.Join('\n', lines.Select(line => line.Length >= indent ? line[indent..] : line));
+        return string.Join(
+            '\n',
+            lines.Select(line => line.Length >= indent ? line[indent..] : line)
+        );
     }
 
     private static string FindRepoRoot()
