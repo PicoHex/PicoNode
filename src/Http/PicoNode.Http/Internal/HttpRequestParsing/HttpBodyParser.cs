@@ -10,8 +10,7 @@ internal static class HttpBodyParser
         string path,
         string queryString,
         HttpVersion version,
-        List<KeyValuePair<string, string>> headerFields,
-        Dictionary<string, string> headers,
+        HttpRequestHeaders headers,
         long contentLength,
         bool expectsContinue
     )
@@ -25,8 +24,8 @@ internal static class HttpBodyParser
                     Path = path,
                     QueryString = queryString,
                     Version = version,
-                    HeaderFields = headerFields,
-                    Headers = headers,
+                    HeaderFields = headers,
+                    Headers = headers.Lookup,
                 },
                 reader.Position
             );
@@ -59,8 +58,8 @@ internal static class HttpBodyParser
             Path = path,
             QueryString = queryString,
             Version = version,
-            HeaderFields = headerFields,
-            Headers = headers,
+            HeaderFields = headers,
+            Headers = headers.Lookup,
             BodyStream = new ReadOnlySequenceStream(bodySlice),
         };
         request._bodySequence = bodySlice;
@@ -76,8 +75,7 @@ internal static class HttpBodyParser
         string path,
         string queryString,
         HttpVersion version,
-        List<KeyValuePair<string, string>> headerFields,
-        Dictionary<string, string> headers,
+        HttpRequestHeaders headers,
         bool expectsContinue
     )
     {
@@ -188,8 +186,8 @@ internal static class HttpBodyParser
                 Path = path,
                 QueryString = queryString,
                 Version = version,
-                HeaderFields = headerFields,
-                Headers = headers,
+                HeaderFields = headers,
+                Headers = headers.Lookup,
                 Body = body,
                 BodyStream = new MemoryStream(body, writable: false),
             },

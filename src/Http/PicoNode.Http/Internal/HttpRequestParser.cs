@@ -114,7 +114,6 @@ internal static class HttpRequestParser
                 path,
                 queryString,
                 version,
-                headerResult.HeaderFields,
                 headerResult.Headers,
                 headerResult.ExpectsContinue
             );
@@ -128,7 +127,6 @@ internal static class HttpRequestParser
             path,
             queryString,
             version,
-            headerResult.HeaderFields,
             headerResult.Headers,
             headerResult.ContentLength,
             headerResult.ExpectsContinue
@@ -219,8 +217,9 @@ internal static class HttpRequestParser
 
     internal readonly record struct HeaderParseState
     {
-        public List<KeyValuePair<string, string>> HeaderFields { get; init; }
-        public Dictionary<string, string> Headers { get; init; }
+        /// <summary>Both header views of a successful parse; null on the reject and incomplete paths.</summary>
+        public HttpRequestHeaders Headers { get; init; }
+
         public long ContentLength { get; init; }
         public bool IsChunked { get; init; }
         public bool ExpectsContinue { get; init; }
@@ -233,15 +232,13 @@ internal static class HttpRequestParser
             new() { Error = error };
 
         public static HeaderParseState Success(
-            List<KeyValuePair<string, string>> headerFields,
-            Dictionary<string, string> headers,
+            HttpRequestHeaders headers,
             long contentLength,
             bool isChunked,
             bool expectsContinue
         ) =>
             new()
             {
-                HeaderFields = headerFields,
                 Headers = headers,
                 ContentLength = contentLength,
                 IsChunked = isChunked,

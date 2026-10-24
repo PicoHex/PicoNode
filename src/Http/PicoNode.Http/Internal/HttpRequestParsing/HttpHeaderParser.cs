@@ -2,21 +2,21 @@ namespace PicoNode.Http.Internal.HttpRequestParsing;
 
 internal static class HttpHeaderParser
 {
+    // Names that are not on HttpHeaderNames (it is public API, so this file adds no members to it) but
+    // are frequent enough on the wire to be worth borrowing instead of materializing per request.
+    private const string CookieName = "Cookie";
+    private const string UserAgentName = "User-Agent";
+    private const string AcceptName = "Accept";
+
     public static HttpRequestParser.HeaderParseState ParseHeaders(
         ref HttpRequestParser.BufferReader reader,
         HttpConnectionHandlerOptions options,
         HttpVersion version
     )
     {
-        var headerFields = new List<KeyValuePair<string, string>>(capacity: 16);
-        // Single-value dictionary for the common case (no repeated headers).
-        // A separate multiValues dictionary is allocated only when a duplicate
-        // header is detected, avoiding per-header List<string> allocations.
-        var headers = new Dictionary<string, string>(
-            capacity: 16,
-            StringComparer.OrdinalIgnoreCase
-        );
-        Dictionary<string, List<string>>? multiValues = null;
+        // One collection for both views: the lines in wire order (HeaderFields) and the name index
+        // behind HeaderFields' dictionary twin (Headers).
+        var headers = new HttpRequestHeaders();
         var contentLength = 0L;
         var hasContentLength = false;
         var hasHost = false;
@@ -104,33 +104,8 @@ internal static class HttpHeaderParser
                 hasHost = true;
             }
 
-            headerFields.Add(new KeyValuePair<string, string>(name, value));
-
-            // Fast path: first occurrence → store as single string value (no allocation beyond the dict entry).
-            if (!headers.TryAdd(name, value))
-            {
-                // Duplicate header — promote to multi-value list.
-                multiValues ??= new Dictionary<string, List<string>>(
-                    StringComparer.OrdinalIgnoreCase
-                );
-
-                if (!multiValues.TryGetValue(name, out var values))
-                {
-                    values = new List<string>(capacity: 2) { headers[name] };
-                    multiValues[name] = values;
-                }
-                values.Add(value);
-            }
-        }
-
-        // Flatten multi-value headers back into the single-value dictionary.
-        // Single-value headers pass through with zero allocation.
-        if (multiValues is not null)
-        {
-            foreach (var (headerName, values) in multiValues)
-            {
-                headers[headerName] = string.Join(", ", values);
-            }
+            // Repeats are kept as separate lines and joined for the dictionary view on demand.
+            headers.Add(name, value);
         }
 
         if (!hasHost && version == HttpVersion.Http11)
@@ -155,7 +130,6 @@ internal static class HttpHeaderParser
             && expectValue.Equals("100-continue", StringComparison.OrdinalIgnoreCase);
 
         return HttpRequestParser.HeaderParseState.Success(
-            headerFields,
             headers,
             contentLength,
             isChunked,
@@ -186,8 +160,74 @@ internal static class HttpHeaderParser
             return false;
         }
 
-        name = Encoding.ASCII.GetString(nameSpan);
+        name = InternKnownName(nameSpan) ?? Encoding.ASCII.GetString(nameSpan);
         value = Encoding.ASCII.GetString(valueSpan);
         return true;
+    }
+
+    /// <summary>
+    /// The shared instance of a well-known header name, or null when the name is not one of them — in
+    /// which case the caller materializes it, because header names are not restricted to this list.
+    /// </summary>
+    /// <remarks>
+    /// The match is byte-exact, casing included: a client that writes <c>accept</c> keeps <c>accept</c>
+    /// in <see cref="HttpRequest.HeaderFields"/>, exactly as before interning existed. Only the spelling
+    /// a client sends and a shared constant agree on is free of an allocation, and that is what real
+    /// clients send. The comparison runs on the wire bytes, so no string is needed to look the name up.
+    /// </remarks>
+    private static string? InternKnownName(ReadOnlySpan<byte> name)
+    {
+        // Ordered by how often the name shows up in a request.
+        if (name.SequenceEqual("Host"u8))
+        {
+            return HttpHeaderNames.Host;
+        }
+
+        if (name.SequenceEqual("User-Agent"u8))
+        {
+            return UserAgentName;
+        }
+
+        if (name.SequenceEqual("Accept"u8))
+        {
+            return AcceptName;
+        }
+
+        if (name.SequenceEqual("Accept-Encoding"u8))
+        {
+            return HttpHeaderNames.AcceptEncoding;
+        }
+
+        if (name.SequenceEqual("Connection"u8))
+        {
+            return HttpHeaderNames.Connection;
+        }
+
+        if (name.SequenceEqual("Cookie"u8))
+        {
+            return CookieName;
+        }
+
+        if (name.SequenceEqual("Content-Type"u8))
+        {
+            return HttpHeaderNames.ContentType;
+        }
+
+        if (name.SequenceEqual("Content-Length"u8))
+        {
+            return HttpHeaderNames.ContentLength;
+        }
+
+        if (name.SequenceEqual("Authorization"u8))
+        {
+            return HttpHeaderNames.Authorization;
+        }
+
+        if (name.SequenceEqual("Transfer-Encoding"u8))
+        {
+            return HttpHeaderNames.TransferEncoding;
+        }
+
+        return null;
     }
 }
