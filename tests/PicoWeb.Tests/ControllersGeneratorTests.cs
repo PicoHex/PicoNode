@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace PicoWeb.Tests;
 
 public sealed class ControllersGeneratorTests
@@ -813,6 +815,241 @@ public sealed class ControllersGeneratorTests
         await Assert.That(result).DoesNotContain("JsonSerializer.SerializeToUtf8Bytes");
     }
 
+    // ─────────────────────── diagnostics (task T5.7, audit F-55) ───────────────────────
+
+    /// <summary>
+    /// A controller that is <em>discovered</em> and then maps nothing used to disappear without a
+    /// trace: the transform returned <c>null</c>, which is indistinguishable from "this class is
+    /// not a controller" — the route 404s at run time and the build says nothing.
+    /// <para>
+    /// <b>This is PCW001's test.</b> It asserts the three things that make a diagnostic worth
+    /// anything: the id, the severity, and a <see cref="Location"/> that points at the
+    /// controller's identifier. A diagnostic without one cannot be navigated to, so it exists for
+    /// the log only.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task PCW001_warns_at_a_controller_that_maps_no_action()
+    {
+        var source = """
+            namespace MyApp.Controllers;
+            public class UsersController
+            {
+                public string Help() => "help";
+            }
+            """;
+
+        var run = GeneratorHarness.RunGeneratorRun(source, "Controllers/UsersController.cs");
+
+        var diagnostics = run.GeneratorDiagnostics.Where(static d => d.Id == "PCW001").ToArray();
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+
+        var diagnostic = diagnostics[0];
+        await Assert.That(diagnostic.Severity).IsEqualTo(DiagnosticSeverity.Warning);
+        // `location: null` — what PWR001 used to report — is the defect; nothing here may repeat it.
+        await Assert.That(diagnostic.Location.Kind).IsNotEqualTo(LocationKind.None);
+        await Assert
+            .That(diagnostic.Location.GetLineSpan().Path)
+            .IsEqualTo("Controllers/UsersController.cs");
+        // …and it points at the identifier, not merely at the file.
+        await Assert.That(GeneratorHarness.TextAt(diagnostic, source)).IsEqualTo("UsersController");
+        await Assert.That(diagnostic.GetMessage()).Contains("UsersController");
+
+        // The controller is still not mapped: the diagnostic explains the silence, it does not
+        // invent an endpoint for an action that answers no verb.
+        await Assert.That(run.Generated).DoesNotContain("app.MapGet");
+    }
+
+    /// <summary>
+    /// A generic controller cannot be mapped (audit F-53's generic half): the emitted
+    /// <c>global::Ns.ItemsController&lt;T&gt;</c> left <c>T</c> unbound and the project failed
+    /// with CS0246. T5.5 skipped it and left a comments-only note in
+    /// <c>SkippedControllers.g.cs</c>; <b>this diagnostic supersedes that note</b> — a comment in
+    /// a generated file is invisible unless you go looking for it in <c>obj/</c>, while an error
+    /// at the controller's own identifier is not.
+    /// </summary>
+    [Test]
+    public async Task PCW002_errors_at_a_generic_controller()
+    {
+        var source = """
+            using PicoNode.Web;
+            namespace MyApp.Controllers;
+            public class ItemsController<T>
+            {
+                [HttpGet("items")]
+                public string Get() => "items";
+            }
+            """;
+
+        var run = GeneratorHarness.RunGeneratorRun(source, "Controllers/ItemsController.cs");
+
+        var diagnostics = run.GeneratorDiagnostics.Where(static d => d.Id == "PCW002").ToArray();
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+
+        var diagnostic = diagnostics[0];
+        await Assert.That(diagnostic.Severity).IsEqualTo(DiagnosticSeverity.Error);
+        await Assert.That(diagnostic.Location.Kind).IsNotEqualTo(LocationKind.None);
+        await Assert
+            .That(diagnostic.Location.GetLineSpan().Path)
+            .IsEqualTo("Controllers/ItemsController.cs");
+        await Assert.That(GeneratorHarness.TextAt(diagnostic, source)).IsEqualTo("ItemsController");
+        await Assert
+            .That(diagnostic.GetMessage())
+            .Contains("global::MyApp.Controllers.ItemsController<T>");
+
+        // The skip itself is unchanged: no endpoint, no DI registration, and no note file.
+        await Assert
+            .That(run.Generated)
+            .DoesNotContain("typeof(global::MyApp.Controllers.ItemsController");
+        await Assert.That(run.Generated).DoesNotContain("Controllers.Gen skipped");
+    }
+
+    /// <summary>
+    /// An action that returns a DTO is emitted as
+    /// <c>PicoJetson.JsonSerializer.SerializeToUtf8Bytes(&lt;dto&gt;)</c>, so the DTO needs a
+    /// generated serialiser, which PicoJetson only emits for a type marked
+    /// <c>[PicoJsonSerializable]</c>. Without the marker the endpoint still compiles and throws at
+    /// request time — the worst place to learn about it.
+    /// </summary>
+    [Test]
+    public async Task PCW003_warns_at_a_DTO_that_is_not_marked_PicoJsonSerializable()
+    {
+        var source = """
+            namespace MyApp.Controllers;
+            public class UsersController
+            {
+                public UserDto GetUser(int id) => new UserDto();
+            }
+            public class UserDto
+            {
+                public string Name { get; set; } = "";
+            }
+            """;
+
+        var run = GeneratorHarness.RunGeneratorRun(source, "Controllers/UsersController.cs");
+
+        var diagnostics = run.GeneratorDiagnostics.Where(static d => d.Id == "PCW003").ToArray();
+        await Assert.That(diagnostics.Length).IsEqualTo(1);
+
+        var diagnostic = diagnostics[0];
+        await Assert.That(diagnostic.Severity).IsEqualTo(DiagnosticSeverity.Warning);
+        await Assert.That(diagnostic.Location.Kind).IsNotEqualTo(LocationKind.None);
+        // The DTO's own declaration is the only useful location for this one: that is where the
+        // attribute has to be added.
+        await Assert.That(GeneratorHarness.TextAt(diagnostic, source)).IsEqualTo("UserDto");
+        await Assert.That(diagnostic.GetMessage()).Contains("UserDto");
+
+        // The endpoint is still mapped: this is a serialisation trap, not a mapping failure.
+        await Assert.That(run.Generated).Contains("SerializeToUtf8Bytes");
+    }
+
+    /// <summary>
+    /// The other half of PCW003, and the half that decides whether the rule is usable: it must
+    /// stay silent for everything that is <em>not</em> a source-declared DTO in a serialised
+    /// return position — a marked DTO, an <c>IWebResult</c> (executed, never serialised) and a
+    /// framework type. A warning that fires on those is noise, and noise gets suppressed.
+    /// </summary>
+    [Test]
+    public async Task PCW003_stays_silent_for_marked_DTOs_and_for_non_serialised_returns()
+    {
+        var source = """
+            using PicoJetson;
+            using PicoNode.Web;
+            namespace MyApp.Controllers;
+            public class MixedController
+            {
+                public MarkerDto GetMarked(int id) => new MarkerDto();
+                public HtmlResult GetPage() => new HtmlResult("ok");
+                public string GetName() => "name";
+                public System.Collections.Generic.List<MarkerDto> GetAll() => new();
+            }
+            [PicoJsonSerializable]
+            public class MarkerDto
+            {
+                public string Name { get; set; } = "";
+            }
+            """;
+
+        var run = GeneratorHarness.RunGeneratorRun(source, "Controllers/MixedController.cs");
+
+        await Assert
+            .That(
+                string.Join(
+                    " | ",
+                    run.GeneratorDiagnostics.Select(static d => $"{d.Id} {d.GetMessage()}")
+                )
+            )
+            .IsEmpty();
+    }
+
+    // ─────────────────────────── routes (task T5.7) ───────────────────────────
+
+    /// <summary>
+    /// <c>[Route("api/x")]</c> — no leading slash — was taken verbatim as the route prefix, so
+    /// the generated <c>app.MapGet("api/x/…")</c> throws
+    /// <c>ArgumentException("Route patterns must start with '/'.")</c> inside
+    /// <c>WebApp.Build()</c>: the app dies at startup, naming none of the user's code.
+    /// <para>
+    /// Registering the emitted route on a <em>real</em> router is the assertion, on purpose —
+    /// <c>Build()</c> throwing <em>is</em> the defect, and a substring assertion would have been
+    /// satisfied by any number of wrong routes.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Route_prefix_without_a_leading_slash_cannot_throw_at_startup()
+    {
+        var source = """
+            using PicoNode.Web;
+            namespace MyApp.Controllers;
+            [Route("api/x")]
+            public class ItemsController
+            {
+                [HttpGet("list")]
+                public string GetList() => "items";
+            }
+            """;
+
+        var run = GeneratorHarness.RunGeneratorRun(source, "Controllers/ItemsController.cs");
+
+        var route = FirstMapRoute(run.Generated);
+        var app = new WebApp(new SpyContainer());
+        app.MapGet(route, static (_, _) => ValueTask.FromResult(PicoWeb.Results.Empty(204)));
+        app.Build();
+
+        await Assert.That(route).IsEqualTo("/api/x/list");
+        await Assert.That(run.Generated).Contains("MapGet(\"/api/x/list\"");
+    }
+
+    /// <summary>
+    /// A verb attribute's route used to be read out of the <em>syntax</em>
+    /// (<c>arg.ToString().Trim('"')</c>), so <c>[HttpGet(Routes.Posts)]</c> emitted the literal
+    /// route <c>Routes.Posts</c> — a path no request can match, with a clean build. The
+    /// attribute's <see cref="AttributeData.ConstructorArguments"/> carry the constant's value,
+    /// which is the string the user wrote.
+    /// </summary>
+    [Test]
+    public async Task Method_route_is_the_constant_value_not_the_expression_text()
+    {
+        var source = """
+            using PicoNode.Web;
+            namespace MyApp.Controllers;
+            public static class Routes
+            {
+                public const string Posts = "posts";
+            }
+            public class PostsController
+            {
+                [HttpGet(Routes.Posts)]
+                public string Get() => "posts";
+            }
+            """;
+
+        var run = GeneratorHarness.RunGeneratorRun(source, "Controllers/PostsController.cs");
+
+        await Assert.That(run.Generated).Contains("MapGet(\"/api/posts/posts\"");
+        await Assert.That(run.Generated).DoesNotContain("Routes.Posts");
+    }
+
     // ─────────────────────────── incrementality (task T5.6) ───────────────────────
 
     /// <summary>
@@ -1025,6 +1262,28 @@ public sealed class ControllersGeneratorTests
     // The generator spine lives in GeneratorHarness so that a string assertion and a
     // compile assertion run the *same* driver over the *same* reference set: they must
     // not be able to disagree about what the generator emitted.
+    /// <summary>
+    /// The first route the generator emitted, so a test can hand it to the real router instead of
+    /// comparing it as a string. Throws when there is none: an empty route list would make the
+    /// "registers without throwing" assertion vacuous.
+    /// </summary>
+    private static string FirstMapRoute(string generated)
+    {
+        var match = MapRoutePattern().Match(generated);
+        if (!match.Success)
+            throw new InvalidOperationException(
+                "the generator emitted no Map* route, so there is nothing to register"
+            );
+
+        return match.Groups["route"].Value;
+    }
+
+    private static Regex MapRoutePattern() =>
+        new(
+            "app\\.Map(?:Get|Post|Put|Delete|Patch)\\(\"(?<route>[^\"]+)\"",
+            RegexOptions.CultureInvariant
+        );
+
     private static string RunGenerator(
         string source,
         string fileName,

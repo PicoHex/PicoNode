@@ -24,7 +24,7 @@ Only executable projects (`ConsoleApplication` / `WindowsApplication`) that refe
 | Input | Output |
 |---|---|
 | Controller classes (above) | `Controllers_Endpoints.g.cs` — one `{FullName}_Endpoints` class per controller registering one `MapGet/MapPost/MapPut/MapDelete/MapPatch` handler per HTTP method. The stub name is keyed by the controller's **fully-qualified** name (`global::` stripped, `.`/`+`/`<`/`>` → `_`), so `Admin.UsersController` and `Public.UsersController` produce two distinct stubs instead of colliding (CS0101) |
-| Skipped controller | `SkippedControllers.g.cs` — a comments-only note naming every controller the generator refused to emit, so a skip is visible instead of presenting as a 404 at run time. Currently: **generic** controllers, whose type parameters cannot be bound in the generated endpoint map (CS0246) |
+| Skipped controller | Nothing is emitted for it, and the skip is reported as a build diagnostic (`PCW002`, below) at the controller — not as the comments-only `SkippedControllers.g.cs` note the generator used to write, which was only visible to someone reading `obj/` |
 | Same | `EndpointRegistrar.g.cs` — `public static class EndpointRegistrar` with `RegisterAll(WebApp app)`; consumers must call it to wire routes (see README). Skipped when the compilation already carries an `EndpointRegistrar` and this project has no controllers; with no controllers and no existing registrar, a no-op `RegisterAll(object)` shim keeps the call compiling |
 | Same | `ControllerServiceRegistrations.g.cs` — `[ModuleInitializer]` that registers every non-static controller in PicoDI via `SvcContainerAutoConfiguration.RegisterConfigurator` (Scoped lifetime) |
 
@@ -40,6 +40,23 @@ Only executable projects (`ConsoleApplication` / `WindowsApplication`) that refe
 
 Complex-typed parameters and `WebContext`/`CancellationToken` are resolved at runtime
 (`ctx.Services` / handler args), not from the route.
+
+Prefixes and action routes are read through the **semantic** model, not the attribute
+syntax: `[Route("api/x")]` is normalised to `/api/x` (a pattern that does not start with
+`/` aborts `WebApp.Build()` at startup), and `[HttpGet(Routes.Posts)]` resolves to the
+constant's value rather than the literal text `Routes.Posts`.
+
+## Diagnostics
+
+Descriptors are declared once in `Diagnostics.cs` and tracked in
+`AnalyzerReleases.Unshipped.md`. Each is reported **at a source location**, so it is
+navigable — `location: null`, which the sibling generator used to report, is not.
+
+| ID | Severity | Fires when |
+|---|---|---|
+| `PCW001` | Warning | A controller (by `*Controller` name or `[ApiController]`) was discovered and **no action matched an HTTP verb** — no endpoint is generated for it, and the route would otherwise 404 silently |
+| `PCW002` | Error | A **generic** controller was discovered. Its type parameters cannot be bound in an endpoint map, so it is skipped; it used to be emitted as `ItemsController<T>` with `T` unbound (CS0246) |
+| `PCW003` | Warning | A non-`IWebResult` return type is serialised by the generated endpoint but is not marked `[PicoJsonSerializable]`, so PicoJetson has no serializer for it and the endpoint fails per request |
 
 ## Notes
 

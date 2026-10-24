@@ -202,10 +202,16 @@ public sealed class GeneratedCodeCompilesTests
     /// <para>
     /// <b>This is F-53's generic half.</b> The fix skips the controller, and the skip must be
     /// <em>visible</em>: a silently-dropped controller reads to the user as "my controller
-    /// is ignored", with a 404 at run time and nothing in the build log. The skip is
-    /// therefore recorded in a generated <c>SkippedControllers.g.cs</c> note naming the
-    /// fully-qualified type, which is what the second half of this test pins. (A real
-    /// diagnostic — <c>PCW002</c> — is T5.7's, so no competing id is invented here.)
+    /// is ignored", with a 404 at run time and nothing in the build log.
+    /// </para>
+    /// <para>
+    /// T5.5 made it visible with a comments-only <c>SkippedControllers.g.cs</c> note and left the
+    /// build diagnostic to T5.7. T5.7 owns it now, so the note is <b>gone</b> and this test pins
+    /// the replacement instead: <c>PCW002</c>, reported at the controller. Its severity and its
+    /// location are pinned by
+    /// <c>ControllersGeneratorTests.PCW002_errors_at_a_generic_controller</c>; what belongs here
+    /// is the half this test is about — the emitted tree still compiles and still contains
+    /// nothing for the skipped controller.
     /// </para>
     /// </summary>
     [Test]
@@ -230,8 +236,19 @@ public sealed class GeneratedCodeCompilesTests
         var errors = await GeneratorHarness.CompileGeneratedAsync(run);
         await Assert.That(Describe(errors)).IsEmpty();
 
-        // The skip is recorded, by fully-qualified name, in its own generated source.
-        await Assert.That(run.Generated).Contains("global::TestApp.Controllers.ItemsController<T>");
+        // The skip is reported, by fully-qualified name, as a build diagnostic (PCW002) — not as
+        // a comment in a generated file nobody opens.
+        await Assert
+            .That(
+                string.Join(
+                    " | ",
+                    run.GeneratorDiagnostics.Select(static d => $"{d.Id} {d.GetMessage()}")
+                )
+            )
+            .Contains("PCW002");
+        await Assert
+            .That(run.Generated)
+            .DoesNotContain("global::TestApp.Controllers.ItemsController<T>");
 
         // …and nothing was emitted for it: no DI registration, no endpoint stub. With its
         // only controller skipped, the project is the "no controllers" shape — the
@@ -312,6 +329,49 @@ public sealed class GeneratedCodeCompilesTests
         await Assert
             .That(run.Generated)
             .Contains("TestApp_Public_UsersController_Endpoints.Register(app);");
+    }
+
+    /// <summary>
+    /// "It compiles" is the floor, not the bar: a generated file can be error-free and still emit
+    /// <c>CS0219</c>, <c>CS8600</c> or <c>CS1998</c>, which turns every consumer's build log
+    /// yellow and — under <c>TreatWarningsAsErrors</c> — red. The floor is <c>Warning</c> here, so
+    /// anything at or above it fails the test.
+    /// </summary>
+    [Test]
+    public async Task Generated_code_for_a_typical_controller_has_no_warnings()
+    {
+        var source = """
+            using PicoNode.Web;
+
+            namespace TestApp.Controllers;
+
+            public sealed class CreatePostDto
+            {
+                public string Title { get; set; } = "";
+            }
+
+            public sealed class PostDto
+            {
+                public int Id { get; set; }
+            }
+
+            public sealed class PostsController
+            {
+                [HttpPost]
+                public PostDto Create(CreatePostDto dto) => new PostDto();
+
+                [HttpGet("list")]
+                public string GetList() => "all";
+            }
+            """;
+
+        var run = GeneratorHarness.RunGeneratorRun(source, GeneratorHarness.TypicalControllerPath);
+        var warnings = await GeneratorHarness.CompileGeneratedAsync(
+            run,
+            DiagnosticSeverity.Warning
+        );
+
+        await Assert.That(Describe(warnings)).IsEmpty();
     }
 
     private static string Describe(ImmutableArray<Diagnostic> errors) =>

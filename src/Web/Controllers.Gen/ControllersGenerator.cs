@@ -78,10 +78,12 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                     ? models
                     : ImmutableArray<ControllerModel>.Empty;
 
-                // A skipped controller is recorded before any early return: the note is
-                // comments only, so it declares no type and cannot shadow the imported
+                // Diagnostics are reported before any early return: a skipped controller's
+                // diagnostic is the *reason* it produced no endpoint, so dropping it on the
+                // "nothing emittable" path would silence exactly the case worth reporting. A
+                // reported diagnostic declares no type, so it cannot shadow the imported
                 // registrar that the early return below exists to protect.
-                EmitSkippedControllerNotes(spc, controllers);
+                ReportDiagnostics(spc, controllers);
 
                 // "No controllers" and "no controller that could be emitted" are the same
                 // situation for the registrar: emitting one here would make the imported
@@ -149,6 +151,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             return null;
 
         var methods = new List<MethodModel>();
+        var diagnostics = new List<DiagnosticModel>();
         foreach (var member in classDecl.Members.OfType<MethodDeclarationSyntax>())
         {
             ct.ThrowIfCancellationRequested();
@@ -161,13 +164,24 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             if (httpMethod is null)
                 continue;
 
-            var route = GetRoute(member, methodSymbol);
+            var route = GetRoute(methodSymbol);
 
             methods.Add(DescribeMethod(httpMethod, route, methodSymbol));
-        }
 
-        if (methods.Count == 0)
-            return null;
+            // PCW003: the emitter serialises an action's non-IWebResult return value, so a DTO
+            // without [PicoJsonSerializable] has no generated serializer behind that call.
+            var unmarkedDto = UnmarkedSerializedType(methodSymbol);
+            if (unmarkedDto is not null)
+            {
+                var described = DiagnosticModel.Create(
+                    Diagnostics.DtoNotSerializable,
+                    IdentifierLocation(unmarkedDto),
+                    unmarkedDto.ToDisplayString()
+                );
+                if (described is not null)
+                    diagnostics.Add(described);
+            }
+        }
 
         var controllerName = classSymbol.Name;
         var controllerFullName = classSymbol.ToDisplayString(
@@ -176,8 +190,11 @@ public sealed class ControllersGenerator : IIncrementalGenerator
 
         // A generic controller has no type argument to bind. The endpoint map used to spell
         // the type verbatim — `global::Ns.ItemsController<T>` — so every `T` was an unbound
-        // type parameter and the whole project failed with CS0246 (audit F-53). Skip it, but
-        // not silently: `SkipReason` is what the generated note below reports.
+        // type parameter and the whole project failed with CS0246 (audit F-53). Skip it, and
+        // report it (PCW002): a controller the user wrote and this generator cannot map is a
+        // build-time fact, and T5.5's comments-only note in `SkippedControllers.g.cs` is
+        // superseded by the diagnostic — a comment in a generated file is invisible unless you
+        // go looking for it, while an error at the controller's identifier is not.
         // `Arity > 0` is this type's own type parameters; `IsGenericType` additionally covers
         // an enclosing generic type (`Outer<T>.InnerController` has arity 0 and is just as
         // unrepresentable), so both are checked.
@@ -187,7 +204,41 @@ public sealed class ControllersGenerator : IIncrementalGenerator
                 controllerName,
                 controllerFullName,
                 "generic controller: its type parameters cannot be bound in the generated "
-                    + "endpoint map"
+                    + "endpoint map",
+                DiagnosticModel.Create(
+                    Diagnostics.UnsupportedController,
+                    IdentifierLocation(classSymbol),
+                    controllerFullName
+                )
+            );
+        }
+
+        // Discovered, and nothing to map. This used to `return null`, which is
+        // indistinguishable from "this class is not a controller": the route 404s at run time
+        // and the build says nothing. It is now PCW001, at the class identifier.
+        //
+        // Reported only for a class that says it is a controller, and that is measured rather
+        // than assumed: the folder convention discovers *every* class declared in a
+        // Controllers/ folder, DTOs and attribute stubs included (samples/PicoWeb.Samples
+        // declares both beside its controllers), and a warning per DTO buries the one warning
+        // that matters. A `FooDto` in that folder is not a controller that failed to map.
+        if (methods.Count == 0)
+        {
+            if (
+                !hasApiControllerAttr
+                && !classSymbol.Name.EndsWith("Controller", StringComparison.Ordinal)
+            )
+                return null;
+
+            return ControllerModel.Skipped(
+                controllerName,
+                controllerFullName,
+                "no action matched an HTTP verb",
+                DiagnosticModel.Create(
+                    Diagnostics.ControllerMapsNoAction,
+                    IdentifierLocation(classSymbol),
+                    controllerFullName
+                )
             );
         }
 
@@ -211,7 +262,8 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             routePrefix,
             new EquatableArray<MethodModel>(methods.ToArray()),
             isStatic,
-            constructorParameters
+            constructorParameters,
+            new EquatableArray<DiagnosticModel>(diagnostics.ToArray())
         );
     }
 
@@ -333,25 +385,29 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         return null;
     }
 
-    private static string GetRoute(MethodDeclarationSyntax method, IMethodSymbol methodSymbol)
+    /// <summary>
+    /// The action's own route segment, from the verb attribute or from the method name.
+    /// <para>
+    /// The attribute is read through the <em>semantic</em> model (task T5.7, audit F-56). Reading
+    /// its syntax text (<c>arg.ToString().Trim('"')</c>) gave <c>[HttpGet(Routes.Posts)]</c> the
+    /// route <c>"Routes.Posts"</c> — a literal path that no request can ever match, emitted with a
+    /// clean build. <see cref="AttributeData.ConstructorArguments"/> carry the constant's value,
+    /// which is the string the user wrote.
+    /// </para>
+    /// </summary>
+    private static string GetRoute(IMethodSymbol methodSymbol)
     {
-        // Check for [HttpGet("{id}")] attribute override
-        foreach (var attrList in method.AttributeLists)
+        // Check for [HttpGet("posts")] / [HttpGet(Routes.Posts)] attribute override. An attribute
+        // written without parentheses ([HttpGet]) is filled with its parameter default, so the
+        // first constructor argument is either the route or the empty string that means "use the
+        // controller prefix".
+        foreach (var attr in methodSymbol.GetAttributes())
         {
-            foreach (var attr in attrList.Attributes)
-            {
-                var attrName = attr.Name.ToString();
-                if (attrName is "HttpGet" or "HttpPost" or "HttpPut" or "HttpDelete" or "HttpPatch")
-                {
-                    if (attr.ArgumentList?.Arguments.Count == 1)
-                    {
-                        var arg = attr.ArgumentList.Arguments[0].ToString();
-                        return arg.Trim('"');
-                    }
-                    // Attribute without path argument (e.g. [HttpGet]) → use prefix
-                    return "";
-                }
-            }
+            if (!IsHttpVerbAttribute(attr.AttributeClass?.Name))
+                continue;
+
+            var argument = attr.ConstructorArguments.FirstOrDefault();
+            return argument.Value as string ?? "";
         }
 
         // Convention: method name → path
@@ -391,6 +447,19 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         return route;
     }
 
+    /// <summary>
+    /// The five attributes that carry an HTTP verb — matched by class <em>name</em>, which is the
+    /// convention documented on <c>PicoNode.Web.ControllerAttributes</c> (a sample may declare its
+    /// own stubs, and this generator honours them).
+    /// </summary>
+    private static bool IsHttpVerbAttribute(string? attributeName) =>
+        attributeName
+            is "HttpGetAttribute"
+                or "HttpPostAttribute"
+                or "HttpPutAttribute"
+                or "HttpDeleteAttribute"
+                or "HttpPatchAttribute";
+
     private static string GetRoutePrefix(
         ClassDeclarationSyntax classDecl,
         INamedTypeSymbol classSymbol
@@ -403,7 +472,13 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             {
                 var arg = attr.ConstructorArguments.FirstOrDefault();
                 if (arg.Value is string route)
-                    return route;
+                {
+                    // Normalise the leading slash (task T5.7): WebRouter rejects a pattern that
+                    // does not start with '/' with an ArgumentException inside WebApp.Build(), so
+                    // an attribute written as [Route("api/x")] used to take the app down at
+                    // startup. `[Route("/")]` normalises to "/" rather than to "".
+                    return "/" + route.TrimStart('/');
+                }
             }
         }
 
@@ -475,50 +550,133 @@ public sealed class ControllersGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Records every controller this generator refused to emit, by fully-qualified name, in a
-    /// comments-only source file.
+    /// Reports every diagnostic the collected models carry, once per site.
     /// <para>
-    /// Why a note and not nothing (audit F-53): a dropped controller is otherwise
-    /// indistinguishable from a controller that was never discovered — the user's route
-    /// simply 404s and the build is clean, which is the most expensive kind of silence.
-    /// The note shows up in <c>EmitCompilerGeneratedFiles</c> output and in this project's
-    /// generator tests. A build-time diagnostic for the same condition is a separate
-    /// deliverable (<c>PCW002</c>, scheduled with the diagnostics work), so it is not
-    /// invented here — one mechanism, one owner.
+    /// This is the generator's only channel for telling the user something about code it did
+    /// <em>not</em> map (task T5.7, audit F-55). Reporting happens in the source output because a
+    /// <see cref="SourceProductionContext"/> exists only here — and, like the note it replaces, it
+    /// happens before any early return, so the "nothing emittable" path still explains itself.
     /// </para>
     /// <para>
-    /// Comments only on purpose: the file declares no type, so it cannot collide with a
-    /// user type and cannot shadow an imported <c>EndpointRegistrar</c> (CS0436).
+    /// Deduplicated by <see cref="DiagnosticModel.Key"/>, so two controllers that serialise the
+    /// same DTO produce one warning at that DTO rather than one per controller.
     /// </para>
     /// </summary>
-    private static void EmitSkippedControllerNotes(
+    private static void ReportDiagnostics(
         SourceProductionContext context,
         System.Collections.Immutable.ImmutableArray<ControllerModel> controllers
     )
     {
-        var skipped = controllers.Where(static c => c.SkipReason is not null).ToArray();
-        if (skipped.Length == 0)
-            return;
+        var reported = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var controller in controllers)
+        {
+            foreach (var diagnostic in controller.Diagnostics)
+            {
+                if (!reported.Add(diagnostic.Key))
+                    continue;
 
-        var note = new StringBuilder();
-        note.AppendLine("// <auto-generated/>");
-        note.AppendLine();
-        note.AppendLine(
-            "// Controllers.Gen skipped these controllers — no endpoint is generated for"
-        );
-        note.AppendLine("// them, so their actions return 404 at run time:");
-        note.AppendLine("//");
-        foreach (var controller in skipped)
-            note.AppendLine($"//   {controller.FullName} — {controller.SkipReason}");
-        note.AppendLine("//");
-        note.AppendLine(
-            "// To map them, make the controller non-generic (or move the generic part"
-        );
-        note.AppendLine(
-            "// into a base class) so its actions can be reached through a concrete type."
-        );
+                var descriptor = Diagnostics.DescriptorFor(diagnostic.DescriptorId);
+                if (descriptor is null)
+                    continue;
 
-        context.AddSource("SkippedControllers.g.cs", note.ToString());
+                context.ReportDiagnostic(
+                    Diagnostic.Create(descriptor, diagnostic.ToLocation(), diagnostic.Name)
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// The type an action hands to <c>PicoJetson.JsonSerializer.SerializeToUtf8Bytes</c> that has
+    /// no <c>[PicoJsonSerializable]</c> — or <c>null</c> when the action serialises nothing, or
+    /// what it serialises is fine.
+    /// <para>
+    /// The position is the emitter's, not a guess: <c>void</c>/<c>Task</c>/<c>ValueTask</c> answer
+    /// 204, an <c>IWebResult</c> is executed, and only what is left is serialised. Declared-here
+    /// types only — a BCL type has no attribute to add, so warning about it would be noise (see
+    /// <see cref="UnmarkedDeclaredType"/>).
+    /// </para>
+    /// </summary>
+    private static INamedTypeSymbol? UnmarkedSerializedType(IMethodSymbol symbol)
+    {
+        var returnType = symbol.ReturnType;
+        if (returnType.SpecialType == SpecialType.System_Void)
+            return null;
+
+        if (ReturnsIWebResult(returnType))
+            return null;
+
+        if (returnType is INamedTypeSymbol { Name: "Task" or "ValueTask" } task)
+        {
+            if (task.TypeArguments.Length != 1)
+                return null;
+
+            return UnmarkedDeclaredType(task.TypeArguments[0], symbol);
+        }
+
+        return UnmarkedDeclaredType(returnType, symbol);
+    }
+
+    /// <summary>
+    /// The first type in <paramref name="type"/>'s own graph that is declared in this compilation
+    /// and is not marked <c>[PicoJsonSerializable]</c>.
+    /// <para>
+    /// The graph is walked because a serializer is needed for the <em>arguments</em> too:
+    /// <c>List&lt;PostDto&gt;</c> is serialised by needing <c>PostDto</c>'s serializer, and that is
+    /// the type the attribute belongs on. The type itself is considered after its arguments, so a
+    /// framework generic (<c>List&lt;&gt;</c>, <c>Dictionary&lt;,&gt;</c>) contributes nothing but
+    /// what it is made of.
+    /// </para>
+    /// </summary>
+    private static INamedTypeSymbol? UnmarkedDeclaredType(ITypeSymbol type, IMethodSymbol context)
+    {
+        if (type is IArrayTypeSymbol array)
+            return UnmarkedDeclaredType(array.ElementType, context);
+
+        if (type is not INamedTypeSymbol named)
+            return null;
+
+        foreach (var argument in named.TypeArguments)
+        {
+            var unmarked = UnmarkedDeclaredType(argument, context);
+            if (unmarked is not null)
+                return unmarked;
+        }
+
+        // Declared in *this* compilation: a type from a referenced project is that project's to
+        // annotate, and a BCL type cannot be annotated at all.
+        var declaredHere =
+            named.TypeKind is TypeKind.Class or TypeKind.Struct
+            && SymbolEqualityComparer.Default.Equals(
+                named.ContainingAssembly,
+                context.ContainingAssembly
+            );
+
+        if (!declaredHere)
+            return null;
+
+        var marked = named
+            .GetAttributes()
+            .Any(static a => a.AttributeClass?.Name == "PicoJsonSerializableAttribute");
+
+        return marked ? null : named;
+    }
+
+    /// <summary>
+    /// The identifier of a declaration — the place the user has to edit, so the place a diagnostic
+    /// has to point at. A symbol with no source declaration has none, and
+    /// <see cref="DiagnosticModel.Create"/> then refuses the diagnostic rather than reporting one
+    /// nobody can navigate to.
+    /// </summary>
+    private static Location? IdentifierLocation(INamedTypeSymbol type)
+    {
+        foreach (var reference in type.DeclaringSyntaxReferences)
+        {
+            if (reference.GetSyntax() is TypeDeclarationSyntax declaration)
+                return declaration.Identifier.GetLocation();
+        }
+
+        return type.Locations.FirstOrDefault(static location => location.IsInSource);
     }
 
     private static void GenerateSources(
@@ -1050,12 +1208,19 @@ internal sealed record ControllerModel
     public EquatableArray<ParameterModel> ConstructorParameters { get; }
 
     /// <summary>
-    /// Why this controller is <em>not</em> emitted, or <c>null</c> when it is. A skipped
-    /// model carries no methods and reaches no emitter (see <c>GenerateSources</c>); it exists
-    /// so the skip can be reported by name instead of vanishing — a controller that is
-    /// discovered and then dropped must not look like one that was never discovered.
+    /// Why this controller is <em>not</em> emitted, or <c>null</c> when it is. A skipped model
+    /// carries no methods and reaches no emitter (see <c>GenerateSources</c>); it exists so the
+    /// skip is a value in the pipeline rather than a silent <c>return null</c>. What the user
+    /// actually sees is the <see cref="Diagnostics"/> entry beside it (task T5.7).
     /// </summary>
     public string? SkipReason { get; }
+
+    /// <summary>
+    /// What to report about this controller, as values: a skipped controller's reason
+    /// (<c>PCW001</c>/<c>PCW002</c>), or a serialisation problem in one of its actions
+    /// (<c>PCW003</c>). Empty for the ordinary case.
+    /// </summary>
+    public EquatableArray<DiagnosticModel> Diagnostics { get; }
 
     public ControllerModel(
         string name,
@@ -1064,6 +1229,7 @@ internal sealed record ControllerModel
         EquatableArray<MethodModel> methods,
         bool isStatic,
         EquatableArray<ParameterModel> constructorParameters,
+        EquatableArray<DiagnosticModel> diagnostics,
         string? skipReason = null
     )
     {
@@ -1073,11 +1239,17 @@ internal sealed record ControllerModel
         Methods = methods;
         IsStatic = isStatic;
         ConstructorParameters = constructorParameters;
+        Diagnostics = diagnostics;
         SkipReason = skipReason;
     }
 
     /// <summary>A controller that matched the predicate but cannot be emitted.</summary>
-    public static ControllerModel Skipped(string name, string fullName, string reason) =>
+    public static ControllerModel Skipped(
+        string name,
+        string fullName,
+        string reason,
+        DiagnosticModel? diagnostic
+    ) =>
         new(
             name,
             fullName,
@@ -1085,6 +1257,9 @@ internal sealed record ControllerModel
             EquatableArray<MethodModel>.Empty,
             false,
             EquatableArray<ParameterModel>.Empty,
+            diagnostic is null
+                ? EquatableArray<DiagnosticModel>.Empty
+                : new EquatableArray<DiagnosticModel>([diagnostic]),
             reason
         );
 }

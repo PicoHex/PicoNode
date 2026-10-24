@@ -103,10 +103,18 @@ internal static class GeneratorHarness
     /// One generator run: the emitted text plus the compilation that already has the
     /// generated trees added, so a test can assert on both without running twice.
     /// </summary>
+    /// <remarks>
+    /// <see cref="GeneratorDiagnostics"/> is what the generator <em>reported</em>
+    /// (<c>PCW001</c>…<c>PCW003</c>), a different channel from
+    /// <see cref="CompilationDiagnostics"/>: a reported diagnostic never appears in the
+    /// compilation's own diagnostics, so a rule asserted only through the compile would be a
+    /// test that cannot see it at all.
+    /// </remarks>
     internal sealed record GeneratedRun(
         CSharpCompilation Compilation,
         string Generated,
-        ImmutableArray<Diagnostic> CompilationDiagnostics
+        ImmutableArray<Diagnostic> CompilationDiagnostics,
+        ImmutableArray<Diagnostic> GeneratorDiagnostics
     );
 
     /// <summary>
@@ -142,7 +150,22 @@ internal static class GeneratorHarness
     /// Compiles a tree this suite already generated (keeps a test that also inspects the
     /// emitted text from running the generator twice).
     /// </summary>
-    internal static Task<ImmutableArray<Diagnostic>> CompileGeneratedAsync(GeneratedRun run)
+    internal static Task<ImmutableArray<Diagnostic>> CompileGeneratedAsync(GeneratedRun run) =>
+        CompileGeneratedAsync(run, DiagnosticSeverity.Error);
+
+    /// <summary>
+    /// Compiles a tree this suite already generated and returns every diagnostic at or above
+    /// <paramref name="minimumSeverity"/>.
+    /// <para>
+    /// The <c>Warning</c> floor exists because "it compiles" is a weaker claim than it looks: a
+    /// generated file can be error-free and still bury the consumer in warnings
+    /// (<c>CS0219</c>, <c>CS8600</c>, …), which is a defect the error-only view cannot see.
+    /// </para>
+    /// </summary>
+    internal static Task<ImmutableArray<Diagnostic>> CompileGeneratedAsync(
+        GeneratedRun run,
+        DiagnosticSeverity minimumSeverity
+    )
     {
         if (run.Generated.Length == 0)
             throw new InvalidOperationException(
@@ -168,7 +191,7 @@ internal static class GeneratorHarness
         var errors = new List<Diagnostic>();
         foreach (var diagnostic in emitResult.Diagnostics)
         {
-            if (diagnostic.Severity != DiagnosticSeverity.Error)
+            if (diagnostic.Severity < minimumSeverity)
                 continue;
             if (diagnostic.Id == ImportedTypeConflict)
                 continue;
@@ -207,15 +230,46 @@ internal static class GeneratorHarness
         var driver = CSharpGeneratorDriver.Create(new ControllersGenerator());
         var runResult = driver.RunGenerators(compilation).GetRunResult();
 
+        var generatorDiagnostics = runResult.Results.IsDefaultOrEmpty
+            ? ImmutableArray<Diagnostic>.Empty
+            : runResult.Results[0].Diagnostics;
+
         if (runResult.Results.Length == 0 || runResult.Results[0].GeneratedSources.IsEmpty)
-            return new GeneratedRun(compilation, "", ImmutableArray<Diagnostic>.Empty);
+            return new GeneratedRun(
+                compilation,
+                "",
+                ImmutableArray<Diagnostic>.Empty,
+                generatorDiagnostics
+            );
 
         var generatedSources = runResult.Results[0].GeneratedSources;
         var generated = string.Join("\n", generatedSources.Select(s => s.SourceText.ToString()));
 
         var updated = compilation.AddSyntaxTrees(generatedSources.Select(s => s.SyntaxTree));
 
-        return new GeneratedRun(updated, generated, updated.GetDiagnostics());
+        return new GeneratedRun(updated, generated, updated.GetDiagnostics(), generatorDiagnostics);
+    }
+
+    /// <summary>
+    /// The source text a diagnostic points at, resolved against the source the test handed to the
+    /// generator — the difference between "the diagnostic has a location" and "the diagnostic
+    /// points at the offending identifier": a location covering the whole file would satisfy the
+    /// first and fail the second.
+    /// <para>
+    /// The location is resolved through <see cref="Location.SourceSpan"/> rather than through
+    /// <see cref="Location.SourceTree"/> because a reported location is an <em>external file</em>
+    /// one: the model travels down an incremental pipeline, and a model that carried a
+    /// <see cref="SyntaxTree"/> could not be cached (see the task report). The span is still an
+    /// exact offset into the file the user wrote, which is what navigation needs.
+    /// </para>
+    /// </summary>
+    internal static string TextAt(Diagnostic diagnostic, string source)
+    {
+        var span = diagnostic.Location.SourceSpan;
+        if (span.Start < 0 || span.End > source.Length)
+            return "<span outside the source>";
+
+        return source.Substring(span.Start, span.Length);
     }
 
     private static string Key(Diagnostic diagnostic)
