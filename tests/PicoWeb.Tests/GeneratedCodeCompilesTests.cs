@@ -195,6 +195,125 @@ public sealed class GeneratedCodeCompilesTests
             .Contains("global::TestApp.Controllers.MiscController.Ping();");
     }
 
+    /// <summary>
+    /// A <c>generic</c> controller cannot be mapped: the generator has no type argument to
+    /// bind, so it emitted <c>global::TestApp.Controllers.ItemsController<T></c> with
+    /// <c>T</c> unbound — <b>CS0246</b> — and the whole tree failed to compile.
+    /// <para>
+    /// <b>This is F-53's generic half.</b> The fix skips the controller, and the skip must be
+    /// <em>visible</em>: a silently-dropped controller reads to the user as "my controller
+    /// is ignored", with a 404 at run time and nothing in the build log. The skip is
+    /// therefore recorded in a generated <c>SkippedControllers.g.cs</c> note naming the
+    /// fully-qualified type, which is what the second half of this test pins. (A real
+    /// diagnostic — <c>PCW002</c> — is T5.7's, so no competing id is invented here.)
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Generic_controller_is_skipped_and_the_skip_is_recorded()
+    {
+        var source = """
+            using PicoNode.Web;
+
+            namespace TestApp.Controllers;
+
+            public sealed class ItemsController<T>
+            {
+                [HttpGet("items")]
+                public string Get() => "items";
+            }
+            """;
+
+        var run = GeneratorHarness.RunGeneratorRun(source, "Controllers/ItemsController.cs");
+
+        // Compile first, so a regression reports CS0246 — the actual defect — rather than a
+        // missing-substring assertion standing in for it.
+        var errors = await GeneratorHarness.CompileGeneratedAsync(run);
+        await Assert.That(Describe(errors)).IsEmpty();
+
+        // The skip is recorded, by fully-qualified name, in its own generated source.
+        await Assert.That(run.Generated).Contains("global::TestApp.Controllers.ItemsController<T>");
+
+        // …and nothing was emitted for it: no DI registration, no endpoint stub. With its
+        // only controller skipped, the project is the "no controllers" shape — the
+        // object-parameter shim, not a typed registrar full of unbound type arguments.
+        await Assert
+            .That(run.Generated)
+            .DoesNotContain("typeof(global::TestApp.Controllers.ItemsController");
+        await Assert
+            .That(run.Generated)
+            .DoesNotContain("public static void RegisterAll(WebApp app)");
+    }
+
+    /// <summary>
+    /// Two controllers with the <b>same simple name in different namespaces</b> — the shape
+    /// the audit (F-53) reports as <b>CS0101</b>. The stub class used to be
+    /// <c>controller.Name + "_Endpoints"</c>, so both <c>TestApp.Admin.UsersController</c> and
+    /// <c>TestApp.Public.UsersController</c> produced a
+    /// global <c>UsersController_Endpoints</c> each
+    /// in the same generated file: two definitions of one type, <c>CS0101</c>.
+    /// <para>
+    /// T5.2 recorded that this half "did not reproduce in a single-source compilation" and
+    /// guessed it needed two assemblies. That guess was wrong, and this test is the
+    /// correction: one source, two namespaces, one generator run — the duplicate type is
+    /// inside a single compilation, because the generated stub lives at global scope while
+    /// its controller name is not qualified at all. The proof is the compiler's own
+    /// diagnostic on the unmodified generator (quoted in the task report).
+    /// </para>
+    /// <para>
+    /// The fix keys the stub by the controller's <em>fully-qualified</em> name, so the two
+    /// remain distinct (<c>TestApp_Admin_UsersController_Endpoints</c> beside
+    /// <c>TestApp_Public_UsersController_Endpoints</c>) and the registrar calls the right one.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Controllers_with_the_same_name_in_different_namespaces_do_not_collide()
+    {
+        var source = """
+            using PicoNode.Web;
+
+            namespace TestApp.Admin
+            {
+                public sealed class UsersController
+                {
+                    [HttpGet("admin/users")]
+                    public string Get() => "admin";
+                }
+            }
+
+            namespace TestApp.Public
+            {
+                public sealed class UsersController
+                {
+                    [HttpGet("public/users")]
+                    public string Get() => "public";
+                }
+            }
+            """;
+
+        // Both class declarations are in one file, so one generator run sees both — that is
+        // the whole point: the collision happens inside a single compilation.
+        var run = GeneratorHarness.RunGeneratorRun(source, "Controllers/UsersController.cs");
+
+        var errors = await GeneratorHarness.CompileGeneratedAsync(run);
+        await Assert.That(Describe(errors)).IsEmpty();
+
+        // Two stubs, keyed by full name — not one shared by both controllers.
+        await Assert
+            .That(run.Generated)
+            .Contains("public static class TestApp_Admin_UsersController_Endpoints");
+        await Assert
+            .That(run.Generated)
+            .Contains("public static class TestApp_Public_UsersController_Endpoints");
+        // …and each registrar line names its own stub, so neither controller is registered
+        // twice against the other's routes.
+        await Assert
+            .That(run.Generated)
+            .Contains("TestApp_Admin_UsersController_Endpoints.Register(app);");
+        await Assert
+            .That(run.Generated)
+            .Contains("TestApp_Public_UsersController_Endpoints.Register(app);");
+    }
+
     private static string Describe(ImmutableArray<Diagnostic> errors) =>
         errors.IsEmpty
             ? ""

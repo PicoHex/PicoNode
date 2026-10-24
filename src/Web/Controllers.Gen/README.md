@@ -23,7 +23,8 @@ Only executable projects (`ConsoleApplication` / `WindowsApplication`) that refe
 
 | Input | Output |
 |---|---|
-| Controller classes (above) | `Controllers_Endpoints.g.cs` — per-controller `{Name}_Endpoints` classes registering one `MapGet/MapPost/MapPut/MapDelete/MapPatch` handler per HTTP method |
+| Controller classes (above) | `Controllers_Endpoints.g.cs` — one `{FullName}_Endpoints` class per controller registering one `MapGet/MapPost/MapPut/MapDelete/MapPatch` handler per HTTP method. The stub name is keyed by the controller's **fully-qualified** name (`global::` stripped, `.`/`+`/`<`/`>` → `_`), so `Admin.UsersController` and `Public.UsersController` produce two distinct stubs instead of colliding (CS0101) |
+| Skipped controller | `SkippedControllers.g.cs` — a comments-only note naming every controller the generator refused to emit, so a skip is visible instead of presenting as a 404 at run time. Currently: **generic** controllers, whose type parameters cannot be bound in the generated endpoint map (CS0246) |
 | Same | `EndpointRegistrar.g.cs` — `public static class EndpointRegistrar` with `RegisterAll(WebApp app)`; consumers must call it to wire routes (see README). Skipped when the compilation already carries an `EndpointRegistrar` and this project has no controllers; with no controllers and no existing registrar, a no-op `RegisterAll(object)` shim keeps the call compiling |
 | Same | `ControllerServiceRegistrations.g.cs` — `[ModuleInitializer]` that registers every non-static controller in PicoDI via `SvcContainerAutoConfiguration.RegisterConfigurator` (Scoped lifetime) |
 

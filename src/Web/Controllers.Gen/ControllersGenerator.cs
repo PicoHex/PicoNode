@@ -31,7 +31,17 @@ public sealed class ControllersGenerator : IIncrementalGenerator
             static (spc, pair) =>
             {
                 var (controllers, registrarExists) = pair;
-                if (registrarExists && controllers.Length == 0)
+
+                // A skipped controller is recorded before any early return: the note is
+                // comments only, so it declares no type and cannot shadow the imported
+                // registrar that the early return below exists to protect.
+                EmitSkippedControllerNotes(spc, controllers);
+
+                // "No controllers" and "no controller that could be emitted" are the same
+                // situation for the registrar: emitting one here would make the imported
+                // registrar unreachable (CS0436 binds calls to the local, empty
+                // implementation).
+                if (registrarExists && !controllers.Any(static c => c.SkipReason is null))
                     return;
 
                 GenerateSources(spc, controllers);
@@ -99,6 +109,24 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         var controllerFullName = classSymbol.ToDisplayString(
             SymbolDisplayFormat.FullyQualifiedFormat
         );
+
+        // A generic controller has no type argument to bind. The endpoint map used to spell
+        // the type verbatim — `global::Ns.ItemsController<T>` — so every `T` was an unbound
+        // type parameter and the whole project failed with CS0246 (audit F-53). Skip it, but
+        // not silently: `SkipReason` is what the generated note below reports.
+        // `Arity > 0` is this type's own type parameters; `IsGenericType` additionally covers
+        // an enclosing generic type (`Outer<T>.InnerController` has arity 0 and is just as
+        // unrepresentable), so both are checked.
+        if (classSymbol.Arity > 0 || classSymbol.IsGenericType)
+        {
+            return ControllerModel.Skipped(
+                controllerName,
+                controllerFullName,
+                "generic controller: its type parameters cannot be bound in the generated "
+                    + "endpoint map"
+            );
+        }
+
         var routePrefix = GetRoutePrefix(classDecl, classSymbol);
 
         var isStatic = classSymbol.IsStatic;
@@ -262,15 +290,103 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         return sb.ToString();
     }
 
+    /// <summary>
+    /// The identifier of a controller's generated endpoint stub, derived from the controller's
+    /// <em>fully-qualified</em> name.
+    /// <para>
+    /// Keyed by the simple name — <c>controller.Name + "_Endpoints"</c> — the stub collided
+    /// across namespaces: <c>Admin.UsersController</c> and <c>Public.UsersController</c> both
+    /// produced a global <c>UsersController_Endpoints</c> in the same generated file, which is
+    /// CS0101 ("the global namespace already contains a definition"), plus CS0111 and two
+    /// CS0121s from the registrar — in a <em>single</em> compilation (audit F-53). The stub is
+    /// emitted at global scope, so its name has to carry the namespace.
+    /// </para>
+    /// <para>
+    /// Every character that cannot appear in an identifier becomes <c>_</c>. The
+    /// <c>global::</c> prefix is dropped because it carries no identity; <c>.</c>, <c>+</c>,
+    /// <c>&lt;</c>, <c>&gt;</c>, <c>,</c> and spaces all collapse to one <c>_</c> each. The
+    /// mapping is not injective in pathological cases — a nested <c>B_C</c> reads like
+    /// <c>C</c> inside namespace <c>B</c> — which the task report records rather than hides;
+    /// the audit's shape only needs distinct namespaces.
+    /// </para>
+    /// </summary>
+    private static string StubClassName(string fullyQualifiedName)
+    {
+        const string GlobalPrefix = "global::";
+        var start = fullyQualifiedName.StartsWith(GlobalPrefix, StringComparison.Ordinal)
+            ? GlobalPrefix.Length
+            : 0;
+
+        var sb = new StringBuilder(fullyQualifiedName.Length + 10);
+        for (var i = start; i < fullyQualifiedName.Length; i++)
+        {
+            var c = fullyQualifiedName[i];
+            sb.Append(char.IsLetterOrDigit(c) ? c : '_');
+        }
+        sb.Append("_Endpoints");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Records every controller this generator refused to emit, by fully-qualified name, in a
+    /// comments-only source file.
+    /// <para>
+    /// Why a note and not nothing (audit F-53): a dropped controller is otherwise
+    /// indistinguishable from a controller that was never discovered — the user's route
+    /// simply 404s and the build is clean, which is the most expensive kind of silence.
+    /// The note shows up in <c>EmitCompilerGeneratedFiles</c> output and in this project's
+    /// generator tests. A build-time diagnostic for the same condition is a separate
+    /// deliverable (<c>PCW002</c>, scheduled with the diagnostics work), so it is not
+    /// invented here — one mechanism, one owner.
+    /// </para>
+    /// <para>
+    /// Comments only on purpose: the file declares no type, so it cannot collide with a
+    /// user type and cannot shadow an imported <c>EndpointRegistrar</c> (CS0436).
+    /// </para>
+    /// </summary>
+    private static void EmitSkippedControllerNotes(
+        SourceProductionContext context,
+        System.Collections.Immutable.ImmutableArray<ControllerModel> controllers
+    )
+    {
+        var skipped = controllers.Where(static c => c.SkipReason is not null).ToArray();
+        if (skipped.Length == 0)
+            return;
+
+        var note = new StringBuilder();
+        note.AppendLine("// <auto-generated/>");
+        note.AppendLine();
+        note.AppendLine(
+            "// Controllers.Gen skipped these controllers — no endpoint is generated for"
+        );
+        note.AppendLine("// them, so their actions return 404 at run time:");
+        note.AppendLine("//");
+        foreach (var controller in skipped)
+            note.AppendLine($"//   {controller.FullName} — {controller.SkipReason}");
+        note.AppendLine("//");
+        note.AppendLine(
+            "// To map them, make the controller non-generic (or move the generic part"
+        );
+        note.AppendLine(
+            "// into a base class) so its actions can be reached through a concrete type."
+        );
+
+        context.AddSource("SkippedControllers.g.cs", note.ToString());
+    }
+
     private static void GenerateSources(
         SourceProductionContext context,
         System.Collections.Immutable.ImmutableArray<ControllerModel> controllers
     )
     {
+        // Skipped controllers never reach an emitter: a stub for `ItemsController<T>` is
+        // precisely the unbound `T` this fix exists to stop emitting.
+        var emitted = controllers.Where(static c => c.SkipReason is null).ToArray();
+
         var registrarCode = new StringBuilder();
         registrarCode.AppendLine("#nullable enable");
 
-        if (controllers.Length == 0)
+        if (emitted.Length == 0)
         {
             // No controllers — use object parameter so this compiles even in projects
             // without PicoNode.Web reference (e.g., class libraries using the analyzer).
@@ -298,9 +414,9 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         endpointsCode.AppendLine("#nullable enable");
         var registrarMethods = new StringBuilder();
 
-        foreach (var controller in controllers)
+        foreach (var controller in emitted)
         {
-            var stubClassName = controller.Name + "_Endpoints";
+            var stubClassName = StubClassName(controller.FullName);
 
             endpointsCode.AppendLine($"    public static class {stubClassName}");
             endpointsCode.AppendLine("    {");
@@ -540,7 +656,7 @@ public sealed class ControllersGenerator : IIncrementalGenerator
         );
         diCode.AppendLine("    {");
 
-        foreach (var controller in controllers)
+        foreach (var controller in emitted)
         {
             var fqn = controller.FullName;
             if (controller.IsStatic)
@@ -753,13 +869,23 @@ internal sealed class ControllerModel
     public bool IsStatic { get; }
     public ImmutableArray<IParameterSymbol> ConstructorParams { get; }
 
+    /// <summary>
+    /// Why this controller is <em>not</em> emitted, or <c>null</c> when it is. A skipped
+    /// model carries no methods and reaches no emitter (see
+    /// <c>GenerateSources</c>); it exists so the skip can be reported by name instead of
+    /// vanishing — a controller that is discovered and then dropped must not look like one
+    /// that was never discovered.
+    /// </summary>
+    public string? SkipReason { get; }
+
     public ControllerModel(
         string name,
         string fullName,
         string routePrefix,
         List<MethodModel> methods,
         bool isStatic,
-        ImmutableArray<IParameterSymbol> ctorParams
+        ImmutableArray<IParameterSymbol> ctorParams,
+        string? skipReason = null
     )
     {
         Name = name;
@@ -768,7 +894,12 @@ internal sealed class ControllerModel
         Methods = methods;
         IsStatic = isStatic;
         ConstructorParams = ctorParams;
+        SkipReason = skipReason;
     }
+
+    /// <summary>A controller that matched the predicate but cannot be emitted.</summary>
+    public static ControllerModel Skipped(string name, string fullName, string reason) =>
+        new(name, fullName, "", new List<MethodModel>(), false, default, reason);
 }
 
 internal sealed class MethodModel
