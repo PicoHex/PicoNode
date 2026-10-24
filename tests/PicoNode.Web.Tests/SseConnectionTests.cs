@@ -298,6 +298,203 @@ public sealed class SseConnectionTests
         }
     }
 
+    [Test]
+    public async Task WriteEventAsync_normalizes_lone_carriage_returns_and_blank_lines()
+    {
+        // SSE line splitting, spelled out: CRLF breaks a line, a lone CR is *deleted*
+        // (not a break), and every line — including empty and trailing ones — gets its own
+        // "data: " line. These are the cases the writer's scanner has to reproduce exactly.
+        var cases = new (string Data, string Expected)[]
+        {
+            ("a\rb", "event: t\ndata: ab\n\n"),
+            ("a\r\r\nb", "event: t\ndata: a\ndata: b\n\n"),
+            ("\r", "event: t\ndata: \n\n"),
+            ("\r\r\r", "event: t\ndata: \n\n"),
+            ("a\r\n", "event: t\ndata: a\ndata: \n\n"),
+            ("", "event: t\ndata: \n\n"),
+            ("\n", "event: t\ndata: \ndata: \n\n"),
+            ("\n\n\n", "event: t\ndata: \ndata: \ndata: \ndata: \n\n"),
+            ("a\n\nb", "event: t\ndata: a\ndata: \ndata: b\n\n"),
+            ("a\r\nb\r\nc", "event: t\ndata: a\ndata: b\ndata: c\n\n"),
+        };
+
+        foreach (var (data, expected) in cases)
+        {
+            var pipe = new Pipe();
+            var sse = new SseConnection(pipe.Writer, TimeSpan.Zero);
+            await sse.WriteEventAsync("t", data, CancellationToken.None);
+            await pipe.Writer.CompleteAsync();
+
+            var result = await pipe.Reader.ReadAsync(CancellationToken.None);
+            await Assert
+                .That(Encoding.UTF8.GetString(result.Buffer))
+                .IsEqualTo(expected)
+                .Because($"data {Escape(data)} must normalize to {Escape(expected)}");
+            pipe.Reader.AdvanceTo(result.Buffer.End);
+        }
+    }
+
+    private static string Escape(string text) =>
+        text.Replace("\r", "\\r").Replace("\n", "\\n");
+
+    [Test]
+    public async Task Each_event_is_readable_before_the_next_write()
+    {
+        // Latency is part of the SSE contract: a write must return only once its event is
+        // in the pipe, not batched with whatever comes next. A reader that had to wait for
+        // a following write would make a live stream look like a dead one.
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer, TimeSpan.Zero);
+
+        await sse.WriteJsonAsync("""{"seq":1}""", CancellationToken.None);
+
+        // No second write, no completion: only the event itself can make this return.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        var first = await pipe.Reader.ReadAsync(cts.Token);
+
+        await Assert
+            .That(Encoding.UTF8.GetString(first.Buffer))
+            .IsEqualTo("data: {\"seq\":1}\n\n")
+            .Because("the first event must be flushed on its own, not batched with the next");
+        await Assert
+            .That(first.IsCompleted)
+            .IsFalse()
+            .Because("the stream is still open — the event alone made this readable");
+        pipe.Reader.AdvanceTo(first.Buffer.End);
+
+        // The same for the next event: exactly one flush per event, nothing carried over.
+        await sse.WriteJsonAsync("""{"seq":2}""", CancellationToken.None);
+        var second = await pipe.Reader.ReadAsync(cts.Token);
+        await Assert.That(Encoding.UTF8.GetString(second.Buffer)).IsEqualTo("data: {\"seq\":2}\n\n");
+        pipe.Reader.AdvanceTo(second.Buffer.End);
+    }
+
+    // ── Allocation guards (audit F-26) ─────────────────────────────────
+    //
+    // One SSE event must cost no garbage on the writer side: it is formatted
+    // straight into the pipe writer's own segment instead of being built as an
+    // interpolated string plus a UTF-8 byte[] that is then copied in. The
+    // ceiling is 16 B — below the 24-byte object header of any array or string a
+    // re-introduced copy would have to allocate, because a percentage of a zero
+    // measurement would be meaningless.
+    private const double EventAllocationCeilingBytes = 16.0;
+    private const int AllocationRounds = 5;
+    private const int EventsPerRound = 100;
+
+    private const string DeltaJson =
+        """{"id":"chatcmpl-7f3a","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Hello from the model"}}]}""";
+
+    [Test]
+    public async Task Write_json_event_allocates_nothing_per_event()
+    {
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer, TimeSpan.Zero);
+
+        var (allocated, events, bytesWritten) = await MeasureEventsAsync(sse, pipe.Reader, DeltaJson);
+        var perEvent = (double)allocated / events;
+
+        // The measured region really wrote whole events: a no-op write would
+        // otherwise look like a free one.
+        await Assert
+            .That(bytesWritten)
+            .IsEqualTo(events * (6L + Encoding.UTF8.GetByteCount(DeltaJson) + 2L))
+            .Because("the measured region must have written every byte of every event");
+        await Assert
+            .That(perEvent)
+            .IsLessThan(EventAllocationCeilingBytes)
+            .Because($"measured {perEvent:F1} B per event ({allocated} B over {events} events)");
+    }
+
+    [Test]
+    public async Task Write_json_event_with_multibyte_text_allocates_nothing_per_event()
+    {
+        // UTF-8 sizing must be exact rather than "worst case per char": a text
+        // payload is the one shape where a lazy fix falls back to GetBytes.
+        const string json = """{"delta":"中文与笑脸 😀 éèê"}""";
+        var pipe = new Pipe();
+        var sse = new SseConnection(pipe.Writer, TimeSpan.Zero);
+
+        var (allocated, events, bytesWritten) = await MeasureEventsAsync(sse, pipe.Reader, json);
+        var perEvent = (double)allocated / events;
+
+        await Assert
+            .That(bytesWritten)
+            .IsEqualTo(events * (6L + Encoding.UTF8.GetByteCount(json) + 2L))
+            .Because("multi-byte text must be written as its exact UTF-8 length");
+        await Assert
+            .That(perEvent)
+            .IsLessThan(EventAllocationCeilingBytes)
+            .Because($"measured {perEvent:F1} B per event ({allocated} B over {events} events)");
+    }
+
+    /// <summary>
+    /// 32 warm-up events outside the window (JIT, the UTF-8 encoding statics, the
+    /// pipe's first segment), then 5 rounds x 100 events, each round counted with
+    /// <see cref="GC.GetAllocatedBytesForCurrentThread"/>. The drained bytes are
+    /// summed so the caller can prove the region did real work.
+    /// </summary>
+    private static async Task<(long Allocated, long Events, long BytesWritten)> MeasureEventsAsync(
+        SseConnection sse,
+        PipeReader reader,
+        string json
+    )
+    {
+        for (var i = 0; i < 32; i++)
+        {
+            await WriteSynchronouslyAsync(sse, json);
+            DrainAvailable(reader);
+        }
+
+        long allocated = 0;
+        long events = 0;
+        long bytesWritten = 0;
+        for (var round = 0; round < AllocationRounds; round++)
+        {
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < EventsPerRound; i++)
+            {
+                await WriteSynchronouslyAsync(sse, json);
+                bytesWritten += DrainAvailable(reader);
+                events++;
+            }
+
+            allocated += GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+
+        return (allocated, events, bytesWritten);
+    }
+
+    /// <summary>
+    /// Writes one event and fails if it did not complete synchronously: a
+    /// suspending write would continue on another thread and
+    /// <see cref="GC.GetAllocatedBytesForCurrentThread"/> would not see its
+    /// allocations, so the measured number would be a lie.
+    /// </summary>
+    private static Task WriteSynchronouslyAsync(SseConnection sse, string json)
+    {
+        var task = sse.WriteJsonAsync(json, CancellationToken.None);
+        if (!task.IsCompletedSuccessfully)
+        {
+            throw new InvalidOperationException(
+                "the event write did not complete synchronously, so per-thread allocation counting is meaningless"
+            );
+        }
+
+        return task;
+    }
+
+    private static long DrainAvailable(PipeReader reader)
+    {
+        long consumed = 0;
+        while (reader.TryRead(out var result))
+        {
+            consumed += result.Buffer.Length;
+            reader.AdvanceTo(result.Buffer.End);
+        }
+
+        return consumed;
+    }
+
     private static async Task<string> ReadUntilKeepAliveAsync(
         PipeReader reader,
         CancellationToken ct

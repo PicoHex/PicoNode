@@ -245,12 +245,63 @@ public sealed class HttpResponseSerializerTests
     }
 
     [Test]
-    public async Task FormatChunk_formats_data_with_hex_size_and_crlf_delimiters()
+    public async Task WriteChunkPrefix_right_aligns_the_hex_length_in_the_header_region()
     {
-        var data = System.Text.Encoding.ASCII.GetBytes("Hello");
-        var chunk = HttpResponseSerializer.FormatChunk(data);
+        // "<hex>\r\n" immediately before the payload: the chunk header region is
+        // right-aligned so the data can follow it in the very same buffer.
+        foreach (var (length, expected) in new[]
+        {
+            (1, "1\r\n"),
 
-        await Assert.That(GetAsciiString(chunk.ToArray())).IsEqualTo("5\r\nHello\r\n");
+            (5, "5\r\n"),
+            (15, "f\r\n"),
+            (16, "10\r\n"),
+            (255, "ff\r\n"),
+            (256, "100\r\n"),
+            (4095, "fff\r\n"),
+            (4096, "1000\r\n"),
+            (65536, "10000\r\n"),
+            (int.MaxValue, "7fffffff\r\n"),
+        })
+        {
+            var region = new byte[HttpResponseSerializer.MaxChunkPrefixLength];
+            region.AsSpan().Fill((byte)'?');
+
+            var prefixLength = HttpResponseSerializer.WriteChunkPrefix(region, length);
+
+            await Assert
+                .That(prefixLength)
+                .IsEqualTo(expected.Length)
+                .Because($"the header of a {length}-octet chunk is {expected.Length} bytes");
+            await Assert
+                .That(Encoding.ASCII.GetString(region, region.Length - prefixLength, prefixLength))
+                .IsEqualTo(expected)
+                .Because($"a {length}-octet chunk must announce {expected.TrimEnd()}");
+            await Assert
+                .That(region.AsSpan(0, region.Length - prefixLength).IndexOfAnyExcept((byte)'?'))
+                .IsEqualTo(-1)
+                .Because("the region left of the header must stay untouched");
+        }
+    }
+
+    [Test]
+    public async Task WriteChunkPrefix_rejects_a_zero_length_chunk_and_a_short_region()
+    {
+        // Zero is the body terminator, not a data chunk: a header for it here would
+        // end the stream mid-body, so the primitive refuses it instead.
+        var region = new byte[HttpResponseSerializer.MaxChunkPrefixLength];
+
+        await Assert
+            .That(() => HttpResponseSerializer.WriteChunkPrefix(region, 0))
+            .Throws<ArgumentOutOfRangeException>();
+        await Assert
+            .That(() => HttpResponseSerializer.WriteChunkPrefix(region, -1))
+            .Throws<ArgumentOutOfRangeException>();
+
+        // 10 octets need "a\r\n" — three bytes — but a 2-byte region cannot hold them.
+        await Assert
+            .That(() => HttpResponseSerializer.WriteChunkPrefix(new byte[2], 10))
+            .Throws<ArgumentException>();
     }
 
     [Test]

@@ -560,7 +560,11 @@ internal static class Http1ConnectionProcessor
             var stream = response.BodyStream!;
             await using (stream.ConfigureAwait(false))
             {
-                var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(
+                // One rented buffer holds the chunk header, the payload the reader
+                // fills, and the CRLF that closes the chunk, so a chunk leaves in one
+                // segment and framing it allocates nothing (audit F-26).
+                const int headerRegion = HttpResponseSerializer.MaxChunkPrefixLength;
+                var buffer = HttpResponseSerializer.AllocateStreamingBuffer(
                     options.StreamingResponseBufferSize
                 );
                 try
@@ -573,7 +577,7 @@ internal static class Http1ConnectionProcessor
                     while (true)
                     {
                         var read = await stream.ReadAsync(
-                            buffer.AsMemory(0, options.StreamingResponseBufferSize),
+                            buffer.AsMemory(headerRegion, options.StreamingResponseBufferSize),
                             cancellationToken
                         );
                         if (read == 0)
@@ -581,8 +585,25 @@ internal static class Http1ConnectionProcessor
                             break;
                         }
 
-                        var chunk = HttpResponseSerializer.FormatChunk(buffer.AsMemory(0, read));
-                        await connection.SendAsync(chunk, cancellationToken).ConfigureAwait(false);
+                        var prefixLength = HttpResponseSerializer.WriteChunkPrefix(
+                            buffer.AsSpan(0, headerRegion),
+                            read
+                        );
+                        var end = headerRegion + read;
+                        buffer[end] = (byte)'\r';
+                        buffer[end + 1] = (byte)'\n';
+
+                        await connection
+                            .SendAsync(
+                                new ReadOnlySequence<byte>(
+                                    buffer.AsMemory(
+                                        headerRegion - prefixLength,
+                                        prefixLength + read + HttpResponseSerializer.ChunkCrLfLength
+                                    )
+                                ),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
                     }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

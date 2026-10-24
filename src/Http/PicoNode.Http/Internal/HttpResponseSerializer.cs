@@ -6,7 +6,6 @@ internal static class HttpResponseSerializer
     private const string ChunkedHeaderValue = "chunked";
     private static readonly Encoding HeaderEncoding = Encoding.ASCII;
     private static readonly byte[] ChunkTerminatorBytes = "0\r\n\r\n"u8.ToArray();
-    private static readonly byte[] CrLfBytes = "\r\n"u8.ToArray();
 
     public static ReadOnlySequence<byte> Serialize(
         HttpResponse response,
@@ -53,31 +52,58 @@ internal static class HttpResponseSerializer
         return new ReadOnlySequence<byte>(headerBuffer.WrittenMemory);
     }
 
-    public static ReadOnlySequence<byte> FormatChunk(ReadOnlyMemory<byte> data)
+    /// <summary>
+    /// Longest chunk header any chunk can need: an <see cref="int"/> renders as at most 8 hex
+    /// digits, plus the CRLF — which is why <see cref="AllocateStreamingBuffer"/> adds it.
+    /// </summary>
+    internal const int MaxChunkPrefixLength = 10;
+
+    /// <summary>The CRLF that closes a chunk, written after its payload.</summary>
+    internal const int ChunkCrLfLength = 2;
+
+    /// <summary>
+    /// Rents the buffer a streaming response needs: the chunk-header region (offset 0), the
+    /// payload the reader fills (offset <see cref="MaxChunkPrefixLength"/>), and the CRLF that
+    /// closes the chunk. The caller owns the array and must return it to
+    /// <see cref="ArrayPool{T}.Shared"/>.
+    /// </summary>
+    internal static byte[] AllocateStreamingBuffer(int readSize) =>
+        ArrayPool<byte>.Shared.Rent(MaxChunkPrefixLength + readSize + ChunkCrLfLength);
+
+    /// <summary>
+    /// Writes the chunk header of a <paramref name="dataLength"/>-octet chunk into the *end* of
+    /// <paramref name="headerRegion"/>, so the payload can follow it in the same buffer and the
+    /// whole chunk leaves in one segment. Returns the header length; the payload is expected at
+    /// <c>headerRegion.Length</c>, so the header starts at
+    /// <c>headerRegion.Length - returnValue</c>.
+    /// </summary>
+    /// <remarks>
+    /// This replaces a three-segment <see cref="ReadOnlySequence{T}"/> plus a freshly allocated
+    /// prefix array per chunk: framing a chunk now costs no allocation at all.
+    /// </remarks>
+    internal static int WriteChunkPrefix(Span<byte> headerRegion, int dataLength)
     {
-        if (data.IsEmpty)
+        // A zero-length chunk *is* the body terminator, not a data chunk: writing a
+        // header for one here would end the stream in the middle of the body.
+        ArgumentOutOfRangeException.ThrowIfLessThan(dataLength, 1);
+
+        Span<byte> hex = stackalloc byte[8];
+        dataLength.TryFormat(hex, out var written, "x");
+
+        var prefixLength = written + 2;
+        if (headerRegion.Length < prefixLength)
         {
-            return ReadOnlySequence<byte>.Empty;
+            throw new ArgumentException(
+                $"The chunk header region must hold {prefixLength} bytes.",
+                nameof(headerRegion)
+            );
         }
 
-        var prefix = FormatChunkPrefix(data.Length);
-
-        var first = new BufferSegment(prefix);
-        var dataSegment = first.Append(data);
-        var last = dataSegment.Append(CrLfBytes);
-
-        return new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);
-    }
-
-    private static byte[] FormatChunkPrefix(int length)
-    {
-        Span<byte> hex = stackalloc byte[10];
-        length.TryFormat(hex, out var written, "x");
-        var prefix = new byte[written + 2];
-        hex[..written].CopyTo(prefix);
-        prefix[written] = (byte)'\r';
-        prefix[written + 1] = (byte)'\n';
-        return prefix;
+        var start = headerRegion.Length - prefixLength;
+        hex[..written].CopyTo(headerRegion[start..]);
+        headerRegion[start + written] = (byte)'\r';
+        headerRegion[start + written + 1] = (byte)'\n';
+        return prefixLength;
     }
 
     public static ReadOnlySequence<byte> ChunkTerminator => new(ChunkTerminatorBytes);
