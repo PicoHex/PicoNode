@@ -50,62 +50,74 @@ public sealed class PerfHarnessTests
     [Test]
     public async Task Tcp_throughput_succeeds()
     {
+        var window = MachineCalibration.Start();
         var metrics = await RunTcpThroughputAsync(port: 7201, messageCount: 200, payloadSize: 128);
-        await AssertFloorsAsync("tcp-throughput", metrics, TcpRoundTripsFloor);
+        await AssertFloorsAsync("tcp-throughput", metrics, TcpRoundTripsFloor, window.Worst());
     }
 
     [Test]
     public async Task Tcp_throughput_parallel_succeeds()
     {
+        var window = MachineCalibration.Start();
         var metrics = await RunTcpThroughputParallelAsync(
             port: 7204,
             clients: 4,
             messagesPerClient: 150,
             payloadSize: 128
         );
-        await AssertFloorsAsync("tcp-throughput-parallel", metrics, TcpParallelRoundTripsFloor);
+        await AssertFloorsAsync(
+            "tcp-throughput-parallel",
+            metrics,
+            TcpParallelRoundTripsFloor,
+            window.Worst()
+        );
     }
 
     [Test]
     public async Task Tcp_throughput_sweep_succeeds()
     {
+        var window = MachineCalibration.Start();
         var metrics = await RunTcpThroughputSweepAsync(
             port: 7210,
             payloads: [64, 256],
             messages: 120
         );
+        var calibration = window.Worst();
         await Assert.That(metrics.Length).IsEqualTo(2);
         foreach (var point in metrics)
         {
             // The sweep covers the per-message overhead at two payload sizes; the small payload is the
             // one that exposes a fixed cost per round trip, so both points are held to the same floor.
-            await AssertFloorsAsync("tcp-throughput-sweep", point, TcpRoundTripsFloor);
+            await AssertFloorsAsync("tcp-throughput-sweep", point, TcpRoundTripsFloor, calibration);
         }
     }
 
     [Test]
     public async Task Tcp_churn_succeeds()
     {
+        var window = MachineCalibration.Start();
         var metrics = await RunTcpChurnAsync(port: 7202, connectionCount: 120, payloadSize: 8);
-        await AssertFloorsAsync("tcp-churn", metrics, TcpChangeoversFloor);
+        await AssertFloorsAsync("tcp-churn", metrics, TcpChangeoversFloor, window.Worst());
         await Assert.That(metrics.MiBPerSecond).IsGreaterThan(0d);
     }
 
     [Test]
     public async Task Udp_rate_succeeds()
     {
+        var window = MachineCalibration.Start();
         var metrics = await RunUdpRateAsync(
             port: 7203,
             datagramCount: 250,
             payloadSize: 96,
             workers: 2
         );
-        await AssertFloorsAsync("udp-rate", metrics, UdpDatagramsFloor);
+        await AssertFloorsAsync("udp-rate", metrics, UdpDatagramsFloor, window.Worst());
     }
 
     [Test]
     public async Task Udp_rate_parallel_succeeds()
     {
+        var window = MachineCalibration.Start();
         var metrics = await RunUdpRateParallelAsync(
             port: 7205,
             clients: 4,
@@ -113,7 +125,12 @@ public sealed class PerfHarnessTests
             payloadSize: 96,
             workers: 2
         );
-        await AssertFloorsAsync("udp-rate-parallel", metrics, UdpParallelDatagramsFloor);
+        await AssertFloorsAsync(
+            "udp-rate-parallel",
+            metrics,
+            UdpParallelDatagramsFloor,
+            window.Worst()
+        );
     }
 
     /// <summary>
@@ -123,18 +140,38 @@ public sealed class PerfHarnessTests
     private static async Task AssertFloorsAsync(
         string scenario,
         PerfMetrics metrics,
-        double operationsPerSecondFloor
+        double operationsPerSecondFloor,
+        CalibrationBracket calibration
     )
     {
+        Console.WriteLine(
+            $"{scenario} calibration cpu={calibration.CpuUpdatesPerSecond:F0}/s handoff={calibration.HandoffsPerSecond:F0}/s"
+        );
+
+        // The floor constants were derived on the reference machine running alone. Under `dotnet test
+        // PicoNode.slnx` the other nine suites share the box, and a scenario that is latency-bound (write,
+        // wake the node, wake the client) tracks the scheduler rather than pure CPU: measured on this
+        // repository's machine, tcp-churn runs ~1100 conn/s alone and ~120 under that load. Scaling the
+        // floor by the probe that tracks contention keeps a real regression below the bound while a busy
+        // machine no longer reads as a slow one.
+        var scale = MachineCalibration.Scale(
+            calibration.HandoffsPerSecond,
+            MachineCalibration.HandoffBaseline
+        );
+        var scaledFloor = operationsPerSecondFloor * scale;
+
         // The byte rate is derived from the same clock, so it only adds a bound when the payload is
         // large enough for it to be non-zero at the floor: the churn scenario moves 8-byte payloads and
         // its byte floor would be a rounding error, not a bound.
         await Assert
             .That(metrics.OpsPerSecond)
-            .IsGreaterThan(operationsPerSecondFloor)
+            .IsGreaterThan(scaledFloor)
             .Because(
-                $"{scenario} ran at {metrics.OpsPerSecond:F0} ops/s, floor is {operationsPerSecondFloor:F0} "
-                    + $"({metrics.OpsPerSecond / operationsPerSecondFloor:F1}x headroom)"
+                $"{scenario} ran at {metrics.OpsPerSecond:F0} ops/s, floor is {scaledFloor:F0} "
+                    + $"(base {operationsPerSecondFloor:F0} x calibration {scale:F2}) "
+                    + $"[cpu {calibration.CpuUpdatesPerSecond:F0}/s vs {MachineCalibration.CpuBaseline:F0}, "
+                    + $"handoff {calibration.HandoffsPerSecond:F0}/s vs {MachineCalibration.HandoffBaseline:F0}] "
+                    + $"({metrics.OpsPerSecond / scaledFloor:F1}x headroom)"
             );
         await Assert
             .That(metrics.MiBPerSecond)
