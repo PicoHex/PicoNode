@@ -10,6 +10,24 @@ release, together with the version bump below.
 `x` bump (not `y`): the public surface changed in four packages, one change is source-breaking, and the JSON-RPC wire
 format changed. Numbering follows the existing scheme; the point is that a `y` bump would be a lie about all three.
 
+## Added after the audit remediation (2026-10-27): the UI-event cursor
+
+`PicoNode.Web.UiEvent` gained `long Epoch` and `long Seq` (both `0 = not provided`), and `UiEventHub` gained a
+`Publish(UiEvent)` overload. Requested by the PicoAgent team so the `/events/ui` SSE channel can stamp
+`id: {Epoch}:{Seq}` from the **publisher's** cursor instead of from a write-side frame counter.
+
+- The hub mints the pair under the same lock it delivers under, so a subscriber's seq is monotonic **across
+  connections**, and a gap (an event dropped by the bounded channel) stays visible as a gap.
+- Both halves belong to the **hub**: `Epoch` is derived from the process start instant plus a per-instance ordinal, and
+  `Seq` is that hub's counter from 1. Sharing one half but not the other would make a restart indistinguishable from a
+  rewind (shared epoch, per-hub counters) or invent gaps that never happened (shared counter, interleaved hubs).
+- A caller that supplies **both** halves keeps them and does not consume the hub's counter; supplying **one** half gets
+  both minted, because completing it would fabricate a position that never existed. A blank event name publishes nothing
+  and consumes no seq.
+- Purely additive: `new UiEvent("name", "payload")` still compiles, and a consumer that ignores the two members reads the
+  same `Name`/`Payload` as before. **`UiEvent` is a record**, so its equality now includes the cursor — compare
+  `Name`/`Payload` for content.
+
 ## Breaking changes
 
 | Change | Impact | Where |
