@@ -713,6 +713,67 @@ public sealed class Http2ProtocolComplianceTests
     }
 
     [Test]
+    public async Task Crlf_in_header_field_value_triggers_RST_PROTOCOL_ERROR()
+    {
+        // RFC 9113 §8.2.1: CR/LF in a field value is malformed. It must be a
+        // stream error (the other streams on the connection are innocent) — and
+        // above all the poisoned value must never reach the request.
+        var connection = NewConnection();
+        var block = new List<byte>(BuildMinimalHpack("GET", "/foo"));
+        AddLiteral(block, "x-echo", "a\r\nb");
+        var headers = BuildHeadersFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+            1,
+            block.ToArray()
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(headers),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.LastRstStreamCode).IsEqualTo(Http2ErrorCode.ProtocolError);
+        await Assert.That(connection.IsClosed).IsFalse();
+    }
+
+    [Test]
+    public async Task Oversized_decoded_header_list_triggers_RST_ENHANCE_YOUR_CALM()
+    {
+        // SETTINGS_MAX_HEADER_LIST_SIZE (§6.5.2) is a stream limit: the peer sent
+        // 1 200 one-octet index references that decode to ~70 KiB of header list,
+        // so we reset THAT stream and keep every other stream on the connection
+        // alive. Treating it as a connection error (GOAWAY COMPRESSION_ERROR) let
+        // one hostile stream kill a connection carrying 99 innocent ones.
+        var connection = NewConnection();
+        var block = new List<byte>(BuildMinimalHpack("GET", "/foo"));
+        for (var i = 0; i < 1200; i++)
+            block.Add(0x90); // index 16: "accept-encoding: gzip, deflate" (59 octets)
+
+        var headers = BuildHeadersFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+            1,
+            block.ToArray()
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(headers),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.LastRstStreamCode).IsEqualTo(Http2ErrorCode.EnhanceYourCalm);
+        await Assert.That(connection.LastGoAwayErrorCode).IsNull();
+        await Assert.That(connection.IsClosed).IsFalse();
+    }
+
+    [Test]
     public async Task Unknown_pseudo_header_triggers_RST_PROTOCOL_ERROR()
     {
         var connection = NewConnection();
@@ -982,6 +1043,72 @@ public sealed class Http2ProtocolComplianceTests
         await Assert.That(connection.LastRstStreamCode).IsEqualTo(Http2ErrorCode.ProtocolError);
     }
 
+    [Test]
+    public async Task Trailer_with_crlf_value_triggers_RST_PROTOCOL_ERROR()
+    {
+        // RFC 9113 §8.2.1 applies to trailer fields exactly as it does to the
+        // request's header block, and these fields are merged straight into
+        // request.Headers — an unvalidated trailer is the same CR/LF injection
+        // one frame later. A reset (not a 200) is the observable difference.
+        (string Value, string Why)[] poisoned =
+        [
+            ("a\r\nb", "CR LF"),
+            ("a\0b", "NUL"),
+            (" a", "leading SP"),
+        ];
+
+        foreach (var (value, why) in poisoned)
+        {
+            var connection = await OpenRequestStreamAwaitingTrailersAsync();
+
+            var trailers = new List<byte>();
+            AddLiteral(trailers, "x-test", value);
+            await SendTrailerFrameAsync(connection, trailers);
+
+            await Assert
+                .That(connection.LastRstStreamCode)
+                .IsEqualTo(Http2ErrorCode.ProtocolError)
+                .Because($"a trailer value with {why} is malformed");
+            await Assert
+                .That(connection.HasResponseHeaders(1))
+                .IsFalse()
+                .Because($"the request with a trailer value containing {why} must not be answered");
+        }
+    }
+
+    [Test]
+    public async Task Trailer_with_forbidden_or_malformed_name_triggers_RST_PROTOCOL_ERROR()
+    {
+        // §8.2.2: the five connection-specific fields are prohibited in HTTP/2, and
+        // §8.2.1 requires lowercase token names — a trailer is no exception, or a
+        // `connection: close` smuggled after the body would still reach the request.
+        (string Name, string Why)[] poisoned =
+        [
+            ("connection", "a connection-specific field (§8.2.2)"),
+            ("transfer-encoding", "a connection-specific field (§8.2.2)"),
+            ("X-Test", "an uppercase name (§8.2.1)"),
+            ("x-test\r\n", "a control octet in the name (§8.2.1)"),
+        ];
+
+        foreach (var (name, why) in poisoned)
+        {
+            var connection = await OpenRequestStreamAwaitingTrailersAsync();
+
+            var trailers = new List<byte>();
+            AddLiteral(trailers, name, "ok");
+            await SendTrailerFrameAsync(connection, trailers);
+
+            await Assert
+                .That(connection.LastRstStreamCode)
+                .IsEqualTo(Http2ErrorCode.ProtocolError)
+                .Because($"a trailer name carrying {why} is malformed");
+            await Assert
+                .That(connection.HasResponseHeaders(1))
+                .IsFalse()
+                .Because($"the request with a trailer named {why} must not be answered");
+        }
+    }
+
     // ── 6.2 / 6.1 Padding ───────────────────────────────────────────
 
     [Test]
@@ -1054,6 +1181,330 @@ public sealed class Http2ProtocolComplianceTests
         );
 
         await Assert.That(connection.LastGoAwayErrorCode).IsEqualTo(Http2ErrorCode.ProtocolError);
+    }
+
+    // ── 6.9.1 Flow control of padded DATA ──────────────────────────
+
+    [Test]
+    public async Task Padded_data_frame_charges_the_full_payload()
+    {
+        // RFC 9113 §6.9.1: the flow-controlled length of a padded DATA frame is
+        // the whole payload — Pad Length and Padding included. Charging only the
+        // unpadded octets lets both windows drift upward: the peer exhausts its
+        // send window while the server still believes it has credit, so no
+        // WINDOW_UPDATE is ever written and the upload stalls for good.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await OpenRequestBodyStreamAsync(connection, 1);
+        var state = runtimeState.Http2Streams![1];
+
+        // 100 octets on the wire: 1 Pad Length octet + 59 body octets + 40 padding.
+        await SendPaddedDataFrameAsync(connection, 1, payloadLength: 100, padLength: 40);
+
+        await Assert.That(state.ReceiveWindow).IsEqualTo(65535 - 100);
+        await Assert.That(runtimeState.ConnectionReceiveWindow).IsEqualTo(65535 - 100);
+
+        // Two more padded frames — each at the advertised 16384-octet maximum
+        // frame size — push both windows past their half-window mark, so the
+        // WINDOW_UPDATE the last one triggers proves the credit is computed from
+        // padded octets: it must grant back every octet charged
+        // (100 + 2 × 16384), not the octets per frame the unpadded accounting
+        // skipped. Under the old accounting the windows would still sit above the
+        // threshold and no WINDOW_UPDATE at all would be written.
+        await SendPaddedDataFrameAsync(connection, 1, payloadLength: 16384, padLength: 40);
+        await SendPaddedDataFrameAsync(connection, 1, payloadLength: 16384, padLength: 40);
+
+        const int chargedOctets = 100 + 16384 + 16384;
+        await Assert.That(state.ReceiveWindow).IsEqualTo(65535);
+        await Assert.That(runtimeState.ConnectionReceiveWindow).IsEqualTo(65535);
+        await Assert.That(GetWindowUpdateIncrements(connection, 1)).IsEquivalentTo([chargedOctets]);
+        await Assert.That(GetWindowUpdateIncrements(connection, 0)).IsEquivalentTo([chargedOctets]);
+    }
+
+    // ── 5.1 Stream States: closed after a local reset ──────────────
+
+    [Test]
+    public async Task Window_update_after_local_rst_is_ignored()
+    {
+        // RFC 9113 §5.1: a stream the server has reset is in the "closed" state,
+        // and WINDOW_UPDATE / RST_STREAM received in that state MUST be ignored.
+        // Forgetting the stream on reset makes the peer's next WINDOW_UPDATE look
+        // like an "idle stream" and escalates it to a connection-level GOAWAY.
+        var connection = NewConnection();
+        await SendCompleteGetAsync(connection, 1);
+
+        await Http2StreamHandler.SendRstStreamAsync(
+            connection,
+            1,
+            Http2ErrorCode.Cancel,
+            CancellationToken.None
+        );
+
+        // The reset stream is kept as a tombstone so later frames match it…
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await Assert.That(runtimeState.Http2Streams!.ContainsKey(1)).IsTrue();
+        await Assert.That(runtimeState.Http2Streams![1].Aborted).IsTrue();
+
+        // …and both closed-state frames are ignored instead of ending the connection.
+        await Http2StreamHandler.ProcessWindowUpdateFrame(
+            connection,
+            BuildFrame(
+                Http2FrameType.WindowUpdate,
+                Http2FrameFlags.None,
+                1,
+                BuildWindowUpdatePayload(1024)
+            ),
+            CancellationToken.None
+        );
+        await Http2StreamHandler.ProcessRstStreamFrame(
+            connection,
+            BuildFrame(
+                Http2FrameType.RstStream,
+                Http2FrameFlags.None,
+                1,
+                BuildWindowUpdatePayload((int)Http2ErrorCode.Cancel)
+            ),
+            CancellationToken.None
+        );
+
+        await Assert.That(connection.LastGoAwayErrorCode).IsNull();
+        await Assert.That(connection.IsClosed).IsFalse();
+    }
+
+    // ── 5.1 Concurrency limit vs. closed streams / abort releases ──
+
+    [Test]
+    public async Task Resetting_100_streams_does_not_starve_new_streams()
+    {
+        // A tombstone left by a server-side reset is CLOSED, so it must not occupy
+        // one of the 100 concurrency slots we advertise in SETTINGS. Sizing the
+        // gate from the raw table size made 100 resets a permanent outage: every
+        // later HEADERS could only be answered with REFUSED_STREAM.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await Assert.That(runtimeState.LocalMaxConcurrentStreams).IsEqualTo(100);
+
+        // 100 streams reset before their responses were ever sent. Neither reaper
+        // can collect these: CleanupClosedStreams needs a sent response plus the
+        // peer's END_STREAM, and RemoveIdleStreams needs the 2-minute idle timeout.
+        for (var streamId = 1; streamId <= 199; streamId += 2)
+        {
+            await OpenRequestBodyStreamAsync(connection, streamId);
+            await Http2StreamHandler.SendRstStreamAsync(
+                connection,
+                streamId,
+                Http2ErrorCode.Cancel,
+                CancellationToken.None
+            );
+        }
+
+        await Assert.That(runtimeState.Http2Streams!.Count).IsEqualTo(100);
+
+        // The 101st stream must still be admitted and answered.
+        await SendCompleteGetAsync(connection, 201);
+
+        await Assert
+            .That(runtimeState.Http2Streams!.ContainsKey(201))
+            .IsTrue()
+            .Because("100 closed tombstones must not exhaust the concurrency limit");
+        await Assert.That(connection.HasResponseHeaders(201)).IsTrue();
+        await Assert.That(connection.LastGoAwayErrorCode).IsNull();
+    }
+
+    [Test]
+    public async Task Stale_streams_are_reaped_before_the_concurrency_gate_decides()
+    {
+        // GetOrCreateStream is the reaper's only call site and the concurrency gate
+        // sits in front of it, so an entry the reaper would collect pinned the limit
+        // for the lifetime of the connection: the gate refused, refused again, and
+        // never reached the reaper. Here the stale entries are two streams of a peer
+        // that went quiet for longer than StreamIdleTimeout.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        runtimeState.LocalMaxConcurrentStreams = 2;
+
+        // Both streams are open, so both occupy a concurrency slot.
+        await OpenRequestBodyStreamAsync(connection, 1);
+        await OpenRequestBodyStreamAsync(connection, 3);
+
+        // Both streams fall out of the idle window without a single frame arriving.
+        var idleSince = DateTime.UtcNow - runtimeState.StreamIdleTimeout - TimeSpan.FromSeconds(1);
+        runtimeState.Http2Streams![1].LastActivityUtc = idleSince;
+        runtimeState.Http2Streams![3].LastActivityUtc = idleSince;
+
+        // A new request must be admitted, and the stale entries actually collected.
+        await SendCompleteGetAsync(connection, 5);
+
+        await Assert
+            .That(runtimeState.Http2Streams!.ContainsKey(5))
+            .IsTrue()
+            .Because("idle streams must be reaped before the gate counts");
+        await Assert.That(connection.HasResponseHeaders(5)).IsTrue();
+        await Assert.That(runtimeState.Http2Streams.ContainsKey(1)).IsFalse();
+        await Assert.That(runtimeState.Http2Streams.ContainsKey(3)).IsFalse();
+        await Assert.That(connection.LastGoAwayErrorCode).IsNull();
+    }
+
+    [Test]
+    public async Task Aborting_a_stream_frees_its_body_buffer()
+    {
+        // The tombstone keeps the whole Http2StreamState alive until the reaper
+        // collects it, so an abort must drop the buffered body -- up to
+        // MaxRequestBodyBytes (64 MiB), and the ENHANCE_YOUR_CALM reset fires
+        // precisely because that buffer got huge.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await OpenRequestBodyStreamAsync(connection, 1);
+        var state = runtimeState.Http2Streams![1];
+
+        await SendDataFrameAsync(connection, 1, payloadLength: 8192);
+        await Assert.That(state.DataBuffer.WrittenCount).IsEqualTo(8192);
+        await Assert.That(state.DataBuffer.Capacity).IsGreaterThanOrEqualTo(8192);
+
+        await Http2StreamHandler.SendRstStreamAsync(
+            connection,
+            1,
+            Http2ErrorCode.EnhanceYourCalm,
+            CancellationToken.None
+        );
+
+        // Still a tombstone, so later frames on stream 1 are ignored (RFC 9113 5.1)...
+        await Assert.That(runtimeState.Http2Streams!.ContainsKey(1)).IsTrue();
+        await Assert.That(state.Aborted).IsTrue();
+
+        // ...but the body buffer is gone. Clear() would keep the grown array, so the
+        // empty writer AND its zero capacity are both asserted.
+        await Assert.That(state.DataBuffer.WrittenCount).IsEqualTo(0);
+        await Assert.That(state.DataBuffer.Capacity).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Stream_level_flow_control_error_still_charges_the_connection_window()
+    {
+        // RFC 9113 6.9.1: flow control covers every DATA octet the peer sends,
+        // whatever we end up doing with it. A stream-level FLOW_CONTROL_ERROR used
+        // to return before the connection window was charged, so the peer's send
+        // window and our receive window drifted apart by the offending frame.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await OpenRequestBodyStreamAsync(connection, 1);
+        var state = runtimeState.Http2Streams![1];
+        state.ReceiveWindow = 100;
+
+        await SendDataFrameAsync(connection, 1, payloadLength: 200);
+
+        await Assert.That(connection.LastRstStreamCode).IsEqualTo(Http2ErrorCode.FlowControlError);
+        await Assert.That(connection.LastGoAwayErrorCode).IsNull();
+        // Stream window untouched: the stream is reset, not credited.
+        await Assert.That(state.ReceiveWindow).IsEqualTo(100);
+        // Connection window charged by the whole frame payload.
+        await Assert.That(runtimeState.ConnectionReceiveWindow).IsEqualTo(65535 - 200);
+    }
+
+    // ── 5.1 Bounded closed set / one reclaim pass / abort vs. body read ──
+
+    [Test]
+    public async Task Closed_stream_table_is_bounded()
+    {
+        // HEADERS is not flow-controlled, so a peer may open a stream and reset it
+        // for free, forever. Once a reset tombstone stopped occupying one of the 100
+        // concurrency slots, nothing capped the table any more: 5,000 resets left
+        // 5,000 entries in place for the whole 2-minute idle window, and every later
+        // HEADERS paid a scan per entry.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+
+        for (var streamId = 1; streamId <= 9999; streamId += 2)
+        {
+            await OpenRequestBodyStreamAsync(connection, streamId);
+            await Http2StreamHandler.SendRstStreamAsync(
+                connection,
+                streamId,
+                Http2ErrorCode.Cancel,
+                CancellationToken.None
+            );
+        }
+
+        // The peer's next HEADERS frame runs exactly this pass; run it directly so
+        // the assertion sees the table that request will see.
+        runtimeState.ReclaimStreamsAndCountLive();
+
+        await Assert
+            .That(runtimeState.Http2Streams!.Count)
+            .IsLessThanOrEqualTo(ConnectionRuntimeState.ClosedStreamKeepAlive)
+            .Because("a peer that only resets streams must not be able to grow the table");
+
+        // Bounded, not amnesiac: the newest closed ids are still tombstones, so
+        // RFC 9113 §5.1 frames for them are still recognised as closed (see
+        // Window_update_after_local_rst_is_ignored). The oldest ones are forgotten —
+        // exactly what the 2-minute idle reaper already did to them, only sooner.
+        await Assert.That(runtimeState.Http2Streams!.ContainsKey(9999)).IsTrue();
+        await Assert.That(runtimeState.Http2Streams.ContainsKey(1)).IsFalse();
+    }
+
+    [Test]
+    public async Task Headers_does_not_rescan_the_table_three_times()
+    {
+        // Reclaiming closed streams, reclaiming idle streams and counting the live
+        // ones were three separate walks of the stream table, all of them paid for by
+        // every HEADERS frame — the one frame type a peer may issue without flow
+        // control. One traversal must do all three jobs.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+
+        // A stream that is both eligible for the idle reaper and holding a concurrency
+        // slot, so the traversal has real work to do in both halves.
+        await OpenRequestBodyStreamAsync(connection, 1);
+        runtimeState.Http2Streams![1].LastActivityUtc =
+            DateTime.UtcNow - runtimeState.StreamIdleTimeout - TimeSpan.FromSeconds(1);
+
+        var scansBefore = runtimeState.CleanupPasses;
+        await SendCompleteGetAsync(connection, 3);
+
+        await Assert
+            .That(runtimeState.CleanupPasses - scansBefore)
+            .IsEqualTo(1)
+            .Because("one HEADERS frame must cost exactly one traversal of the stream table");
+
+        // That one traversal still reaped (the stale entry is gone) and still counted
+        // (the gate it feeds admitted stream 3 even though the stale entry held a slot
+        // when the frame arrived).
+        await Assert
+            .That(runtimeState.Http2Streams!.ContainsKey(1))
+            .IsFalse()
+            .Because("the traversal that counts live streams must also reap stale ones");
+        await Assert.That(connection.HasResponseHeaders(3)).IsTrue();
+    }
+
+    [Test]
+    public async Task Abort_during_body_read_does_not_emit_a_bogus_rst()
+    {
+        // The deferred-request path snapshots the buffered body and then validated
+        // content-length against a SECOND read of state.DataBuffer. An abort landing
+        // between the two (RST_STREAM runs on the frame loop, this path does not)
+        // replaces that buffer with an empty writer, so the snapshot still said 8192
+        // octets while the validation saw 0: a PROTOCOL_ERROR RST_STREAM written for a
+        // stream that our own reset had already closed.
+        var connection = NewConnection();
+        var runtimeState = (ConnectionRuntimeState)connection.UserState!;
+        await OpenRequestBodyStreamAsync(connection, 1, contentLength: 8192);
+        var state = runtimeState.Http2Streams![1];
+
+        await SendDataFrameAsync(connection, 1, payloadLength: 8192);
+        await Assert.That(state.DataBuffer.WrittenCount).IsEqualTo(8192);
+
+        // The abort lands in exactly the window between the snapshot and the
+        // content-length check. The body the handler sees is still the 8 KiB that
+        // arrived, so content-length matches and no reset may be written.
+        runtimeState.OnBodySnapshotCaptured = aborted => aborted.MarkAborted();
+
+        await SendEndStreamDataFrameAsync(connection, 1);
+
+        await Assert
+            .That(connection.LastRstStreamCode)
+            .IsNull()
+            .Because("a stream already closed by an abort must not be reset a second time");
+        await Assert.That(state.Aborted).IsTrue();
     }
 
     // ── HPACK 5.2 String Literal: Huffman padding ──────────────────
@@ -1267,7 +1718,72 @@ public sealed class Http2ProtocolComplianceTests
         await Assert.That(connection.HasResponseHeaders(1)).IsTrue();
     }
 
-    // ── Helpers ────────────────────────────────────────────────────
+    // ── Helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Opens stream 1 with a complete request header block and a DATA frame, both
+    /// without END_STREAM, so the next HEADERS frame is necessarily a trailer block.
+    /// </summary>
+    private static async Task<ComplianceTestContext> OpenRequestStreamAwaitingTrailersAsync()
+    {
+        var connection = NewConnection();
+        var block = new List<byte> { 0x83, 0x04, 0x04 };
+        block.AddRange("/foo"u8.ToArray());
+        block.Add(0x86);
+        var headers = BuildHeadersFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders,
+            1,
+            block.ToArray()
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(headers),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        var data = BuildHeadersFrame(
+            Http2FrameType.Data,
+            Http2FrameFlags.None,
+            1,
+            "test"u8.ToArray()
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(data),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+
+        return connection;
+    }
+
+    /// <summary>Sends a trailing HEADERS block with END_HEADERS | END_STREAM on stream 1.</summary>
+    private static async Task SendTrailerFrameAsync(
+        ComplianceTestContext connection,
+        List<byte> trailerBlock
+    )
+    {
+        var trailerFrame = BuildHeadersFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders | Http2FrameFlags.EndStream,
+            1,
+            trailerBlock.ToArray()
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(trailerFrame),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+    }
 
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {
@@ -1366,6 +1882,130 @@ public sealed class Http2ProtocolComplianceTests
 
     private static byte[] BuildWindowUpdatePayload(int increment) =>
         [(byte)(increment >> 24), (byte)(increment >> 16), (byte)(increment >> 8), (byte)increment];
+
+    /// <summary>
+    /// Increments of every WINDOW_UPDATE frame written for <paramref name="streamId"/>.
+    /// </summary>
+    private static List<int> GetWindowUpdateIncrements(
+        ComplianceTestContext connection,
+        int streamId
+    )
+    {
+        var increments = new List<int>();
+        foreach (var frameBytes in connection.SentFrames)
+        {
+            if (!TryReadFrame(frameBytes, out var frame) || frame is null)
+                continue;
+            if (frame.Type != Http2FrameType.WindowUpdate || frame.StreamId != streamId)
+                continue;
+
+            increments.Add(
+                ((frame.Payload.Span[0] & 0x7F) << 24)
+                    | (frame.Payload.Span[1] << 16)
+                    | (frame.Payload.Span[2] << 8)
+                    | frame.Payload.Span[3]
+            );
+        }
+
+        return increments;
+    }
+
+    /// <summary>
+    /// Opens <paramref name="streamId"/> with a HEADERS frame that does not carry
+    /// END_STREAM, leaving the stream open for the DATA frames that follow. When
+    /// <paramref name="contentLength"/> is set the request declares that
+    /// content-length, so the deferred path validates it against the body.
+    /// </summary>
+    private static async Task OpenRequestBodyStreamAsync(
+        ComplianceTestContext connection,
+        int streamId,
+        int? contentLength = null
+    )
+    {
+        var block = new List<byte>(BuildMinimalHpack("POST", "/upload"));
+        if (contentLength is { } declared)
+            AddLiteral(block, "content-length", declared.ToString());
+
+        var headers = BuildHeadersFrame(
+            Http2FrameType.Headers,
+            Http2FrameFlags.EndHeaders,
+            streamId,
+            block.ToArray()
+        );
+        await Http2ConnectionProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(headers),
+            sendInitialSettings: false,
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+    }
+
+    /// <summary>
+    /// Feeds one PADDED DATA frame whose payload is <paramref name="payloadLength"/>
+    /// octets: the Pad Length octet, then the body octets, then
+    /// <paramref name="padLength"/> padding octets (zero, which is valid padding).
+    /// </summary>
+    private static async ValueTask SendPaddedDataFrameAsync(
+        ComplianceTestContext connection,
+        int streamId,
+        int payloadLength,
+        byte padLength
+    )
+    {
+        var payload = new byte[payloadLength];
+        payload[0] = padLength;
+        await Http2StreamHandler.ProcessDataFrame(
+            connection,
+            BuildFrame(Http2FrameType.Data, Http2FrameFlags.Padded, streamId, payload),
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+    }
+
+    /// <summary>
+    /// Sends one unpadded DATA frame with <paramref name="payloadLength"/> zero
+    /// octets, so padding can never mask a flow-control accounting bug.
+    /// </summary>
+    private static async ValueTask SendDataFrameAsync(
+        ComplianceTestContext connection,
+        int streamId,
+        int payloadLength
+    )
+    {
+        await Http2StreamHandler.ProcessDataFrame(
+            connection,
+            BuildFrame(
+                Http2FrameType.Data,
+                Http2FrameFlags.None,
+                streamId,
+                new byte[payloadLength]
+            ),
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+    }
+
+    /// <summary>
+    /// Sends the empty DATA frame that carries END_STREAM — the frame that completes
+    /// the request, so the frame loop hands the buffered body to the handler.
+    /// </summary>
+    private static async ValueTask SendEndStreamDataFrameAsync(
+        ComplianceTestContext connection,
+        int streamId
+    )
+    {
+        await Http2StreamHandler.ProcessDataFrame(
+            connection,
+            BuildFrame(Http2FrameType.Data, Http2FrameFlags.EndStream, streamId, []),
+            static (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            null,
+            CancellationToken.None
+        );
+    }
 
     private static byte[] BuildMinimalHpack(string method, string path)
     {

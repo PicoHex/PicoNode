@@ -30,7 +30,7 @@
 | **AOT 支援** | ✅ 原生支援 — 所有 net10.0 程式庫 | ⚠️ 需要修剪（trimming） |
 | **DI / 紀錄 / 設定** | PicoDI + PicoLog + PicoCfg（PicoHex 原生） | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 框架編解碼器，訊息處理器抽象 | 透過中介軟體透明處理 |
-| **程式碼行數** | 全堆疊約 18K 行 | ASP.NET Core 約 1M+ 行 |
+| **程式碼行數** | C# 25,125 行（`src/` 下 178 個檔案，不含 `bin/`/`obj/`） | 本儲存庫未測量 |
 
 > **設計優先順序：** PicoNode 優先考量配置效率和 AOT 相容性。熱路徑委派使用 `ValueTask`、ArrayPool 基礎的緩衝區管理，以及可選委派（無強迫配置）都是經過審慎權衡的取捨 — 它們讓傳輸層保持精簡且可預測。
 
@@ -75,7 +75,9 @@ PicoNode 以分層 NuGet 套件形式提供。選擇您需要的抽象層級：
 |---------|--------------|-------------|
 | **PicoWeb** | 想要一個可直接執行的網頁伺服器 | WebServer + WebApp + HTTP + TCP（全部傳遞相依） |
 | **PicoNode.Web** | 想要網頁框架但不需要主機 | WebApp、路由、中介軟體、靜態檔案、DI |
+| **PicoNode.Web.Session.Abs** | 正在撰寫工作階段存放區 | `ISession` / `ISessionStore` — `PicoNode.Web` 使用的工作階段抽象 |
 | **PicoNode.Http** | 想要原始 HTTP 協定處理 | HTTP/1.1 + HTTP/2 + WebSocket、HttpRouter |
+| **PicoJsonRpc** | 與子行程以 JSON-RPC 2.0 通訊 | `NdjsonFramer`、`JsonRpcClient`、`ProcessLifecycle` |
 | **PicoNode** | 想要原始 TCP/UDP 傳輸 | TcpNode、UdpNode、通訊端生命週期、度量 |
 | **PicoNode.Abs** | 正在撰寫處理器或擴充功能 | INode、ITcpConnectionHandler、核心合約 |
 
@@ -87,15 +89,18 @@ PicoWeb  →  PicoNode  →  PicoNode.Abs
 ### TCP 回聲伺服器
 
 ```csharp
+using System.Buffers;
 using System.Net;
 using PicoNode;
 using PicoNode.Abs;
 
-var node = new TcpNode(new TcpNodeOptions
-{
-    Endpoint = new IPEndPoint(IPAddress.Loopback, 7001),
-    ConnectionHandler = new EchoHandler(),
-});
+var node = new TcpNode(
+    new TcpNodeOptions
+    {
+        Endpoint = new IPEndPoint(IPAddress.Loopback, 7001),
+        ConnectionHandler = new EchoHandler(),
+    }
+);
 
 await node.StartAsync();
 Console.ReadLine();
@@ -103,15 +108,21 @@ await node.DisposeAsync();
 
 sealed class EchoHandler : ITcpConnectionHandler
 {
-    public Task OnConnectedAsync(ITcpConnectionContext c, CancellationToken ct)
-        => Task.CompletedTask;
-    public Task OnClosedAsync(ITcpConnectionContext c, TcpCloseReason r,
-        Exception? e, CancellationToken ct) => Task.CompletedTask;
+    public Task OnConnectedAsync(ITcpConnectionContext c, CancellationToken ct) =>
+        Task.CompletedTask;
+
+    public ValueTask OnClosedAsync(
+        ITcpConnectionContext c,
+        TcpCloseReason r,
+        Exception? e,
+        CancellationToken ct
+    ) => ValueTask.CompletedTask;
 
     public ValueTask<SequencePosition> OnReceivedAsync(
         ITcpConnectionContext connection,
         ReadOnlySequence<byte> buffer,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         _ = connection.SendAsync(buffer, ct);
         return ValueTask.FromResult(buffer.End);
@@ -226,23 +237,32 @@ var node = new TcpNode(options);
 
 ```csharp
 var config = await Cfg.CreateBuilder()
-    .AddEnvironmentVariables("PICONODE_")
+    .Add(new Dictionary<string, string>
+    {
+        ["App:Name"] = "PicoCfg",
+        ["App:Enabled"] = "true",
+    })
     .BuildAsync();
 
 var settings = CfgBind.Bind<AppSettings>(config, "App");
-options.Endpoint = new IPEndPoint(IPAddress.Any, 8080); // required
-var node = new TcpNode(options);
+
+public sealed class AppSettings
+{
+    public string? Name { get; set; }
+    public bool Enabled { get; set; }
+}
 ```
 
 ### 執行時期重新載入
 
 ```csharp
-// TcpNode 支援執行時期設定重新載入（Endpoint 除外）
+// TcpNode supports runtime config reload (except Endpoint)
 var options = new TcpNodeOptions
 {
     Endpoint = new IPEndPoint(IPAddress.Loopback, 8080),
+    Config = config, // ICfgRoot for live reload
 };
-// 節點會啟動一個監聽設定變更的重新載入迴圈
+// Node starts a reload loop watching for config changes
 ```
 
 ### 主要選項
@@ -290,24 +310,26 @@ var options = new TcpNodeOptions
 PicoNode 使用 PicoLog 進行結構化診斷。所有非致命錯誤都會附帶操作上下文進行紀錄：
 
 ```csharp
+var logger = new LoggerFactory([new ColoredConsoleSink(new ConsoleFormatter())])
+    .CreateLogger("PicoNode.Tcp");
 
 var node = new TcpNode(new TcpNodeOptions
 {
     Endpoint = new IPEndPoint(IPAddress.Loopback, 7001),
     ConnectionHandler = handler,
-    Logger = logger, // 所有傳輸錯誤紀錄在此
+    Logger = logger, // All transport faults logged here
 });
 
-// 紀錄輸出：
+// Log output:
 // [Error] Operation tcp.accept failed: AcceptFailed - System.Net.Sockets.SocketException
 // [Warning] Operation tcp.reject.limit failed: SessionRejected
 // [Debug] Socket shutdown during TLS teardown failed
 ```
 
 **依錯誤碼的紀錄層級：**
-- `Error`：StartFailed、StopFailed、AcceptFailed、ReceiveFailed、SendFailed、HandlerFailed、TlsFailed、DatagramReceiveFailed、DatagramHandlerFailed
+- `Error`：StartFailed、StopFailed、AcceptFailed、ReceiveFailed、SendFailed、HandlerFailed、DatagramReceiveFailed、DatagramHandlerFailed
 - `Warning`：SessionRejected、DatagramDropped
-- `Debug`：清理期間的通訊端關閉（盡力而為的操作）
+- `Debug`：TlsFailed、清理期間的通訊端關閉（盡力而為的操作）
 
 ## 相依性注入
 
@@ -360,8 +382,10 @@ PicoJetson 原始碼產生器在編譯期執行。處理器必須在使用者程
 // ✅ Triggers PicoJetson.Gen — UserDto serializer generated
 var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
 
-// ❌ Does NOT trigger generator (cross-assembly generic)
-Results.Json<UserDto>(200, user);
+// ❌ Does NOT trigger the generator: a controller's DTO is serialised by Controllers.Gen's
+//    GENERATED code, which PicoJetson.Gen never sees — an unmarked DTO still compiles and
+//    then throws on every request (NativeAOT cannot fall back to reflection). Mark it
+//    [PicoJsonSerializable]; forgetting it surfaces as PCW003.
 ```
 
 ### WebApiBuilder（便捷方式）
@@ -397,13 +421,12 @@ public class UsersController
     public List<UserDto> GetAllUsers() { return ...; }
 }
 
-// 2. Register controller in DI
-builder.RegisterScoped<UsersController>();
-
-// 3. Call EndpointRegistrar (auto-generated by Controllers.Gen)
+// 2. Controllers.Gen auto-registers controllers in DI via a generated
+//    [ModuleInitializer] (no manual registration needed).
+// 3. Call EndpointRegistrar (auto-generated by Controllers.Gen) to wire the routes:
 EndpointRegistrar.RegisterAll(app);
 
-// 4. Or use WebApiBuilder (calls it automatically)
+// 4. Then run the app:
 new WebApiBuilder()
     .RegisterScoped<UsersController>()
     .Build()
@@ -442,12 +465,12 @@ var staticFiles = new StaticFileMiddleware(
 app.Use(staticFiles.InvokeAsync);
 ```
 
-從根目錄提供檔案服務。防止目錄遍歷攻擊。將 30 多種副檔名對應至 MIME 類型。
+從根目錄提供檔案服務。防止目錄遍歷攻擊。將 28 種副檔名對應至 MIME 類型。
 
 ### CORS
 
 ```csharp
-app.Use((ctx, next, ct) =>
+app.Use(async (ctx, next, ct) =>
 {
     var corsOptions = new CorsOptions
     {
@@ -471,7 +494,7 @@ app.Use((ctx, next, ct) =>
 ### Cookie 與多部分表單
 
 ```csharp
-// Cookie 解析
+// Cookie parsing
 var cookies = CookieParser.Parse(context.Request.HeaderFields);
 
 // Set-Cookie
@@ -479,7 +502,7 @@ var setCookie = new SetCookieBuilder("session", "abc123")
     .Path("/").HttpOnly().Secure().SameSite("Strict").MaxAge(3600)
     .Build();
 
-// 多部分表單資料
+// Multipart form data
 // Limits (MaxPartSizeBytes/MaxTotalSizeBytes) are enforced on both the in-memory
 // Body path and the streaming BodyStream path; exceeding one throws InvalidDataException.
 var form = await MultipartFormDataParser.ParseAsync(
@@ -540,8 +563,14 @@ Console.WriteLine($"Accepted: {tcpMetrics.TotalAccepted}");
 Console.WriteLine($"Active: {tcpMetrics.ActiveConnections}");
 Console.WriteLine($"Sent: {tcpMetrics.TotalBytesSent}");
 Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
-// UDP counters available via internal state
-// (UdpNode tracks datagrams, bytes, and drops internally)
+
+// UDP
+var udpMetrics = udpNode.GetMetrics();
+Console.WriteLine($"Datagrams sent: {udpMetrics.TotalDatagramsSent}");
+Console.WriteLine($"Datagrams received: {udpMetrics.TotalDatagramsReceived}");
+Console.WriteLine($"Dropped: {udpMetrics.TotalDatagramsDropped}");
+Console.WriteLine($"Sent: {udpMetrics.TotalBytesSent}");
+Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 ```
 
 ## 專案
@@ -551,7 +580,9 @@ Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
 | **PicoNode.Abs** | net10.0 | 核心介面：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、故障碼、列舉 |
 | **PicoNode** | net10.0 | `TcpNode` 與 `UdpNode` — 生產級非同步 socket 傳輸 |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
+| **PicoJsonRpc** | net10.0 | JSON-RPC 2.0 協定核心：`NdjsonFramer`、`JsonRpcClient`、`ProcessLifecycle` |
 | **PicoNode.Web** | net10.0 | `WebApp`、`WebRouter`、中介軟體、靜態檔案、壓縮、CORS、DI |
+| **PicoNode.Web.Session.Abs** | net10.0 | 工作階段抽象：`ISession`、`ISessionStore` |
 | **PicoWeb** | net10.0 | `WebServer` — 將 `WebApp` 接到 `TcpNode` 的輕量主機 |
 
 ## 範例
@@ -578,8 +609,8 @@ dotnet test --solution PicoNode.slnx -c Release
 # Run a specific test project
 dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj -c Release
 
-# AOT publish check
-dotnet publish src/PicoWeb/PicoWeb.csproj -c Release -r win-x64 -p:PublishAot=true
+# AOT publish check (publishes tests/PicoWeb.AotVerify and runs it; -RuntimeIdentifier is optional)
+pwsh ./scripts/test-aot-publish.ps1 -RuntimeIdentifier win-x64
 ```
 
 ## 基準測試

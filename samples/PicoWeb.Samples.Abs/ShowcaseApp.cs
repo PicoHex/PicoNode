@@ -68,8 +68,10 @@ public static class ShowcaseApp
         var rateLimitStore = new InMemoryRateLimitStore(rateLimitOpts);
         app.Use(RateLimitMiddleware.Create(rateLimitStore, rateLimitOpts));
 
-        // Session middleware — injects ISession into WebContext
-        app.Use(SessionMiddleware.Create());
+        // Session middleware — injects ISession into WebContext. The host logger is threaded
+        // through so a refused session-id rotation is reported instead of silently leaving the
+        // pre-rotation id in the response.
+        app.Use(SessionMiddleware.Create(logger));
 
         // Request logging middleware — outermost in the pipeline (but inside session)
         if (logger is not null)

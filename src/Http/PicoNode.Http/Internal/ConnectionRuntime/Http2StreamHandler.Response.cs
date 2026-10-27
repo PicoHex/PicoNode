@@ -31,8 +31,6 @@ internal static partial class Http2StreamHandler
             responseHeaders.Add((header.Key, header.Value));
         }
 
-        var headerWriter = new ArrayBufferWriter<byte>();
-
         // RFC 7231 §4.3.2: a HEAD response advertises the same metadata a GET
         // would return, including the content-length of a buffered body.
         var isHead = string.Equals(
@@ -54,29 +52,31 @@ internal static partial class Http2StreamHandler
         // Encoded exactly once, here: encoding a header block that is never sent
         // would mutate the shared encoder's dynamic table for a block the peer
         // never decodes (verified regression: X-Content-Type-Options became
-        // undecodable). Concurrent stream handlers are serialised by the lock
-        // inside EncodeResponseHeadersHpack.
-        EncodeResponseHeadersHpack(connection, responseHeaders, headerWriter);
+        // undecodable). Encode and write share one critical section, so the peer
+        // can never receive a block that references a dynamic-table entry it has
+        // not decoded yet (see EncodeAndWriteResponseHeadersAsync).
+        var sendsBody =
+            (response.Body.Length > 0 || response.BodyStream is not null) && !isHead;
         var headersFlags = Http2FrameFlags.EndHeaders;
-        var encodedHeaders = headerWriter.WrittenMemory;
-
-        if (response.Body.Length == 0 && response.BodyStream is null)
-        {
+        if (!sendsBody)
             headersFlags |= Http2FrameFlags.EndStream;
-            await WriteHeadersFrameAsync(connection, streamId, headersFlags, encodedHeaders, ct);
-            state?.CompleteResponse();
-            return;
-        }
 
-        if (isHead)
+        await EncodeAndWriteResponseHeadersAsync(
+                connection,
+                streamId,
+                headersFlags,
+                responseHeaders,
+                ct
+            )
+            .ConfigureAwait(false);
+
+        if (!sendsBody)
         {
+            state?.CompleteResponse();
+
             // No DATA frames for HEAD; release the (unused) body stream so a
             // DI scope bound to it is closed.
-            headersFlags |= Http2FrameFlags.EndStream;
-            await WriteHeadersFrameAsync(connection, streamId, headersFlags, encodedHeaders, ct);
-            state?.CompleteResponse();
-
-            if (response.BodyStream is not null)
+            if (isHead && response.BodyStream is not null)
             {
                 await response.BodyStream.DisposeAsync().ConfigureAwait(false);
             }
@@ -88,7 +88,6 @@ internal static partial class Http2StreamHandler
         // background pump. The pump is decoupled from the frame loop so a slow
         // or stalled producer (e.g. an SSE stream whose handler never ends)
         // cannot wedge every other request on the connection.
-        await WriteHeadersFrameAsync(connection, streamId, headersFlags, encodedHeaders, ct);
 
         if (state is null)
         {

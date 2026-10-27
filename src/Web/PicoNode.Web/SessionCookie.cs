@@ -16,6 +16,13 @@ public sealed class SessionCookieOptions
     /// Emit the <c>Secure</c> attribute. Off by default so plain-HTTP local
     /// development keeps working; enable it for HTTPS deployments.
     /// </summary>
+    /// <remarks>
+    /// When this is on (and <see cref="Path"/> is <c>/</c>) the emitted name carries the
+    /// <c>__Host-</c> prefix, which pins the cookie to the exact origin — a subdomain cannot
+    /// set or overwrite it. Enabling <c>Secure</c> never happens by itself: a <c>__Host-</c>
+    /// cookie without <c>Secure</c> is rejected by browsers, and forcing <c>Secure</c> would
+    /// silently break every plain-HTTP deployment (decision D1).
+    /// </remarks>
     public bool Secure { get; init; }
 
     /// <summary><c>SameSite</c> attribute value. Defaults to <c>Lax</c>.</summary>
@@ -24,6 +31,8 @@ public sealed class SessionCookieOptions
 
 public static class SessionCookie
 {
+    private const string HostPrefix = "__Host-";
+
     public static (SessionIdExtractor Extract, SessionIdSetter Set) Create(
         string cookieName = "sid"
     ) => Create(new SessionCookieOptions { CookieName = cookieName });
@@ -33,6 +42,9 @@ public static class SessionCookie
     )
     {
         ArgumentNullException.ThrowIfNull(options);
+
+        // Resolved once, so the reader and the writer cannot disagree about the name.
+        var name = EffectiveName(options);
 
         return (
             Extract: request =>
@@ -47,8 +59,8 @@ public static class SessionCookie
                     if (eq < 0)
                         continue;
 
-                    var name = trimmed[..eq].Trim();
-                    if (!string.Equals(name, options.CookieName, StringComparison.Ordinal))
+                    var partName = trimmed[..eq].Trim();
+                    if (!string.Equals(partName, name, StringComparison.Ordinal))
                         continue;
 
                     var value = trimmed[(eq + 1)..].Trim();
@@ -59,9 +71,7 @@ public static class SessionCookie
             },
             Set: (response, sessionId) =>
             {
-                var builder = new SetCookieBuilder(options.CookieName, sessionId).Path(
-                    options.Path
-                );
+                var builder = new SetCookieBuilder(name, sessionId).Path(options.Path);
 
                 if (options.HttpOnly)
                     builder = builder.HttpOnly();
@@ -74,5 +84,24 @@ public static class SessionCookie
                 response.Headers.Add(cookie.Key, cookie.Value);
             }
         );
+    }
+
+    /// <summary>
+    /// The name actually used on the wire. The <c>__Host-</c> prefix is applied only when the
+    /// cookie can legally carry it — <c>Secure</c> on and path <c>/</c> (there is no domain
+    /// option, so there is no domain to violate). A browser drops a <c>__Host-</c> cookie that
+    /// breaks either rule, i.e. the session cookie would vanish.
+    /// </summary>
+    /// <remarks>
+    /// D1: the prefix rides on <see cref="SessionCookieOptions.Secure"/>; it never forces it.
+    /// </remarks>
+    internal static string EffectiveName(SessionCookieOptions options)
+    {
+        var name = options.CookieName;
+
+        if (!options.Secure || !string.Equals(options.Path, "/", StringComparison.Ordinal))
+            return name;
+
+        return name.StartsWith(HostPrefix, StringComparison.Ordinal) ? name : HostPrefix + name;
     }
 }

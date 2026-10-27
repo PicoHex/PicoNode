@@ -30,7 +30,7 @@
 | **Suporte AOT** | ✅ Nativo — todas as bibliotecas net10.0 | ⚠️ Requer trimming |
 | **DI / Log / Config** | PicoDI + PicoLog + PicoCfg (nativos PicoHex) | Microsoft.Extensions.* |
 | **WebSocket** | Codec de frame RFC 6455 com abstração de handler de mensagem | Transparente via middleware |
-| **Linhas de código** | ~18K para a pilha completa | ~1M+ para ASP.NET Core |
+| **Linhas de código** | 25.125 linhas de C# (178 arquivos em `src/`, sem `bin/`/`obj/`) | não medido neste repositório |
 
 > **Prioridade de projeto:** O PicoNode prioriza eficiência de alocação e compatibilidade AOT. `ValueTask` em delegates de hot-path, gerenciamento de buffers baseado em ArrayPool e delegates opcionais (sem alocações forçadas) são escolhas deliberadas — elas mantêm a camada de transporte compacta e previsível.
 
@@ -75,7 +75,9 @@ O PicoNode é distribuído como pacotes NuGet em camadas. Escolha exatamente o n
 |---------|----------------|-----------------|
 | **PicoWeb** | Você quer um servidor web pronto para execução | WebServer + WebApp + HTTP + TCP (tudo transitivo) |
 | **PicoNode.Web** | Você quer o framework web sem hospedagem | WebApp, roteamento, middleware, arquivos estáticos, DI |
+| **PicoNode.Web.Session.Abs** | Você está escrevendo um store de sessão | `ISession` / `ISessionStore` — as abstrações de sessão que `PicoNode.Web` consome |
 | **PicoNode.Http** | Você quer manipulação de protocolo HTTP bruta | HTTP/1.1 + HTTP/2 + WebSocket, HttpRouter |
+| **PicoJsonRpc** | Você fala JSON-RPC 2.0 com um processo filho | `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode** | Você quer transportes TCP/UDP brutos | TcpNode, UdpNode, ciclo de vida de sockets, métricas |
 | **PicoNode.Abs** | Você está escrevendo um handler ou extensão | INode, ITcpConnectionHandler, contratos centrais |
 
@@ -87,15 +89,18 @@ PicoWeb  →  PicoNode  →  PicoNode.Abs
 ### Servidor TCP Echo
 
 ```csharp
+using System.Buffers;
 using System.Net;
 using PicoNode;
 using PicoNode.Abs;
 
-var node = new TcpNode(new TcpNodeOptions
-{
-    Endpoint = new IPEndPoint(IPAddress.Loopback, 7001),
-    ConnectionHandler = new EchoHandler(),
-});
+var node = new TcpNode(
+    new TcpNodeOptions
+    {
+        Endpoint = new IPEndPoint(IPAddress.Loopback, 7001),
+        ConnectionHandler = new EchoHandler(),
+    }
+);
 
 await node.StartAsync();
 Console.ReadLine();
@@ -103,15 +108,21 @@ await node.DisposeAsync();
 
 sealed class EchoHandler : ITcpConnectionHandler
 {
-    public Task OnConnectedAsync(ITcpConnectionContext c, CancellationToken ct)
-        => Task.CompletedTask;
-    public Task OnClosedAsync(ITcpConnectionContext c, TcpCloseReason r,
-        Exception? e, CancellationToken ct) => Task.CompletedTask;
+    public Task OnConnectedAsync(ITcpConnectionContext c, CancellationToken ct) =>
+        Task.CompletedTask;
+
+    public ValueTask OnClosedAsync(
+        ITcpConnectionContext c,
+        TcpCloseReason r,
+        Exception? e,
+        CancellationToken ct
+    ) => ValueTask.CompletedTask;
 
     public ValueTask<SequencePosition> OnReceivedAsync(
         ITcpConnectionContext connection,
         ReadOnlySequence<byte> buffer,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         _ = connection.SendAsync(buffer, ct);
         return ValueTask.FromResult(buffer.End);
@@ -226,23 +237,32 @@ var node = new TcpNode(options);
 
 ```csharp
 var config = await Cfg.CreateBuilder()
-    .AddEnvironmentVariables("PICONODE_")
+    .Add(new Dictionary<string, string>
+    {
+        ["App:Name"] = "PicoCfg",
+        ["App:Enabled"] = "true",
+    })
     .BuildAsync();
 
 var settings = CfgBind.Bind<AppSettings>(config, "App");
-options.Endpoint = new IPEndPoint(IPAddress.Any, 8080); // obrigatório
-var node = new TcpNode(options);
+
+public sealed class AppSettings
+{
+    public string? Name { get; set; }
+    public bool Enabled { get; set; }
+}
 ```
 
 ### Recarga em Tempo de Execução
 
 ```csharp
-// TcpNode suporta recarga de configuração em execução (exceto Endpoint)
+// TcpNode supports runtime config reload (except Endpoint)
 var options = new TcpNodeOptions
 {
     Endpoint = new IPEndPoint(IPAddress.Loopback, 8080),
+    Config = config, // ICfgRoot for live reload
 };
-// O nó inicia um loop de recarga monitorando mudanças na configuração
+// Node starts a reload loop watching for config changes
 ```
 
 ### Opções Principais
@@ -290,24 +310,26 @@ var options = new TcpNodeOptions
 O PicoNode usa PicoLog para diagnósticos estruturados. Todos os erros não fatais são registrados com contexto da operação:
 
 ```csharp
+var logger = new LoggerFactory([new ColoredConsoleSink(new ConsoleFormatter())])
+    .CreateLogger("PicoNode.Tcp");
 
 var node = new TcpNode(new TcpNodeOptions
 {
     Endpoint = new IPEndPoint(IPAddress.Loopback, 7001),
     ConnectionHandler = handler,
-    Logger = logger, // Todas as falhas de transporte são registradas aqui
+    Logger = logger, // All transport faults logged here
 });
 
-// Saída de log:
+// Log output:
 // [Error] Operation tcp.accept failed: AcceptFailed - System.Net.Sockets.SocketException
 // [Warning] Operation tcp.reject.limit failed: SessionRejected
 // [Debug] Socket shutdown during TLS teardown failed
 ```
 
 **Níveis de log por código de falha:**
-- `Error`: StartFailed, StopFailed, AcceptFailed, ReceiveFailed, SendFailed, HandlerFailed, TlsFailed, DatagramReceiveFailed, DatagramHandlerFailed
+- `Error`: StartFailed, StopFailed, AcceptFailed, ReceiveFailed, SendFailed, HandlerFailed, DatagramReceiveFailed, DatagramHandlerFailed
 - `Warning`: SessionRejected, DatagramDropped
-- `Debug`: Socket shutdown durante limpeza (operações de melhor esforço)
+- `Debug`: TlsFailed, Socket shutdown durante limpeza (operações de melhor esforço)
 
 ## Injeção de Dependência
 
@@ -360,8 +382,10 @@ Os geradores de código-fonte do PicoJetson rodam em tempo de compilação. Os h
 // ✅ Triggers PicoJetson.Gen — UserDto serializer generated
 var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
 
-// ❌ Does NOT trigger generator (cross-assembly generic)
-Results.Json<UserDto>(200, user);
+// ❌ Does NOT trigger the generator: a controller's DTO is serialised by Controllers.Gen's
+//    GENERATED code, which PicoJetson.Gen never sees — an unmarked DTO still compiles and
+//    then throws on every request (NativeAOT cannot fall back to reflection). Mark it
+//    [PicoJsonSerializable]; forgetting it surfaces as PCW003.
 ```
 
 ### WebApiBuilder (conveniência)
@@ -397,13 +421,12 @@ public class UsersController
     public List<UserDto> GetAllUsers() { return ...; }
 }
 
-// 2. Register controller in DI
-builder.RegisterScoped<UsersController>();
-
-// 3. Call EndpointRegistrar (auto-generated by Controllers.Gen)
+// 2. Controllers.Gen auto-registers controllers in DI via a generated
+//    [ModuleInitializer] (no manual registration needed).
+// 3. Call EndpointRegistrar (auto-generated by Controllers.Gen) to wire the routes:
 EndpointRegistrar.RegisterAll(app);
 
-// 4. Or use WebApiBuilder (calls it automatically)
+// 4. Then run the app:
 new WebApiBuilder()
     .RegisterScoped<UsersController>()
     .Build()
@@ -442,12 +465,12 @@ var staticFiles = new StaticFileMiddleware(
 app.Use(staticFiles.InvokeAsync);
 ```
 
-Serve arquivos de um diretório raiz. Previne directory traversal. Mapeia mais de 30 extensões de arquivo para tipos MIME.
+Serve arquivos de um diretório raiz. Previne directory traversal. Mapeia 28 extensões de arquivo para tipos MIME.
 
 ### CORS
 
 ```csharp
-app.Use((ctx, next, ct) =>
+app.Use(async (ctx, next, ct) =>
 {
     var corsOptions = new CorsOptions
     {
@@ -471,7 +494,7 @@ app.Use((ctx, next, ct) =>
 ### Cookies & Multipart
 
 ```csharp
-// Análise de cookies
+// Cookie parsing
 var cookies = CookieParser.Parse(context.Request.HeaderFields);
 
 // Set-Cookie
@@ -479,7 +502,7 @@ var setCookie = new SetCookieBuilder("session", "abc123")
     .Path("/").HttpOnly().Secure().SameSite("Strict").MaxAge(3600)
     .Build();
 
-// Dados de formulário multipart
+// Multipart form data
 // Limits (MaxPartSizeBytes/MaxTotalSizeBytes) are enforced on both the in-memory
 // Body path and the streaming BodyStream path; exceeding one throws InvalidDataException.
 var form = await MultipartFormDataParser.ParseAsync(
@@ -540,8 +563,14 @@ Console.WriteLine($"Accepted: {tcpMetrics.TotalAccepted}");
 Console.WriteLine($"Active: {tcpMetrics.ActiveConnections}");
 Console.WriteLine($"Sent: {tcpMetrics.TotalBytesSent}");
 Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
-// UDP counters available via internal state
-// (UdpNode tracks datagrams, bytes, and drops internally)
+
+// UDP
+var udpMetrics = udpNode.GetMetrics();
+Console.WriteLine($"Datagrams sent: {udpMetrics.TotalDatagramsSent}");
+Console.WriteLine($"Datagrams received: {udpMetrics.TotalDatagramsReceived}");
+Console.WriteLine($"Dropped: {udpMetrics.TotalDatagramsDropped}");
+Console.WriteLine($"Sent: {udpMetrics.TotalBytesSent}");
+Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 ```
 
 ## Projetos
@@ -551,7 +580,9 @@ Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
 | **PicoNode.Abs** | net10.0 | Interfaces principais: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, códigos de falha, enums |
 | **PicoNode** | net10.0 | `TcpNode` e `UdpNode` — transportes de socket assíncronos de nível de produção |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
+| **PicoJsonRpc** | net10.0 | Núcleo do protocolo JSON-RPC 2.0: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, middleware, arquivos estáticos, compressão, CORS, DI |
+| **PicoNode.Web.Session.Abs** | net10.0 | Abstrações de sessão: `ISession`, `ISessionStore` |
 | **PicoWeb** | net10.0 | `WebServer` — host fino que conecta `WebApp` ao `TcpNode` |
 
 ## Exemplos
@@ -578,8 +609,8 @@ dotnet test --solution PicoNode.slnx -c Release
 # Run a specific test project
 dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj -c Release
 
-# AOT publish check
-dotnet publish src/PicoWeb/PicoWeb.csproj -c Release -r win-x64 -p:PublishAot=true
+# AOT publish check (publishes tests/PicoWeb.AotVerify and runs it; -RuntimeIdentifier is optional)
+pwsh ./scripts/test-aot-publish.ps1 -RuntimeIdentifier win-x64
 ```
 
 ## Benchmarks

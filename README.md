@@ -30,7 +30,7 @@
 | **AOT Support** | ✅ Native — all net10.0 libraries | ⚠️ Requires trimming |
 | **DI / Logging / Config** | PicoDI + PicoLog + PicoCfg (PicoHex native) | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 frame codec with message handler abstraction | Transparent via middleware |
-| **Line count** | ~18K for the full stack | ~1M+ for ASP.NET Core |
+| **Line count** | 25,125 lines of C# (178 files under `src/`, `bin/`/`obj/` excluded) | not measured in this repository |
 
 > **Design priority:** PicoNode prioritizes allocation efficiency and AOT compatibility. `ValueTask` on hot-path delegates, ArrayPool-based buffer management, and optional delegates (no forced allocations) are deliberate trade-offs — they keep the transport layer compact and predictable.
 
@@ -75,7 +75,9 @@ PicoNode ships as layered NuGet packages. Pick exactly the abstraction level you
 |---------|--------------|-------------|
 | **PicoWeb** | You want a ready-to-run web server | WebServer + WebApp + HTTP + TCP (all transitive) |
 | **PicoNode.Web** | You want the web framework without hosting | WebApp, routing, middleware, static files, DI |
+| **PicoNode.Web.Session.Abs** | You're writing a session store | `ISession` / `ISessionStore` — the session abstractions `PicoNode.Web` consumes |
 | **PicoNode.Http** | You want raw HTTP protocol handling | HTTP/1.1 + HTTP/2 + WebSocket, HttpRouter |
+| **PicoJsonRpc** | You're talking JSON-RPC 2.0 to a child process | `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode** | You want raw TCP/UDP transports | TcpNode, UdpNode, socket lifecycle, metrics |
 | **PicoNode.Abs** | You're writing a handler or extension | INode, ITcpConnectionHandler, core contracts |
 
@@ -87,15 +89,18 @@ PicoWeb  →  PicoNode  →  PicoNode.Abs
 ### TCP Echo Server
 
 ```csharp
+using System.Buffers;
 using System.Net;
 using PicoNode;
 using PicoNode.Abs;
 
-var node = new TcpNode(new TcpNodeOptions
-{
-    Endpoint = new IPEndPoint(IPAddress.Loopback, 7001),
-    ConnectionHandler = new EchoHandler(),
-});
+var node = new TcpNode(
+    new TcpNodeOptions
+    {
+        Endpoint = new IPEndPoint(IPAddress.Loopback, 7001),
+        ConnectionHandler = new EchoHandler(),
+    }
+);
 
 await node.StartAsync();
 Console.ReadLine();
@@ -103,15 +108,21 @@ await node.DisposeAsync();
 
 sealed class EchoHandler : ITcpConnectionHandler
 {
-    public Task OnConnectedAsync(ITcpConnectionContext c, CancellationToken ct)
-        => Task.CompletedTask;
-    public Task OnClosedAsync(ITcpConnectionContext c, TcpCloseReason r,
-        Exception? e, CancellationToken ct) => Task.CompletedTask;
+    public Task OnConnectedAsync(ITcpConnectionContext c, CancellationToken ct) =>
+        Task.CompletedTask;
+
+    public ValueTask OnClosedAsync(
+        ITcpConnectionContext c,
+        TcpCloseReason r,
+        Exception? e,
+        CancellationToken ct
+    ) => ValueTask.CompletedTask;
 
     public ValueTask<SequencePosition> OnReceivedAsync(
         ITcpConnectionContext connection,
         ReadOnlySequence<byte> buffer,
-        CancellationToken ct)
+        CancellationToken ct
+    )
     {
         _ = connection.SendAsync(buffer, ct);
         return ValueTask.FromResult(buffer.End);
@@ -121,6 +132,7 @@ sealed class EchoHandler : ITcpConnectionHandler
 
 ### HTTP Server (Low-Level)
 
+<!-- readme-fragment: needs its own entry point: the block opens with using directives and ends in top-level await, so no method can hold it -->
 ```csharp
 using System.Net;
 using PicoNode;
@@ -155,6 +167,7 @@ await node.DisposeAsync();
 
 ### Web Application (DI First + Delegate)
 
+<!-- readme-fragment: binds the application's own IUserService/UserService behind a console entry point; samples/PicoWeb.Samples wires the same builder against real services -->
 ```csharp
 using PicoNode.Web;
 using PicoWeb;
@@ -189,6 +202,7 @@ await api.RunAsync("http://+:8080");
 
 ### Web Application (Controller-based)
 
+<!-- readme-fragment: two files in one block (Controllers/UsersController.cs and Program.cs) plus the generated EndpointRegistrar, so no single file can hold it -->
 ```csharp
 // Controllers/UsersController.cs
 using PicoJetson;
@@ -225,6 +239,7 @@ var node = new TcpNode(options);
 
 ### PicoCfg Binding (AOT-safe, source-generated)
 
+<!-- readme-fragment: declares the AppSettings class inside the block, so it is file content rather than a fragment a method can hold; CfgBindSmokeTest compiles the same calls -->
 ```csharp
 var config = await Cfg.CreateBuilder()
     .Add(new Dictionary<string, string>
@@ -300,7 +315,7 @@ var options = new TcpNodeOptions
 PicoNode uses PicoLog for structured diagnostics. All non-fatal errors are logged with operation context:
 
 ```csharp
-var logger = new LoggerFactory([new ConsoleSink()])
+var logger = new LoggerFactory([new ColoredConsoleSink(new ConsoleFormatter())])
     .CreateLogger("PicoNode.Tcp");
 
 var node = new TcpNode(new TcpNodeOptions
@@ -317,9 +332,9 @@ var node = new TcpNode(new TcpNodeOptions
 ```
 
 **Log levels by fault code:**
-- `Error`: StartFailed, StopFailed, AcceptFailed, ReceiveFailed, SendFailed, HandlerFailed, TlsFailed, DatagramReceiveFailed, DatagramHandlerFailed
+- `Error`: StartFailed, StopFailed, AcceptFailed, ReceiveFailed, SendFailed, HandlerFailed, DatagramReceiveFailed, DatagramHandlerFailed
 - `Warning`: SessionRejected, DatagramDropped
-- `Debug`: Socket shutdown during cleanup (best-effort operations)
+- `Debug`: TlsFailed, Socket shutdown during cleanup (best-effort operations)
 
 ## Dependency Injection
 
@@ -327,6 +342,7 @@ PicoNode.Web requires `ISvcContainer` at construction time (DI First). Scopes ar
 
 ### Manual DI resolution in handlers
 
+<!-- readme-fragment: depends on the application's own IDatabase/SqlDatabase implementations and on a top-level await -->
 ```csharp
 using PicoNode.Web;
 using PicoWeb;
@@ -353,6 +369,7 @@ Handlers always use the `WebRequestHandler` signature
 `(WebContext, CancellationToken)`. Services come from the request scope via
 `ctx.Services` — there is no parameter injection:
 
+<!-- readme-fragment: declares a handler that resolves the application's own IUserService, so it cannot compile in isolation; the WebApiBuilder block shows the same handler -->
 ```csharp
 app.MapGet("/users/{id}", async (WebContext ctx, CancellationToken _) =>
 {
@@ -367,16 +384,20 @@ app.MapGet("/users/{id}", async (WebContext ctx, CancellationToken _) =>
 
 PicoJetson source generators run at compile time. Handlers must call `SerializeToUtf8Bytes<T>()` directly in user code to trigger generator:
 
+<!-- readme-fragment: the block is two comments, not code: it contrasts the attribute path with the PCW003 failure, so there is nothing to compile -->
 ```csharp
 // ✅ Triggers PicoJetson.Gen — UserDto serializer generated
 var bytes = PicoJetson.JsonSerializer.SerializeToUtf8Bytes(user);
 
-// ❌ Does NOT trigger generator (cross-assembly generic)
-Results.Json<UserDto>(200, user);
+// ❌ Does NOT trigger the generator: a controller's DTO is serialised by Controllers.Gen's
+//    GENERATED code, which PicoJetson.Gen never sees — an unmarked DTO still compiles and
+//    then throws on every request (NativeAOT cannot fall back to reflection). Mark it
+//    [PicoJsonSerializable]; forgetting it surfaces as PCW003.
 ```
 
 ### WebApiBuilder (convenience)
 
+<!-- readme-fragment: binds the application's own IUserService/UserService behind a console entry point, exactly like the builder sample above it -->
 ```csharp
 using PicoNode.Web;
 using PicoWeb;
@@ -399,6 +420,7 @@ await api.RunAsync("http://+:5000");
 
 ### WebApiBuilder with Controllers (endpoint registration)
 
+<!-- readme-fragment: contains `{ ... }` placeholders for the DTO bodies - a sketch of the contract the generator consumes, not C# -->
 ```csharp
 // 1. Controller in Controllers/ folder (convention)
 //    Controllers/UsersController.cs
@@ -432,7 +454,6 @@ from explicit `SerializeToUtf8Bytes<T>()` call sites.
 
 > **Note:** The controller-based pattern requires PicoJetson.Gen for automatic DTO serialization registration.
 > For the MapXX pattern, call `PicoJetson.JsonSerializer.SerializeToUtf8Bytes<T>()` explicitly in your handler.
-```
 
 ## Built-in Middleware
 
@@ -454,7 +475,7 @@ var staticFiles = new StaticFileMiddleware(
 app.Use(staticFiles.InvokeAsync);
 ```
 
-Serves files from a root directory. Prevents directory traversal. Maps 30+ file extensions to MIME types.
+Serves files from a root directory. Prevents directory traversal. Maps 28 file extensions to MIME types.
 
 ### CORS
 
@@ -547,15 +568,26 @@ Both `TcpNode` and `UdpNode` expose real-time counters:
 
 ```csharp
 // TCP
-var tcpMetrics = node.GetMetrics();  // only TcpNode
+var tcpMetrics = tcpNode.GetMetrics();
 Console.WriteLine($"Accepted: {tcpMetrics.TotalAccepted}");
 Console.WriteLine($"Active: {tcpMetrics.ActiveConnections}");
 Console.WriteLine($"Sent: {tcpMetrics.TotalBytesSent}");
 Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
 
-// UDP counters available via internal state
-// (UdpNode tracks datagrams, bytes, and drops internally)
+// UDP
+var udpMetrics = udpNode.GetMetrics();
+Console.WriteLine($"Datagrams sent: {udpMetrics.TotalDatagramsSent}");
+Console.WriteLine($"Datagrams received: {udpMetrics.TotalDatagramsReceived}");
+Console.WriteLine($"Dropped: {udpMetrics.TotalDatagramsDropped}");
+Console.WriteLine($"Sent: {udpMetrics.TotalBytesSent}");
+Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 ```
+
+The JSON-RPC client (`PicoJsonRpc`) counts rather than logs the stream notifications it
+cannot attribute to an open subscription: `JsonRpcClient.DroppedNotifications` (an
+`Interlocked` counter, `internal`) records both cases — a chunk naming a stream that is no
+longer open, and an uncorrelated chunk while several streams are open. The package takes
+**no logging dependency**, so a drop is a number, not a silent loss.
 
 ## Projects
 
@@ -564,7 +596,9 @@ Console.WriteLine($"Received: {tcpMetrics.TotalBytesReceived}");
 | **PicoNode.Abs** | net10.0 | Core interfaces: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, fault codes, enums |
 | **PicoNode** | net10.0 | `TcpNode` and `UdpNode` — production-grade async socket transports |
 | **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
+| **PicoJsonRpc** | net10.0 | JSON-RPC 2.0 protocol core: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
 | **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, middleware, static files, compression, CORS, DI |
+| **PicoNode.Web.Session.Abs** | net10.0 | Session abstractions: `ISession`, `ISessionStore` |
 | **PicoWeb** | net10.0 | `WebServer` — thin host wiring `WebApp` to `TcpNode` |
 
 ## Samples
@@ -591,8 +625,8 @@ dotnet test --solution PicoNode.slnx -c Release
 # Run a specific test project
 dotnet test --project tests/PicoNode.Http.Tests/PicoNode.Http.Tests.csproj -c Release
 
-# AOT publish check
-dotnet publish src/PicoWeb/PicoWeb.csproj -c Release -r win-x64 -p:PublishAot=true
+# AOT publish check (publishes tests/PicoWeb.AotVerify and runs it; -RuntimeIdentifier is optional)
+pwsh ./scripts/test-aot-publish.ps1 -RuntimeIdentifier win-x64
 ```
 
 ## Benchmarks

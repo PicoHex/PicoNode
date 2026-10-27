@@ -1,6 +1,10 @@
 global using System.Collections.Concurrent;
 global using System.Diagnostics.CodeAnalysis;
+global using System.Globalization;
 global using System.Net;
+global using System.Text;
+global using PicoDI;
 global using PicoDI.Abs;
 global using PicoNode;
+global using PicoNode.Http;
 global using PicoNode.Web;

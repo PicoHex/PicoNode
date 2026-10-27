@@ -418,6 +418,22 @@ public sealed class Http2StreamHandlerTests
         return Http2FrameCodec.TryReadFrame(buffer, out frame, out _);
     }
 
+    /// <summary>Parses every frame in one SendAsync buffer (a single send may carry a whole header block).</summary>
+    private static List<Http2Frame> ReadFrames(byte[] send)
+    {
+        var frames = new List<Http2Frame>();
+        var remaining = new ReadOnlySequence<byte>(send);
+        while (remaining.Length >= Http2FrameCodec.FrameHeaderSize)
+        {
+            if (!Http2FrameCodec.TryReadFrame(remaining, out var frame, out var consumed))
+                break;
+            frames.Add(frame!);
+            remaining = remaining.Slice(consumed);
+        }
+
+        return frames;
+    }
+
     [Test]
     public async Task SendRstStreamAsync_writes_exact_rst_frame()
     {
@@ -447,12 +463,14 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
-    public async Task SendRstStreamAsync_cancels_the_response_pump_and_removes_the_stream()
+    public async Task SendRstStreamAsync_cancels_the_response_pump_and_keeps_a_tombstone()
     {
         // Regression: the server-initiated RST removed the stream from tracking
         // but did not cancel ResponseCts, so a streaming response (SSE) kept
-        // writing DATA frames after the stream was reset, and the untracked
-        // stream turned the peer's next WINDOW_UPDATE into a GOAWAY.
+        // writing DATA frames after the stream was reset. The entry now stays
+        // behind as a tombstone (RFC 9113 §5.1: frames for a closed stream are
+        // ignored, not diagnosed as an idle stream), so no untracked id can turn
+        // the peer's next WINDOW_UPDATE into a GOAWAY.
         var connection = new TestTcpConnectionContext();
         var runtime = new ConnectionRuntimeState();
         connection.UserState = runtime;
@@ -470,7 +488,11 @@ public sealed class Http2StreamHandlerTests
             .That(stream.ResponseCts.IsCancellationRequested)
             .IsTrue()
             .Because("a server-initiated RST_STREAM must stop the response pump");
-        await Assert.That(runtime.Http2Streams!.ContainsKey(1)).IsFalse();
+        await Assert
+            .That(runtime.Http2Streams!.ContainsKey(1))
+            .IsTrue()
+            .Because("the reset stream must stay tracked as a closed-stream tombstone");
+        await Assert.That(runtime.Http2Streams[1].Aborted).IsTrue();
     }
 
     [Test]
@@ -1571,9 +1593,12 @@ public sealed class Http2StreamHandlerTests
             | rstFrame.Payload.Span[3];
         await Assert.That(errorCode).IsEqualTo((int)Http2ErrorCode.EnhanceYourCalm);
 
-        // Verify the stream was removed from tracking
+        // Verify the stream stays tracked as a closed-stream tombstone: the RST
+        // closes the stream, and RFC 9113 §5.1 requires later frames for it to be
+        // ignored rather than answered with a connection error.
         var state = (ConnectionRuntimeState)connection.UserState!;
-        await Assert.That(state.Http2Streams?.ContainsKey(1)).IsFalse();
+        await Assert.That(state.Http2Streams?.ContainsKey(1)).IsTrue();
+        await Assert.That(state.Http2Streams![1].Aborted).IsTrue();
     }
 
     [Test]
@@ -1657,13 +1682,13 @@ public sealed class Http2StreamHandlerTests
     }
 
     [Test]
-    public async Task Continuation_exceeding_MaxHeaderListSize_sends_GoAway()
+    public async Task Continuation_exceeding_MaxCompressedHeaderBlockSize_sends_GoAway()
     {
         var connection = new TestTcpConnectionContext();
 
-        // Build a large HPACK payload that exceeds 16KB MaxHeaderListSize
+        // Build a large HPACK payload that exceeds the 16 KiB MaxCompressedHeaderBlockSize
         // Use BuildFrame directly to avoid Http2FrameCodec's max frame size check
-        var largeValue = new string('x', Http2StreamState.MaxHeaderListSize);
+        var largeValue = new string('x', Http2StreamState.MaxCompressedHeaderBlockSize);
         var largeHpack = BuildHpackWithLargeValue(largeValue);
 
         var frame = BuildFrame(Http2FrameType.Headers, Http2FrameFlags.EndHeaders, 1, largeHpack);
@@ -1679,7 +1704,7 @@ public sealed class Http2StreamHandlerTests
             CancellationToken.None
         );
 
-        // Exceeding MaxHeaderListSize is a connection error
+        // Exceeding MaxCompressedHeaderBlockSize is a connection error
         await Assert.That(connection.IsClosed).IsTrue();
     }
 
@@ -1946,6 +1971,14 @@ public sealed class Http2StreamHandlerTests
             .That(state.HpackTable.Capacity)
             .IsEqualTo(4096)
             .Because("the peer cannot change our decoder table capacity");
+
+        // RFC 7540 §6.5.2 leaves the value unbounded: one that does not fit an
+        // int is clamped to 0 (table disabled) at the entry point, instead of
+        // casting negative — which the deferred path's `pending >= 0` sentinel
+        // dropped silently.
+        state.ApplySettings([new Http2Setting(Http2SettingId.HeaderTableSize, uint.MaxValue)]);
+        await Assert.That(state.RemoteHeaderTableSize).IsEqualTo(0);
+        await Assert.That(state.ResponseHpackEncoder.DynamicTable.Capacity).IsEqualTo(0);
     }
 
     [Test]
@@ -2004,6 +2037,599 @@ public sealed class Http2StreamHandlerTests
                 .Because("response HPACK must stay in sync with the peer decoder table");
             await Assert.That(headers!.Any(h => h.Item1 == ":status")).IsTrue();
         }
+    }
+
+    [Test]
+    public async Task Concurrent_stream_headers_are_written_in_encode_order()
+    {
+        // Regression guard for ERR_HTTP2_COMPRESSION_ERROR on a multiplexed
+        // connection: the shared encoder mutates its dynamic table on every
+        // encode, so a block encoded later may reference an entry inserted by an
+        // earlier block. If the write order can diverge from the encode order
+        // (encode inside the critical section, write after releasing it) the
+        // peer decodes a forward reference against a table that does not hold it
+        // yet and tears the connection down.
+        var connection = new StallingHeadersConnectionContext();
+        var runtime = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = runtime;
+
+        // Deterministic "stream 3 has reached the gate" signal: no timing window.
+        // The seam fires on the thread that is about to enter the encoder gate.
+        var streamThreeAtGate = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        runtime.OnHpackGateEnter = streamId =>
+        {
+            if (streamId == 3)
+                streamThreeAtGate.TrySetResult();
+        };
+
+        // Identical value on both streams: the first response inserts
+        // "x-request-id: <value>" into the dynamic table, the second response
+        // then references that entry by index.
+        const string requestId = "b7d2e4a1-0c3f-4e5a-9f21-8a6c5d4e3b2a";
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    Headers = new HttpHeaderCollection { { "x-request-id", requestId } },
+                }
+            );
+
+        // Stream 1 encodes first, then parks inside its HEADERS write — the
+        // equivalent of a socket send whose drain has not completed yet.
+        var first = Task.Run(() =>
+            Http2StreamHandler
+                .ProcessHeadersFrame(
+                    connection,
+                    BuildHeadersFrameFor(1, "/first"),
+                    handler,
+                    null,
+                    CancellationToken.None
+                )
+                .AsTask()
+        );
+        await connection.FirstHeadersWriteStarted.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Stream 3 answers while stream 1's write is still in flight.
+        var second = Task.Run(() =>
+            Http2StreamHandler
+                .ProcessHeadersFrame(
+                    connection,
+                    BuildHeadersFrameFor(3, "/second"),
+                    handler,
+                    null,
+                    CancellationToken.None
+                )
+                .AsTask()
+        );
+
+        // Stream 3 either reaches the wire while stream 1 is still parked (the
+        // bug) or it cannot encode at all, because stream 1's write holds the
+        // encoder gate. Waiting for the gate signal instead of a wall-clock window
+        // makes the ordering deterministic in both cases: stream 1's frame is
+        // recorded before it releases the gate, so a gate-bound stream 3 can never
+        // be written first.
+        await streamThreeAtGate.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        connection.ReleaseFirstHeadersWrite();
+        await first.WaitAsync(TimeSpan.FromSeconds(10));
+        await second.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Decode the header blocks in wire order against a single peer table,
+        // exactly as the peer does.
+        var peerTable = new HpackDynamicTable();
+        var writtenStreamIds = new List<int>();
+        foreach (var sent in connection.SentFrames)
+        {
+            if (!TryReadFrame(sent, out var sentFrame) || sentFrame!.Type != Http2FrameType.Headers)
+                continue;
+
+            writtenStreamIds.Add(sentFrame.StreamId);
+            var decoded = HpackDecoder.TryDecode(
+                sentFrame.Payload.Span,
+                out var decodedHeaders,
+                peerTable
+            );
+            await Assert
+                .That(decoded)
+                .IsTrue()
+                .Because(
+                    $"stream {sentFrame.StreamId}'s header block must only reference dynamic-table entries the peer has already decoded (wire order: {string.Join(", ", writtenStreamIds)})"
+                );
+            await Assert
+                .That(decodedHeaders.Any(h => h.Item1 == "x-request-id" && h.Item2 == requestId))
+                .IsTrue();
+        }
+
+        await Assert.That(writtenStreamIds.Count).IsEqualTo(2);
+        await Assert
+            .That(writtenStreamIds[0])
+            .IsEqualTo(1)
+            .Because("the first stream to encode must be the first stream written");
+        await Assert
+            .That(writtenStreamIds[1])
+            .IsEqualTo(3)
+            .Because("a header block may not be overtaken by a block encoded after it");
+    }
+
+    [Test]
+    public async Task New_stream_does_not_rescan_cleanup_twice()
+    {
+        // GetOrCreateStream used to run the whole CleanupClosedStreams scan twice
+        // for every new stream — the second scan was pure repetition.
+        var state = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+
+        await Assert.That(state.GetOrCreateStream(1)).IsNotNull();
+        await Assert
+            .That(state.CleanupPasses)
+            .IsEqualTo(1)
+            .Because("creating a stream must scan the stream table once, not twice");
+
+        await Assert.That(state.GetOrCreateStream(3)).IsNotNull();
+        await Assert
+            .That(state.CleanupPasses)
+            .IsEqualTo(2)
+            .Because("every created stream costs exactly one scan");
+
+        // Re-using a known stream adds its own single scan, no hidden extra one.
+        await Assert.That(state.GetOrCreateStream(1)).IsNotNull();
+        await Assert.That(state.CleanupPasses).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task Header_block_is_not_interleaved_by_frame_loop_frames()
+    {
+        // RFC 9113 6.2/6.10: a header block must reach the peer as ONE contiguous
+        // run of HEADERS + CONTINUATION frames. A block larger than the peer's max
+        // frame size used to be written one frame per SendAsync, so any other
+        // writer on the connection - here the frame loop's PING ACK - could land
+        // between HEADERS and its CONTINUATION.
+        var connection = new SplitHeaderBlockConnectionContext();
+        var runtime = new ConnectionRuntimeState
+        {
+            Protocol = ConnectionProtocol.Http2,
+            RemoteMaxFrameSize = 16384,
+            ReceivedPostPrefaceFrame = true, // the PING below is not the preface frame
+        };
+        connection.UserState = runtime;
+
+        var bigValue = new string('a', 40_000);
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    Headers = new HttpHeaderCollection { { "x-big", bigValue } },
+                }
+            );
+
+        try
+        {
+            var response = Task.Run(() =>
+                Http2StreamHandler
+                    .ProcessHeadersFrame(
+                        connection,
+                        BuildHeadersFrameFor(1, "/big"),
+                        handler,
+                        null,
+                        CancellationToken.None
+                    )
+                    .AsTask()
+            );
+
+            // Deterministic ordering, no timing window: the double parks a write
+            // that stops in the middle of a header block until a PING ACK has been
+            // recorded. The buggy path is therefore forced to be interleaved; the
+            // fixed path never parks (its last frame carries END_HEADERS).
+            await connection.FirstHeaderWriteRecorded.WaitAsync(TimeSpan.FromSeconds(10));
+
+            var ping = Http2FrameCodec.EncodeFrame(
+                Http2FrameType.Ping,
+                Http2FrameFlags.None,
+                0,
+                new byte[8]
+            );
+            await Http2ConnectionProcessor.ProcessAsync(
+                connection,
+                new ReadOnlySequence<byte>(ping),
+                sendInitialSettings: false,
+                handler,
+                null,
+                CancellationToken.None
+            );
+
+            await response.WaitAsync(TimeSpan.FromSeconds(10));
+
+            var frames = connection.RecordedFrames();
+            var wire = string.Join(" ", frames.Select(f => $"{f.StreamId}:{f.Type}"));
+
+            await Assert
+                .That(frames.Any(f => f.Type == Http2FrameType.Continuation))
+                .IsTrue()
+                .Because(
+                    $"a 40 KB header block must be split when the peer max frame size is 16 KB (wire: {wire})"
+                );
+            await Assert
+                .That(
+                    frames.Any(f => f.Type == Http2FrameType.Ping && f.HasFlag(Http2FrameFlags.Ack))
+                )
+                .IsTrue()
+                .Because(
+                    $"the frame loop must have written a PING ACK for this test to mean anything (wire: {wire})"
+                );
+
+            for (var i = 0; i < frames.Count; i++)
+            {
+                var head = frames[i];
+                if (head.Type != Http2FrameType.Headers || head.HasFlag(Http2FrameFlags.EndHeaders))
+                    continue;
+
+                var endHeadersSeen = false;
+                var j = i + 1;
+                for (; j < frames.Count; j++)
+                {
+                    var next = frames[j];
+                    await Assert
+                        .That(next.Type)
+                        .IsEqualTo(Http2FrameType.Continuation)
+                        .Because(
+                            $"nothing may be written inside a split header block (wire: {wire})"
+                        );
+                    await Assert
+                        .That(next.StreamId)
+                        .IsEqualTo(head.StreamId)
+                        .Because($"CONTINUATION must stay on the same stream (wire: {wire})");
+                    if (next.HasFlag(Http2FrameFlags.EndHeaders))
+                    {
+                        endHeadersSeen = true;
+                        j++;
+                        break;
+                    }
+                }
+
+                await Assert
+                    .That(endHeadersSeen)
+                    .IsTrue()
+                    .Because($"a split header block must end with END_HEADERS (wire: {wire})");
+                i = j - 1;
+            }
+        }
+        finally
+        {
+            connection.ReleaseInterleavedWrite();
+        }
+    }
+
+    [Test]
+    public async Task Settings_resize_does_not_block_the_frame_loop()
+    {
+        // A SETTINGS_HEADER_TABLE_SIZE change used to take the response-encoder
+        // gate with a blocking Wait() on the frame loop. While a header write was
+        // parked in an unbounded socket flush, that stopped the whole frame loop
+        // and burned a pool thread with no timeout.
+        var connection = new StallingHeadersConnectionContext();
+        var runtime = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = runtime;
+
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    Headers = new HttpHeaderCollection { { "x-request-id", "alpha" } },
+                }
+            );
+
+        var first = Task.Run(() =>
+            Http2StreamHandler
+                .ProcessHeadersFrame(
+                    connection,
+                    BuildHeadersFrameFor(1, "/first"),
+                    handler,
+                    null,
+                    CancellationToken.None
+                )
+                .AsTask()
+        );
+
+        try
+        {
+            // Stream 1's header write is now parked, holding the encoder gate.
+            await connection.FirstHeadersWriteStarted.WaitAsync(TimeSpan.FromSeconds(10));
+
+            var settings = Http2FrameCodec.EncodeSettings(
+                new Http2Setting(Http2SettingId.HeaderTableSize, 1024)
+            );
+            var frameLoop = Task.Run(() =>
+                Http2ConnectionProcessor
+                    .ProcessAsync(
+                        connection,
+                        new ReadOnlySequence<byte>(settings),
+                        sendInitialSettings: false,
+                        handler,
+                        null,
+                        CancellationToken.None
+                    )
+                    .AsTask()
+            );
+
+            var progressed = true;
+            try
+            {
+                // Bounded only so a regression fails instead of hanging the suite;
+                // the fixed frame loop finishes immediately, without any window.
+                await frameLoop.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (TimeoutException)
+            {
+                progressed = false;
+            }
+
+            await Assert
+                .That(progressed)
+                .IsTrue()
+                .Because(
+                    "ApplySettings must not block the frame loop: a SETTINGS_HEADER_TABLE_SIZE resize behind an in-flight header write has to be deferred, not waited for"
+                );
+
+            var acked = connection
+                .SentFrames.SelectMany(ReadFrames)
+                .Any(f => f.Type == Http2FrameType.Settings && f.HasFlag(Http2FrameFlags.Ack));
+            await Assert
+                .That(acked)
+                .IsTrue()
+                .Because("the frame loop must still ACK the SETTINGS it processed");
+        }
+        finally
+        {
+            connection.ReleaseFirstHeadersWrite();
+        }
+
+        await first.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // The deferred resize must not be dropped: the next encode applies it
+        // before touching the encoder table.
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            BuildHeadersFrameFor(3, "/second"),
+            handler,
+            null,
+            CancellationToken.None
+        );
+        await Assert
+            .That(runtime.ResponseHpackEncoder.DynamicTable.Capacity)
+            .IsEqualTo(1024)
+            .Because(
+                "a resize deferred behind an in-flight header write must be applied before the next encode"
+            );
+    }
+
+    [Test]
+    public async Task A_deferred_resize_is_not_reapplied_after_a_newer_resize()
+    {
+        // Regression guard: SETTINGS A arrived while the encoder gate was taken,
+        // so it was recorded as the deferred size; the in-flight write then
+        // completed and SETTINGS B was applied directly. Re-applying the stale
+        // deferred A on the next encode would resize the table back to A while
+        // the peer's decoder evicted everything at B, so the encoder would emit
+        // dynamic-table indexes the peer cannot resolve (COMPRESSION_ERROR).
+        // The old blocking code applied both sizes, in order.
+        var connection = new StallingHeadersConnectionContext();
+        var runtime = new ConnectionRuntimeState { Protocol = ConnectionProtocol.Http2 };
+        connection.UserState = runtime;
+
+        HttpRequestHandler handler = (req, ct) =>
+            ValueTask.FromResult(
+                new HttpResponse
+                {
+                    StatusCode = 200,
+                    Headers = new HttpHeaderCollection { { "x-request-id", "alpha" } },
+                }
+            );
+
+        var first = Task.Run(() =>
+            Http2StreamHandler
+                .ProcessHeadersFrame(
+                    connection,
+                    BuildHeadersFrameFor(1, "/first"),
+                    handler,
+                    null,
+                    CancellationToken.None
+                )
+                .AsTask()
+        );
+
+        try
+        {
+            // Stream 1's HEADERS write is parked inside the gate.
+            await connection.FirstHeadersWriteStarted.WaitAsync(TimeSpan.FromSeconds(10));
+
+            // SETTINGS A: contended, so it is deferred instead of applied.
+            runtime.ApplySettings([new Http2Setting(Http2SettingId.HeaderTableSize, 1024)]);
+            await Assert
+                .That(runtime.ResponseHpackEncoder.DynamicTable.Capacity)
+                .IsEqualTo(4096)
+                .Because("a resize that arrives while the gate is taken must be deferred");
+        }
+        finally
+        {
+            connection.ReleaseFirstHeadersWrite();
+        }
+
+        // The parked write completes: the gate is free again, and the deferred
+        // SETTINGS A has still not been consumed by any encode.
+        await first.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // SETTINGS B: uncontended, so it is applied immediately.
+        runtime.ApplySettings([new Http2Setting(Http2SettingId.HeaderTableSize, 0)]);
+        await Assert.That(runtime.RemoteHeaderTableSize).IsEqualTo(0);
+        await Assert.That(runtime.ResponseHpackEncoder.DynamicTable.Capacity).IsEqualTo(0);
+
+        // One encode: the deferred SETTINGS A is superseded by B and must not be
+        // re-applied on top of it.
+        await Http2StreamHandler.ProcessHeadersFrame(
+            connection,
+            BuildHeadersFrameFor(3, "/second"),
+            handler,
+            null,
+            CancellationToken.None
+        );
+        await Assert
+            .That(runtime.ResponseHpackEncoder.DynamicTable.Capacity)
+            .IsEqualTo(0)
+            .Because(
+                "SETTINGS A was superseded by SETTINGS B: re-applying the stale deferred size would emit indexes the peer's evicted decoder table cannot resolve"
+            );
+    }
+
+    /// <summary>
+    /// Connection double that parks the FIRST HEADERS frame write until the test
+    /// releases it, so two stream handlers can be observed with one write still
+    /// in flight.
+    /// </summary>
+    private sealed class StallingHeadersConnectionContext : ITcpConnectionContext
+    {
+        private readonly object _sendGate = new();
+        private readonly List<byte[]> _sentFrames = new();
+        private readonly TaskCompletionSource _firstHeadersWriteStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _releaseFirstHeadersWrite = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _headersWrites;
+
+        public Task FirstHeadersWriteStarted => _firstHeadersWriteStarted.Task;
+
+        public void ReleaseFirstHeadersWrite() => _releaseFirstHeadersWrite.TrySetResult();
+
+        public long ConnectionId => 1;
+        public EndPoint RemoteEndPoint => new IPEndPoint(IPAddress.Loopback, 12345);
+        public DateTimeOffset ConnectedAtUtc => DateTimeOffset.MinValue;
+        public DateTimeOffset LastActivityUtc => DateTimeOffset.MinValue;
+        public object? UserState { get; set; }
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
+        public string? NegotiatedProtocol => null;
+        public bool IsClosed { get; private set; }
+
+        public List<byte[]> SentFrames
+        {
+            get
+            {
+                lock (_sendGate)
+                {
+                    return _sentFrames.ToList();
+                }
+            }
+        }
+
+        public async Task SendAsync(
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var bytes = new byte[buffer.Length];
+            buffer.CopyTo(bytes);
+
+            var isHeadersFrame =
+                bytes.Length >= Http2FrameCodec.FrameHeaderSize
+                && bytes[3] == (byte)Http2FrameType.Headers;
+            if (isHeadersFrame && Interlocked.Increment(ref _headersWrites) == 1)
+            {
+                _firstHeadersWriteStarted.TrySetResult();
+                await _releaseFirstHeadersWrite.Task.ConfigureAwait(false);
+            }
+
+            lock (_sendGate)
+            {
+                _sentFrames.Add(bytes);
+            }
+        }
+
+        public void Close() => IsClosed = true;
+    }
+
+    /// <summary>
+    /// Connection double that records every send (split into frames) and parks any
+    /// send that stops in the MIDDLE of a header block until a PING ACK has been
+    /// recorded. A write ending mid-block is exactly the state RFC 9113 6.2 forbids
+    /// another writer to observe, so the interleaving is forced rather than raced.
+    /// </summary>
+    private sealed class SplitHeaderBlockConnectionContext : ITcpConnectionContext
+    {
+        private readonly object _sendGate = new();
+        private readonly List<byte[]> _sentFrames = new();
+        private readonly TaskCompletionSource _firstHeaderWriteRecorded = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _pingAckRecorded = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _releaseInterleavedWrite = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _midBlockWrites;
+
+        /// <summary>Completes once the response's first send has been recorded.</summary>
+        public Task FirstHeaderWriteRecorded => _firstHeaderWriteRecorded.Task;
+
+        public void ReleaseInterleavedWrite() => _releaseInterleavedWrite.TrySetResult();
+
+        public long ConnectionId => 1;
+        public EndPoint RemoteEndPoint => new IPEndPoint(IPAddress.Loopback, 12345);
+        public DateTimeOffset ConnectedAtUtc => DateTimeOffset.MinValue;
+        public DateTimeOffset LastActivityUtc => DateTimeOffset.MinValue;
+        public object? UserState { get; set; }
+        public CancellationToken RemoteCloseToken => CancellationToken.None;
+        public string? NegotiatedProtocol => null;
+        public bool IsClosed { get; private set; }
+
+        /// <summary>Every frame recorded so far, in wire order.</summary>
+        public List<Http2Frame> RecordedFrames()
+        {
+            List<byte[]> snapshot;
+            lock (_sendGate)
+            {
+                snapshot = _sentFrames.ToList();
+            }
+
+            return snapshot.SelectMany(ReadFrames).ToList();
+        }
+
+        public async Task SendAsync(
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var bytes = new byte[buffer.Length];
+            buffer.CopyTo(bytes);
+            var frames = ReadFrames(bytes);
+
+            lock (_sendGate)
+            {
+                _sentFrames.Add(bytes);
+            }
+
+            if (frames.Any(f => f.Type == Http2FrameType.Headers))
+                _firstHeaderWriteRecorded.TrySetResult();
+
+            if (frames.Any(f => f.Type == Http2FrameType.Ping && f.HasFlag(Http2FrameFlags.Ack)))
+                _pingAckRecorded.TrySetResult();
+
+            var last = frames.Count > 0 ? frames[^1] : null;
+            var endsMidBlock =
+                last is not null
+                && (last.Type == Http2FrameType.Headers || last.Type == Http2FrameType.Continuation)
+                && !last.HasFlag(Http2FrameFlags.EndHeaders);
+            if (endsMidBlock && Interlocked.Increment(ref _midBlockWrites) == 1)
+            {
+                await Task.WhenAny(_pingAckRecorded.Task, _releaseInterleavedWrite.Task)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        public void Close() => IsClosed = true;
     }
 
     private static async Task AwaitStreamPumpsAsync(TestTcpConnectionContext connection)
@@ -2179,11 +2805,9 @@ public sealed class Http2StreamHandlerTests
         using var headerBlock = new MemoryStream();
         var sawContinuation = false;
         var endHeadersSeen = false;
-        foreach (var sent in connection.SentFrames)
+        foreach (var sentFrame in connection.SentFrames.SelectMany(ReadFrames))
         {
-            if (!TryReadFrame(sent, out var sentFrame))
-                continue;
-            if (sentFrame!.Type == Http2FrameType.Headers)
+            if (sentFrame.Type == Http2FrameType.Headers)
             {
                 headerBlock.Write(sentFrame.Payload.Span);
                 endHeadersSeen = sentFrame.HasFlag(Http2FrameFlags.EndHeaders);

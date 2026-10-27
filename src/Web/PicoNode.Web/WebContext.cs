@@ -50,6 +50,14 @@ public sealed class WebContext
 
     public ISession? Session { get; internal set; }
 
+    /// <summary>
+    /// Set by <see cref="SessionRotation.Regenerate"/>, consumed by
+    /// <see cref="SessionMiddleware"/> on the way out. Deliberately not an
+    /// <see cref="Items"/> entry: the session middleware would then allocate an items
+    /// dictionary for every request that never rotates anything.
+    /// </summary>
+    internal volatile bool SessionRegenerationRequested;
+
     private Dictionary<string, object?>? _items;
 
     public IDictionary<string, object?> Items => _items ??= new Dictionary<string, object?>();

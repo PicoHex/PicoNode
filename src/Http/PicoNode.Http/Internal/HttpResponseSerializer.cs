@@ -6,7 +6,6 @@ internal static class HttpResponseSerializer
     private const string ChunkedHeaderValue = "chunked";
     private static readonly Encoding HeaderEncoding = Encoding.ASCII;
     private static readonly byte[] ChunkTerminatorBytes = "0\r\n\r\n"u8.ToArray();
-    private static readonly byte[] CrLfBytes = "\r\n"u8.ToArray();
 
     public static ReadOnlySequence<byte> Serialize(
         HttpResponse response,
@@ -22,46 +21,11 @@ internal static class HttpResponseSerializer
             EstimateHeaderLength(response, closeConnection, serverHeader)
         );
 
-        WriteStatusAndHeaders(
-            headerBuffer,
-            response,
-            closeConnection,
-            serverHeader,
-            isChunked: false
-        );
-
-        if (omitBody)
-        {
-            // HEAD (RFC 7231 §4.3.2): identical metadata to the GET response,
-            // no payload. An application-provided Content-Length describes the
-            // entity a GET would return (e.g. static files) and is preserved;
-            // otherwise the length of the in-memory body is used.
-            if (
-                response.Headers.TryGetValue(HttpHeaderNames.ContentLength, out var declared)
-                && long.TryParse(
-                    declared,
-                    NumberStyles.None,
-                    CultureInfo.InvariantCulture,
-                    out var declaredLength
-                )
-                && declaredLength >= 0
-            )
-            {
-                WriteHeader(headerBuffer, HttpHeaderNames.ContentLength, declaredLength);
-            }
-            else
-            {
-                WriteHeader(headerBuffer, HttpHeaderNames.ContentLength, response.Body.Length);
-            }
-
-            WriteCrlf(headerBuffer);
-            return new ReadOnlySequence<byte>(headerBuffer.WrittenMemory);
-        }
-
-        WriteHeader(headerBuffer, HttpHeaderNames.ContentLength, response.Body.Length);
+        WriteStatusAndHeaders(headerBuffer, response, closeConnection, serverHeader);
+        WriteContentLength(headerBuffer, response, omitBody);
         WriteCrlf(headerBuffer);
 
-        if (response.Body.IsEmpty)
+        if (omitBody || response.Body.IsEmpty || !HasContent(response.StatusCode))
         {
             return new ReadOnlySequence<byte>(headerBuffer.WrittenMemory);
         }
@@ -81,44 +45,65 @@ internal static class HttpResponseSerializer
         ValidateResponse(response, serverHeader);
 
         var headerBuffer = new ArrayBufferWriter<byte>(256);
-        WriteStatusAndHeaders(
-            headerBuffer,
-            response,
-            closeConnection,
-            serverHeader,
-            isChunked: true
-        );
+        WriteStatusAndHeaders(headerBuffer, response, closeConnection, serverHeader);
         WriteHeader(headerBuffer, HttpHeaderNames.TransferEncoding, ChunkedHeaderValue);
         WriteCrlf(headerBuffer);
 
         return new ReadOnlySequence<byte>(headerBuffer.WrittenMemory);
     }
 
-    public static ReadOnlySequence<byte> FormatChunk(ReadOnlyMemory<byte> data)
+    /// <summary>
+    /// Longest chunk header any chunk can need: an <see cref="int"/> renders as at most 8 hex
+    /// digits, plus the CRLF — which is why <see cref="AllocateStreamingBuffer"/> adds it.
+    /// </summary>
+    internal const int MaxChunkPrefixLength = 10;
+
+    /// <summary>The CRLF that closes a chunk, written after its payload.</summary>
+    internal const int ChunkCrLfLength = 2;
+
+    /// <summary>
+    /// Rents the buffer a streaming response needs: the chunk-header region (offset 0), the
+    /// payload the reader fills (offset <see cref="MaxChunkPrefixLength"/>), and the CRLF that
+    /// closes the chunk. The caller owns the array and must return it to
+    /// <see cref="ArrayPool{T}.Shared"/>.
+    /// </summary>
+    internal static byte[] AllocateStreamingBuffer(int readSize) =>
+        ArrayPool<byte>.Shared.Rent(MaxChunkPrefixLength + readSize + ChunkCrLfLength);
+
+    /// <summary>
+    /// Writes the chunk header of a <paramref name="dataLength"/>-octet chunk into the *end* of
+    /// <paramref name="headerRegion"/>, so the payload can follow it in the same buffer and the
+    /// whole chunk leaves in one segment. Returns the header length; the payload is expected at
+    /// <c>headerRegion.Length</c>, so the header starts at
+    /// <c>headerRegion.Length - returnValue</c>.
+    /// </summary>
+    /// <remarks>
+    /// This replaces a three-segment <see cref="ReadOnlySequence{T}"/> plus a freshly allocated
+    /// prefix array per chunk: framing a chunk now costs no allocation at all.
+    /// </remarks>
+    internal static int WriteChunkPrefix(Span<byte> headerRegion, int dataLength)
     {
-        if (data.IsEmpty)
+        // A zero-length chunk *is* the body terminator, not a data chunk: writing a
+        // header for one here would end the stream in the middle of the body.
+        ArgumentOutOfRangeException.ThrowIfLessThan(dataLength, 1);
+
+        Span<byte> hex = stackalloc byte[8];
+        dataLength.TryFormat(hex, out var written, "x");
+
+        var prefixLength = written + 2;
+        if (headerRegion.Length < prefixLength)
         {
-            return ReadOnlySequence<byte>.Empty;
+            throw new ArgumentException(
+                $"The chunk header region must hold {prefixLength} bytes.",
+                nameof(headerRegion)
+            );
         }
 
-        var prefix = FormatChunkPrefix(data.Length);
-
-        var first = new BufferSegment(prefix);
-        var dataSegment = first.Append(data);
-        var last = dataSegment.Append(CrLfBytes);
-
-        return new ReadOnlySequence<byte>(first, 0, last, last.Memory.Length);
-    }
-
-    private static byte[] FormatChunkPrefix(int length)
-    {
-        Span<byte> hex = stackalloc byte[10];
-        length.TryFormat(hex, out var written, "x");
-        var prefix = new byte[written + 2];
-        hex[..written].CopyTo(prefix);
-        prefix[written] = (byte)'\r';
-        prefix[written + 1] = (byte)'\n';
-        return prefix;
+        var start = headerRegion.Length - prefixLength;
+        hex[..written].CopyTo(headerRegion[start..]);
+        headerRegion[start + written] = (byte)'\r';
+        headerRegion[start + written + 1] = (byte)'\n';
+        return prefixLength;
     }
 
     public static ReadOnlySequence<byte> ChunkTerminator => new(ChunkTerminatorBytes);
@@ -135,12 +120,27 @@ internal static class HttpResponseSerializer
         }
     }
 
+    /// <summary>
+    /// Writes the status line plus every application header the serializer does not
+    /// own. Two names are never copied: <c>Content-Length</c> (recomputed by
+    /// <see cref="WriteContentLength"/>, except for the 304 echo) and
+    /// <c>Transfer-Encoding</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>Transfer-Encoding</c> is dropped unconditionally — not only on the chunked
+    /// path — because framing belongs to the serializer. RFC 9112 §6.1/§6.3 forbid one
+    /// message from carrying both <c>Transfer-Encoding</c> and <c>Content-Length</c>,
+    /// and <see cref="Serialize"/> always announces a body it sends raw with a
+    /// <c>Content-Length</c>: an application-supplied <c>Transfer-Encoding: chunked</c>
+    /// would make a downstream proxy parse that raw body as chunk framing (response
+    /// smuggling). The chunked path writes its own single
+    /// <c>Transfer-Encoding: chunked</c>.
+    /// </remarks>
     private static void WriteStatusAndHeaders(
         ArrayBufferWriter<byte> buffer,
         HttpResponse response,
         bool closeConnection,
-        string? serverHeader,
-        bool isChunked
+        string? serverHeader
     )
     {
         WriteAscii(buffer, VersionToString(response.Version));
@@ -162,8 +162,7 @@ internal static class HttpResponseSerializer
             )
                 continue;
             if (
-                isChunked
-                && header.Key.Equals(
+                header.Key.Equals(
                     HttpHeaderNames.TransferEncoding,
                     StringComparison.OrdinalIgnoreCase
                 )
@@ -188,6 +187,74 @@ internal static class HttpResponseSerializer
         }
     }
 
+    /// <summary>
+    /// Emits the framing header this response is allowed to carry (RFC 9110 §8.6,
+    /// RFC 9112 §6.3). The status code decides:
+    /// <list type="bullet">
+    /// <item>1xx and 204 — nothing: <see cref="HasContent"/> is false and
+    /// <c>Content-Length</c> is forbidden outright.</item>
+    /// <item>304 — an application-supplied value only. RFC 9110 §15.4.5 lets a 304
+    /// repeat the <c>Content-Length</c> a 200 would have carried; a synthesized
+    /// <c>0</c> (or the length of whatever body the handler built) claims a length the
+    /// 200 never had.</item>
+    /// <item>everything else — the serializer's own framing: the in-memory body length,
+    /// or for HEAD the application-declared entity length (RFC 9110 §9.3.2), falling
+    /// back to the body length.</item>
+    /// </list>
+    /// </summary>
+    private static void WriteContentLength(
+        ArrayBufferWriter<byte> buffer,
+        HttpResponse response,
+        bool omitBody
+    )
+    {
+        var statusCode = response.StatusCode;
+
+        if (!HasContent(statusCode))
+        {
+            if (statusCode == 304 && TryGetDeclaredContentLength(response, out var declared304))
+            {
+                WriteHeader(buffer, HttpHeaderNames.ContentLength, declared304);
+            }
+
+            return;
+        }
+
+        // HEAD (RFC 9110 §9.3.2): identical metadata to the GET response, no payload.
+        // An application-provided Content-Length describes the entity a GET would
+        // return (e.g. static files) and is preserved; otherwise the length of the
+        // in-memory body is used.
+        if (omitBody && TryGetDeclaredContentLength(response, out var declaredHead))
+        {
+            WriteHeader(buffer, HttpHeaderNames.ContentLength, declaredHead);
+            return;
+        }
+
+        WriteHeader(buffer, HttpHeaderNames.ContentLength, response.Body.Length);
+    }
+
+    private static bool TryGetDeclaredContentLength(HttpResponse response, out long length)
+    {
+        length = 0;
+
+        return response.Headers.TryGetValue(HttpHeaderNames.ContentLength, out var declared)
+            && long.TryParse(declared, NumberStyles.None, CultureInfo.InvariantCulture, out length)
+            && length >= 0;
+    }
+
+    /// <summary>
+    /// RFC 9110 §6.4.1: a 1xx, 204 or 304 response has no content. Sending a body
+    /// anyway would leave it unframed — no <c>Content-Length</c> is allowed to
+    /// announce it — so on a keep-alive connection the next response would start in
+    /// the middle of those octets.
+    /// </summary>
+    private static bool HasContent(int statusCode) =>
+        !(statusCode is >= 100 and < 200 or 204 or 304);
+
+    /// <summary>
+    /// Sizing hint for the header buffer only — <see cref="ArrayBufferWriter{T}"/> grows
+    /// on demand, so an estimate that is a few bytes off costs nothing but a reallocation.
+    /// </summary>
     private static int EstimateHeaderLength(
         HttpResponse response,
         bool closeConnection,
@@ -239,6 +306,7 @@ internal static class HttpResponseSerializer
         bool closeConnection = false
     ) =>
         name.Equals(HttpHeaderNames.ContentLength, StringComparison.OrdinalIgnoreCase)
+        || name.Equals(HttpHeaderNames.TransferEncoding, StringComparison.OrdinalIgnoreCase)
         || (
             closeConnection
             && name.Equals(HttpHeaderNames.Connection, StringComparison.OrdinalIgnoreCase)

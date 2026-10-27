@@ -6,7 +6,10 @@ public readonly record struct UdpNodeMetrics(
     long TotalDatagramsSent,
     /// <summary>Total datagrams received since node start.</summary>
     long TotalDatagramsReceived,
-    /// <summary>Total datagrams dropped due to queue overflow.</summary>
+    /// <summary>
+    /// Total datagrams dropped instead of delivered: the dispatch queue was full or had already
+    /// been closed by a shutdown.
+    /// </summary>
     long TotalDatagramsDropped,
     /// <summary>Total payload bytes sent since node start.</summary>
     long TotalBytesSent,

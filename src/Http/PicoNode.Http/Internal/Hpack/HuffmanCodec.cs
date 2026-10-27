@@ -26,36 +26,36 @@ internal static class HuffmanCodec
         var t = Codes;
         t[0] = (0x1FF8, 13);
         t[1] = (0x7FFFD8, 23);
-        t[2] = (0xFFFFE2, 28);
-        t[3] = (0xFFFFE3, 28);
-        t[4] = (0xFFFFE4, 28);
-        t[5] = (0xFFFFE5, 28);
-        t[6] = (0xFFFFE6, 28);
-        t[7] = (0xFFFFE7, 28);
-        t[8] = (0xFFFFE8, 28);
+        t[2] = (0xFFFFFE2, 28);
+        t[3] = (0xFFFFFE3, 28);
+        t[4] = (0xFFFFFE4, 28);
+        t[5] = (0xFFFFFE5, 28);
+        t[6] = (0xFFFFFE6, 28);
+        t[7] = (0xFFFFFE7, 28);
+        t[8] = (0xFFFFFE8, 28);
         t[9] = (0xFFFFEA, 24);
         t[10] = (0x3FFFFFFC, 30);
-        t[11] = (0xFFFFE9, 28);
-        t[12] = (0xFFFFEA, 28);
+        t[11] = (0xFFFFFE9, 28);
+        t[12] = (0xFFFFFEA, 28);
         t[13] = (0x3FFFFFFD, 30);
-        t[14] = (0xFFFFEB, 28);
-        t[15] = (0xFFFFEC, 28);
-        t[16] = (0xFFFFED, 28);
-        t[17] = (0xFFFFEE, 28);
-        t[18] = (0xFFFFEF, 28);
-        t[19] = (0xFFFFF0, 28);
-        t[20] = (0xFFFFF1, 28);
-        t[21] = (0xFFFFF2, 28);
+        t[14] = (0xFFFFFEB, 28);
+        t[15] = (0xFFFFFEC, 28);
+        t[16] = (0xFFFFFED, 28);
+        t[17] = (0xFFFFFEE, 28);
+        t[18] = (0xFFFFFEF, 28);
+        t[19] = (0xFFFFFF0, 28);
+        t[20] = (0xFFFFFF1, 28);
+        t[21] = (0xFFFFFF2, 28);
         t[22] = (0x3FFFFFFE, 30);
-        t[23] = (0xFFFFF3, 28);
-        t[24] = (0xFFFFF4, 28);
-        t[25] = (0xFFFFF5, 28);
-        t[26] = (0xFFFFF6, 28);
-        t[27] = (0xFFFFF7, 28);
-        t[28] = (0xFFFFF8, 28);
-        t[29] = (0xFFFFF9, 28);
-        t[30] = (0xFFFFFA, 28);
-        t[31] = (0xFFFFFB, 28);
+        t[23] = (0xFFFFFF3, 28);
+        t[24] = (0xFFFFFF4, 28);
+        t[25] = (0xFFFFFF5, 28);
+        t[26] = (0xFFFFFF6, 28);
+        t[27] = (0xFFFFFF7, 28);
+        t[28] = (0xFFFFFF8, 28);
+        t[29] = (0xFFFFFF9, 28);
+        t[30] = (0xFFFFFFA, 28);
+        t[31] = (0xFFFFFFB, 28);
         t[32] = (0x14, 6);
         t[33] = (0x3F8, 10);
         t[34] = (0x3F9, 10);
@@ -151,7 +151,7 @@ internal static class HuffmanCodec
         t[124] = (0x7FC, 11);
         t[125] = (0x3FFD, 14);
         t[126] = (0x1FFD, 13);
-        t[127] = (0xFFFFFC, 28);
+        t[127] = (0xFFFFFFC, 28);
         t[128] = (0xFFFE6, 20);
         t[129] = (0x3FFFD2, 22);
         t[130] = (0xFFFE7, 20);
@@ -244,7 +244,7 @@ internal static class HuffmanCodec
         t[217] = (0x1FFFE5, 21);
         t[218] = (0x3FFFFE8, 26);
         t[219] = (0x3FFFFE9, 26);
-        t[220] = (0xFFFFFD, 28);
+        t[220] = (0xFFFFFFD, 28);
         t[221] = (0x7FFFFE3, 27);
         t[222] = (0x7FFFFE4, 27);
         t[223] = (0x7FFFFE5, 27);
@@ -273,7 +273,7 @@ internal static class HuffmanCodec
         t[246] = (0x7FFFFE9, 27);
         t[247] = (0x7FFFFEA, 27);
         t[248] = (0x7FFFFEB, 27);
-        t[249] = (0xFFFFFE, 28);
+        t[249] = (0xFFFFFFE, 28);
         t[250] = (0x7FFFFEC, 27);
         t[251] = (0x7FFFFED, 27);
         t[252] = (0x7FFFFEE, 27);
@@ -390,6 +390,14 @@ internal static class HuffmanCodec
                 paddingBits++;
 
                 node = bit == 0 ? HuffLeft[node] : HuffRight[node];
+
+                // Defence-in-depth only: a complete prefix code (RFC 7541 Appendix B, Kraft
+                // sum = 1) gives every internal node both children, so with a correct table
+                // this guard is unreachable for any input. It fires on a damaged table, where
+                // it turns a would-be IndexOutOfRangeException into false (TryDecode must
+                // never throw).
+                if (node < 0)
+                    return false; // dead end — a damaged/invalid code, not a crash
 
                 if (HuffSym[node] != -1)
                 {

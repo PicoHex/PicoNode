@@ -4,10 +4,22 @@ namespace PicoJsonRpc;
 /// NDJSON framing for the JSON-RPC 2.0 envelope stream (spec §9.1):
 /// one JSON object per line, '\n' terminated; 16 MiB per-message cap; empty
 /// lines skipped (EOF is expressed only by ReadAsync returning 0, never by a
-/// blank line). Frames serialize via <see cref="JsonRpcCodec"/> (camelCase
-/// wire, PicoJetson). Malformed lines, over-limit frames, and — per the union
-/// discrimination rule — frames carrying BOTH id and method (the child sent a
-/// request) throw <see cref="FormatException"/> (fail-loud protocol discipline).
+/// blank line). Frames serialize via <see cref="JsonRpcWire"/> — hand-written
+/// UTF-8 JSON, conforming to JSON-RPC 2.0 (T7.4 / D2 = A): every line carries
+/// <c>"jsonrpc":"2.0"</c>, payloads are INLINE JSON values, a notification has
+/// no <c>id</c>, and a response carries exactly one of <c>result</c>/<c>error</c>.
+/// <para>
+/// Malformed lines, over-limit frames, and — per the union discrimination rule —
+/// frames carrying BOTH id and method (the child sent a request) throw
+/// <see cref="FormatException"/> (fail-loud protocol discipline). A BATCH line
+/// (an array) is the one inbound line that is ANSWERED instead of throwing:
+/// batching is unsupported (README), so it yields an <c>Invalid Request</c>
+/// (<c>-32600</c>) frame with a null id and the stream keeps flowing — a throw
+/// here would run into the client's <c>HandleEof</c> and kill the channel for
+/// every later call. The framer OFFERS that frame; <see cref="JsonRpcClient"/> has
+/// no id to route it on and drops it, so a peer's batch gets no reply (stated
+/// plainly there and in the README, never claimed as "answered").
+/// </para>
 /// </summary>
 public static class NdjsonFramer
 {
@@ -16,8 +28,10 @@ public static class NdjsonFramer
     public static byte[] Encode<T>(T envelope)
         where T : class
     {
-        // A0 probe: Serialize<T> returns string; UTF8 bytes for the wire.
-        var jsonBytes = Encoding.UTF8.GetBytes(JsonRpcCodec.Serialize(envelope));
+        // A frame has one wire shape, whichever face of the codec produced it.
+        var jsonBytes =
+            envelope is JsonRpcFrame frame ? JsonRpcWire.Encode(frame)
+            : Encoding.UTF8.GetBytes(JsonRpcCodec.Serialize(envelope));
         if (jsonBytes.Length > MaxFrameBytes)
             throw new InvalidOperationException($"frame exceeds {MaxFrameBytes} bytes");
         var withNl = new byte[jsonBytes.Length + 1];
@@ -52,17 +66,24 @@ public static class NdjsonFramer
                         continue; // empty line — not EOF
                     if (bytes.Count > MaxFrameBytes)
                         throw new FormatException($"frame exceeds {MaxFrameBytes} bytes");
-                    var frame =
-                        JsonSerializer.Deserialize<JsonRpcFrame>(
-                            bytes.ToArray(),
-                            JsonRpcCodec.Camel
-                        ) ?? throw new FormatException("null JSON frame");
+                    // snapshot the line and clear BEFORE yielding: the caller may
+                    // never resume the enumerator, and the buffer must already be
+                    // reusable for the next line.
+                    var line = bytes.ToArray();
+                    bytes.Clear();
+                    if (IsBatchLine(line))
+                    {
+                        // batching unsupported — the -32600 frame is OFFERED to
+                        // the caller and then dropped by the client (no id to route on)
+                        yield return BatchUnsupported();
+                        continue;
+                    }
+                    var frame = JsonRpcWire.ReadFrame(line);
                     if (frame.Id is not null && frame.Method is not null)
                         throw new FormatException(
                             "child sent a request (response/notification only)"
                         );
                     yield return frame;
-                    bytes.Clear();
                     continue;
                 }
                 bytes.Add(b);
@@ -71,4 +92,32 @@ public static class NdjsonFramer
             }
         }
     }
+
+    /// <summary>A batch (a top-level JSON array) — the only unsupported line
+    /// shape. Leading whitespace (a stray CR from a CRLF writer) is skipped.</summary>
+    private static bool IsBatchLine(byte[] line)
+    {
+        foreach (var b in line)
+        {
+            if (b is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n')
+                continue;
+            return b == (byte)'[';
+        }
+        return false;
+    }
+
+    /// <summary>The OFFERED answer to a batch line: a <c>-32600 Invalid Request</c>
+    /// frame with a null id (JSON-RPC 2.0 §5 — an unanswerable request is answered
+    /// with a null id). A framer cannot write it: it hands the frame to the caller,
+    /// and <see cref="JsonRpcClient"/> drops it (nothing to route on), so a batch is
+    /// answered only by a caller that writes it back itself.</summary>
+    private static JsonRpcFrame BatchUnsupported() =>
+        new()
+        {
+            Error = new JsonRpcError
+            {
+                Code = JsonRpcWire.InvalidRequestCode,
+                Message = JsonRpcWire.BatchUnsupportedMessage,
+            },
+        };
 }

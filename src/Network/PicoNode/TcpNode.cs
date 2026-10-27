@@ -4,6 +4,9 @@ public sealed class TcpNode : INode
 {
     private const string OperationStart = "tcp.start";
     private const string OperationStop = "tcp.stop.listener";
+    private const string OperationStopSignal = "tcp.stop.signal";
+    private const string OperationStopIdle = "tcp.stop.idle";
+    private const string OperationStopLoops = "tcp.stop.loops";
     private const string OperationAccept = "tcp.accept";
     private const string OperationRejectLimit = "tcp.reject.limit";
     private const string OperationRejectTracking = "tcp.reject.tracking";
@@ -32,7 +35,17 @@ public sealed class TcpNode : INode
     /// to ensure in-flight reloads complete gracefully.
     /// </summary>
     private Task? _configReloadTask;
-    private TaskCompletionSource<bool>? _drained;
+
+    /// <summary>
+    /// The one and only drain source for this node: created exactly once — under
+    /// <see cref="_stateLock"/>, by the caller that performs the Running→Stopping
+    /// transition — and signalled exactly once by <see cref="OnConnectionClosed"/> when the
+    /// last tracked connection is removed. Every <see cref="StopAsync"/> caller awaits this
+    /// very task, so a repeat or concurrent stop can never be stranded on a source nobody
+    /// signals. It is never reset: the Stopping transition is one way, so a node is
+    /// stopped at most once.
+    /// </summary>
+    private TaskCompletionSource? _drainSource;
     private volatile NodeState _state;
     private int _disposed;
     private long _totalAccepted;
@@ -43,6 +56,7 @@ public sealed class TcpNode : INode
     private long _prevAccepted;
     private long _prevSent;
     private long _prevReceived;
+    private long _acceptFaultBackoffs;
     private DateTime _metricsTime = DateTime.UtcNow;
 
     public TcpNode(TcpNodeOptions options)
@@ -186,102 +200,267 @@ public sealed class TcpNode : INode
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        if (_state is NodeState.Stopped or NodeState.Disposed or NodeState.Created)
-        {
-            return;
-        }
+        Task drainTask;
+        var ownsStop = false;
 
-        var stopCompleted = false;
-
-        using var stopCts =
-            Options.DrainTimeout > TimeSpan.Zero
-                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-                : null;
-        if (stopCts is not null)
-        {
-            stopCts.CancelAfter(Options.DrainTimeout);
-            cancellationToken = stopCts.Token;
-        }
-
-        TaskCompletionSource<bool>? drained;
         lock (_stateLock)
         {
+            // Nothing to do — but Stopping is deliberately NOT in this set. A caller that
+            // finds the node already Stopping is a repeat or concurrent stop: it must not
+            // own the stop, yet it still has to await the drain below instead of returning
+            // with the node parked in Stopping and a caller unconvinced.
             if (_state is NodeState.Stopped or NodeState.Disposed or NodeState.Created)
             {
                 return;
             }
 
-            _state = NodeState.Stopping;
-            drained = _connections.IsEmpty
-                ? null
-                : new TaskCompletionSource<bool>(
+            if (_state is not NodeState.Stopping)
+            {
+                // Exactly one caller performs the transition and, under the same lock,
+                // becomes the owner of the single drain source. Ownership is what makes it
+                // single: every later caller sees Stopping and creates nothing.
+                _state = NodeState.Stopping;
+                ownsStop = true;
+                _drainSource = new TaskCompletionSource(
                     TaskCreationOptions.RunContinuationsAsynchronously
                 );
-            _drained = drained;
+                if (_connections.IsEmpty)
+                {
+                    // No connection can be tracked from here on (TryTrackConnection rejects
+                    // Stopping), so OnConnectionClosed will never run: nothing to drain.
+                    _drainSource.TrySetResult();
+                }
+            }
+
+            // Null only when the state was forced to Stopping from outside (tests) — then
+            // there is no stop in flight to wait for.
+            drainTask = _drainSource?.Task ?? Task.CompletedTask;
         }
+
+        // The caller's own token, kept before the internal deadline is linked in: the two
+        // cancellations below are indistinguishable at the catch site, and only one of them is
+        // the caller's business.
+        // The deadline timer gets the CLAMPED budget. CancelAfter rejects a delay above the timer limit
+        // with ArgumentOutOfRangeException, and this call sits before the try below — so an oversized
+        // DrainTimeout did not shorten the drain, it removed it: no connection was asked to close, the
+        // node stayed Stopping and DisposeAsync rethrew after the teardown.
+        var callerToken = cancellationToken;
+        var drainBudget = DrainBudget.Effective(Options.DrainTimeout);
+        using var stopCts =
+            drainBudget > TimeSpan.Zero
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : null;
+        if (stopCts is not null)
+        {
+            stopCts.CancelAfter(drainBudget);
+            cancellationToken = stopCts.Token;
+        }
+
+        var stopCompleted = false;
+        var drainTimedOut = false;
+        Exception? stopFault = null;
 
         try
         {
-            await _cts.CancelAsync().ConfigureAwait(false);
+            // Safe for a repeat caller to skip this: it runs before the first await that can
+            // surface a caller/token cancellation (the accept and idle waits swallow it), so
+            // by the time the owner can abandon the stop, every connection has already been
+            // asked to close and the drain below is all that is left to wait for.
+            if (ownsStop)
+            {
+                // Each step of the close drive is isolated from the next. A fault escaping
+                // from this prefix used to skip the connection close drive entirely: no
+                // connection was asked to close, OnConnectionClosed never ran, the single
+                // drain source was never signalled and the node stayed in Stopping for ever.
+                // The first fault is reported and rethrown once the stop has finished, so it
+                // is still loud — it just can no longer wedge the node.
+                // Note the shape: every step is awaited even when an earlier one already
+                // faulted (`??=` would short-circuit and skip the wait entirely, leaving a
+                // background loop running while the connections are closed under it).
+                stopFault ??= await CancelNodeSignalAsync().ConfigureAwait(false);
 
-            try
-            {
-                _listener.Close();
-            }
-            catch (Exception ex)
-            {
-                ReportFault(NodeFaultCode.StopFailed, OperationStop, ex);
-            }
-
-            if (_acceptTask is not null)
-            {
                 try
                 {
-                    await _acceptTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    _listener.Close();
                 }
-                catch (OperationCanceledException)
-                { /* expected during shutdown — accept task cancelled */
-                }
-            }
-
-            if (_idleMonitorTask is not null)
-            {
-                try
+                catch (Exception ex)
                 {
-                    await _idleMonitorTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    ReportFault(NodeFaultCode.StopFailed, OperationStop, ex);
+                    stopFault ??= ex;
                 }
-                catch (OperationCanceledException)
-                { /* expected during shutdown — idle monitor task cancelled */
+
+                var acceptLoopFault = await ObserveBackgroundLoopAsync(
+                        _acceptTask,
+                        cancellationToken,
+                        OperationAccept
+                    )
+                    .ConfigureAwait(false);
+                stopFault ??= acceptLoopFault;
+
+                var idleLoopFault = await ObserveBackgroundLoopAsync(
+                        _idleMonitorTask,
+                        cancellationToken,
+                        OperationStopIdle
+                    )
+                    .ConfigureAwait(false);
+                stopFault ??= idleLoopFault;
+
+                foreach (var connection in _connections.Values)
+                {
+                    connection.Close(TcpCloseReason.NodeStopping);
                 }
             }
 
-            foreach (var connection in _connections.Values)
-            {
-                connection.Close(TcpCloseReason.NodeStopping);
-            }
-
-            if (drained is not null)
-            {
-                await drained.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-            }
+            // One task, every caller: completed by OnConnectionClosed once the last
+            // connection is gone, so a second caller observes the outcome of the same drain
+            // instead of waiting on a source that a later call replaced.
+            await drainTask.WaitAsync(cancellationToken).ConfigureAwait(false);
 
             stopCompleted = true;
+        }
+        catch (OperationCanceledException) when (callerToken.IsCancellationRequested)
+        {
+            // A genuine caller cancellation. The deadline is the caller's, so the stop it
+            // interrupted is not one this method may report as done: the node stays Stopping and a
+            // later stop finishes it, which is what
+            // StopAsync_cancellation_leaves_state_as_stopping_until_drain_finishes pins.
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // DrainTimeout expired with a connection still closing. That deadline is the node's
+            // own, not the caller's: surfacing it as an OperationCanceledException would make
+            // `await using var node` throw on the way out of a host shutdown in which nothing was
+            // cancelled. So the stop completes here instead (the same two-catch shape as
+            // UdpNode.StopAsync).
+            //
+            // Nothing is hidden by completing: a connection that missed the deadline is still
+            // running its own close, and every way that close can fail is reported at its site
+            // (tcp.close.wait, tcp.close.handler, tcp.close.core). The timeout is a deadline on the
+            // WAIT, not a verdict on the close.
+            drainTimedOut = true;
         }
         finally
         {
             lock (_stateLock)
             {
-                if (stopCompleted)
-                {
-                    _drained = null;
-                }
-
-                if (_state != NodeState.Disposed && stopCompleted)
+                // A drained stop and a stop that ran out of deadline both end as Stopped: from the
+                // caller's side the stop is over either way, and leaving the node in Stopping would
+                // park every later stop on a drain nobody is left to finish in time.
+                if (_state != NodeState.Disposed && (stopCompleted || drainTimedOut))
                 {
                     _state = NodeState.Stopped;
                 }
             }
         }
+
+        if (stopFault is not null)
+        {
+            // The stop did what it could — every connection is closed and the drain was
+            // observed — but the caller still learns that a step of it failed.
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(stopFault).Throw();
+        }
+    }
+
+    /// <summary>
+    /// Cancels the node-wide cancellation signal. A disposed source (a concurrent
+    /// <see cref="DisposeAsync"/>) is a fault to report, not a reason to abandon the stop: the
+    /// connections still have to be closed and the drain still has to be observed.
+    /// </summary>
+    private async Task<Exception?> CancelNodeSignalAsync()
+    {
+        try
+        {
+            await _cts.CancelAsync().ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            ReportFault(NodeFaultCode.StopFailed, OperationStopSignal, ex);
+            return ex;
+        }
+    }
+
+    /// <summary>
+    /// Waits for a background loop to observe the stop. Cancellation is its expected exit and is
+    /// not a fault; a loop that died with a real exception is captured (and reported) so the
+    /// close drive that follows it still runs.
+    /// </summary>
+    private async Task<Exception?> ObserveBackgroundLoopAsync(
+        Task? loop,
+        CancellationToken cancellationToken,
+        string operation
+    )
+    {
+        if (loop is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            await loop.WaitAsync(cancellationToken).ConfigureAwait(false);
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            // expected during shutdown — the loop exits via cancellation
+            return null;
+        }
+        catch (Exception ex)
+        {
+            ReportFault(NodeFaultCode.StopFailed, operation, ex);
+            return ex;
+        }
+    }
+
+    /// <summary>
+    /// How many accept-fault backoffs the accept loop has COMPLETED (one per accept fault that
+    /// reached the pause, counted only after the pause elapsed). Diagnostics for the one thing a
+    /// test cannot otherwise observe without consulting a wall clock: that the loop suspends between
+    /// two failed accepts instead of re-entering the accept wait immediately. At every instant it is
+    /// <c>faults - 1</c> or <c>faults</c> — the next fault cannot be reported before its pause ran.
+    /// </summary>
+    internal long AcceptFaultBackoffs => Interlocked.Read(ref _acceptFaultBackoffs);
+
+    /// <summary>
+    /// The smallest pause the accept loop takes after a failed accept — see
+    /// <see cref="EffectiveAcceptFaultBackoff"/>.
+    /// </summary>
+    internal static readonly TimeSpan AcceptFaultBackoffFloor = TimeSpan.FromMilliseconds(1);
+
+    /// <summary>
+    /// The pause the accept loop takes after a failed accept, for a given
+    /// <see cref="TcpNodeOptions.AcceptFaultBackoff"/>. A NON-POSITIVE value is REPLACED by
+    /// <see cref="AcceptFaultBackoffFloor"/> (1 ms) — the pause cannot be switched off. A positive
+    /// value is used unchanged up to <see cref="DrainBudget.MaxTimerDuration"/>, and capped at it
+    /// above, so that a delay <see cref="Task.Delay(TimeSpan, CancellationToken)"/> rejects can never
+    /// end the accept loop. A 0.5 ms backoff therefore still means 0.5 ms, not the floor.
+    /// </summary>
+    /// <remarks>
+    /// A NON-POSITIVE value is the case that matters, and the reason the loop no longer branches on
+    /// one. It used to `continue` with no suspension at all, so a persistently failing accept —
+    /// WSAENOBUFS, EMFILE, an exhausted handle table — pinned a core and flooded the logger and every
+    /// <see cref="OnFault"/> subscriber for as long as the condition lasted. The option keeps its
+    /// documented meaning ("how long to pause after a failed accept"); a value that would switch the
+    /// pause off is raised to the floor instead of switching it off.
+    /// <para>
+    /// The clamp lives HERE — where the loop reads the option — and not in the constructor, because
+    /// the option is hot-reloadable and <see cref="ApplyConfigReload"/> takes whatever
+    /// <see cref="TimeSpan.TryParse(string, out TimeSpan)"/> accepts: <c>00:00:00</c> and negative
+    /// values included. The upper end is the timer limit for the same kind of reason: a pause
+    /// <see cref="Task.Delay(TimeSpan, CancellationToken)"/> rejects would throw out of the accept
+    /// loop's catch and end the loop for good, instead of pacing it.
+    /// </para>
+    /// </remarks>
+    internal static TimeSpan EffectiveAcceptFaultBackoff(TimeSpan configured)
+    {
+        if (configured <= TimeSpan.Zero)
+        {
+            return AcceptFaultBackoffFloor;
+        }
+
+        return DrainBudget.Cap(configured);
     }
 
     private async Task AcceptLoopAsync()
@@ -323,15 +502,22 @@ public sealed class TcpNode : INode
                 catch (Exception ex)
                 {
                     ReportFault(NodeFaultCode.AcceptFailed, OperationAccept, ex);
-                    if (Options.AcceptFaultBackoff <= TimeSpan.Zero)
-                    {
-                        continue;
-                    }
 
+                    // Never re-enter the accept wait without suspending: see
+                    // EffectiveAcceptFaultBackoff. A non-positive backoff used to `continue` from
+                    // here with no yield at all, so a persistently failing accept — WSAENOBUFS,
+                    // EMFILE, an exhausted handle table — pinned a core and flooded the logger and
+                    // every OnFault subscriber for as long as the condition lasted.
                     try
                     {
-                        await Task.Delay(Options.AcceptFaultBackoff, _cts.Token)
+                        await Task.Delay(
+                                EffectiveAcceptFaultBackoff(Options.AcceptFaultBackoff),
+                                _cts.Token
+                            )
                             .ConfigureAwait(false);
+                        // Counted only once the pause has actually elapsed, so the counter can
+                        // never claim a suspension that did not happen.
+                        Interlocked.Increment(ref _acceptFaultBackoffs);
                     }
                     catch (OperationCanceledException) when (_cts.IsCancellationRequested)
                     {
@@ -567,7 +753,9 @@ public sealed class TcpNode : INode
         {
             if (_connections.TryRemove(connection.Id, out _) && _connections.IsEmpty)
             {
-                _drained?.TrySetResult(true);
+                // The single drain source, signalled exactly once. TrySetResult keeps that
+                // guarantee even when several closes race on the last removal.
+                _drainSource?.TrySetResult();
             }
         }
     }
@@ -658,6 +846,77 @@ public sealed class TcpNode : INode
         // Endpoint, EnableDualMode, ConnectionHandler, LingerState, Logger, SslOptions are code-only
     }
 
+    /// <summary>
+    /// How long <see cref="DisposeAsync"/> waits for the background loops to exit before it gives up on
+    /// releasing the objects they read. Long enough that only a loop parked in something that ignores
+    /// cancellation can miss it, short enough that a host shutdown is not held indefinitely.
+    /// </summary>
+    private static readonly TimeSpan BackgroundLoopExitWait = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Waits for the background loops to exit, once <see cref="DisposeAsync"/> has stopped them. Returns
+    /// whether they all did.
+    /// </summary>
+    /// <remarks>
+    /// The wait is bounded. A loop that outlives it is REPORTED and its members are left to the GC rather
+    /// than disposed underneath it - the same trade as <c>TcpConnectionLifecycle</c>'s <c>_sendLock</c>,
+    /// which is left alone because a live sender can still touch it. A loop that faulted has finished, so
+    /// its failure is not a reason to skip the release; it is reported here because this is the last
+    /// observer left (a stop that gave up on the same loop never saw it).
+    /// </remarks>
+    private async Task<bool> WaitForBackgroundLoopsAsync()
+    {
+        var loops = new List<Task>(2);
+        if (_acceptTask is not null)
+        {
+            loops.Add(_acceptTask);
+        }
+
+        if (_idleMonitorTask is not null)
+        {
+            loops.Add(_idleMonitorTask);
+        }
+
+        if (loops.Count == 0)
+        {
+            return true;
+        }
+
+        try
+        {
+            await Task.WhenAll(loops).WaitAsync(BackgroundLoopExitWait).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // Nobody else reports this one: the stop that abandoned the same loops returned quietly by
+            // design (an internal deadline is not the caller's cancellation).
+            ReportFault(
+                NodeFaultCode.StopFailed,
+                OperationStopLoops,
+                new TimeoutException(
+                    $"a background loop did not exit within {BackgroundLoopExitWait} during dispose"
+                )
+            );
+        }
+        catch (Exception ex)
+        {
+            // A loop that faulted is a loop that FINISHED, so it is not a reason to skip the release -
+            // but when the stop gave up on it, nothing else observed the failure, and this is the last
+            // observer left.
+            ReportFault(NodeFaultCode.StopFailed, OperationStopLoops, ex);
+        }
+
+        foreach (var loop in loops)
+        {
+            if (!loop.IsCompleted)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -674,14 +933,36 @@ public sealed class TcpNode : INode
         {
             stopException = ex;
         }
-        finally
+
+        _configCts.Cancel();
+
+        // The loops are stopped first and the objects they use are released only once they are gone. "The
+        // stop returned" is NOT "the loops exited": a DrainTimeout expiry or a caller cancellation makes
+        // ObserveBackgroundLoopAsync return on the OperationCanceledException while the loop is still
+        // running, and that is the state this ordering has to be correct for.
+        //
+        // Stopping them takes BOTH of these, and neither may be left to the stop: the node signal is every
+        // loop's own lifetime (and a stop that returned early never cancelled it), and the listening socket
+        // is what makes a pending accept return at all - AcceptAsync takes no token, so the close is the
+        // only thing that wakes it. Cancel comes first so the accept loop's own filter recognises the
+        // ObjectDisposedException the close produces as a shutdown.
+        _ = await CancelNodeSignalAsync().ConfigureAwait(false);
+        _listener.Dispose();
+
+        var loopsExited = await WaitForBackgroundLoopsAsync().ConfigureAwait(false);
+
+        if (loopsExited)
         {
-            _configCts.Cancel();
+            // Only now are these safe to release. Disposing a CancellationTokenSource or the event-args
+            // pool underneath a live loop is precisely the defect this ordering removes: the loop's next
+            // _cts.Token read (the accept-fault pause) or _eventArgsPool.Rent() throws
+            // ObjectDisposedException into a task nobody awaits any more - an UNOBSERVED exception rather
+            // than a failure a caller can see.
             _cts.Dispose();
-            _listener.Dispose();
             _eventArgsPool.Dispose();
-            _state = NodeState.Disposed;
         }
+
+        _state = NodeState.Disposed;
 
         if (_configReloadTask is not null)
         {

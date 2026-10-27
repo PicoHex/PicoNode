@@ -27,12 +27,18 @@ public interface ITcpConnectionContext
     string? NegotiatedProtocol { get; }
 
     /// <summary>
-    /// Cancelled when the peer closes the connection (graceful FIN or aborted
-    /// RST). Unlike the request cancellation token — which stays alive while a
-    /// half-closed client's buffered responses drain — this token fires on any
-    /// remote close, so long-lived responses (e.g. SSE) can observe the
-    /// disconnect deterministically.
+    /// Cancelled when the connection closes, whichever side closed it: the peer's graceful FIN
+    /// or aborted RST, or a local close (an explicit <see cref="Close()"/> from a handler, an
+    /// idle timeout, a receive or send fault, or the node stopping). It is the deterministic
+    /// disconnect signal for responses that outlive their request (e.g. SSE), and it fires
+    /// before the read pipe is completed and the socket is torn down.
     /// </summary>
+    /// <remarks>
+    /// Unlike the request cancellation token — which stays alive while a half-closed client's
+    /// buffered responses drain — this token fires on every close path, so a long-lived response
+    /// cannot outlive its connection. It is safe to read (and to register on) at any time,
+    /// including after the connection has been disposed.
+    /// </remarks>
     CancellationToken RemoteCloseToken { get; }
 }
 

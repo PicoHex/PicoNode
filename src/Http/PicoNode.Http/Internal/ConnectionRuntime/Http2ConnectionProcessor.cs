@@ -22,6 +22,12 @@ internal static class Http2ConnectionProcessor
                         new(Http2SettingId.MaxConcurrentStreams, 100),
                         new(Http2SettingId.InitialWindowSize, 65535),
                         new(Http2SettingId.HeaderTableSize, 4096),
+                        // RFC 9113 §6.5.2: the decoded header-list budget we accept,
+                        // enforced by HpackDecoder.Decode (stream error on overflow).
+                        new(
+                            Http2SettingId.MaxHeaderListSize,
+                            ConnectionRuntimeState.LocalMaxHeaderListSize
+                        ),
                     ];
             var size = Http2FrameCodec.FrameHeaderSize + settings.Length * 6;
             var rented = ArrayPool<byte>.Shared.Rent(size);

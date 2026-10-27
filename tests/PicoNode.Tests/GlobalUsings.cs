@@ -2,6 +2,7 @@
 
 global using System.Buffers;
 global using System.Collections.Concurrent;
+global using System.Diagnostics;
 global using System.Diagnostics.CodeAnalysis;
 global using System.IO.Pipelines;
 global using System.Net;
@@ -11,6 +12,7 @@ global using System.Reflection;
 global using System.Runtime.InteropServices;
 global using System.Security.Cryptography;
 global using System.Security.Cryptography.X509Certificates;
+global using System.Threading.Channels;
 global using System.Xml.Linq;
 global using PicoCfg;
 global using PicoCfg.Abs;

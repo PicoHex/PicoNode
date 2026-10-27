@@ -51,6 +51,16 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # PicoJsonRpc.Tests starts REAL children (`node <fixture>`). Without a runtime
+      # the suite takes its loud-skip path and reports 21 skipped on every run —
+      # a green build covering a third less than it claims. Pinned to a major (the
+      # fixtures use plain ESM + `node:readline` with no npm dependencies, so there
+      # is nothing to cache): `latest` would move the runtime under the wire tests
+      # and make a conformance regression indistinguishable from a node upgrade.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Install Linux AOT prerequisites
         if: startsWith(matrix.rid, 'linux-')
         shell: bash

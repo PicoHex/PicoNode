@@ -44,11 +44,35 @@ public static class Http2FrameCodec
         var streamId =
             ((header[5] & 0x7F) << 24) | (header[6] << 16) | (header[7] << 8) | header[8];
 
-        var usePool = Http2Frame.ShouldPool(length);
-        var payload = usePool ? ArrayPool<byte>.Shared.Rent(length) : new byte[Math.Max(length, 1)];
-        if (length > 0)
+        // The payload is handed out as a VIEW of the caller's buffer whenever it is
+        // contiguous: no copy, no allocation, and nothing to return. A payload split
+        // across segments cannot be a ReadOnlyMemory view, so that case - and only that
+        // case - is copied into one ArrayPool buffer owned by the frame until
+        // Http2Frame.ReturnPayload. Ownership is therefore the caller's buffer XOR the
+        // frame's pooled copy, never both and never neither.
+        byte[]? rented = null;
+        ReadOnlyMemory<byte> payload;
+        if (length == 0)
         {
-            buffer.Slice(FrameHeaderSize, length).CopyTo(payload.AsSpan(0, length));
+            payload = ReadOnlyMemory<byte>.Empty;
+        }
+        else
+        {
+            var payloadSequence = buffer.Slice(FrameHeaderSize, length);
+
+            // First.Length == length is the assertion that the whole payload lies in that
+            // one segment; without it a view could silently expose another frame's bytes.
+            // It costs nothing - IsSingleSegment already walked the positions.
+            if (payloadSequence.IsSingleSegment && payloadSequence.First.Length == length)
+            {
+                payload = payloadSequence.First;
+            }
+            else
+            {
+                rented = ArrayPool<byte>.Shared.Rent(length);
+                payloadSequence.CopyTo(rented.AsSpan(0, length));
+                payload = rented.AsMemory(0, length);
+            }
         }
 
         frame = new Http2Frame
@@ -57,11 +81,11 @@ public static class Http2FrameCodec
             Type = type,
             Flags = flags,
             StreamId = streamId,
-            Payload = payload.AsMemory(0, length),
+            Payload = payload,
         };
-        if (usePool)
+        if (rented is not null)
         {
-            frame.SetPooledBuffer(payload);
+            frame.SetPooledBuffer(rented);
         }
 
         consumed = totalSize;
@@ -163,7 +187,10 @@ public static class Http2FrameCodec
         return FrameHeaderSize;
     }
 
-    /// <summary>Writes a PING frame into destination (17 bytes).</summary>
+    /// <summary>Writes a PING frame into destination (17 bytes). When
+    /// <paramref name="opaqueData"/> is shorter than 8 octets the rest of the payload is
+    /// zeroed: the destination is usually a rented buffer, so leaving it untouched puts
+    /// whatever was in that array on the wire.</summary>
     public static int WritePing(
         Span<byte> destination,
         ReadOnlySpan<byte> opaqueData,
@@ -177,10 +204,11 @@ public static class Http2FrameCodec
             ack ? Http2FrameFlags.Ack : Http2FrameFlags.None,
             0
         );
-        if (opaqueData.Length >= 8)
-            opaqueData[..8].CopyTo(destination.Slice(FrameHeaderSize));
-        else
-            opaqueData.CopyTo(destination.Slice(FrameHeaderSize));
+
+        var pingPayload = destination.Slice(FrameHeaderSize, 8);
+        var copied = Math.Min(opaqueData.Length, 8);
+        opaqueData[..copied].CopyTo(pingPayload);
+        pingPayload[copied..].Clear();
         return FrameHeaderSize + 8;
     }
 

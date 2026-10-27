@@ -7,6 +7,7 @@ route registration + DI registration code.
 
 - **Embedded in**: `PicoWeb`
 - **TFM**: `netstandard2.0`
+- **Dependencies**: none from PicoHex — the Roslyn compiler API is a build-time reference of the analyzer, not a dependency of anything that consumes it
 - **Type**: Roslyn Incremental Source Generator
 
 ## Discovery Rules
@@ -23,7 +24,8 @@ Only executable projects (`ConsoleApplication` / `WindowsApplication`) that refe
 
 | Input | Output |
 |---|---|
-| Controller classes (above) | `Controllers_Endpoints.g.cs` — per-controller `{Name}_Endpoints` classes registering one `MapGet/MapPost/MapPut/MapDelete/MapPatch` handler per HTTP method |
+| Controller classes (above) | `Controllers_Endpoints.g.cs` — one `{FullName}_Endpoints` class per controller registering one `MapGet/MapPost/MapPut/MapDelete/MapPatch` handler per HTTP method. The stub name is keyed by the controller's **fully-qualified** name (`global::` stripped, `.`/`+`/`<`/`>` → `_`), so `Admin.UsersController` and `Public.UsersController` produce two distinct stubs instead of colliding (CS0101) |
+| Skipped controller | Nothing is emitted for it, and the skip is reported as a build diagnostic (`PCW002`, below) at the controller — not as the comments-only `SkippedControllers.g.cs` note the generator used to write, which was only visible to someone reading `obj/` |
 | Same | `EndpointRegistrar.g.cs` — `public static class EndpointRegistrar` with `RegisterAll(WebApp app)`; consumers must call it to wire routes (see README). Skipped when the compilation already carries an `EndpointRegistrar` and this project has no controllers; with no controllers and no existing registrar, a no-op `RegisterAll(object)` shim keeps the call compiling |
 | Same | `ControllerServiceRegistrations.g.cs` — `[ModuleInitializer]` that registers every non-static controller in PicoDI via `SvcContainerAutoConfiguration.RegisterConfigurator` (Scoped lifetime) |
 
@@ -34,14 +36,38 @@ Only executable projects (`ConsoleApplication` / `WindowsApplication`) that refe
 | Prefix: `{ClassName}` minus `Controller` suffix → `/api/{kebab-case}` | `UsersController` → `/api/users` |
 | Verb: method name prefix (`Get`/`Post`/`Put`/`Delete`/`Patch`) or `[HttpGet]`-style attribute | `GetUser` → GET |
 | Path: method name minus verb prefix, kebab-cased | `GetUser` → `/user` |
-| Params: simple-typed parameters become `{name}` route segments with TryParse guards (404 on mismatch) | `GetUser(int id)` → `/api/users/user/{id}` |
+| Params: simple-typed parameters bind from the route value, else the query string, else 400 — no `{name}` segment is invented — and non-string types keep their TryParse guard (404 on mismatch) | `GetUser(int id)` → `/api/users/user/{id}`, `[HttpPost] Create(string title)` → `POST /api/posts?title=...` |
 | Attribute override: `[Route(...)]` on class, `[HttpGet("...")]`-style on method | absolute or relative path |
 
 Complex-typed parameters and `WebContext`/`CancellationToken` are resolved at runtime
 (`ctx.Services` / handler args), not from the route.
 
+Prefixes and action routes are read through the **semantic** model, not the attribute
+syntax: `[Route("api/x")]` is normalised to `/api/x` (a pattern that does not start with
+`/` aborts `WebApp.Build()` at startup), and `[HttpGet(Routes.Posts)]` resolves to the
+constant's value rather than the literal text `Routes.Posts`.
+
+## Diagnostics
+
+Descriptors are declared once in `Diagnostics.cs` and tracked in
+`AnalyzerReleases.Unshipped.md`. Each is reported **at a source location**, so it is
+navigable — `location: null`, which the sibling generator used to report, is not.
+
+| ID | Severity | Fires when |
+|---|---|---|
+| `PCW001` | Warning | A controller (by `*Controller` name or `[ApiController]`) was discovered and **no action matched an HTTP verb** — no endpoint is generated for it, and the route would otherwise 404 silently |
+| `PCW002` | Error | A **generic** controller was discovered. Its type parameters cannot be bound in an endpoint map, so it is skipped; it used to be emitted as `ItemsController<T>` with `T` unbound (CS0246) |
+| `PCW003` | Warning | A non-`IWebResult` return type is serialised by the generated endpoint but is not marked `[PicoJsonSerializable]`, so PicoJetson has no serializer for it and the endpoint fails per request |
+
 ## Notes
 
+- **Genuinely incremental**: the value the pipeline caches is the controller model — strings,
+  bools and `EquatableArray<T>`, with no `ISymbol` or `Compilation` in it — so a run whose
+  models come out equal does not re-enter the emitters. The syntax transform itself is not
+  cached by Roslyn (it re-runs per class declaration on each pass); what value equality
+  saves is the generated text. Pinned by
+  `ControllersGeneratorTests.Generator_output_is_cached_across_an_unrelated_edit` and
+  `...Only_the_changed_controller_is_rebuilt`, which assert the driver's step reasons.
 - The generator emits **no `[PicoJsonSerializable]` markers** — apply the attribute to DTOs
   directly for PicoJetson.Gen serialization.
 - `EndpointRegistrar` lives in the **global namespace** — do not declare your own type

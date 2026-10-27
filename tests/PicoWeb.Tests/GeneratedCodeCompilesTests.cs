@@ -1,0 +1,386 @@
+using System.Collections.Immutable;
+using Microsoft.CodeAnalysis;
+
+namespace PicoWeb.Tests;
+
+/// <summary>
+/// Compiles what <see cref="ControllersGenerator"/> emits instead of matching strings
+/// in it. The rest of the generator suite asserts text, which cannot see the failure
+/// mode this file is for: emitted code that does not compile (audit F-51…F-53 —
+/// CS1503 / CS0716 / CS0246 / CS0101).
+/// <para>
+/// A test here fails when <c>CompileGeneratedAsync</c> reports any error other than
+/// CS0436. If the generator emits nothing at all, the harness throws: a green compile
+/// of an empty tree would be vacuous.
+/// </para>
+/// </summary>
+public sealed class GeneratedCodeCompilesTests
+{
+    /// <summary>
+    /// The controller from the audit: a POST action taking a DTO and returning one.
+    /// <para>
+    /// <b>This is F-51's regression test.</b> <c>Create(CreatePostDto dto)</c> takes a
+    /// complex type, and <c>ISvcScope.GetService</c> returns <c>object?</c> — so the
+    /// generator must cast the resolved service before handing it to the typed
+    /// parameter, or the emitted line is
+    /// <c>var __dto = ctx.Services.GetService(…);</c> followed by
+    /// <c>Create(__dto)</c>, i.e. <c>object</c> to <c>CreatePostDto</c>: CS1503. The
+    /// constructor path already cast; the action-parameter path now does too. Removing
+    /// that cast turns this test red again — that mutation is the proof it still bites.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Generated_code_for_a_typical_controller_compiles()
+    {
+        var source = """
+            using PicoNode.Web;
+
+            namespace TestApp.Controllers;
+
+            public sealed class CreatePostDto
+            {
+                public string Title { get; set; } = "";
+            }
+
+            public sealed class PostDto
+            {
+                public int Id { get; set; }
+            }
+
+            public sealed class PostsController
+            {
+                [HttpPost]
+                public PostDto Create(CreatePostDto dto) => new PostDto();
+            }
+            """;
+
+        var errors = await GeneratorHarness.CompileGeneratedAsync(source);
+
+        await Assert.That(Describe(errors)).IsEmpty();
+    }
+
+    /// <summary>
+    /// The exemption the harness makes must be exactly one code, not a blind spot: a
+    /// project that owns controllers <em>and</em> references an assembly that already
+    /// exports <c>EndpointRegistrar</c> legitimately produces CS0436 (generated type
+    /// shadows an imported one) and must still compile for real errors. This test is the
+    /// control for the red one above — it fails the moment the harness stops reporting
+    /// anything, which is the mutation that would otherwise let the red test pass.
+    /// </summary>
+    [Test]
+    public async Task Controller_project_beside_an_imported_registrar_still_compiles()
+    {
+        var source = """
+            using PicoNode.Web;
+
+            namespace TestApp.Controllers;
+
+            public sealed class UsersController
+            {
+                [HttpGet("users")]
+                public string GetUser(int id) => "test";
+            }
+
+            public static class Program
+            {
+                public static void Main() => EndpointRegistrar.RegisterAll(null!);
+            }
+            """;
+
+        var run = GeneratorHarness.RunGeneratorRun(
+            source,
+            "Controllers/UsersController.cs",
+            [GeneratorHarness.ImportedRegistrarReference()]
+        );
+
+        // The exemption is only meaningful if CS0436 is genuinely there: without this
+        // assertion the test would still pass if the shape stopped producing it, and the
+        // "CS0436 is filtered" line would be untested.
+        await Assert
+            .That(
+                run.CompilationDiagnostics.Any(d => d.Id == GeneratorHarness.ImportedTypeConflict)
+            )
+            .IsTrue();
+
+        var errors = await GeneratorHarness.CompileGeneratedAsync(run);
+
+        await Assert.That(Describe(errors)).IsEmpty();
+    }
+
+    /// <summary>
+    /// A <c>static</c> controller has no instance to resolve — the generator deliberately
+    /// never registers it in DI (<c>ControllersGeneratorTests.StaticController_NotRegisteredInDI</c>),
+    /// so the endpoint must call the type directly:
+    /// <c>global::TestApp.Controllers.StatusController.Get()</c>.
+    /// <para>
+    /// <b>This is F-52's regression test.</b> The instance shape
+    /// <c>var __controller = ctx.Services.GetService(typeof(StatusController))!;</c> followed
+    /// by <c>((StatusController)__controller).Get()</c> is two defects in one line: CS0716
+    /// (a static type cannot be the target of a cast) makes the emitted tree uncompilable,
+    /// and the resolve would answer <c>null</c> at run time precisely because the type is
+    /// never registered.
+    /// </para>
+    /// <para>
+    /// The second shape below is the same bug one level down and is pinned here on purpose:
+    /// a <c>static</c> method on an ordinary (instance) controller was also emitted against
+    /// <c>__controller</c>, which is CS0176 ("cannot be accessed with an instance
+    /// reference"). Fixing F-52 on <c>ClassDeclarationSymbol.IsStatic</c> alone leaves that
+    /// half broken and this half untested, so the discriminator is the member
+    /// (<c>IMethodSymbol.IsStatic</c>) and both shapes are asserted from one generator run
+    /// each.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Static_controller_compiles_and_is_invoked_statically()
+    {
+        var staticClassSource = """
+            using PicoNode.Web;
+
+            namespace TestApp.Controllers;
+
+            public static class StatusController
+            {
+                [HttpGet("status")]
+                public static string Get() => "ok";
+            }
+            """;
+
+        // One run, two views of it: the emitted text and the compilation of that same text
+        // must never come from two different generator runs.
+        var run = GeneratorHarness.RunGeneratorRun(
+            staticClassSource,
+            "Controllers/StatusController.cs"
+        );
+
+        // The compile comes first so a regression reports CS0716 — the actual defect —
+        // instead of a missing-substring assertion standing in for it.
+        var errors = await GeneratorHarness.CompileGeneratedAsync(run);
+        await Assert.That(Describe(errors)).IsEmpty();
+
+        var generated = run.Generated;
+        await Assert
+            .That(generated)
+            .Contains("global::TestApp.Controllers.StatusController.Get();");
+        // The two halves of the shape, asserted separately so a regression names which one
+        // came back: the cast, and the DI resolve of an instance that never exists.
+        await Assert
+            .That(generated)
+            .DoesNotContain("(global::TestApp.Controllers.StatusController)");
+        await Assert
+            .That(generated)
+            .DoesNotContain("GetService(typeof(global::TestApp.Controllers.StatusController))");
+
+        // Same discriminator, one level down: a static action on an instance controller.
+        var staticMethodSource = """
+            using PicoNode.Web;
+
+            namespace TestApp.Controllers;
+
+            public sealed class MiscController
+            {
+                [HttpGet("ping")]
+                public static string Ping() => "pong";
+            }
+            """;
+
+        var staticMethodRun = GeneratorHarness.RunGeneratorRun(
+            staticMethodSource,
+            "Controllers/MiscController.cs"
+        );
+
+        var staticMethodErrors = await GeneratorHarness.CompileGeneratedAsync(staticMethodRun);
+        await Assert.That(Describe(staticMethodErrors)).IsEmpty();
+        await Assert
+            .That(staticMethodRun.Generated)
+            .Contains("global::TestApp.Controllers.MiscController.Ping();");
+    }
+
+    /// <summary>
+    /// A <c>generic</c> controller cannot be mapped: the generator has no type argument to
+    /// bind, so it emitted <c>global::TestApp.Controllers.ItemsController<T></c> with
+    /// <c>T</c> unbound — <b>CS0246</b> — and the whole tree failed to compile.
+    /// <para>
+    /// <b>This is F-53's generic half.</b> The fix skips the controller, and the skip must be
+    /// <em>visible</em>: a silently-dropped controller reads to the user as "my controller
+    /// is ignored", with a 404 at run time and nothing in the build log.
+    /// </para>
+    /// <para>
+    /// T5.5 made it visible with a comments-only <c>SkippedControllers.g.cs</c> note and left the
+    /// build diagnostic to T5.7. T5.7 owns it now, so the note is <b>gone</b> and this test pins
+    /// the replacement instead: <c>PCW002</c>, reported at the controller. Its severity and its
+    /// location are pinned by
+    /// <c>ControllersGeneratorTests.PCW002_errors_at_a_generic_controller</c>; what belongs here
+    /// is the half this test is about — the emitted tree still compiles and still contains
+    /// nothing for the skipped controller.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Generic_controller_is_skipped_and_the_skip_is_recorded()
+    {
+        var source = """
+            using PicoNode.Web;
+
+            namespace TestApp.Controllers;
+
+            public sealed class ItemsController<T>
+            {
+                [HttpGet("items")]
+                public string Get() => "items";
+            }
+            """;
+
+        var run = GeneratorHarness.RunGeneratorRun(source, "Controllers/ItemsController.cs");
+
+        // Compile first, so a regression reports CS0246 — the actual defect — rather than a
+        // missing-substring assertion standing in for it.
+        var errors = await GeneratorHarness.CompileGeneratedAsync(run);
+        await Assert.That(Describe(errors)).IsEmpty();
+
+        // The skip is reported, by fully-qualified name, as a build diagnostic (PCW002) — not as
+        // a comment in a generated file nobody opens.
+        await Assert
+            .That(
+                string.Join(
+                    " | ",
+                    run.GeneratorDiagnostics.Select(static d => $"{d.Id} {d.GetMessage()}")
+                )
+            )
+            .Contains("PCW002");
+        await Assert
+            .That(run.Generated)
+            .DoesNotContain("global::TestApp.Controllers.ItemsController<T>");
+
+        // …and nothing was emitted for it: no DI registration, no endpoint stub. With its
+        // only controller skipped, the project is the "no controllers" shape — the
+        // object-parameter shim, not a typed registrar full of unbound type arguments.
+        await Assert
+            .That(run.Generated)
+            .DoesNotContain("typeof(global::TestApp.Controllers.ItemsController");
+        await Assert
+            .That(run.Generated)
+            .DoesNotContain("public static void RegisterAll(WebApp app)");
+    }
+
+    /// <summary>
+    /// Two controllers with the <b>same simple name in different namespaces</b> — the shape
+    /// the audit (F-53) reports as <b>CS0101</b>. The stub class used to be
+    /// <c>controller.Name + "_Endpoints"</c>, so both <c>TestApp.Admin.UsersController</c> and
+    /// <c>TestApp.Public.UsersController</c> produced a
+    /// global <c>UsersController_Endpoints</c> each
+    /// in the same generated file: two definitions of one type, <c>CS0101</c>.
+    /// <para>
+    /// T5.2 recorded that this half "did not reproduce in a single-source compilation" and
+    /// guessed it needed two assemblies. That guess was wrong, and this test is the
+    /// correction: one source, two namespaces, one generator run — the duplicate type is
+    /// inside a single compilation, because the generated stub lives at global scope while
+    /// its controller name is not qualified at all. The proof is the compiler's own
+    /// diagnostic on the unmodified generator (quoted in the task report).
+    /// </para>
+    /// <para>
+    /// The fix keys the stub by the controller's <em>fully-qualified</em> name, so the two
+    /// remain distinct (<c>TestApp_Admin_UsersController_Endpoints</c> beside
+    /// <c>TestApp_Public_UsersController_Endpoints</c>) and the registrar calls the right one.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Controllers_with_the_same_name_in_different_namespaces_do_not_collide()
+    {
+        var source = """
+            using PicoNode.Web;
+
+            namespace TestApp.Admin
+            {
+                public sealed class UsersController
+                {
+                    [HttpGet("admin/users")]
+                    public string Get() => "admin";
+                }
+            }
+
+            namespace TestApp.Public
+            {
+                public sealed class UsersController
+                {
+                    [HttpGet("public/users")]
+                    public string Get() => "public";
+                }
+            }
+            """;
+
+        // Both class declarations are in one file, so one generator run sees both — that is
+        // the whole point: the collision happens inside a single compilation.
+        var run = GeneratorHarness.RunGeneratorRun(source, "Controllers/UsersController.cs");
+
+        var errors = await GeneratorHarness.CompileGeneratedAsync(run);
+        await Assert.That(Describe(errors)).IsEmpty();
+
+        // Two stubs, keyed by full name — not one shared by both controllers.
+        await Assert
+            .That(run.Generated)
+            .Contains("public static class TestApp_Admin_UsersController_Endpoints");
+        await Assert
+            .That(run.Generated)
+            .Contains("public static class TestApp_Public_UsersController_Endpoints");
+        // …and each registrar line names its own stub, so neither controller is registered
+        // twice against the other's routes.
+        await Assert
+            .That(run.Generated)
+            .Contains("TestApp_Admin_UsersController_Endpoints.Register(app);");
+        await Assert
+            .That(run.Generated)
+            .Contains("TestApp_Public_UsersController_Endpoints.Register(app);");
+    }
+
+    /// <summary>
+    /// "It compiles" is the floor, not the bar: a generated file can be error-free and still emit
+    /// <c>CS0219</c>, <c>CS8600</c> or <c>CS1998</c>, which turns every consumer's build log
+    /// yellow and — under <c>TreatWarningsAsErrors</c> — red. The floor is <c>Warning</c> here, so
+    /// anything at or above it fails the test.
+    /// </summary>
+    [Test]
+    public async Task Generated_code_for_a_typical_controller_has_no_warnings()
+    {
+        var source = """
+            using PicoNode.Web;
+
+            namespace TestApp.Controllers;
+
+            public sealed class CreatePostDto
+            {
+                public string Title { get; set; } = "";
+            }
+
+            public sealed class PostDto
+            {
+                public int Id { get; set; }
+            }
+
+            public sealed class PostsController
+            {
+                [HttpPost]
+                public PostDto Create(CreatePostDto dto) => new PostDto();
+
+                [HttpGet("list")]
+                public string GetList() => "all";
+            }
+            """;
+
+        var run = GeneratorHarness.RunGeneratorRun(source, GeneratorHarness.TypicalControllerPath);
+        var warnings = await GeneratorHarness.CompileGeneratedAsync(
+            run,
+            DiagnosticSeverity.Warning
+        );
+
+        await Assert.That(Describe(warnings)).IsEmpty();
+    }
+
+    private static string Describe(ImmutableArray<Diagnostic> errors) =>
+        errors.IsEmpty
+            ? ""
+            : string.Join(
+                "\n",
+                errors.Select(d =>
+                    $"{d.Id} {d.Location.GetLineSpan().Path}({d.Location.GetLineSpan().StartLinePosition.Line + 1}): {d.GetMessage()}"
+                )
+            );
+}

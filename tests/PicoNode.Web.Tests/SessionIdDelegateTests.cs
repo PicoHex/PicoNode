@@ -150,6 +150,58 @@ public sealed class SessionIdDelegateTests
     }
 
     [Test]
+    public async Task Cookie_secure_on_root_path_gets_Host_prefix()
+    {
+        var (extract, set) = SessionCookie.Create(new SessionCookieOptions { Secure = true });
+
+        var response = new HttpResponse { StatusCode = 200 };
+        set(response, "abc123");
+
+        var cookie = response.Headers[HttpHeaderNames.SetCookie];
+        await Assert.That(cookie).IsNotNull();
+        // D1: __Host- rides on Secure, which stays opt-in. It never *forces* Secure on.
+        await Assert.That(cookie!).StartsWith("__Host-sid=abc123");
+        await Assert.That(cookie!).Contains("Secure");
+        await Assert.That(cookie!).Contains("Path=/");
+
+        // The reader must agree with the writer, or every secure deployment mints a
+        // fresh session per request.
+        var request = new HttpRequest
+        {
+            Method = "GET",
+            Target = "/",
+            Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Cookie"] = "__Host-sid=abc123",
+            },
+        };
+        await Assert.That(extract(request)).IsEqualTo("abc123");
+    }
+
+    [Test]
+    public async Task Cookie_secure_on_sub_path_keeps_plain_name()
+    {
+        // The __Host- prefix requires Path=/ and no Domain, so it cannot be applied to a
+        // scoped cookie — the header would be rejected by the browser.
+        var (_, set) = SessionCookie.Create(
+            new SessionCookieOptions
+            {
+                CookieName = "mysid",
+                Path = "/app",
+                Secure = true,
+            }
+        );
+
+        var response = new HttpResponse { StatusCode = 200 };
+        set(response, "abc123");
+
+        var cookie = response.Headers[HttpHeaderNames.SetCookie];
+        await Assert.That(cookie).IsNotNull();
+        await Assert.That(cookie!).StartsWith("mysid=abc123");
+        await Assert.That(cookie!).DoesNotContain("__Host-");
+    }
+
+    [Test]
     public async Task Cookie_default_options_omit_secure_and_keep_lax()
     {
         var (_, set) = SessionCookie.Create();

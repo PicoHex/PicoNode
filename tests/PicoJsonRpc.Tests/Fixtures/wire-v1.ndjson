@@ -1,0 +1,12 @@
+{"jsonrpc":"2.0","id":"req-1","method":"stream","params":{"messages":[]}}
+{"jsonrpc":"2.0","method":"chunk","params":{"text":"a"}}
+{"jsonrpc":"2.0","id":"req-1","result":{"ok":true}}
+{"jsonrpc":"2.0","id":"req-2","error":{"code":-32601,"message":"no such method","data":{"method":"nope"}}}
+{"jsonrpc":"2.0","method":"stream","params":{"_streamId":"s-1","text":"b"}}
+{"jsonrpc":"2.0","method":"cancel","params":{"id":"req-1"}}
+{"jsonrpc":"2.0","id":7,"result":"ok"}
+{"jsonrpc":"2.0","id":null,"error":{"code":-32600,"message":"batch unsupported"}}
+{"jsonrpc":"2.0","id":"req-3","error":{"code":-32602,"message":"invalid params","data":["a",1]}}
+{"jsonrpc":"2.0","method":"tick","params":{}}
+{"jsonrpc":"2.0","method":"ping"}
+{"jsonrpc":"2.0","id":"req-4","method":"ping"}

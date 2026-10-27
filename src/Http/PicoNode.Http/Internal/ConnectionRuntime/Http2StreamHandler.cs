@@ -11,13 +11,22 @@ internal static partial class Http2StreamHandler
     )
     {
         // Check stream concurrency limit before creating stream state.
+        var gateReclaimed = false;
         var runtimeStateForLimit = connection.UserState as ConnectionRuntimeState;
         if (runtimeStateForLimit is not null && frame.StreamId != 0)
         {
-            var streamCount = runtimeStateForLimit.Http2Streams?.Count ?? 0;
+            // Reclaim BEFORE the gate decides. GetOrCreateStream — the reaper's
+            // only call site — sits behind this check, so a table that reached the
+            // limit could never shrink again: 100 finished streams (or 100
+            // tombstones left by our own RST_STREAMs) turned every later HEADERS
+            // into REFUSED_STREAM for the lifetime of the connection.
+            gateReclaimed = true;
             // Our own advertised limit governs how many streams the PEER may open
-            // (the peer's SETTINGS value only limits what WE open).
-            if (streamCount >= runtimeStateForLimit.LocalMaxConcurrentStreams)
+            // (the peer's SETTINGS value only limits what WE open), and only OPEN
+            // streams occupy a slot: a reset tombstone and a stream both sides have
+            // finished are closed (RFC 9113 §5.1) and count against nothing.
+            var liveStreams = runtimeStateForLimit.ReclaimStreamsAndCountLive();
+            if (liveStreams >= runtimeStateForLimit.LocalMaxConcurrentStreams)
             {
                 // Per RFC 7540, refuse the specific stream with RST_STREAM,
                 // not GoAway (which would close the entire connection).
@@ -31,7 +40,7 @@ internal static partial class Http2StreamHandler
             }
         }
 
-        var state = GetStreamState(connection, frame.StreamId);
+        var state = GetStreamState(connection, frame.StreamId, !gateReclaimed);
         if (state is null)
         {
             // Invalid stream ID (even, non-monotonic, or stream 0) — a
@@ -106,7 +115,7 @@ internal static partial class Http2StreamHandler
         }
 
         // CONTINUATION buffering: if END_HEADERS is not set, buffer and return.
-        ArraySegment<byte>? payloadData;
+        ReadOnlyMemory<byte>? payloadData;
         try
         {
             var headerPayload = frame.Payload;
@@ -214,19 +223,39 @@ internal static partial class Http2StreamHandler
             clearState.PendingContinuationStreamId = null;
 
         // Decode HPACK header block from the complete (possibly reassembled) data.
+        // The budget is the same value we advertised in SETTINGS_MAX_HEADER_LIST_SIZE,
+        // so a peer that obeyed our SETTINGS never trips it, and one that ignored
+        // them cannot make us build a multi-megabyte header list from a 16 KiB block.
         var dynamicTable = runtimeStateForLimit?.HpackTable;
-        if (
-            !HpackDecoder.TryDecode(
-                payloadData.Value.AsSpan(),
-                out var headerFields,
-                dynamicTable,
-                ConnectionRuntimeState.LocalHeaderTableSize
-            )
-        )
+        var decodeStatus = HpackDecoder.Decode(
+            payloadData.Value.Span,
+            out var headerFields,
+            dynamicTable,
+            ConnectionRuntimeState.LocalHeaderTableSize,
+            ConnectionRuntimeState.LocalMaxHeaderListSize
+        );
+
+        if (decodeStatus == HpackDecodeStatus.HeaderListTooLarge)
+        {
+            // RFC 9113 §6.5.2: SETTINGS_MAX_HEADER_LIST_SIZE is a per-stream limit, so
+            // the answer is RST_STREAM — not the GOAWAY below. The HPACK table is still
+            // in sync (the block decoded cleanly; it was merely too big), so the other
+            // streams on this connection are innocent and keep running.
+            logger?.Log(
+                LogLevel.Debug,
+                $"[H2] header list over MaxHeaderListSize: StreamId={frame.StreamId}, sending RST_STREAM ENHANCE_YOUR_CALM",
+                null
+            );
+            await SendRstStreamAsync(connection, frame.StreamId, Http2ErrorCode.EnhanceYourCalm, ct)
+                .ConfigureAwait(false);
+            return false;
+        }
+
+        if (decodeStatus != HpackDecodeStatus.Success)
         {
             logger?.Log(
                 LogLevel.Debug,
-                $"[H2] HPACK decode failed: StreamId={frame.StreamId} payloadLen={payloadData.Value.Count}, sending GOAWAY COMPRESSION_ERROR",
+                $"[H2] HPACK decode failed: StreamId={frame.StreamId} payloadLen={payloadData.Value.Length}, sending GOAWAY COMPRESSION_ERROR",
                 null
             );
             await SendGoAwayAndCloseAsync(connection, Http2ErrorCode.CompressionError, ct)
@@ -265,8 +294,25 @@ internal static partial class Http2StreamHandler
                 return false;
             }
 
+            // §8.2.1/§8.2.2 do not stop at the request's first header block: these
+            // fields are merged into request.Headers just below, so an unvalidated
+            // trailer is the same CR/LF injection — and the same Connection /
+            // Transfer-Encoding smuggling — one frame later. Same helper as the main
+            // block, so the two paths cannot drift apart again.
             foreach (var (name, value) in headerFields)
             {
+                if (!IsValidRegularHeaderField(name, value))
+                {
+                    await SendRstStreamAsync(
+                            connection,
+                            frame.StreamId,
+                            Http2ErrorCode.ProtocolError,
+                            ct
+                        )
+                        .ConfigureAwait(false);
+                    return false;
+                }
+
                 state.DecodedHeadersDict![name] = value;
             }
 
@@ -387,7 +433,11 @@ internal static partial class Http2StreamHandler
     // ── HPACK response encoder (uses the connection's shared HpackEncoder, whose
     //    dynamic table is resized by peer SETTINGS — see ConnectionRuntimeState) ──
 
-    private static Http2StreamState? GetStreamState(ITcpConnectionContext connection, int streamId)
+    private static Http2StreamState? GetStreamState(
+        ITcpConnectionContext connection,
+        int streamId,
+        bool reclaimClosedStreams = true
+    )
     {
         var state = connection.UserState as ConnectionRuntimeState;
         if (state is null)
@@ -396,6 +446,6 @@ internal static partial class Http2StreamHandler
             connection.UserState = state;
         }
 
-        return state.GetOrCreateStream(streamId);
+        return state.GetOrCreateStream(streamId, reclaimClosedStreams);
     }
 }

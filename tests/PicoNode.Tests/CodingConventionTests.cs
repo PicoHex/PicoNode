@@ -49,14 +49,17 @@ public sealed class CodingConventionTests
         await Assert
             .That(content)
             .Contains(
-                "/// <summary>User-provided connection handler threw an unhandled exception.</summary>"
+                "/// <summary>User-provided connection handler or close-sequence callback threw an unhandled exception.</summary>"
             );
         await Assert.That(content).Contains("/// <summary>UDP socket receive failed.</summary>");
-        await Assert
-            .That(content)
-            .Contains(
-                "/// <summary>UDP datagram dropped due to channel overflow (<see cref=\"UdpOverflowMode.DropNewest\"/>).</summary>"
-            );
+        // DatagramDropped covers TWO causes: the drop-newest overflow, and the datagram that lands in
+        // the window between its receive and StopAsync closing the queue. The sentence has to name
+        // both - a summary that still said "channel overflow" only would describe half of what the
+        // node reports with this code.
+        var dropped = DocBlockAbove(content, "DatagramDropped,");
+        await Assert.That(dropped).Contains("UDP datagram dropped instead of delivered");
+        await Assert.That(dropped).Contains("UdpOverflowMode.DropNewest");
+        await Assert.That(dropped).Contains("shutdown had already closed it");
         await Assert
             .That(content)
             .Contains("/// <summary>UDP datagram handler threw an unhandled exception.</summary>");
@@ -286,6 +289,140 @@ public sealed class CodingConventionTests
             Path.Combine(SrcPath, "Web", "PicoNode.Web", "WebResults.cs")
         );
         await Assert.That(content).Contains("/// <summary>");
+    }
+
+    [Test]
+    public async Task EffectiveAcceptFaultBackoff_docs_match_what_the_clamp_does()
+    {
+        // The summary claimed the pause was "clamped into [floor, max]", which a 0.5 ms value
+        // contradicts: it passes through unchanged. Only a NON-POSITIVE value is replaced by the floor,
+        // and only the upper end is a cap. The behaviour is pinned in TcpNodeBranchTests; this pins the
+        // words, because a doc line that misdescribes the clamp is how the next reader is misled.
+        var content = await File.ReadAllTextAsync(
+            Path.Combine(SrcPath, "Network", "PicoNode", "TcpNode.cs")
+        );
+        var doc = DocBlockAbove(
+            content,
+            "internal static TimeSpan EffectiveAcceptFaultBackoff(TimeSpan configured)"
+        );
+
+        await Assert.That(doc).IsNotEmpty();
+        await Assert.That(doc).Contains("REPLACED");
+        await Assert.That(doc).Contains("capped");
+        await Assert.That(doc).Contains("unchanged");
+        await Assert.That(doc).DoesNotContain("clamped into");
+    }
+
+    [Test]
+    public async Task WebServerOptions_AcceptFaultBackoff_documents_the_one_millisecond_floor()
+    {
+        // PicoWeb inherits the TCP accept-loop clamp through WebServerOptionsExtensions, so a
+        // WebServerOptions.AcceptFaultBackoff of zero now means "pause 1 ms", not "pause not at all".
+        // The public doc has to say so: it is the only place a PicoWeb host reads the option.
+        var content = await File.ReadAllTextAsync(
+            Path.Combine(SrcPath, "Web", "PicoWeb", "WebServerOptions.cs")
+        );
+        var doc = DocBlockAbove(content, "public TimeSpan AcceptFaultBackoff { get; init; }");
+
+        await Assert.That(doc).IsNotEmpty();
+        await Assert.That(doc).Contains("1 ms");
+        await Assert.That(doc).Contains("zero");
+    }
+
+    [Test]
+    public async Task The_timer_limit_cap_is_expressed_once()
+    {
+        // Single-homing the CONSTANT (DrainBudget.MaxTimerDuration) did not single-home the EXPRESSION:
+        // `value < MaxTimerDuration ? value : MaxTimerDuration` had been written out in
+        // DrainBudget.Effective, TcpNode.EffectiveAcceptFaultBackoff,
+        // UdpNode.EffectiveReceiveFaultBackoff and TcpConnectionLifecycle.HandlerLoopTimeoutFor, so one
+        // timer-limit rule had four homes and could drift in three of them. DrainBudget.Cap is now the
+        // only place the cap is expressed; every other source line has to go through it.
+        var offenders = new List<string>();
+
+        foreach (var file in Directory.EnumerateFiles(SrcPath, "*.cs", SearchOption.AllDirectories))
+        {
+            if (
+                file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+            )
+            {
+                continue;
+            }
+
+            var name = Path.GetFileName(file);
+            if (string.Equals(name, "DrainBudget.cs", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var lines = await File.ReadAllLinesAsync(file);
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].TrimStart();
+                // XML doc comments may still cref the constant: that documents the limit, it is not a
+                // second copy of the rule.
+                if (line.StartsWith("//", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (line.Contains("MaxTimerDuration", StringComparison.Ordinal))
+                {
+                    offenders.Add($"{name}:{i + 1}");
+                }
+            }
+        }
+
+        await Assert
+            .That(offenders.Count)
+            .IsEqualTo(0)
+            .Because(
+                $"the cap is expressed once, in DrainBudget.Cap(...): {string.Join(", ", offenders)}"
+            );
+
+        var budget = await File.ReadAllTextAsync(
+            Path.Combine(SrcPath, "Network", "PicoNode", "DrainBudget.cs")
+        );
+        await Assert.That(budget).Contains("internal static TimeSpan Cap(");
+
+        // ...and the readers consume it, so removing the duplication cannot be done by dropping the cap
+        // instead of sharing it.
+        foreach (var reader in new[] { "TcpNode.cs", "UdpNode.cs" })
+        {
+            var source = await File.ReadAllTextAsync(
+                Path.Combine(SrcPath, "Network", "PicoNode", reader)
+            );
+            await Assert.That(source).Contains("DrainBudget.Cap(");
+        }
+    }
+
+    /// <summary>
+    /// The <c>///</c> block immediately above a declaration, joined into one string, so a doc
+    /// assertion cannot be satisfied by wording that lives somewhere else in the file.
+    /// </summary>
+    private static string DocBlockAbove(string content, string declaration)
+    {
+        var index = content.IndexOf(declaration, StringComparison.Ordinal);
+        if (index < 0)
+        {
+            return string.Empty;
+        }
+
+        var before = content[..index].Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        var doc = new List<string>();
+        for (var i = before.Length - 2; i >= 0; i--)
+        {
+            var line = before[i].Trim();
+            if (!line.StartsWith("///", StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            doc.Insert(0, line);
+        }
+
+        return string.Join('\n', doc);
     }
 
     [Test]

@@ -97,7 +97,6 @@ public sealed class HttpResponseSerializerTests
                     + "X-Trace-Id: abc123\r\n"
                     + "Server: PicoNode\r\n"
                     + "Connection: close\r\n"
-                    + "Content-Length: 0\r\n"
                     + "\r\n"
             );
     }
@@ -246,12 +245,63 @@ public sealed class HttpResponseSerializerTests
     }
 
     [Test]
-    public async Task FormatChunk_formats_data_with_hex_size_and_crlf_delimiters()
+    public async Task WriteChunkPrefix_right_aligns_the_hex_length_in_the_header_region()
     {
-        var data = System.Text.Encoding.ASCII.GetBytes("Hello");
-        var chunk = HttpResponseSerializer.FormatChunk(data);
+        // "<hex>\r\n" immediately before the payload: the chunk header region is
+        // right-aligned so the data can follow it in the very same buffer.
+        foreach (var (length, expected) in new[]
+        {
+            (1, "1\r\n"),
 
-        await Assert.That(GetAsciiString(chunk.ToArray())).IsEqualTo("5\r\nHello\r\n");
+            (5, "5\r\n"),
+            (15, "f\r\n"),
+            (16, "10\r\n"),
+            (255, "ff\r\n"),
+            (256, "100\r\n"),
+            (4095, "fff\r\n"),
+            (4096, "1000\r\n"),
+            (65536, "10000\r\n"),
+            (int.MaxValue, "7fffffff\r\n"),
+        })
+        {
+            var region = new byte[HttpResponseSerializer.MaxChunkPrefixLength];
+            region.AsSpan().Fill((byte)'?');
+
+            var prefixLength = HttpResponseSerializer.WriteChunkPrefix(region, length);
+
+            await Assert
+                .That(prefixLength)
+                .IsEqualTo(expected.Length)
+                .Because($"the header of a {length}-octet chunk is {expected.Length} bytes");
+            await Assert
+                .That(Encoding.ASCII.GetString(region, region.Length - prefixLength, prefixLength))
+                .IsEqualTo(expected)
+                .Because($"a {length}-octet chunk must announce {expected.TrimEnd()}");
+            await Assert
+                .That(region.AsSpan(0, region.Length - prefixLength).IndexOfAnyExcept((byte)'?'))
+                .IsEqualTo(-1)
+                .Because("the region left of the header must stay untouched");
+        }
+    }
+
+    [Test]
+    public async Task WriteChunkPrefix_rejects_a_zero_length_chunk_and_a_short_region()
+    {
+        // Zero is the body terminator, not a data chunk: a header for it here would
+        // end the stream mid-body, so the primitive refuses it instead.
+        var region = new byte[HttpResponseSerializer.MaxChunkPrefixLength];
+
+        await Assert
+            .That(() => HttpResponseSerializer.WriteChunkPrefix(region, 0))
+            .Throws<ArgumentOutOfRangeException>();
+        await Assert
+            .That(() => HttpResponseSerializer.WriteChunkPrefix(region, -1))
+            .Throws<ArgumentOutOfRangeException>();
+
+        // 10 octets need "a\r\n" — three bytes — but a 2-byte region cannot hold them.
+        await Assert
+            .That(() => HttpResponseSerializer.WriteChunkPrefix(new byte[2], 10))
+            .Throws<ArgumentException>();
     }
 
     [Test]
@@ -279,6 +329,169 @@ public sealed class HttpResponseSerializerTests
 
     private static string GetAsciiString(byte[] buffer) =>
         System.Text.Encoding.ASCII.GetString(buffer);
+
+    [Test]
+    public async Task Serialize_204_has_no_content_length()
+    {
+        var response = new HttpResponse { StatusCode = 204, ReasonPhrase = "No Content" };
+
+        var text = GetAsciiString(HttpResponseSerializer.Serialize(response).ToArray());
+
+        await Assert
+            .That(text)
+            .DoesNotContain("Content-Length")
+            .Because("RFC 9110 §8.6: a 204 response MUST NOT carry Content-Length");
+        await Assert.That(text).IsEqualTo("HTTP/1.1 204 No Content\r\n\r\n");
+    }
+
+    [Test]
+    public async Task Serialize_101_has_no_content_length()
+    {
+        // The real WebSocket handshake response, not a hand-built 101: RFC 6455
+        // upgrades and RFC 9110 §8.6 (no Content-Length on any 1xx) meet here.
+        var headerFields = new List<KeyValuePair<string, string>>
+        {
+            new("Host", "localhost"),
+            new("Upgrade", "websocket"),
+            new("Connection", "Upgrade"),
+            new("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ=="),
+            new("Sec-WebSocket-Version", "13"),
+        };
+        var request = new HttpRequest
+        {
+            Method = "GET",
+            Target = "/ws",
+            Version = HttpVersion.Http11,
+            HeaderFields = headerFields,
+            Headers = headerFields.ToDictionary(
+                h => h.Key,
+                h => h.Value,
+                StringComparer.OrdinalIgnoreCase
+            ),
+            Body = ReadOnlyMemory<byte>.Empty,
+        };
+
+        var response = WebSocketUpgrade.TryUpgrade(request);
+        await Assert.That(response).IsNotNull();
+
+        var text = GetAsciiString(HttpResponseSerializer.Serialize(response!).ToArray());
+
+        await Assert.That(text).StartsWith("HTTP/1.1 101 Switching Protocols\r\n");
+        await Assert.That(text).Contains("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+        await Assert
+            .That(text)
+            .DoesNotContain("Content-Length")
+            .Because("RFC 9110 §8.6: a 1xx response MUST NOT carry Content-Length");
+    }
+
+    [Test]
+    public async Task Serialize_drops_content_length_when_transfer_encoding_present()
+    {
+        // RFC 9112 §6.1/§6.3: Transfer-Encoding and Content-Length must never
+        // disagree about framing on one message. The serializer owns framing, so
+        // the application's Transfer-Encoding is dropped and the buffered body is
+        // announced with the Content-Length the serializer itself computes.
+        var response = new HttpResponse
+        {
+            StatusCode = 200,
+            ReasonPhrase = "OK",
+            Headers = [new KeyValuePair<string, string>("Transfer-Encoding", "chunked")],
+            Body = "hello"u8.ToArray(),
+        };
+
+        var text = GetAsciiString(HttpResponseSerializer.Serialize(response).ToArray());
+
+        await Assert
+            .That(text)
+            .DoesNotContain("Transfer-Encoding")
+            .Because("the serializer owns framing; an application Transfer-Encoding would"
+                + " tell a proxy to read the raw body as chunk framing (response smuggling)"
+            );
+        await Assert.That(text).Contains("Content-Length: 5");
+        await Assert.That(text).EndsWith("\r\n\r\nhello");
+    }
+
+    [Test]
+    public async Task Serialize_304_echoes_application_content_length_only()
+    {
+        var withLength = new HttpResponse
+        {
+            StatusCode = 304,
+            ReasonPhrase = "Not Modified",
+            Headers = [new KeyValuePair<string, string>("Content-Length", "1234")],
+        };
+        var synthesizedOnly = new HttpResponse
+        {
+            StatusCode = 304,
+            ReasonPhrase = "Not Modified",
+            Body = "hello"u8.ToArray(),
+        };
+
+        var echoed = GetAsciiString(HttpResponseSerializer.Serialize(withLength).ToArray());
+        var none = GetAsciiString(HttpResponseSerializer.Serialize(synthesizedOnly).ToArray());
+
+        await Assert
+            .That(echoed)
+            .Contains("Content-Length: 1234")
+            .Because("RFC 9110 §15.4.5: a 304 may repeat the length a 200 would have carried");
+        await Assert
+            .That(none)
+            .DoesNotContain("Content-Length")
+            .Because("a synthesized Content-Length on 304 is a length the 200 never had");
+    }
+
+    [Test]
+    public async Task SerializeChunkedHeaders_ignores_application_transfer_encoding()
+    {
+        var response = new HttpResponse
+        {
+            StatusCode = 200,
+            ReasonPhrase = "OK",
+            Headers = [new KeyValuePair<string, string>("Transfer-Encoding", "gzip, chunked")],
+        };
+
+        var text = GetAsciiString(
+            HttpResponseSerializer.SerializeChunkedHeaders(response).ToArray()
+        );
+
+        await Assert.That(text).Contains("Transfer-Encoding: chunked\r\n");
+        await Assert.That(text).DoesNotContain("gzip");
+        await Assert.That(text).DoesNotContain("Content-Length");
+    }
+
+    [Test]
+    public async Task Serialize_does_not_send_a_body_for_statuses_that_have_no_content()
+    {
+        foreach (var (statusCode, reasonPhrase) in new[]
+        {
+            (101, "Switching Protocols"),
+            (204, "No Content"),
+            (304, "Not Modified"),
+        })
+        {
+            var response = new HttpResponse
+            {
+                StatusCode = statusCode,
+                ReasonPhrase = reasonPhrase,
+                Body = "leaked"u8.ToArray(),
+            };
+
+            var text = GetAsciiString(HttpResponseSerializer.Serialize(response).ToArray());
+
+            await Assert
+                .That(text)
+                .EndsWith("\r\n\r\n")
+                .Because("RFC 9110 §6.4.1: a " + statusCode + " response has no content");
+            await Assert
+                .That(text)
+                .DoesNotContain("leaked")
+                .Because(
+                    "an unframed body on a "
+                        + statusCode
+                        + " response desyncs the next response on a keep-alive connection"
+                );
+        }
+    }
 
     [Test]
     public async Task Non_ascii_header_values_are_not_mangled()

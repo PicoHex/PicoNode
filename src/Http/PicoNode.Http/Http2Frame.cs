@@ -1,9 +1,15 @@
 namespace PicoNode.Http;
 
+/// <summary>
+/// One decoded HTTP/2 frame. The payload's memory is owned by somebody else:
+/// either the receive buffer the frame was decoded from (a zero-copy view, valid until
+/// the caller advances past the frame's bytes) or, when the payload spanned buffer
+/// segments, one ArrayPool buffer this frame owns and returns in
+/// <see cref="ReturnPayload"/>. Reading <see cref="Payload"/> after the caller consumed
+/// the frame is use-after-return.
+/// </summary>
 public sealed class Http2Frame
 {
-    private const int PoolThreshold = 256;
-
     private byte[]? _rentedBuffer;
 
     public int Length { get; init; }
@@ -14,6 +20,11 @@ public sealed class Http2Frame
 
     public int StreamId { get; init; }
 
+    /// <summary>
+    /// The frame payload. It is a view of the receive buffer when the payload is
+    /// contiguous, and this frame's pooled copy when it is not - see the type's remarks
+    /// for who owns it and for how long.
+    /// </summary>
     public ReadOnlyMemory<byte> Payload { get; init; }
 
     public bool HasFlag(Http2FrameFlags flag) => (Flags & flag) == flag;
@@ -24,7 +35,9 @@ public sealed class Http2Frame
         _rentedBuffer = buffer;
     }
 
-    /// <summary>Returns the pooled buffer to ArrayPool, if applicable.</summary>
+    /// <summary>Returns the payload's pooled buffer to ArrayPool, if the payload was a
+    /// copy (i.e. it spanned receive-buffer segments). A view has nothing to return.
+    /// </summary>
     internal void ReturnPayload()
     {
         if (_rentedBuffer is not null)
@@ -33,7 +46,4 @@ public sealed class Http2Frame
             _rentedBuffer = null;
         }
     }
-
-    /// <summary>Returns true when the frame payload is large enough to warrant pooling.</summary>
-    internal static bool ShouldPool(int length) => length > PoolThreshold;
 }

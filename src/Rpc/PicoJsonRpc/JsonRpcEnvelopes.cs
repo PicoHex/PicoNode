@@ -19,8 +19,9 @@ public sealed class JsonRpcError
     public int Code { get; set; }
     public string Message { get; set; } = string.Empty;
 
-    /// <summary>Optional structured payload as RAW JSON text (string-embedded
-    /// wire, spec §9.8) — e.g. store conflict data {"current":N} (D1).</summary>
+    /// <summary>Optional structured payload as RAW JSON text — inlined on the wire
+/// as a JSON value (e.g. store conflict data {"current":N}, D1); a non-JSON
+/// string degrades to a JSON string rather than breaking the line.</summary>
     public string? Data { get; set; }
 }
 
@@ -33,7 +34,34 @@ public sealed class JsonRpcError
 /// <see cref="Params"/>/<see cref="Result"/> carry raw JSON text (spec §9.8:
 /// "typed envelope + typed payload contract, payload = raw JSON text") — the
 /// typed payload contracts live in the adapter layer, which converts POCOs
-/// into this text via <see cref="JsonRpcCodec"/> and back on receipt.
+/// into this text via <see cref="JsonRpcCodec"/> and back on receipt. The text
+/// is emitted INLINE on the wire (a JSON value, not a string containing JSON).
+/// </para>
+/// <para>
+/// <b>The payload TEXT itself decides the emitted JSON kind</b> — there is no type
+/// annotation to override it, so a caller that wants the JSON string <c>"7"</c>
+/// must pass <c>"\"7\""</c> (quoted text), not <c>"7"</c>:
+/// <list type="bullet">
+/// <item><c>Result = "7"</c> → <c>"result":7</c> (a number); <c>"true"</c> →
+/// <c>true</c>; <c>"null"</c> → <c>null</c>; <c>"{\"a\":1}"</c> → an object;</item>
+/// <item><c>Result = "ok"</c> (not JSON at all) → <c>"result":"ok"</c> — the text
+/// is QUOTED and shipped as a string;</item>
+/// <item>malformed text (<c>"{\"ok\":true"</c>) → the same quoted-string
+/// fallback, i.e. it ships as the text <c>{"ok":true</c>, NOT as an object.
+/// Silent by design: the alternative (throwing) would make a consumer's
+/// diagnostics unable to escape the process.</item>
+/// <item>Text carrying a line break is re-emitted compactly (text already on one
+/// line keeps its exact bytes), so a pretty-printed payload keeps its VALUE and
+/// never its newlines — NDJSON has one line per frame.</item>
+/// </list>
+/// </para>
+/// <para>
+/// <b><see cref="Response"/> discards <c>resultJson</c> when <c>error</c> is set</b>
+/// — JSON-RPC 2.0 allows exactly one of <c>result</c>/<c>error</c>, so passing
+/// both is a caller bug that cannot be answered: the factory does not merge, it
+/// <em>drops</em> the result (and the emitted line carries only <c>error</c>).
+/// <see cref="Result"/> is left null in that case; use <see cref="Response"/> once,
+/// with either a result or an error.
 /// </para>
 /// <para>
 /// Sealed class with get/set (NOT a positional record): A0 probe — when a
@@ -69,7 +97,10 @@ public sealed class JsonRpcFrame
         new()
         {
             Id = id,
-            Result = resultJson,
+            // exactly one of result/error is wire-legal: an error DROPS the
+            // result (documented on the type — a silent discard is a loaded gun,
+            // so the choice is stated where a consumer reads it)
+            Result = error is null ? resultJson : null,
             Error = error,
         };
 
@@ -78,14 +109,23 @@ public sealed class JsonRpcFrame
 }
 
 /// <summary>
-/// Shared serialization contract for PicoJsonRpc frames and payload JSON text.
-/// Wire shape: JSON-RPC 2.0 reserved members (id/method/params/result/error)
-/// are camelCase via the naming policy; reading is case-insensitive so the
-/// nested error's PascalCase artifact roundtrips. Payload text (raw JSON in
-/// <see cref="JsonRpcFrame.Params"/>/<see cref="JsonRpcFrame.Result"/>) is
-/// produced/consumed with the same camel policy — typed payload contracts in
+/// Shared serialization contract for PicoHex payload JSON text, and the string
+/// face of the frame codec.
+/// <para>
+/// Typed payloads: camelCase wire via <see cref="Camel"/> (PicoJetson); reading
+/// is case-insensitive so the nested error's PascalCase artifact roundtrips.
+/// Payload text in <see cref="JsonRpcFrame.Params"/>/<see cref="JsonRpcFrame.Result"/>
+/// is produced/consumed with the same camel policy — typed payload contracts in
 /// the adapter layer (e.g. StreamChunk {"text":...}) therefore match the
 /// fixtures verbatim.
+/// </para>
+/// <para>
+/// Frames: <c>Serialize</c>/<c>Deserialize</c> of a <see cref="JsonRpcFrame"/> do
+/// NOT go through the generator — they route to <see cref="JsonRpcWire"/> (T7.4),
+/// so the frame has ONE wire shape no matter which face of the codec produced or
+/// read it (conforming <c>jsonrpc</c>/inline payloads/member presence decided by
+/// frame kind). The overload is a compile-time type test: zero reflection.
+/// </para>
 /// </summary>
 public static class JsonRpcCodec
 {
@@ -101,10 +141,18 @@ public static class JsonRpcCodec
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
     };
 
-    /// <summary>Serialize a typed value to JSON text (camelCase wire).</summary>
-    public static string Serialize<T>(T value) => JsonSerializer.Serialize(value, Camel);
+    /// <summary>Serialize to JSON text. A <see cref="JsonRpcFrame"/> takes the
+    /// hand-written 2.0 codec; anything else is a typed payload (camelCase,
+    /// PicoJetson).</summary>
+    public static string Serialize<T>(T value) =>
+        value is JsonRpcFrame frame ? JsonRpcWire.Serialize(frame)
+        : JsonSerializer.Serialize(value, Camel);
 
-    /// <summary>Deserialize JSON text (camelCase wire, case-insensitive) back into a typed value.</summary>
+    /// <summary>Deserialize JSON text (camelCase wire, case-insensitive) back into a typed value.
+    /// A <see cref="JsonRpcFrame"/> takes the hand-written 2.0 codec (inline
+    /// payloads, numeric ids as raw text); anything else is a typed payload.</summary>
     public static T? Deserialize<T>(string jsonText) =>
-        JsonSerializer.Deserialize<T>(Encoding.UTF8.GetBytes(jsonText), Camel);
+        typeof(T) == typeof(JsonRpcFrame)
+            ? (T?)(object?)JsonRpcWire.ReadFrame(Encoding.UTF8.GetBytes(jsonText))
+            : JsonSerializer.Deserialize<T>(Encoding.UTF8.GetBytes(jsonText), Camel);
 }

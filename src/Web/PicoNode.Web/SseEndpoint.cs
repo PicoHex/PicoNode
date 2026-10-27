@@ -6,6 +6,13 @@ namespace PicoNode.Web;
 /// </summary>
 public sealed class SseConnection
 {
+    private static ReadOnlySpan<byte> DataPrefix => "data: "u8;
+    private static ReadOnlySpan<byte> EventPrefix => "event: "u8;
+    private static ReadOnlySpan<byte> LineBreak => "\n"u8;
+    private static ReadOnlySpan<byte> EventTerminator => "\n\n"u8;
+    private static ReadOnlySpan<byte> KeepAliveFrame => ": keepalive\n\n"u8;
+    private static ReadOnlySpan<byte> DoneFrame => "data: [DONE]\n\n"u8;
+
     private readonly PipeWriter _writer;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private long _lastWriteTimestamp;
@@ -44,23 +51,29 @@ public sealed class SseConnection
 
     /// <summary>Writes a pre-serialized JSON string as an SSE event.</summary>
     public Task WriteJsonAsync(string json, CancellationToken ct) =>
-        WriteAsync($"data: {json}\n\n", ct);
+        WriteFrameAsync(FrameKind.DataEvent, json ?? string.Empty, string.Empty, ct);
 
     /// <summary>Writes raw text as an SSE event.</summary>
     public Task WriteAsync(string text, CancellationToken ct)
     {
-        var bytes = Encoding.UTF8.GetBytes(text);
-        return WriteCoreAsync(bytes, ct);
+        if (text is null)
+        {
+            throw new ArgumentNullException(nameof(text));
+        }
+
+        return WriteFrameAsync(FrameKind.RawText, text, string.Empty, ct);
     }
 
     /// <summary>Sends a keep-alive comment line.</summary>
-    public Task PingAsync(CancellationToken ct) => WriteAsync(": keepalive\n\n", ct);
+    public Task PingAsync(CancellationToken ct) =>
+        WriteFrameAsync(FrameKind.KeepAlive, string.Empty, string.Empty, ct);
 
     /// <summary>Marks the event stream as complete.</summary>
     public async Task CompleteAsync(CancellationToken ct)
     {
-        await WriteCoreAsync(Encoding.UTF8.GetBytes("data: [DONE]\n\n"), ct);
-        await _writer.CompleteAsync();
+        await WriteFrameAsync(FrameKind.Done, string.Empty, string.Empty, ct)
+            .ConfigureAwait(false);
+        await _writer.CompleteAsync().ConfigureAwait(false);
     }
 
     /// <summary>
@@ -74,25 +87,7 @@ public sealed class SseConnection
         if (eventType.Contains('\n'))
             throw new ArgumentException("Event type must not contain newlines", nameof(eventType));
 
-        data ??= string.Empty;
-
-        var sb = new StringBuilder();
-        sb.Append("event: ").Append(eventType).Append('\n');
-
-        var normalized = data.Replace("\r\n", "\n").Replace("\r", "");
-        if (normalized.Length > 0)
-        {
-            foreach (var line in normalized.Split('\n'))
-                sb.Append("data: ").Append(line).Append('\n');
-        }
-        else
-        {
-            sb.Append("data: \n");
-        }
-        sb.Append('\n');
-
-        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-        return WriteCoreAsync(bytes, ct);
+        return WriteFrameAsync(FrameKind.NamedEvent, eventType, data ?? string.Empty, ct);
     }
 
     /// <summary>
@@ -169,7 +164,12 @@ public sealed class SseConnection
     /// through this method. SemaphoreSlim is not reentrant, so outer methods must
     /// not acquire the lock themselves.
     /// </summary>
-    private async Task WriteCoreAsync(ReadOnlyMemory<byte> bytes, CancellationToken ct)
+    private async Task WriteFrameAsync(
+        FrameKind kind,
+        string first,
+        string second,
+        CancellationToken ct
+    )
     {
         var acquired = false;
         try
@@ -185,7 +185,13 @@ public sealed class SseConnection
             }
 
             Interlocked.Exchange(ref _lastWriteTimestamp, TimeProvider.GetTimestamp());
-            await _writer.WriteAsync(bytes, ct).ConfigureAwait(false);
+
+            // The frame is UTF-8 encoded straight into the pipe writer's own buffer:
+            // no interpolated string, no byte[] and no second copy on the way out.
+            // AppendFrame commits exactly the bytes it wrote, so a throw inside it
+            // (or inside a GetBytes below) leaves the pipe untouched rather than
+            // half a frame.
+            AppendFrame(_writer, kind, first, second);
             await _writer.FlushAsync(ct).ConfigureAwait(false);
         }
         finally
@@ -195,6 +201,164 @@ public sealed class SseConnection
                 _writeLock.Release();
             }
         }
+    }
+
+    private enum FrameKind
+    {
+        /// <summary>The payload verbatim.</summary>
+        RawText,
+
+        /// <summary>"data: " + payload + a blank line — <see cref="WriteJsonAsync"/>.</summary>
+        DataEvent,
+
+        /// <summary>An "event:" line, one "data:" line per payload line, a blank line.</summary>
+        NamedEvent,
+
+        /// <summary>The keep-alive comment frame.</summary>
+        KeepAlive,
+
+        /// <summary>The terminating "data: [DONE]" frame.</summary>
+        Done,
+    }
+
+    private static void AppendFrame(PipeWriter writer, FrameKind kind, string first, string second)
+    {
+        switch (kind)
+        {
+            case FrameKind.RawText:
+                AppendUtf8(writer, first);
+                break;
+
+            case FrameKind.DataEvent:
+                Append(writer, DataPrefix);
+                AppendUtf8(writer, first);
+                Append(writer, EventTerminator);
+                break;
+
+            case FrameKind.NamedEvent:
+                Append(writer, EventPrefix);
+                AppendUtf8(writer, first);
+                Append(writer, LineBreak);
+                AppendDataLines(writer, second);
+                Append(writer, LineBreak);
+                break;
+
+            case FrameKind.KeepAlive:
+                Append(writer, KeepAliveFrame);
+                break;
+
+            case FrameKind.Done:
+                Append(writer, DoneFrame);
+                break;
+
+            default:
+                // Unreachable while FrameKind is complete — but a new kind that forgot
+                // its bytes would otherwise write an empty frame, which a client reads
+                // as a stray blank line at the end of the previous event.
+                throw new ArgumentOutOfRangeException(nameof(kind));
+        }
+    }
+
+    /// <summary>
+    /// Appends one "data: " line per line of <paramref name="data"/>, normalizing line
+    /// breaks the way SSE requires: CRLF counts as one break. A lone CR is *deleted*
+    /// rather than treated as a break, so payloads containing one take
+    /// <see cref="AppendDataLinesNormalized"/> — the exact replace-then-split the
+    /// StringBuilder version performed — instead of being written line by line.
+    /// </summary>
+    private static void AppendDataLines(PipeWriter writer, string data)
+    {
+        if (data.Length == 0)
+        {
+            AppendDataLine(writer, ReadOnlySpan<char>.Empty);
+            return;
+        }
+
+        if (HasLoneCarriageReturn(data))
+        {
+            AppendDataLinesNormalized(writer, data);
+            return;
+        }
+
+        var start = 0;
+        for (var i = 0; i < data.Length; i++)
+        {
+            if (data[i] != '\n')
+            {
+                continue;
+            }
+
+            // The CR of a CRLF belongs to the break, not to the line.
+            var lineEnd = i > start && data[i - 1] == '\r' ? i - 1 : i;
+            AppendDataLine(writer, data.AsSpan(start, lineEnd - start));
+            start = i + 1;
+        }
+
+        // string.Split always yields the trailing (possibly empty) line.
+        AppendDataLine(writer, data.AsSpan(start));
+    }
+
+    private static bool HasLoneCarriageReturn(string data)
+    {
+        for (var i = 0; i < data.Length; i++)
+        {
+            if (data[i] == '\r' && (i + 1 >= data.Length || data[i + 1] != '\n'))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The pre-existing normalization, kept verbatim for the lone-CR payloads that need it:
+    /// CRLF becomes LF, every remaining CR is removed, then the result is split on LF.
+    /// </summary>
+    private static void AppendDataLinesNormalized(PipeWriter writer, string data)
+    {
+        var normalized = data.Replace("\r\n", "\n").Replace("\r", string.Empty);
+        if (normalized.Length == 0)
+        {
+            AppendDataLine(writer, ReadOnlySpan<char>.Empty);
+            return;
+        }
+
+        foreach (var line in normalized.Split('\n'))
+        {
+            AppendDataLine(writer, line);
+        }
+    }
+
+    private static void AppendDataLine(PipeWriter writer, ReadOnlySpan<char> line)
+    {
+        Append(writer, DataPrefix);
+        AppendUtf8(writer, line);
+        Append(writer, LineBreak);
+    }
+
+    /// <summary>Copies a fixed frame literal into the pipe's buffer.</summary>
+    private static void Append(PipeWriter writer, ReadOnlySpan<byte> bytes)
+    {
+        bytes.CopyTo(writer.GetSpan(bytes.Length));
+        writer.Advance(bytes.Length);
+    }
+
+    /// <summary>
+    /// Encodes <paramref name="text"/> into the pipe's buffer. The size is counted first
+    /// (a scan, no allocation) so the reservation is exact — a worst-case
+    /// <c>GetMaxByteCount</c> hint would over-reserve up to three times the payload.
+    /// </summary>
+    private static void AppendUtf8(PipeWriter writer, ReadOnlySpan<char> text)
+    {
+        if (text.IsEmpty)
+        {
+            return;
+        }
+
+        var destination = writer.GetSpan(Encoding.UTF8.GetByteCount(text));
+        var written = Encoding.UTF8.GetBytes(text, destination);
+        writer.Advance(written);
     }
 }
 
@@ -227,9 +391,11 @@ public static class SseEndpoint
                 TimeProvider = timeProvider,
             };
 
-            // Per-stream disconnect source: fires on remote close (transport's
-            // RemoteCloseToken) or when keep-alive writes start failing, which
-            // means the client is gone even if the request token stays alive.
+            // Per-stream disconnect source: fires when the connection closes, whichever side
+            // closed it — the transport's RemoteCloseToken is cancelled on the peer's FIN or
+            // RST, on an idle timeout, on a fault, and on a node stop — or when keep-alive
+            // writes start failing, which means the client is gone even if the request token
+            // stays alive.
             var streamCts = CancellationTokenSource.CreateLinkedTokenSource(
                 ct,
                 context.Request.RemoteCloseToken

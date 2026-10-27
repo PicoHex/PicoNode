@@ -8,15 +8,20 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 ## Build & test
 
 - Whole solution (samples included): `dotnet build PicoNode.slnx -c Release --nologo`.
-- One project: `dotnet test tests/<Project>/<Project>.csproj -c Release`.
+- One project: `dotnet test --project tests/<Project>/<Project>.csproj -c Release` — `--project` is the
+  form `dotnet test --help` documents (SDK 10); a bare path is accepted but is not in its usage line.
 - **Never pass `--nologo` to `dotnet test`** on SDK 10 — it makes the run report zero tests.
   `dotnet build --nologo` is fine.
-- Runner arguments go **after** `--` (TUnit), e.g. `dotnet test tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj -c Release -- --treenode-filter '/*/*/Name'`.
+- Runner arguments go **after** `--` (TUnit), e.g. `dotnet test --project tests/PicoNode.Web.Tests/PicoNode.Web.Tests.csproj -c Release -- --treenode-filter '/*/*/Name'`.
 - TUnit exits **2** (not 1) on failure and colourises its output: strip ANSI before matching.
-- NativeAOT check: `scripts/test-aot-publish.ps1 -RuntimeIdentifier linux-x64` (CI runs it for the linux RIDs).
-- README samples: `dotnet test tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj` compiles the README's
-  rate-limiting samples and fails when a README drifts from the marked region in `ReadmeSamples.cs` —
-  change a sample in both places, in all ten READMEs.
+- NativeAOT check: `scripts/test-aot-publish.ps1 -RuntimeIdentifier linux-x64` (CI runs it once per matrix RID — win-x64,
+  win-arm64, linux-x64, linux-arm64, osx-arm64).
+- README samples: `dotnet test tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj` compiles the README code
+  blocks and measures them. Eleven of the twenty blocks are compiled samples (`#region readme:*` in
+  `samples/readme/*.cs` and `ReadmeSamples.cs`) and must match their region byte for byte in all ten READMEs;
+  a block that is deliberately not compilable carries `<!-- readme-fragment: reason -->` on the line above it,
+  so an uncompiled snippet is a decision in review rather than an omission. `ReadmeAccuracyTests` measures the
+  rest of the prose (line count, TFMs, dependency chains, package tables, `tests/README.md` counts).
 - Zero external dependencies and AOT-first: no reflection, no `dynamic`, no runtime attribute consumption,
   no per-request LINQ or closures on hot paths. A new dependency or a trim-unsafe construct is a design
   change, not a detail.
@@ -37,10 +42,13 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 
 - Dry run first: `./scripts/release.ps1 -DryRun` prints `last release`, `API changed : true|false` and the
   next version. Read it **before** touching the baselines.
-- `./scripts/release.ps1 -Push` refreshes the baselines, commits `chore(release): vX.Y.Z`, creates an
-  annotated tag and pushes branch + tag.
-- **The tag is the release trigger**: `.github/workflows/release.yml` runs the tests, packs every package at
-  the tag version and publishes to NuGet. Never tag by hand.
+- `./scripts/release.ps1 -Push` refreshes the baselines and commits `chore(release): vX.Y.Z` **only when
+  the refresh changed them** (an unchanged API tags the current commit instead); then it creates an
+  annotated tag and pushes branch and tag.
+- **The tag is the release trigger**: `.github/workflows/release.yml` gates the publish on a **`verify` job**
+  (restore + build, all ten test projects, the version-shape assertion) and `publish` reaches NuGet only
+  through `needs: verify`. It then packs every package at the tag version and publishes to NuGet; a version
+  that already exists on nuget.org fails the run instead of being skipped. Never tag by hand.
 - A baseline holds the **last release's** surface and the script enforces it: when the committed baselines
   match the worktree but differ from the last tag (someone refreshed them mid-cycle), it explains the drift,
   warns on `-DryRun` and refuses to release - that is exactly how the API delta stayed invisible and
@@ -53,6 +61,22 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
   (`-AllowBranch` is the deliberate override for re-tagging cases).
 - Version rule: `<four-digit year>.<x>.<y>` — `x` bumps (and `y` resets to 0) when the public API changed;
   `y` bumps when it did not.
+- **The version rule cannot see the wire.** `api-surface` diffs assemblies, so a change to the JSON a peer reads
+  (identical C# surface, different bytes) is invisible to it and would ship as a `y` bump with nothing announcing it.
+  `tests/PicoJsonRpc.Tests/Fixtures/wire-v1.ndjson` is a golden snapshot of 12 frames of the JSON-RPC encoder's output
+  - the corpus `WireSnapshotTests` names, not a sweep of the encoder (`"result":null`, the quoted-string `params`
+  fallback, surrogate substitution and multi-line normalisation are pinned by `WireConformanceTests` instead) -
+  compared byte for byte; it is marked `-text` in `.gitattributes` so no checkout rewrites its LF terminators.
+  If you change the emitted bytes: regenerate the snapshot in the **same** commit, put a `wire-change:` line in the
+  commit message, and ship a consumer pinned to the old shape (`PicoAgent.Binding`) in lockstep.
+- **What that snapshot enforces, exactly.** It forces a **file edit and a visible diff**: the bytes cannot move
+  without the fixture moving in the same commit, so a wire change is always reviewable. It **does not force a
+  version bump** - the version comes from the API diff only. `scripts/release.ps1 -DryRun` prints `wire hash` and
+  `wire changed`; it measures the wire *before* it asks for the next version (fix round 1 moved it there), but it is
+  warn-only and does not feed the version, the release workflow's `verify` job has no wire step at all (it just runs
+  the tests), and a hand `git tag` skips the script entirely while still passing `verify`. So the `wire-change:` line
+  and the lockstep release are **discipline, checked by a human** - nothing in this repository can fail a release
+  that changed the bytes and bumped only `y`.
 
 ## Working rules
 
@@ -70,10 +94,11 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 
 ## Environment quirks (this developer machine)
 
-- - Small, focused, conventional commits: `fix(web):`, `test(http):`, `docs(spec):`, `build(api):`, `chore(release):`.
 - Commit before you use a throwaway branch for a probe. `git checkout -B probe && git add -A && git commit`
   sweeps uncommitted work into the probe commit, and deleting the branch deletes that work (recoverable via
-  `git reflog` + `git fsck` while the commit is unreferenced, but not worth the scare).fig` (`http.https://github.com.proxy`) and a direct connection. Sometimes only one works, and the
+  `git reflog` + `git fsck` while the commit is unreferenced, but not worth the scare).
+- github.com is reachable either through the proxy configured in `.gitconfig`
+  (`http.https://github.com.proxy`) or directly. Sometimes only one works, and the
   symptom is `Failed to connect to github.com port 443`. Start with `git ls-remote origin main`; if that
   fails, retry with `-c http.https://github.com.proxy=` (and vice versa) before blaming credentials.
 - `curl` does not read git's proxy setting, so `curl https://api.nuget.org/...` returns an empty response while
@@ -83,3 +108,9 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 - NuGet reads are served by a lagging mirror, so a version can be missing from the flat container minutes
   after a successful publish. Confirm publications through the search index instead:
   `https://azuresearch-usnc.nuget.org/query?q=packageid:<Id>&prerelease=true`.
+- Tracked one-shot scripts are guarded by `CiWorkflowTests.Tracked_python_scripts_are_referenced`: every
+  `*.py` file in the tree must be named by a CI workflow, a `scripts/*.ps1` or this file. Delete it or wire it.
+  There is no `Fixtures/` carve-out any more: a Python fixture counts too, so wire it by name or delete it.
+- Any workflow that runs `PicoJsonRpc.Tests` must install `node` first (pinned major, `actions/setup-node@v4`);
+  guarded by `CiWorkflowTests.Every_workflow_that_runs_the_rpc_suite_installs_node`. Without it the 21
+  child-process tests skip loudly in CI — a green run covering a third less than it claims.

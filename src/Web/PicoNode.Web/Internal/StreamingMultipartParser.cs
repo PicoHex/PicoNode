@@ -8,6 +8,8 @@ internal static class StreamingMultipartParser
         int bufferSize = 65536,
         int maxPartSizeBytes = MultipartFormDataParserOptions.DefaultMaxPartSizeBytes,
         int maxTotalSizeBytes = MultipartFormDataParserOptions.DefaultMaxTotalSizeBytes,
+        int maxPartCount = MultipartFormDataParserOptions.DefaultMaxPartCount,
+        int maxHeaderBytesPerPart = MultipartFormDataParserOptions.DefaultMaxHeaderBytesPerPart,
         CancellationToken ct = default
     )
     {
@@ -22,6 +24,7 @@ internal static class StreamingMultipartParser
         var fields = new List<MultipartFormField>();
         var files = new List<MultipartFormFile>();
         long totalBytes = 0;
+        var partCount = 0;
 
         while (true)
         {
@@ -30,10 +33,26 @@ internal static class StreamingMultipartParser
                 reader,
                 boundaryBytes,
                 maxPartSizeBytes,
+                maxHeaderBytesPerPart,
                 ct
             );
             if (part is null)
                 break;
+
+            // Same limits as the in-memory path, in the same order: part count, the
+            // running total (headers + content) after each addition, then the per-part
+            // content guard (which MultipartPartReader applied while accumulating).
+            partCount++;
+            if (partCount > maxPartCount)
+            {
+                throw new InvalidDataException("Multipart body exceeds maximum part count");
+            }
+
+            totalBytes += part.HeaderBytes;
+            if (totalBytes > maxTotalSizeBytes)
+            {
+                throw new InvalidDataException("Multipart body exceeds maximum total size");
+            }
 
             if (part.Content is not null)
             {
@@ -47,11 +66,11 @@ internal static class StreamingMultipartParser
             if (!part.Headers.TryGetValue("Content-Disposition", out var disposition))
                 continue;
 
-            var name = ExtractParameter(disposition, "name");
+            var name = ContentDispositionHeader.GetParameter(disposition, "name");
             if (name is null)
                 continue;
 
-            var fileName = ExtractParameter(disposition, "filename");
+            var fileName = ContentDispositionHeader.GetParameter(disposition, "filename");
 
             if (fileName is not null)
             {
@@ -71,27 +90,5 @@ internal static class StreamingMultipartParser
         }
 
         return new MultipartFormData(fields, files);
-    }
-
-    private static string? ExtractParameter(string header, string paramName)
-    {
-        var searchKey = paramName + "=";
-        var span = header.AsSpan();
-        var idx = span.IndexOf(searchKey, StringComparison.OrdinalIgnoreCase);
-        if (idx < 0)
-            return null;
-
-        return ExtractValue(span[(idx + searchKey.Length)..]);
-    }
-
-    private static string? ExtractValue(ReadOnlySpan<char> value)
-    {
-        if (value.Length >= 2 && value[0] == '"')
-        {
-            var endQuote = value[1..].IndexOf('"');
-            return endQuote < 0 ? null : value[1..(endQuote + 1)].ToString();
-        }
-        var end = value.IndexOfAny([';', ' ', '\r', '\n']);
-        return (end >= 0 ? value[..end] : value).ToString();
     }
 }

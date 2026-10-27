@@ -10,4 +10,14 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
   </ItemGroup>
+
+  <!--
+    Analyzer release tracking (RS2008): the rules this generator reports are declared in
+    AnalyzerReleases.Unshipped.md, which the Roslyn release-tracking analyzer validates the
+    DiagnosticDescriptors against. Without the AdditionalFiles item the file is inert and every
+    descriptor is flagged as untracked.
+  -->
+  <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
 </Project>

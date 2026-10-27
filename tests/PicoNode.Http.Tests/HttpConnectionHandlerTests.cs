@@ -202,7 +202,7 @@ public sealed class HttpConnectionHandlerTests
         await Assert.That(context.CloseCount).IsEqualTo(0);
         await Assert
             .That(Encoding.ASCII.GetString(context.LastSent.ToArray()))
-            .IsEqualTo("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n");
+            .IsEqualTo("HTTP/1.1 204 No Content\r\n\r\n");
     }
 
     [Test]
@@ -227,7 +227,7 @@ public sealed class HttpConnectionHandlerTests
         await Assert.That(context.CloseCount).IsEqualTo(1);
         await Assert
             .That(Encoding.ASCII.GetString(context.LastSent.ToArray()))
-            .IsEqualTo("HTTP/1.1 204 No Content\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+            .IsEqualTo("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
     }
 
     [Test]

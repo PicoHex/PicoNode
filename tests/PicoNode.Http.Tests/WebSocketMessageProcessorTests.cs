@@ -600,9 +600,10 @@ public sealed class WebSocketMessageProcessorTests
     {
         // Build a state with a small MaxMessageSize and feed a frame larger than it.
         var state = new WebSocketMessageProcessorState { MaxMessageSize = 64 };
-        // Frame: FIN+Text, length 100 (126-form), masked (mask key 00000000)
-        byte[] frame = [0x81, 0xFE, 0x00, 0x64, 0x00, 0x00, 0x00, 0x00];
-        frame = frame.Concat(new byte[100]).ToArray();
+        // Frame: FIN+Text, length 200 (126-form, the minimal form for this size),
+        // masked (mask key 00000000).
+        byte[] frame = [0x81, 0xFE, 0x00, 0xC8, 0x00, 0x00, 0x00, 0x00];
+        frame = frame.Concat(new byte[200]).ToArray();
         var connection = new RecordingConnectionContext();
 
         await WebSocketMessageProcessor.ProcessAsync(
@@ -795,5 +796,57 @@ public sealed class WebSocketMessageProcessorTests
         );
 
         await Assert.That(connection.CloseCount).IsGreaterThanOrEqualTo(1);
+    }
+
+    [Test]
+    public async Task Unmasked_client_frame_is_rejected_with_close_1002()
+    {
+        // RFC 6455 §5.1: client-to-server frames MUST be masked, so a server that
+        // accepts an unmasked frame is non-conforming. §7.4.1: failing the
+        // connection means a Close frame whose body carries 1002 (Protocol Error);
+        // an empty close body signals no status at all, which the Autobahn fuzzing
+        // suite reports as a missing-code failure (case 3.x).
+        var frame = CreateFrame(WebSocketOpCode.Text, "hello"u8, fin: true, mask: false);
+        var connection = new RecordingConnectionContext();
+        var delivered = new List<WebSocketMessage>();
+
+        WebSocketMessageHandler handler = (message, _, _) =>
+        {
+            delivered.Add(message);
+            return ValueTask.CompletedTask;
+        };
+
+        await WebSocketMessageProcessor.ProcessAsync(
+            connection,
+            new ReadOnlySequence<byte>(frame),
+            handler,
+            CancellationToken.None
+        );
+
+        await Assert
+            .That(delivered.Count)
+            .IsEqualTo(0)
+            .Because("an unmasked frame must never reach the application handler");
+
+        await Assert
+            .That(connection.CloseCount)
+            .IsEqualTo(1)
+            .Because("the connection must be dropped after the failing close frame");
+
+        var read = WebSocketFrameCodec.TryReadFrame(
+            new ReadOnlySequence<byte>(connection.LastSent),
+            out var closeFrame,
+            out _
+        );
+        await Assert.That(read).IsTrue().Because("the server must send a close frame");
+        await Assert.That(closeFrame!.OpCode).IsEqualTo(WebSocketOpCode.Close);
+        await Assert
+            .That(closeFrame.Payload.Length)
+            .IsEqualTo(2)
+            .Because("RFC 6455 §7.4.1: the close body must carry the status code");
+
+        // Close codes are big-endian on the wire (RFC 6455 §5.5.1).
+        var closeCode = (ushort)((closeFrame.Payload.Span[0] << 8) | closeFrame.Payload.Span[1]);
+        await Assert.That(closeCode).IsEqualTo((ushort)1002);
     }
 }

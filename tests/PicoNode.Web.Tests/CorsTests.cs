@@ -120,11 +120,11 @@ public sealed class CorsTests
     }
 
     [Test]
-    public async Task Wildcard_origin_with_credentials_echoes_origin_instead_of_star()
+    public async Task Wildcard_with_credentials_throws_on_first_use()
     {
-        // `Access-Control-Allow-Origin: *` with credentials is invalid per the
-        // Fetch spec — browsers reject the response. The correct behavior is to
-        // echo the request origin.
+        // `Access-Control-Allow-Origin: *` with credentials is invalid per the Fetch
+        // spec. Reflecting every origin instead (the old behaviour) silently turned
+        // the wildcard into universal, credentialed trust — fail loud instead.
         var options = new CorsOptions { AllowedOrigins = ["*"], AllowCredentials = true };
         var request = CreateRequest(
             "OPTIONS",
@@ -132,23 +132,15 @@ public sealed class CorsTests
             new("Host", "localhost")
         );
 
-        var response = CorsHandler.HandlePreflight(request, options);
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            CorsHandler.HandlePreflight(request, options)
+        );
 
-        var allowOrigin = response!.Headers.FirstOrDefault(h =>
-            h.Key == "Access-Control-Allow-Origin"
-        );
-        await Assert
-            .That(allowOrigin.Value)
-            .IsEqualTo("https://evil.example")
-            .Because("wildcard + credentials must echo the origin, never emit '*'");
-        var allowCredentials = response.Headers.FirstOrDefault(h =>
-            h.Key == "Access-Control-Allow-Credentials"
-        );
-        await Assert.That(allowCredentials.Value).IsEqualTo("true");
+        await Assert.That(ex.Message).Contains("credentials");
     }
 
     [Test]
-    public async Task GetResponseHeaders_wildcard_with_credentials_echoes_origin()
+    public async Task GetResponseHeaders_wildcard_with_credentials_throws()
     {
         var options = new CorsOptions { AllowedOrigins = ["*"], AllowCredentials = true };
         var request = CreateRequest(
@@ -157,10 +149,171 @@ public sealed class CorsTests
             new("Host", "localhost")
         );
 
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            CorsHandler.GetResponseHeaders(request, options)
+        );
+
+        await Assert.That(ex.Message).Contains("credentials");
+    }
+
+    [Test]
+    public async Task Empty_allowed_origins_throws_on_first_use()
+    {
+        // An empty allow-list used to answer every cross-origin request with 403 and
+        // no diagnostic; that is a misconfiguration, not a policy.
+        var request = CreateRequest(
+            "OPTIONS",
+            new("Origin", "https://example.com"),
+            new("Host", "localhost")
+        );
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            CorsHandler.HandlePreflight(request, new CorsOptions())
+        );
+
+        await Assert.That(ex.Message).Contains("AllowedOrigins");
+    }
+
+    [Test]
+    public async Task HandlePreflight_rejects_null_options()
+    {
+        // Guard clause: a null policy is a programming error, not a CORS decision.
+        var request = CreateRequest(
+            "OPTIONS",
+            new("Origin", "https://example.com"),
+            new("Host", "localhost")
+        );
+
+        var ex = Assert.Throws<ArgumentNullException>(() =>
+            CorsHandler.HandlePreflight(request, null!)
+        );
+
+        await Assert.That(ex.ParamName).IsEqualTo("options");
+    }
+
+    [Test]
+    public async Task Preflight_carries_vary_origin()
+    {
+        var request = CreateRequest(
+            "OPTIONS",
+            new("Origin", "https://example.com"),
+            new("Host", "localhost")
+        );
+
+        var response = CorsHandler.HandlePreflight(request, DefaultOptions);
+
+        await Assert.That(response!.Headers[HttpHeaderNames.Vary]).IsEqualTo("Origin");
+    }
+
+    [Test]
+    public async Task Preflight_403_carries_vary_origin()
+    {
+        // The rejection varies by origin too: a shared cache must not replay this 403
+        // (or a later allow) to a different origin.
+        var request = CreateRequest(
+            "OPTIONS",
+            new("Origin", "https://evil.com"),
+            new("Host", "localhost")
+        );
+
+        var response = CorsHandler.HandlePreflight(request, DefaultOptions);
+
+        await Assert.That(response!.StatusCode).IsEqualTo(403);
+        await Assert.That(response.Headers[HttpHeaderNames.Vary]).IsEqualTo("Origin");
+    }
+
+    [Test]
+    public async Task GetResponseHeaders_carries_vary_origin()
+    {
+        var request = CreateRequest(
+            "GET",
+            new("Origin", "https://example.com"),
+            new("Host", "localhost")
+        );
+
+        var headers = CorsHandler.GetResponseHeaders(request, DefaultOptions);
+
+        var vary = headers.FirstOrDefault(h => h.Key == HttpHeaderNames.Vary);
+        await Assert.That(vary.Value).IsEqualTo("Origin");
+    }
+
+    [Test]
+    public async Task WithVaryOrigin_merges_into_an_existing_vary_field()
+    {
+        HttpHeaderCollection existing = [new(HttpHeaderNames.Vary, "Accept-Encoding")];
+
+        var merged = CorsHandler.WithVaryOrigin(existing);
+
+        await Assert.That(merged[HttpHeaderNames.Vary]).IsEqualTo("Accept-Encoding, Origin");
+        await Assert.That(merged.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task WithVaryOrigin_is_idempotent()
+    {
+        HttpHeaderCollection existing = [new(HttpHeaderNames.Vary, "Origin")];
+
+        var merged = CorsHandler.WithVaryOrigin(existing);
+
+        await Assert.That(merged[HttpHeaderNames.Vary]).IsEqualTo("Origin");
+        await Assert.That(merged.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task WithVaryOrigin_folds_multiple_vary_fields_into_one()
+    {
+        HttpHeaderCollection existing =
+        [
+            new(HttpHeaderNames.Vary, "Accept-Encoding"),
+            new(HttpHeaderNames.Vary, "Accept-Language"),
+        ];
+
+        var merged = CorsHandler.WithVaryOrigin(existing);
+
+        await Assert
+            .That(merged[HttpHeaderNames.Vary])
+            .IsEqualTo("Accept-Encoding, Accept-Language, Origin");
+        await Assert.That(merged.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task Null_origin_is_not_reflected()
+    {
+        // `Origin: null` is sent by sandboxed iframes and data: URLs; reflecting it
+        // under a wildcard would hand every opaque origin a credentialed grant.
+        var options = new CorsOptions { AllowedOrigins = ["*"] };
+        var request = CreateRequest("OPTIONS", new("Origin", "null"), new("Host", "localhost"));
+
+        var response = CorsHandler.HandlePreflight(request, options);
+
+        await Assert.That(response).IsNotNull();
+        await Assert.That(response!.StatusCode).IsEqualTo(403);
+        await Assert
+            .That(response.Headers.TryGetValue("Access-Control-Allow-Origin", out _))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task GetResponseHeaders_ignores_null_origin()
+    {
+        var options = new CorsOptions { AllowedOrigins = ["*"] };
+        var request = CreateRequest("GET", new("Origin", "null"), new("Host", "localhost"));
+
         var headers = CorsHandler.GetResponseHeaders(request, options);
 
-        var allowOrigin = headers.FirstOrDefault(h => h.Key == "Access-Control-Allow-Origin");
-        await Assert.That(allowOrigin.Value).IsEqualTo("https://app.example");
+        await Assert.That(headers.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Explicit_null_origin_entry_still_rejects_null()
+    {
+        // Listing the literal "null" must not re-enable the opaque-origin grant.
+        var options = new CorsOptions { AllowedOrigins = ["null", "https://example.com"] };
+        var request = CreateRequest("OPTIONS", new("Origin", "null"), new("Host", "localhost"));
+
+        var response = CorsHandler.HandlePreflight(request, options);
+
+        await Assert.That(response!.StatusCode).IsEqualTo(403);
     }
 
     [Test]

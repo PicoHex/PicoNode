@@ -23,8 +23,7 @@ public sealed class SseDisconnectFinTests
         var handlerCancelled = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
-        var (node, port) = StartSseServer(handlerCancelled);
-        await node.StartAsync();
+        var (node, port) = await StartSseServerAsync(handlerCancelled);
 
         try
         {
@@ -61,9 +60,10 @@ public sealed class SseDisconnectFinTests
         }
     }
 
-    private static (TcpNode Node, int Port) StartSseServer(TaskCompletionSource handlerCancelled)
+    private static Task<(TcpNode Node, int Port)> StartSseServerAsync(
+        TaskCompletionSource handlerCancelled
+    )
     {
-        var port = TestSupport.GetRandomPort();
         var httpHandler = new PicoNode.Http.HttpRequestHandler((request, ct) =>
         {
             if (request.Path.StartsWith("/hang", StringComparison.Ordinal))
@@ -102,13 +102,15 @@ public sealed class SseDisconnectFinTests
         );
         // Default idle timeout (2 min) — intentionally NOT shortened, so the
         // assertions can only be satisfied by deterministic detection.
-        var node = new TcpNode(
-            new TcpNodeOptions
-            {
-                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
-                ConnectionHandler = handler,
-            }
+        return TestSupport.StartNodeAsync(
+            port =>
+                new TcpNode(
+                    new TcpNodeOptions
+                    {
+                        Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                        ConnectionHandler = handler,
+                    }
+                )
         );
-        return (node, port);
     }
 }

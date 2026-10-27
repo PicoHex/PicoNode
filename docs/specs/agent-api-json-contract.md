@@ -2,8 +2,6 @@
 
 PicoAgent 前后端之间的 JSON 约定。单一真相来源（single source of truth）。
 
-> **策略说明**：JSON 序列化分层策略见 `src/Agent/JSON_ARCHITECTURE.md`。
-
 ---
 
 ## 1. SSE 事件流

@@ -277,6 +277,42 @@ public sealed class RateLimitKeysTests
     }
 
     [Test]
+    public async Task UntrustedHeader_Is_Header_Under_A_Trust_Requiring_Name()
+    {
+        // The alias exists so a caller rotation-vulnerable key is a visible decision, not a
+        // header name a reader has to know is client-controlled. It must stay an exact synonym:
+        // a variant that classified differently would be a third classifier to reason about.
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["X-Forwarded-For"] = "203.0.113.7",
+            ["X-Empty"] = "",
+        };
+        var context = WebContext.Create(
+            new HttpRequest
+            {
+                Method = "GET",
+                Target = "/api/data",
+                Path = "/api/data",
+                Headers = headers,
+            }
+        );
+
+        await Assert
+            .That(RateLimitKeys.UntrustedHeader("X-Forwarded-For")(context))
+            .IsEqualTo("203.0.113.7");
+        await Assert.That(RateLimitKeys.UntrustedHeader("X-Missing")(context)).IsNull();
+        await Assert
+            .That(RateLimitKeys.UntrustedHeader("X-Missing", "none")(context))
+            .IsEqualTo("none");
+        await Assert.That(RateLimitKeys.UntrustedHeader("X-Empty")(context)).IsEqualTo("");
+
+        await Assert
+            .That(RateLimitKeys.UntrustedHeader("X-Forwarded-For")(context))
+            .IsEqualTo(RateLimitKeys.Header("X-Forwarded-For")(context))
+            .Because("the alias must classify exactly like Header");
+    }
+
+    [Test]
     public async Task B1_Trusted_Tier_Does_Not_Consume_The_Anonymous_Bucket()
     {
         // B1 (spec §4): trusted and anonymous are mutually exclusive tiers composed with

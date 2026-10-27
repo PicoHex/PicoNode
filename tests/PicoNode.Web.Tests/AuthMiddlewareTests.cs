@@ -241,6 +241,101 @@ public sealed class AuthMiddlewareTests
     }
 
     [Test]
+    public async Task RequireIdentity_returns_401_when_no_identity()
+    {
+        // Opt-in hardening (D1): the middleware stays fail-open by default, but a host
+        // that sets RequireIdentity gets "registering the middleware protects the route".
+        var options = new AuthOptions
+        {
+            ValidateToken = static (_, _) => ValueTask.FromResult<AuthIdentity?>(null),
+            RequireIdentity = true,
+        };
+        var middleware = AuthMiddleware.Create(options);
+        var context = WebContext.Create(new HttpRequest { Method = "GET", Target = "/admin" });
+        var nextCalled = false;
+
+        var response = await middleware(
+            context,
+            (_, _) =>
+            {
+                nextCalled = true;
+                return ValueTask.FromResult(new HttpResponse { StatusCode = 200 });
+            },
+            CancellationToken.None
+        );
+
+        await Assert.That(response.StatusCode).IsEqualTo(401);
+        await Assert.That(nextCalled).IsFalse();
+        // RFC 9110 §15.5.2 makes WWW-Authenticate a MUST on a 401: without a challenge the
+        // client cannot learn which scheme to retry with.
+        await Assert.That(response.Headers[HttpHeaderNames.WwwAuthenticate]).IsEqualTo("Bearer");
+    }
+
+    [Test]
+    public async Task RequireIdentity_passes_the_request_when_identity_is_present()
+    {
+        var options = new AuthOptions
+        {
+            ValidateToken = static (token, _) =>
+                ValueTask.FromResult<AuthIdentity?>(
+                    token == "good" ? new AuthIdentity { UserId = "u-1" } : null
+                ),
+            RequireIdentity = true,
+        };
+        var middleware = AuthMiddleware.Create(options);
+        var context = WebContext.Create(
+            new HttpRequest
+            {
+                Method = "GET",
+                Target = "/admin",
+                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Authorization"] = "Bearer good",
+                },
+            }
+        );
+
+        var response = await middleware(
+            context,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
+
+        await Assert.That(response.StatusCode).IsEqualTo(200);
+        await Assert.That(AuthMiddleware.GetIdentity(context)?.UserId).IsEqualTo("u-1");
+    }
+
+    [Test]
+    public async Task RequireIdentity_returns_401_when_validation_throws()
+    {
+        var options = new AuthOptions
+        {
+            ValidateToken = static (_, _) => throw new InvalidOperationException("auth down"),
+            RequireIdentity = true,
+        };
+        var middleware = AuthMiddleware.Create(options);
+        var context = WebContext.Create(
+            new HttpRequest
+            {
+                Method = "GET",
+                Target = "/admin",
+                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Authorization"] = "Bearer token",
+                },
+            }
+        );
+
+        var response = await middleware(
+            context,
+            (_, _) => ValueTask.FromResult(new HttpResponse { StatusCode = 200 }),
+            CancellationToken.None
+        );
+
+        await Assert.That(response.StatusCode).IsEqualTo(401);
+    }
+
+    [Test]
     public async Task Validation_exception_is_logged_and_request_continues()
     {
         var logger = new RecordingLogger();

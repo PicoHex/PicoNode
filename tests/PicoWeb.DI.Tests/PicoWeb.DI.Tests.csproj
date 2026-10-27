@@ -10,6 +10,11 @@
   <ItemGroup>
     <PackageReference Include="TUnit" />
 
+    <!-- These tests exercise the real PicoDI container (SvcContainer/SvcScope) directly. It was already
+         reachable transitively through PicoWeb, but a transitive asset is not a declaration: a change to
+         PicoWeb's own references would silently remove the container this suite exists to test. -->
+    <PackageReference Include="PicoDI" />
+
     <ProjectReference Include="..\..\src\Network\PicoNode.Abs\PicoNode.Abs.csproj" />
     <ProjectReference Include="..\..\src\Network\PicoNode\PicoNode.csproj" />
     <ProjectReference Include="..\..\src\Web\PicoNode.Web\PicoNode.Web.csproj" />

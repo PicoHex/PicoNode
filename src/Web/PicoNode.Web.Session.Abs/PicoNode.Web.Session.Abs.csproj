@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
     <PackageId>PicoNode.Web.Session.Abs</PackageId>
     <Description>Core abstractions for PicoNode.Web Session: ISession, ISessionStore, and SessionOptions. Targets net10.0 (PicoHex AOT-first ecosystem baseline).</Description>
     <PackageTags>PicoHex;PicoNode;AOT;Session;Abstractions;Web</PackageTags>

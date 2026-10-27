@@ -63,45 +63,4 @@ public sealed class CookieTests
 
         await Assert.That(cookies.Count).IsEqualTo(0);
     }
-
-    [Test]
-    public async Task SetCookieBuilder_builds_simple_cookie()
-    {
-        var header = new SetCookieBuilder("session", "abc123").Build();
-
-        await Assert.That(header.Key).IsEqualTo("Set-Cookie");
-        await Assert.That(header.Value).IsEqualTo("session=abc123");
-    }
-
-    [Test]
-    public async Task SetCookieBuilder_builds_full_cookie()
-    {
-        var expires = new DateTimeOffset(2025, 12, 31, 23, 59, 59, TimeSpan.Zero);
-        var header = new SetCookieBuilder("token", "xyz")
-            .Domain(".example.com")
-            .Path("/api")
-            .Expires(expires)
-            .MaxAge(3600)
-            .Secure()
-            .HttpOnly()
-            .SameSite("Strict")
-            .Build();
-
-        await Assert.That(header.Value).Contains("token=xyz");
-        await Assert.That(header.Value).Contains("Domain=.example.com");
-        await Assert.That(header.Value).Contains("Path=/api");
-        await Assert.That(header.Value).Contains("Expires=Wed, 31 Dec 2025 23:59:59 GMT");
-        await Assert.That(header.Value).Contains("Max-Age=3600");
-        await Assert.That(header.Value).Contains("Secure");
-        await Assert.That(header.Value).Contains("HttpOnly");
-        await Assert.That(header.Value).Contains("SameSite=Strict");
-    }
-
-    [Test]
-    public async Task SetCookieBuilder_supports_delete_via_max_age_zero()
-    {
-        var header = new SetCookieBuilder("session", "").MaxAge(0).Path("/").Build();
-
-        await Assert.That(header.Value).IsEqualTo("session=; Path=/; Max-Age=0");
-    }
 }

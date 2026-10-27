@@ -22,9 +22,14 @@ var app = api.App;
 // exhausted). PerMinute(1, 1) is deliberate: two probes one socket round-trip apart
 // must not depend on landing in the same second. Mounted before any auth middleware
 // (this program has none) — the design's premise.
+// The generated-code probes under /api/aot are exempt for the same reason
+// /api/health is: they are the gate's own health checks. The prefix is matched on
+// segment boundaries (/api/aot covers /api/aot/health and /api/aot/echo/7), so the
+// one-token budget the 429 observation below depends on is untouched.
 using var policy = RateLimitPolicy
     .Create("aot")
     .Exempt("/api/health")
+    .Exempt("/api/aot")
     .Tier("shield", RateLimitBudget.PerMinute(1, 1), RateLimitKeys.Constant("instance"))
     .Build();
 
@@ -46,6 +51,18 @@ app.MapGet(
     (WebContext ctx, CancellationToken _) =>
         ValueTask.FromResult(WebResults.Text(200, "limited"))
 );
+
+// Generated code (task T5.8): the endpoint map Controllers.Gen emits.
+//
+// Until T5.8 this program contained no controller, so everything it published was
+// hand-written and the gate said nothing about the code PicoWeb *generates* — which
+// is the code the reflection-free claim exists for. RegisterAll is the documented
+// wiring step (README; samples/PicoWeb.Samples/Program.cs); the routes behind it are
+// emitted from Controllers/HealthController.cs, resolved from DI by the generated
+// service registration and serialised by the PicoJetson serializer that
+// [PicoJsonSerializable] generates. Both halves therefore execute in the native
+// binary, not merely compile into it.
+EndpointRegistrar.RegisterAll(app);
 
 // Port 0: the OS assigns a free port, so a second concurrent run (or an
 // unrelated service) cannot collide with this gate.
@@ -84,6 +101,21 @@ if (response is not null)
     limitedAllowed = await client.GetAsync("http://127.0.0.1:" + port + "/api/limited");
     limitedRejected = await client.GetAsync("http://127.0.0.1:" + port + "/api/limited");
     exemptWhileEmpty = await client.GetAsync("http://127.0.0.1:" + port + "/api/health");
+}
+
+// Generated-code probes, on the same listener: a constant route (serialisation of
+// the action's marked DTO) and a route parameter (the emitted TryParse binding), so
+// the gate covers more than one shape of the emitted endpoint map.
+HttpResponseMessage? generatedHealth = null;
+HttpResponseMessage? generatedEcho = null;
+string? generatedHealthBody = null;
+string? generatedEchoBody = null;
+if (response is not null)
+{
+    generatedHealth = await client.GetAsync("http://127.0.0.1:" + port + "/api/aot/health");
+    generatedHealthBody = await generatedHealth.Content.ReadAsStringAsync();
+    generatedEcho = await client.GetAsync("http://127.0.0.1:" + port + "/api/aot/echo/42");
+    generatedEchoBody = await generatedEcho.Content.ReadAsStringAsync();
 }
 
 // Graceful stop before disposal (DisposeAsync then no-ops) so the probe result
@@ -191,10 +223,60 @@ Console.WriteLine(
         + exemptWhileEmpty.StatusCode
 );
 
+// ── Generated code (T5.8): the emitted controller endpoints ─────────────
+// The verdict is the request, not the presence of the route in the map: a 404, a 429,
+// a 500 from a null controller or a reflection-disabled serialiser are all failures,
+// and the body assertions prove the DTO was serialised by the generated serializer.
+if (generatedHealth is null || generatedEcho is null)
+{
+    Console.WriteLine("FAIL: generated-endpoint probes did not complete");
+    return 1;
+}
+
+if (generatedHealth.StatusCode != System.Net.HttpStatusCode.OK)
+{
+    Console.WriteLine("FAIL: GET /api/aot/health status " + generatedHealth.StatusCode);
+    return 1;
+}
+
+if (generatedHealthBody is null || !generatedHealthBody.Contains("\"Status\":\"generated\""))
+{
+    Console.WriteLine("FAIL: GET /api/aot/health body '" + generatedHealthBody + "'");
+    return 1;
+}
+
+if (generatedEcho.StatusCode != System.Net.HttpStatusCode.OK)
+{
+    Console.WriteLine("FAIL: GET /api/aot/echo/42 status " + generatedEcho.StatusCode);
+    return 1;
+}
+
+if (generatedEchoBody is null || !generatedEchoBody.Contains("\"Echo\":42"))
+{
+    Console.WriteLine("FAIL: GET /api/aot/echo/42 body '" + generatedEchoBody + "'");
+    return 1;
+}
+
+Console.WriteLine(
+    "generated controller: /api/aot/health="
+        + generatedHealth.StatusCode
+        + " ("
+        + generatedHealthBody
+        + "), /api/aot/echo/42="
+        + generatedEcho.StatusCode
+        + " ("
+        + generatedEchoBody
+        + ")"
+);
+
 Console.WriteLine("PASS");
 return 0;
 
+[PicoJetson.PicoJsonSerializable]
 public sealed class HealthDto
 {
     public string Status { get; set; } = string.Empty;
+
+    /// <summary>Echoed by the route-parameter action, so a bound int is visible in the body.</summary>
+    public int Echo { get; set; }
 }

@@ -3,39 +3,234 @@ namespace PicoNode.Tests;
 public sealed class TcpNodeMetricsTests
 {
     [Test]
-    public async Task GetMetrics_concurrent_calls_are_safe_and_monotonic()
+    public async Task GetMetrics_counts_every_byte_while_readers_hammer_the_snapshot()
     {
-        await using var node = CreateNode(new EchoTcpHandler());
+        // What this test used to do: connect, never send a byte, and hammer GetMetrics from 8 threads
+        // while asserting the total never decreases. With nothing in flight the total was 0 for every
+        // sample, so "never decreases" held trivially — the test could not fail, and a counter that
+        // lost writes would still have passed it.
+        //
+        // Overlapping work is what makes the counters observable: four connections write at the same
+        // time (so RecordBytesSent/RecordBytesReceived are entered from four threads at once, which is
+        // the only situation a lost update or a torn rate snapshot can happen in) while eight readers
+        // sample the snapshot the whole time. The total is then asserted exactly: the sum the server
+        // counted must be the sum the clients put on the wire, not "roughly".
+        const int Connections = 4;
+        const int ChunkBytes = 1024;
+        const int ChunksPerConnection = 512;
+        const int Readers = 8;
+        const long TotalBytes = (long)Connections * ChunksPerConnection * ChunkBytes;
+
+        await using var node = CreateNode(new EchoTcpHandler(), maxConnections: Connections);
         await node.StartAsync();
+        var endpoint = (IPEndPoint)node.LocalEndPoint!;
 
-        using var client = new Socket(
-            AddressFamily.InterNetwork,
-            SocketType.Stream,
-            ProtocolType.Tcp
-        );
-        await client.ConnectAsync(node.LocalEndPoint!);
+        var clients = new Socket[Connections];
+        try
+        {
+            foreach (var index in Enumerable.Range(0, Connections))
+            {
+                clients[index] = new Socket(
+                    AddressFamily.InterNetwork,
+                    SocketType.Stream,
+                    ProtocolType.Tcp
+                );
+                await clients[index].ConnectAsync(endpoint);
+            }
 
-        // Hammer GetMetrics from multiple threads: the rate snapshot fields
-        // must be updated atomically so concurrent callers never observe
-        // torn or backwards totals.
-        var tasks = Enumerable
-            .Range(0, 8)
-            .Select(_ =>
-                Task.Run(() =>
+            var stop = 0;
+            var startGate = new ManualResetEventSlim(false);
+            var firstSample = new CountdownEvent(Readers);
+            var failures = new ConcurrentQueue<string>();
+            long samples = 0;
+            long intermediateSamples = 0;
+
+            // Dedicated threads, not Task.Run: a reader spins until the writers are done, and on a
+            // 1-CPU mask eight spinning pool threads would delay the very work being observed.
+            var readers = new Thread[Readers];
+            for (var index = 0; index < Readers; index++)
+            {
+                var readerIndex = index;
+                readers[index] = new Thread(() =>
                 {
-                    long lastSent = -1;
-                    for (var i = 0; i < 500; i++)
+                    long localSamples = 0;
+                    long localIntermediate = 0;
+                    var last = 0L;
+                    var first = true;
+                    startGate.Wait();
+                    while (Volatile.Read(ref stop) == 0)
                     {
-                        var m = node.GetMetrics();
-                        if (m.TotalBytesSent < lastSent)
-                            throw new InvalidOperationException("metrics went backwards");
-                        lastSent = m.TotalBytesSent;
-                    }
-                })
-            )
-            .ToArray();
+                        var metrics = node.GetMetrics();
+                        if (metrics.TotalBytesSent < last)
+                        {
+                            failures.Enqueue(
+                                $"reader {readerIndex}: TotalBytesSent went backwards "
+                                    + $"{last} -> {metrics.TotalBytesSent}"
+                            );
+                        }
 
-        await Task.WhenAll(tasks);
+                        if (metrics.TotalBytesSent > TotalBytes)
+                        {
+                            failures.Enqueue(
+                                $"reader {readerIndex}: TotalBytesSent {metrics.TotalBytesSent} "
+                                    + $"exceeds the {TotalBytes} bytes on the wire"
+                            );
+                        }
+
+                        if (metrics.BytesSentPerSecond < 0 || metrics.BytesReceivedPerSecond < 0)
+                        {
+                            failures.Enqueue(
+                                $"reader {readerIndex}: negative rate "
+                                    + $"({metrics.BytesSentPerSecond}, {metrics.BytesReceivedPerSecond})"
+                            );
+                        }
+
+                        // A sample strictly between zero and the total was taken while the writers were
+                        // still working: that is what proves the reads overlapped the traffic instead of
+                        // bracketing it.
+                        if (metrics.TotalBytesSent > 0 && metrics.TotalBytesSent < TotalBytes)
+                        {
+                            localIntermediate++;
+                        }
+
+                        last = metrics.TotalBytesSent;
+                        localSamples++;
+                        if (first)
+                        {
+                            first = false;
+                            firstSample.Signal();
+                        }
+
+                        // Sleep rather than Yield: on a 1-CPU affinity mask twelve runnable threads
+                        // share one core in ~15 ms slices, and a yielding reader would get one sample
+                        // per slice while starving the writers it is supposed to observe. A reader that
+                        // sleeps hands the core back and samples again a millisecond later.
+                        Thread.Sleep(1);
+                    }
+
+                    Interlocked.Add(ref samples, localSamples);
+                    Interlocked.Add(ref intermediateSamples, localIntermediate);
+                })
+                {
+                    IsBackground = true,
+                    Name = $"metrics-reader-{index}",
+                };
+            }
+
+            foreach (var reader in readers)
+            {
+                reader.Start();
+            }
+
+            startGate.Set();
+
+            // Every reader has sampled at least once before the first byte is written, so the samples
+            // below span the whole write window rather than only its tail.
+            await Assert.That(firstSample.Wait(TimeSpan.FromSeconds(10))).IsTrue();
+
+            await Task.WhenAll(
+                clients.Select(client =>
+                    Task.Run(() => EchoAsync(client, ChunksPerConnection, ChunkBytes))
+                )
+            );
+
+            Volatile.Write(ref stop, 1);
+            foreach (var reader in readers)
+            {
+                await Assert.That(reader.Join(TimeSpan.FromSeconds(10))).IsTrue();
+            }
+
+            await Assert
+                .That(failures)
+                .IsEmpty()
+                .Because("every snapshot must be self-consistent: " + string.Join("; ", failures));
+
+            // The total is exact, not "at least": both counters are written by four connections at the
+            // same time, so a lost update (a plain += instead of Interlocked.Add) shows up here as a
+            // total that is short by exactly the increments that were overwritten.
+            var final = await WaitForTotalsAsync(node, TotalBytes);
+            await Assert
+                .That(final.TotalBytesReceived)
+                .IsEqualTo(TotalBytes)
+                .Because("every byte the clients wrote must have been received");
+            await Assert
+                .That(final.TotalBytesSent)
+                .IsEqualTo(TotalBytes)
+                .Because("every byte that was echoed must have been counted as sent");
+
+            Console.WriteLine(
+                $"tcp-metrics-overlap samples={samples} intermediate={intermediateSamples} "
+                    + $"readers={Readers} writers={Connections} bytes={TotalBytes}"
+            );
+
+            // Genuine overlap, not a sequential run that happens to end at the right total.
+            await Assert
+                .That(intermediateSamples)
+                .IsGreaterThan(0)
+                .Because(
+                    $"no reader saw the totals move ({samples} samples, all zero or final): the reads "
+                        + "did not overlap the writes, so the snapshot was only ever taken of a settled counter"
+                );
+            await Assert.That(samples).IsGreaterThanOrEqualTo(Readers);
+        }
+        finally
+        {
+            foreach (var client in clients)
+            {
+                client?.Dispose();
+            }
+        }
+    }
+
+    /// <summary>Sends <paramref name="chunks"/> chunks over one connection and reads every echo back.</summary>
+    private static async Task EchoAsync(Socket socket, int chunks, int chunkBytes)
+    {
+        var payload = new byte[chunkBytes];
+        new Random(chunkBytes ^ Environment.CurrentManagedThreadId).NextBytes(payload);
+        var readBuffer = new byte[chunkBytes];
+
+        for (var i = 0; i < chunks; i++)
+        {
+            await socket.SendAsync(payload, SocketFlags.None);
+            var offset = 0;
+            while (offset < chunkBytes)
+            {
+                var read = await socket.ReceiveAsync(readBuffer.AsMemory(offset), SocketFlags.None);
+                if (read == 0)
+                {
+                    throw new InvalidOperationException("the echo closed the connection");
+                }
+
+                offset += read;
+            }
+
+            if (!readBuffer.AsSpan().SequenceEqual(payload))
+            {
+                throw new InvalidOperationException("the echo returned different bytes");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Polls until both byte counters have reached <paramref name="expected"/>, because a connection's
+    /// final records are written after the client has already read the echo. Returns the last snapshot
+    /// when the deadline passes, so the assertion shows the actual numbers.
+    /// </summary>
+    private static async Task<TcpNodeMetrics> WaitForTotalsAsync(TcpNode node, long expected)
+    {
+        var metrics = node.GetMetrics();
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            metrics = node.GetMetrics();
+            if (metrics.TotalBytesSent >= expected && metrics.TotalBytesReceived >= expected)
+            {
+                return metrics;
+            }
+
+            await Task.Delay(10);
+        }
+
+        return metrics;
     }
 
     [Test]
