@@ -151,30 +151,36 @@ public sealed class UiEventHubTests
             .Because("it is the same delivered event, not a per-connection re-numbering");
     }
 
-    /// <summary>Two hubs in one process are one generation: &quot;the process/lifetime&quot; is the
-    /// epoch's unit, so the two SSE channels stay comparable. A per-instance epoch (random, or a
-    /// timestamp taken in the constructor) makes the second channel look like a restart.</summary>
+    /// <summary>Each hub is its own generation: `Epoch` and `Seq` must belong to the same unit, or a
+    /// consumer cannot tell a real gap from a bookkeeping artifact. Two hubs in one process therefore
+    /// differ in `Epoch` (so their sequences are never compared with each other), and each numbers its
+    /// own events from 1.</summary>
     [Test]
-    public async Task TwoHubsInOneProcess_ReportTheSameEpoch()
+    public async Task TwoHubsInOneProcess_HaveDistinctGenerations()
     {
         var first = new UiEventHub();
         var firstId = first.Subscribe();
         first.Publish("evt");
-        var firstEpoch = (await first.GetReader(firstId).ReadAsync()).Epoch;
-
-        // Cross a millisecond boundary so a per-instance wall-clock stamp would differ.
-        await Task.Delay(20);
+        var firstEvent = await first.GetReader(firstId).ReadAsync();
 
         var second = new UiEventHub();
         var secondId = second.Subscribe();
         second.Publish("evt");
-        var secondEpoch = (await second.GetReader(secondId).ReadAsync()).Epoch;
+        var secondEvent = await second.GetReader(secondId).ReadAsync();
 
-        await Assert.That(firstEpoch).IsGreaterThan(0L);
+        await Assert.That(firstEvent.Epoch).IsGreaterThan(0L);
         await Assert
-            .That(secondEpoch)
-            .IsEqualTo(firstEpoch)
-            .Because("the epoch is the generation of the process, shared by every hub in it");
+            .That(secondEvent.Epoch)
+            .IsNotEqualTo(firstEvent.Epoch)
+            .Because(
+                "a shared epoch over per-instance counters (or the reverse) is what makes a restart indistinguishable "
+                    + "from a rewind, and a real gap indistinguishable from a number the other hub handed out"
+            );
+
+        // Both halves belong to the same generation, so each hub's own numbering starts at 1 and stays
+        // comparable with itself across reconnects.
+        await Assert.That(firstEvent.Seq).IsEqualTo(1L);
+        await Assert.That(secondEvent.Seq).IsEqualTo(1L);
     }
 
     /// <summary>A caller that already has a cursor (e.g. an event relayed from another generation)

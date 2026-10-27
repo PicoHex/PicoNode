@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Threading.Channels;
 
@@ -21,9 +20,11 @@ namespace PicoNode.Web;
 /// </remarks>
 public sealed record UiEvent(string Name, string? Payload)
 {
-    /// <summary>Cursor half 1: the generation (process lifetime) of the publisher, in unix
-    /// milliseconds. Changes on every restart, so a cursor from a dead process cannot be mistaken
-    /// for a position in this one. <c>0</c> = not provided.</summary>
+    /// <summary>Cursor half 1: the generation of the publisher. Derived from the process start
+    /// instant (unix milliseconds) plus this hub's ordinal within the process, so it is non-zero, fixed
+    /// for the life of the hub, and different after a restart of either the process or the hub. A
+    /// cursor from a dead generation therefore cannot be mistaken for a position in this one.
+    /// <c>0</c> = not provided.</summary>
     public long Epoch { get; init; }
 
     /// <summary>Cursor half 2: the position of this event within its <see cref="Epoch"/>, strictly
@@ -59,13 +60,31 @@ public sealed class UiEventHub
     /// SSE channels (session body and shell notifications) stay comparable, while a new process
     /// gets a new stamp and its <c>Seq == 1</c> cannot be mistaken for a healed gap. Not a
     /// cache-shared constant: it is evaluated at type initialisation, once per process.</summary>
-    private static readonly long ProcessEpoch = ResolveProcessEpoch();
+    private static readonly long ProcessEpochMs = ResolveProcessEpoch();
 
     private readonly object _gate = new();
     private readonly Dictionary<Guid, Channel<UiEvent>> _subscribers = [];
 
-    /// <summary>Last seq handed out to a <em>hub-minted</em> event. Guarded by <see cref="_gate"/>,
-    /// which is what makes seq order equal delivery order.</summary>
+    /// <summary>Stamps this hub's generation. See <see cref="_epoch"/>.</summary>
+    public UiEventHub() => _epoch = ProcessEpochMs + Interlocked.Increment(ref _instances);
+
+    /// <summary>Ordinals handed out to hubs in this process, so two hubs in one process do not share a
+    /// generation.</summary>
+    private static long _instances;
+
+    /// <summary>The generation of <em>this hub</em>: the process start instant plus a per-instance
+    /// ordinal.</summary>
+    /// <remarks>
+    /// Per instance, not per process, and that is the point: <see cref="Seq"/> is also per instance, so
+    /// if two hubs shared an epoch a consumer reading both channels would see each one skip the numbers
+    /// the other handed out - gaps that never happened. Sharing the epoch but not the counter (or the
+    /// counter but not the epoch) is what makes a consumer unable to tell a real gap from a bookkeeping
+    /// artifact, or a restart from a rewind. Both halves therefore belong to the same unit: the hub.
+    /// </remarks>
+    private readonly long _epoch;
+
+    /// <summary>Last seq handed out by this hub. Guarded by <see cref="_gate"/>, which is what makes
+    /// this hub's seq order equal its delivery order.</summary>
     private long _seq;
 
     public Guid Subscribe()
@@ -133,7 +152,7 @@ public sealed class UiEventHub
                     ? evt
                     : evt with
                     {
-                        Epoch = ProcessEpoch,
+                        Epoch = _epoch,
                         Seq = ++_seq,
                     };
             foreach (var channel in _subscribers.Values)
@@ -155,13 +174,13 @@ public sealed class UiEventHub
             var started = Process.GetCurrentProcess().StartTime.ToUniversalTime();
             return new DateTimeOffset(started, TimeSpan.Zero).ToUnixTimeMilliseconds();
         }
-        catch (Exception ex)
-            when (ex is PlatformNotSupportedException
-                or NotSupportedException
-                or InvalidOperationException
-                or Win32Exception
-            )
+        catch (Exception)
         {
+            // Deliberately catch everything: this runs in a static field initializer, so an escaping
+            // exception becomes a TypeInitializationException that makes UiEventHub unusable for the
+            // rest of the process. A wall-clock stamp taken once at type initialisation still has every
+            // property the value must have (non-zero, fixed for the process, different after a restart),
+            // so the fallback is strictly better than bricking the hub.
             return DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         }
     }
