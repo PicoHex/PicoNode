@@ -32,7 +32,19 @@ public sealed class ClientTests
     /// step resolves in single-digit milliseconds on a healthy machine; the
     /// budget exists to turn a hang into a red test instead of a stuck run.
     /// </summary>
-    private static readonly TimeSpan HangBudget = TimeSpan.FromSeconds(5);
+    /// <summary>
+    /// How long a "must not hang" assertion waits before calling it a hang.
+    /// </summary>
+    /// <remarks>
+    /// Every use of this budget guards an operation that must complete; the failure it is
+    /// looking for is a call that never completes, so any finite deadline catches it and the
+    /// number only decides how quickly the report arrives. It was 5 s, which the Windows CI
+    /// runners (2 cores, node startup plus several child processes per class) could not meet:
+    /// <c>Dropped_notifications_are_counted_at_both_drop_sites</c> timed out there while passing
+    /// everywhere else. 15 s keeps a genuine hang detectable and stops a busy runner from
+    /// reading as a deadlocked client.
+    /// </remarks>
+    private static readonly TimeSpan HangBudget = TimeSpan.FromSeconds(15);
 
     /// <summary>
     /// A call written to ch-1 and never answered must be released when ch-1
