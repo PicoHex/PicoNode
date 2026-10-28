@@ -389,10 +389,17 @@ public sealed class TcpNodeMetricsTests
         );
         await client2.ConnectAsync((IPEndPoint)node.LocalEndPoint);
 
-        // Wait briefly for the rejection to process
-        await Task.Delay(200);
-
-        var metrics = node.GetMetrics();
+        // Poll instead of waiting a fixed 200 ms: on macOS the "max connections" rejection is
+        // observed by the accept loop later than on Linux, so a fixed window is a race (it failed on
+        // osx-arm64 in CI while passing on every other leg).
+        TcpNodeMetrics metrics = default;
+        for (var attempt = 0; attempt < 200; attempt++)
+        {
+            metrics = node.GetMetrics();
+            if (metrics.TotalRejected >= 1)
+                break;
+            await Task.Delay(10);
+        }
 
         await Assert.That(metrics.TotalRejected).IsGreaterThanOrEqualTo(1);
     }

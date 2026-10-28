@@ -93,6 +93,17 @@ public sealed class ReadmeAccuracyTests
             .Select(Measure)
             .ToArray();
 
+    /// <summary>
+    /// The project name a <c>ProjectReference</c> points at, independent of the separator the csproj
+    /// happens to use. The files store Windows separators even when checked out on Linux or macOS,
+    /// where a backslash is an ordinary name character: <see cref="Path.GetFileNameWithoutExtension(string)"/>
+    /// then returns the whole relative path, every dependency stops starting with <c>Pico</c>, and the
+    /// dependency-model rule fails on every non-Windows runner while passing on the machine it was
+    /// written on. Normalising first is what makes the rule platform-honest.
+    /// </summary>
+    private static string ProjectNameOf(string include) =>
+        Path.GetFileNameWithoutExtension(include.Replace((char)92, '/'));
+
     private static Project Measure(string csprojPath)
     {
         var csproj = XDocument.Load(csprojPath);
@@ -114,9 +125,12 @@ public sealed class ReadmeAccuracyTests
                     StringComparison.OrdinalIgnoreCase
                 )
             )
-            .Select(static reference =>
-                Path.GetFileNameWithoutExtension(reference.Attribute("Include")!.Value)
-            );
+            // The csproj stores Windows separators even when the repo is checked out on Linux or
+            // macOS, where '\' is an ordinary name character: Path.GetFileNameWithoutExtension then
+            // returns the whole relative path instead of the project name, every dependency stops
+            // starting with "Pico", and this rule fails on every non-Windows runner while passing on
+            // the machine it was written on. Normalise first; '/' is a separator on all three.
+            .Select(static reference => ProjectNameOf(reference.Attribute("Include")!.Value));
 
         var packageReferences = csproj
             .Descendants("PackageReference")
@@ -605,6 +619,24 @@ public sealed class ReadmeAccuracyTests
             .That(string.Join(" | ", findings))
             .IsEqualTo("")
             .Because("netstandard2.0 is a fact about a csproj, not a claim to be trusted");
+    }
+
+    /// <summary>
+    /// Pins the platform trap directly, because the rule above can only fail on a runner this
+    /// repository is not developed on: a Windows-style reference path must yield the project name on
+    /// every OS, or the dependency-model rule silently becomes "true on the author's machine only".
+    /// </summary>
+    [Test]
+    public async Task Project_reference_paths_are_resolved_the_same_way_on_every_platform()
+    {
+        // Written with explicit char codes so the test itself stays copy-pasteable between platforms.
+        var windowsStyle = $"..{(char)92}..{(char)92}Network{(char)92}PicoNode.Abs{(char)92}PicoNode.Abs.csproj";
+        var unixStyle = "../../Network/PicoNode.Abs/PicoNode.Abs.csproj";
+        var bare = "PicoNode.Abs.csproj";
+
+        await Assert.That(ProjectNameOf(windowsStyle)).IsEqualTo("PicoNode.Abs");
+        await Assert.That(ProjectNameOf(unixStyle)).IsEqualTo("PicoNode.Abs");
+        await Assert.That(ProjectNameOf(bare)).IsEqualTo("PicoNode.Abs");
     }
 
     [Test]
