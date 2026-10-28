@@ -31,7 +31,6 @@ P:PicoJsonRpc.JsonRpcChannel.ConsecutiveCrashes : int { get; set; }
 P:PicoJsonRpc.JsonRpcChannel.Name : string { get; init; }
 P:PicoJsonRpc.JsonRpcChannel.NextRetryAtUtc : System.DateTime { get; set; }
 P:PicoJsonRpc.JsonRpcChannel.Process : System.Diagnostics.Process { get; init; }
-P:PicoJsonRpc.JsonRpcChannel.Stderr : System.IO.Stream { get; init; }
 P:PicoJsonRpc.JsonRpcChannel.Stdin : System.IO.Stream { get; init; }
 P:PicoJsonRpc.JsonRpcChannel.Stdout : System.IO.Stream { get; init; }
 P:PicoJsonRpc.JsonRpcError.Code : int { get; set; }

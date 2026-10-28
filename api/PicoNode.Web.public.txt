@@ -5,8 +5,6 @@ B:PicoNode.Web.HttpPostAttribute : System.Attribute
 B:PicoNode.Web.HttpPutAttribute : System.Attribute
 B:PicoNode.Web.RouteAttribute : System.Attribute
 F:PicoNode.Web.MultipartFormDataParserOptions.DefaultMaxBoundaryLength : int = 70 const
-F:PicoNode.Web.MultipartFormDataParserOptions.DefaultMaxHeaderBytesPerPart : int = 8192 const
-F:PicoNode.Web.MultipartFormDataParserOptions.DefaultMaxPartCount : int = 256 const
 F:PicoNode.Web.MultipartFormDataParserOptions.DefaultMaxPartSizeBytes : int = 67108864 const
 F:PicoNode.Web.MultipartFormDataParserOptions.DefaultMaxTotalSizeBytes : int = 67108864 const
 F:PicoNode.Web.RateLimitPath.Any : System.Predicate`1<PicoNode.Web.WebContext> static readonly
@@ -58,7 +56,7 @@ M:PicoNode.Web.HttpPutAttribute..ctor(string path = "") : void
 M:PicoNode.Web.IRateLimitStore.TryConsumeTokenAsync(string key, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<PicoNode.Web.RateLimitResult> abstract
 M:PicoNode.Web.IWebResult.Execute(PicoNode.Web.WebContext ctx) : PicoNode.Http.HttpResponse abstract
 M:PicoNode.Web.InMemoryRateLimitStore..ctor(PicoNode.Web.RateLimitOptions options) : void
-M:PicoNode.Web.InMemoryRateLimitStore..ctor(in PicoNode.Web.RateLimitBudget budget, System.Nullable`1<System.TimeSpan> cleanupInterval = null, int maxBuckets = 100000) : void
+M:PicoNode.Web.InMemoryRateLimitStore..ctor(in PicoNode.Web.RateLimitBudget budget, System.Nullable`1<System.TimeSpan> cleanupInterval = null) : void
 M:PicoNode.Web.InMemoryRateLimitStore.Dispose() : void override
 M:PicoNode.Web.InMemoryRateLimitStore.TryConsumeTokenAsync(string key, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<PicoNode.Web.RateLimitResult> override
 M:PicoNode.Web.InMemorySessionStore..ctor(PicoNode.Web.Session.Abs.SessionOptions options) : void
@@ -66,7 +64,6 @@ M:PicoNode.Web.InMemorySessionStore.CreateAsync(System.Threading.CancellationTok
 M:PicoNode.Web.InMemorySessionStore.DeleteAsync(string sessionId, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask override
 M:PicoNode.Web.InMemorySessionStore.Dispose() : void override
 M:PicoNode.Web.InMemorySessionStore.LoadAsync(string sessionId, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<PicoNode.Web.Session.Abs.ISession> override
-M:PicoNode.Web.InMemorySessionStore.RegenerateAsync(string oldId, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<string> override
 M:PicoNode.Web.InMemorySessionStore.SaveAsync(string sessionId, PicoNode.Web.Session.Abs.ISession session, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask override
 M:PicoNode.Web.MultipartFormDataParser.ParseAsync(PicoNode.Http.HttpRequest request, PicoNode.Web.MultipartFormDataParserOptions options = null, PicoLog.Abs.ILogger logger = null, System.Threading.CancellationToken ct = null) : System.Threading.Tasks.ValueTask`1<PicoNode.Web.MultipartFormData> static
 M:PicoNode.Web.MultipartFormDataParserOptions..ctor() : void
@@ -80,7 +77,6 @@ M:PicoNode.Web.RateLimitKeys.Not(System.Func`2<PicoNode.Web.WebContext, string> 
 M:PicoNode.Web.RateLimitKeys.Path() : System.Func`2<PicoNode.Web.WebContext, string> static
 M:PicoNode.Web.RateLimitKeys.RemoteAddress(string fallback = "unknown") : System.Func`2<PicoNode.Web.WebContext, string> static
 M:PicoNode.Web.RateLimitKeys.TokenMatch(string expected, string key = "trusted") : System.Func`2<PicoNode.Web.WebContext, string> static
-M:PicoNode.Web.RateLimitKeys.UntrustedHeader(string name, string fallback = null) : System.Func`2<PicoNode.Web.WebContext, string> static
 M:PicoNode.Web.RateLimitMiddleware..ctor() : void
 M:PicoNode.Web.RateLimitMiddleware.Create(PicoNode.Web.IRateLimitStore store, PicoNode.Web.RateLimitOptions options) : PicoNode.Web.WebMiddleware static
 M:PicoNode.Web.RateLimitMiddleware.Create(PicoNode.Web.RateLimitOptions options) : PicoNode.Web.WebMiddleware static
@@ -116,12 +112,8 @@ M:PicoNode.Web.SessionIdSetter.EndInvoke(System.IAsyncResult result) : void virt
 M:PicoNode.Web.SessionIdSetter.Invoke(PicoNode.Http.HttpResponse response, string sessionId) : void virtual
 M:PicoNode.Web.SessionMiddleware..ctor() : void
 M:PicoNode.Web.SessionMiddleware.Create() : PicoNode.Web.WebMiddleware static
-M:PicoNode.Web.SessionMiddleware.Create(PicoLog.Abs.ILogger logger) : PicoNode.Web.WebMiddleware static
 M:PicoNode.Web.SessionMiddleware.Create(PicoNode.Web.Session.Abs.ISessionStore store, PicoNode.Web.SessionIdExtractor extractor, PicoNode.Web.SessionIdSetter setter) : PicoNode.Web.WebMiddleware static
-M:PicoNode.Web.SessionMiddleware.Create(PicoNode.Web.Session.Abs.ISessionStore store, PicoNode.Web.SessionIdExtractor extractor, PicoNode.Web.SessionIdSetter setter, PicoLog.Abs.ILogger logger) : PicoNode.Web.WebMiddleware static
 M:PicoNode.Web.SessionMiddleware.Create(PicoNode.Web.SessionIdExtractor extractor, PicoNode.Web.SessionIdSetter setter) : PicoNode.Web.WebMiddleware static
-M:PicoNode.Web.SessionMiddleware.Create(PicoNode.Web.SessionIdExtractor extractor, PicoNode.Web.SessionIdSetter setter, PicoLog.Abs.ILogger logger) : PicoNode.Web.WebMiddleware static
-M:PicoNode.Web.SessionRotation.Regenerate(PicoNode.Web.WebContext context) : void static
 M:PicoNode.Web.SetCookieBuilder..ctor(string name, string value) : void
 M:PicoNode.Web.SetCookieBuilder.Build() : System.Collections.Generic.KeyValuePair`2<string, string>
 M:PicoNode.Web.SetCookieBuilder.Domain(string domain) : PicoNode.Web.SetCookieBuilder
@@ -148,7 +140,6 @@ M:PicoNode.Web.TextResult.Execute(PicoNode.Web.WebContext ctx) : PicoNode.Http.H
 M:PicoNode.Web.UiEvent..ctor(string Name, string Payload) : void
 M:PicoNode.Web.UiEventHub..ctor() : void
 M:PicoNode.Web.UiEventHub.GetReader(System.Guid subscriptionId) : System.Threading.Channels.ChannelReader`1<PicoNode.Web.UiEvent>
-M:PicoNode.Web.UiEventHub.Publish(PicoNode.Web.UiEvent evt) : void
 M:PicoNode.Web.UiEventHub.Publish(string eventName) : void
 M:PicoNode.Web.UiEventHub.Publish(string eventName, string payload) : void
 M:PicoNode.Web.UiEventHub.Subscribe() : System.Guid
@@ -184,10 +175,7 @@ P:PicoNode.Web.AuthIdentity.Metadata : System.Collections.Generic.IReadOnlyDicti
 P:PicoNode.Web.AuthIdentity.Permissions : System.Collections.Generic.IReadOnlyList`1<string> { get; init; }
 P:PicoNode.Web.AuthIdentity.UserId : string { get; init; }
 P:PicoNode.Web.AuthOptions.Logger : PicoLog.Abs.ILogger { get; init; }
-P:PicoNode.Web.AuthOptions.RequireIdentity : bool { get; init; }
 P:PicoNode.Web.AuthOptions.ValidateToken : System.Func`3<string, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask`1<PicoNode.Web.AuthIdentity>> { get; init; }
-P:PicoNode.Web.CacheMiddleware.IdentityHeaders : System.Collections.Generic.IReadOnlyList`1<string> { get; init; }
-P:PicoNode.Web.CacheMiddleware.ShouldCache : System.Func`2<PicoNode.Web.WebContext, bool> { get; init; }
 P:PicoNode.Web.CorsOptions.AllowCredentials : bool { get; init; }
 P:PicoNode.Web.CorsOptions.AllowedHeaders : System.Collections.Generic.IReadOnlyList`1<string> { get; init; }
 P:PicoNode.Web.CorsOptions.AllowedMethods : System.Collections.Generic.IReadOnlyList`1<string> { get; init; }
@@ -204,8 +192,6 @@ P:PicoNode.Web.HttpPutAttribute.Path : string { get; }
 P:PicoNode.Web.MultipartFormData.Fields : System.Collections.Generic.IReadOnlyList`1<PicoNode.Web.MultipartFormField> { get; }
 P:PicoNode.Web.MultipartFormData.Files : System.Collections.Generic.IReadOnlyList`1<PicoNode.Web.MultipartFormFile> { get; }
 P:PicoNode.Web.MultipartFormDataParserOptions.MaxBoundaryLength : int { get; init; }
-P:PicoNode.Web.MultipartFormDataParserOptions.MaxHeaderBytesPerPart : int { get; init; }
-P:PicoNode.Web.MultipartFormDataParserOptions.MaxPartCount : int { get; init; }
 P:PicoNode.Web.MultipartFormDataParserOptions.MaxPartSizeBytes : int { get; init; }
 P:PicoNode.Web.MultipartFormDataParserOptions.MaxTotalSizeBytes : int { get; init; }
 P:PicoNode.Web.MultipartFormField.Name : string { get; }
@@ -215,14 +201,12 @@ P:PicoNode.Web.MultipartFormFile.ContentType : string { get; }
 P:PicoNode.Web.MultipartFormFile.FileName : string { get; }
 P:PicoNode.Web.MultipartFormFile.Length : long { get; }
 P:PicoNode.Web.MultipartFormFile.Name : string { get; }
-P:PicoNode.Web.MultipartFormFile.SafeFileName : string { get; }
 P:PicoNode.Web.RateLimitBudget.MaxTokens : int { get; }
 P:PicoNode.Web.RateLimitBudget.RefillInterval : System.TimeSpan { get; }
 P:PicoNode.Web.RateLimitBudget.RefillRate : int { get; }
 P:PicoNode.Web.RateLimitOptions.CleanupInterval : System.TimeSpan { get; init; }
 P:PicoNode.Web.RateLimitOptions.FailOpen : bool { get; init; }
 P:PicoNode.Web.RateLimitOptions.KeySelector : System.Func`2<PicoNode.Web.WebContext, string> { get; init; }
-P:PicoNode.Web.RateLimitOptions.MaxBuckets : int { get; init; }
 P:PicoNode.Web.RateLimitOptions.MaxTokens : int { get; init; }
 P:PicoNode.Web.RateLimitOptions.RefillInterval : System.TimeSpan { get; init; }
 P:PicoNode.Web.RateLimitOptions.RefillRate : int { get; init; }
@@ -259,10 +243,8 @@ P:PicoNode.Web.SessionCookieOptions.Secure : bool { get; init; }
 P:PicoNode.Web.SseConnection.KeepAliveInterval : System.TimeSpan { get; init; }
 P:PicoNode.Web.StaticFileMiddlewareOptions.DefaultDocument : string { get; init; }
 P:PicoNode.Web.StaticFileMiddlewareOptions.RequestPathPrefix : string { get; init; }
-P:PicoNode.Web.UiEvent.Epoch : long { get; init; }
 P:PicoNode.Web.UiEvent.Name : string { get; init; }
 P:PicoNode.Web.UiEvent.Payload : string { get; init; }
-P:PicoNode.Web.UiEvent.Seq : long { get; init; }
 P:PicoNode.Web.WebAppOptions.Logger : PicoLog.Abs.ILogger { get; init; }
 P:PicoNode.Web.WebAppOptions.MaxRequestBytes : int { get; init; }
 P:PicoNode.Web.WebAppOptions.RequestTimeout : System.TimeSpan { get; init; }
@@ -319,7 +301,6 @@ T:class PicoNode.Web.SessionCookie
 T:class PicoNode.Web.SessionCookieOptions
 T:class PicoNode.Web.SessionHeader
 T:class PicoNode.Web.SessionMiddleware
-T:class PicoNode.Web.SessionRotation
 T:class PicoNode.Web.SetCookieBuilder
 T:class PicoNode.Web.SseConnection
 T:class PicoNode.Web.SseEndpoint
