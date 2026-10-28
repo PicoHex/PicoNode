@@ -64,6 +64,7 @@ F:PicoNode.Http.HttpHeaderNames.Server : string = "Server" const
 F:PicoNode.Http.HttpHeaderNames.SetCookie : string = "Set-Cookie" const
 F:PicoNode.Http.HttpHeaderNames.TransferEncoding : string = "Transfer-Encoding" const
 F:PicoNode.Http.HttpHeaderNames.Vary : string = "Vary" const
+F:PicoNode.Http.HttpHeaderNames.WwwAuthenticate : string = "WWW-Authenticate" const
 F:PicoNode.Http.HttpVersion.Http10 : PicoNode.Http.HttpVersion = 0 const
 F:PicoNode.Http.HttpVersion.Http11 : PicoNode.Http.HttpVersion = 1 const
 F:PicoNode.Http.HttpVersion.Http2 : PicoNode.Http.HttpVersion = 2 const
