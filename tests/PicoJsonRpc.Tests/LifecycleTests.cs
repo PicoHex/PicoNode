@@ -178,10 +178,16 @@ public sealed class LifecycleTests
         await using var client = new JsonRpcClient(lc);
         try
         {
-            // the 5 s budget is the assertion: on a blocked child AcquireAsync
-            // succeeds (spawn never blocks) but the call is cancelled, so the
-            // test fails instead of hanging the run.
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            // The budget is the assertion: a genuinely blocked child never answers, so any finite
+            // deadline catches the deadlock this test exists for - the number only decides how
+            // quickly the failure is reported. It was 5 s; the Windows CI runners (win-x64 and
+            // win-arm64, 2 cores, the suite's classes in parallel) needed longer for node to start,
+            // push 200 KB through the pipe and get the answer back, because the drain continuation
+            // waits for a thread-pool thread. 15 s keeps a real deadlock detectable and stops the
+            // suite from reddening merely because the runner is busy. The structural fix - a
+            // dedicated drain thread that never competes with the pool - is recorded as a known
+            // limitation instead of being smuggled in with a timeout change.
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             var ch = await lc.AcquireAsync(cts.Token);
             var resp = await client.CallAsync("ping", "{}", cts.Token);
             await Assert.That(resp.Error).IsNull();
