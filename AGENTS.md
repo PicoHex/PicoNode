@@ -78,6 +78,29 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
   and the lockstep release are **discipline, checked by a human** - nothing in this repository can fail a release
   that changed the bytes and bumped only `y`.
 
+### Documentation is part of the release, not a follow-up
+
+The API diff the script prints is also the list of documents that may now be wrong. Before tagging, walk it:
+
+- **READMEs in this repository** - the root README in all ten languages, and the per-package `src/**/README.md`.
+  A changed option, default or behaviour that a README describes has to move in the same release. `PicoNode.Docs.Tests`
+  catches the measurable half (counts, block coverage, claims that can be derived from the tree); it cannot catch a
+  sentence that is merely out of date.
+- **The PicoHex skills** - `picohex-picorpc`, `picohex-picoweb`, `picohex-picodi`, `picohex-readme-standard`, ... live
+  **outside this repository**, in the `picohex-skills` package, so nothing here fails when they go stale. They are what
+  an agent or a partner reads *instead of* the source, which makes a stale skill worse than a stale README. Walk the
+  diff member by member and ask of each one: does a skill describe it?
+  - The **wire format** counts as a described API: v2026.6.0 had to rewrite `picohex-picorpc`'s "params/result are
+    string-embedded JSON" section, because a partner following it would have called `JSON.parse(params)` on a value
+    that is no longer quoted.
+  - **Semantics** count too, not just members: `AcceptFaultBackoff = 0` changed meaning (1 ms), and the crash-backoff
+    counters moved from the channel to the lifecycle.
+- **The release notes** - `docs/release-notes/` gets an entry per release: the API delta, the wire delta, the breaking
+  changes, and the limitations left open.
+- **Analyzer release notes** - a new or changed `DiagnosticDescriptor` needs its `AnalyzerReleases.Unshipped.md` row.
+
+A release whose diff is documented nowhere is not finished; it is just uploaded.
+
 ## Working rules
 
 - TDD, RED first: a behavioural fix needs a test that fails before the change and passes after.
