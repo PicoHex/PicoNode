@@ -109,6 +109,11 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     environment: release
+    permissions:
+      contents: write
+      # GitHub OIDC: lets this job mint the identity token nuget.org trades for a
+      # short-lived API key. Without it the login step has nothing to present.
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -186,14 +191,18 @@ jobs:
           -p:RestoreAdditionalProjectSources=${{ github.workspace }}/packages
           -o packages
 
+      - name: NuGet login (OIDC → temp API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       # No --skip-duplicate: a version that already exists on nuget.org is a
       # failure, not a silent no-op that leaves a green run behind.
       - name: Publish to NuGet
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: >
           dotnet nuget push packages/*.nupkg
-          --api-key ${{ env.NUGET_API_KEY }}
+          --api-key ${{ steps.login.outputs.NUGET_API_KEY }}
           --source https://api.nuget.org/v3/index.json
 
       - name: Assert every package was published
