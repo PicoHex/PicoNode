@@ -18,7 +18,7 @@
 #   2  HEAD is not branch main (or is detached)
 #   3  the work tree is dirty
 #   4  OUT resolves inside the repository
-#   5  the build left changes inside the repository
+#   5  the work tree changed while the build was running (concurrent edit, leaked path)
 set -euo pipefail
 
 RELEASE_BRANCH="main"
@@ -174,12 +174,21 @@ say ""
 say "primary artifact : $(basename "$primary")"
 say "sha256           : $(sha256sum "$primary" | cut -d' ' -f1)"
 
-# --- R4 (post-check): leave the repository exactly as found ------------------
-residue=$(git status --porcelain)
-if [ -n "$residue" ]; then
+# --- R4 (post-check): the tree the artifact came from did not move -----------
+# R2 proved this tree was clean before the build, so anything dirty now changed
+# WHILE the build ran. That is normally not the pack's own doing - it writes only to
+# bin/obj (ignored) and to OUT - but either way the packages were compiled from a
+# working copy that no commit describes, so they cannot be tied to $head_sha and
+# cannot be released.
+after_status=$(git status --porcelain)
+if [ -n "$after_status" ]; then
   say ""
-  say "release-build: FAILED - the build changed the repository; artifacts must not do that:"
-  printf '%s\n' "$residue" | head -5
+  say "release-build: REFUSED - the work tree changed while the build was running."
+  say "  It was clean before the build (R2), so these paths appeared or changed during it"
+  say "  - a concurrent editor, or a build step that leaked a tracked path:"
+  printf '%s\n' "$after_status" | head -5
+  say "  The packages in $out_abs were compiled from that moving tree and cannot be tied"
+  say "  to $head_sha. Re-run when the workspace is quiet."
   exit 5
 fi
 

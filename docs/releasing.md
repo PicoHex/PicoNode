@@ -47,7 +47,7 @@ not depend on the shebang surviving them.
 It packs the whole solution once, at one version, and prints the commit it built, the branch, the UTC
 time, every `.nupkg` with its sha256, and the **primary artifact** (`PicoNode.<version>.nupkg`) with its
 sha256 so a build can be compared with what NuGet received. Artifacts go outside the work tree by design,
-and the script fails if the build leaves anything behind.
+and the script fails if that work tree moves while it is building.
 
 | Exit | Meaning | What to do |
 |-----:|---------|------------|
@@ -56,7 +56,7 @@ and the script fails if the build leaves anything behind.
 | `2` | HEAD is not branch `main` (or is detached) | Merge into `main` and build there |
 | `3` | The work tree is dirty (the first three paths are printed) | Commit or `git stash -u`, then rebuild |
 | `4` | `OUT` resolves inside the repository | Point `OUT` somewhere outside the work tree |
-| `5` | The build changed the repository | Treat it as a bug in the build, not as a cleanup task |
+| `5` | The work tree changed *while* the build ran (a concurrent edit, or a path the build leaked) | Re-run in a quiet workspace: those packages cannot be tied to a commit |
 
 ## Cutting the release
 
