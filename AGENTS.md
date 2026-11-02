@@ -54,9 +54,11 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
   warns on `-DryRun` and refuses to release - that is exactly how the API delta stayed invisible and
   v2026.4.7 shipped wrongly. Restore first: `git checkout <last-tag> -- api/`.
 - Already published the wrong version? Unlisting (never deleting) is the remedy - NuGet versions cannot be
-  reused: `gh workflow run unlist.yml -f version=X.Y.Z -f confirm=unlist`. That workflow needs the API key to
-  carry the **Unlist** permission as well as push (the release key currently only pushes, so unlisting is a
-  manual step on nuget.org), and the GitHub Release should get a "Superseded: use <version>" note.
+  reused - but **this repository has no unlist workflow**: it was removed, because nuget.org pins a trusted
+  publishing policy to the workflow *file name*, so it could only ever run against a separate
+  `unlist.yml`/`Unlist` policy that does not exist. Unlist by hand on nuget.org (and give the GitHub Release a
+  "Superseded: use <version>" note); restoring the workflow is a three-step job documented in
+  `docs/releasing.md` (section "Restoring the unlist workflow").
 - **Releases are cut from `main`** — CI on `main` green first. The script refuses to tag any other branch
   (`-AllowBranch` is the deliberate override for re-tagging cases).
 - Version rule: `<four-digit year>.<x>.<y>` — `x` bumps (and `y` resets to 0) when the public API changed;

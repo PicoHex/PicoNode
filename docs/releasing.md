@@ -77,3 +77,38 @@ It is telling you the artifact would be unattributable, not that your code is wr
 move the work onto `main` (merge/rebase, then rebuild) — not to bypass the script. If you believe you need
 an exception, get it agreed explicitly and record why in the commit message; a released package with a
 wrong provenance stays on nuget.org forever, because NuGet versions can be unlisted but never reused.
+
+## If you published the wrong version
+
+There is **no unlist workflow in this repository**, deliberately. Unlisting hides a version from search and
+from resolution while consumers that pin it keep restoring; it never deletes, because NuGet versions cannot be
+reused. The `unlist.yml` workflow that used to do this was removed on the owner's decision - withdrawal is not a
+capability this repository wires up - and it could not have worked anyway. nuget.org matches an OIDC token
+against a trusted publishing policy that pins the **workflow file name**, so `unlist.yml` needed its own policy
+(workflow file `unlist.yml`, scope `Unlist`, environment empty); the policy registered for `release.yml` does
+not admit it, and a push-scoped key is exactly what made the first attempt answer 403 for every package. A
+switch that cannot move is worse than no switch: it looks like a remedy while it always fails.
+
+For now, unlist by hand on nuget.org, and put a "Superseded: use <version>" note on the GitHub Release for the
+bad version.
+
+### Restoring the unlist workflow
+
+If withdrawal ever becomes a wanted capability, all three steps - in this order:
+
+1. **Bring the file back from git history:**
+
+   ```bash
+   git log --all --oneline -- .github/workflows/unlist.yml   # find the commit that deleted it
+   git show <deleting-sha>^:.github/workflows/unlist.yml > .github/workflows/unlist.yml
+   ```
+
+2. **Register a trusted publishing policy for it on nuget.org** - publisher `GitHub Actions`, workflow file
+   **`unlist.yml`**, scope **`Unlist`**, environment **empty**. The `release.yml` policy does not cover it: the
+   policy is pinned to the file name, and an empty environment is not the `release` environment that
+   `release.yml` declares.
+
+3. **Run it:** `gh workflow run unlist.yml -f version=X.Y.Z -f confirm=unlist`.
+
+Step 2 is the one that gets skipped, and skipping it is why the workflow was dead: without its own `Unlist`
+policy the OIDC handshake mints a push-scoped key, and every package answers 403.
