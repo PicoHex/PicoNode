@@ -2,8 +2,9 @@
 
 **AOT-first JSON-RPC 2.0 protocol core** — NDJSON framing, child-process
 lifecycle management, and an id-routed multiplexed client. The envelope is
-hand-written UTF-8 JSON (`Utf8JsonWriter`); typed payloads are PicoJetson
-compile-time shapes (zero reflection).
+hand-written UTF-8 JSON (`PicoJetson.JsonWriter`); typed payloads are PicoJetson
+compile-time shapes (zero reflection). No `System.Text.Json` anywhere in the package —
+PicoJetson *is* PicoSerDe's JSON format, so its writer/reader are the stack's JSON.
 
 ## Package Info
 
@@ -67,6 +68,13 @@ member presence follows the frame kind:
   degrades to a quoted string instead of a broken line. Text that carries an
   unpaired surrogate (which cannot be transcoded to UTF-8) is substituted with
   U+FFFD rather than throwing. See the `JsonRpcFrame` remarks.
+- **The reader is stricter than it used to be, in one place.** An *escaped* lone
+  surrogate on the wire (the JSON escape for U+D800) is now rejected with
+  `FormatException: malformed JSON frame: Lone high surrogate ...`; the previous
+  System.Text.Json codec accepted it. Substitution still applies to a lone surrogate
+  in caller text on the emitting side, so the two directions differ on purpose:
+  invalid input a peer sends is refused, invalid text we are asked to send is
+  substituted.
 - **"One line" means one line to an LF/CR reader.** NDJSON splits on LF, so a raw
   U+2028 / U+2029 / U+0085 inside an otherwise one-line payload is emitted
   verbatim: an LF/CR reader sees one line, a Unicode-aware splitter (a JS regex
@@ -137,5 +145,11 @@ var result = JsonRpcCodec.Deserialize<ToolsListResult>(frame.Result!); // compil
 ## AOT Contract
 
 Zero reflection, zero runtime code generation — the frame envelope is
-hand-written `Utf8JsonWriter`/`JsonDocument` code and every typed payload is a
+hand-written `PicoJetson.JsonWriter`/`JsonReader` code and every typed payload is a
 compile-time PicoJetson shape. No IL2xxx exception list.
+
+`JsonWriter` is a `ref struct`: the internal helpers take `ref JsonWriter` (a by-value
+copy silently loses the bytes it wrote) and `Encode` commits with
+`try/finally { writer.Dispose(); }` rather than `using`, because a `using` variable
+cannot be passed by `ref` (CS1657). Closing the outermost container — not `Flush()` —
+is what closes the document.
