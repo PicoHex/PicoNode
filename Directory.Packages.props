@@ -4,6 +4,14 @@
        for all NuGet dependency versions in this solution.
        ═══════════════════════════════════════════════════════ -->
 
+  <PropertyGroup>
+    <!-- CPM refuses floating PackageVersion items (NU1011) unless this is on;
+         the float is deliberate and bounded to the y segment (policy below).
+         It lives here, beside the versions it governs, matching PicoActor /
+         PicoSerDe / PicoUI. -->
+    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- PicoHex ecosystem.
          Floating policy (see the picohex-release skill): a version is
