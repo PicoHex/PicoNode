@@ -1,56 +1,85 @@
 <Project>
   <!-- ═══════════════════════════════════════════════════════
-       Central Package Management — single source of truth
+       Central Package Management: single source of truth
        for all NuGet dependency versions in this solution.
        ═══════════════════════════════════════════════════════ -->
 
   <PropertyGroup>
-    <!-- CPM refuses floating PackageVersion items (NU1011) unless this is on;
-         the float is deliberate and bounded to the y segment (policy below).
-         It lives here, beside the versions it governs, matching PicoActor /
-         PicoSerDe / PicoUI. -->
+    <!-- The three CPM switches, declared here and nowhere else: a switch
+         declared twice makes "which one wins" a question nobody can answer
+         from the code. They live beside the versions they govern, matching
+         PicoActor / PicoSerDe / PicoUI.
+
+         CentralPackageFloatingVersionsEnabled: CPM rejects a floating
+         PackageVersion with NU1011 without this opt in, and every version
+         below is a float.
+
+         CentralPackageTransitivePinningEnabled: a central float only governs
+         projects that reference the package DIRECTLY. Every other project
+         resolves it at some upstream nuspec lower bound, so with this off one
+         build graph can carry two copies of the same package. Measured in
+         PicoAgent: PicoDI 2026.11.0 (CentralTransitive) in three projects and
+         2026.11.1 (Direct) in two, linked into a single executable; PicoNode
+         itself died that way, the SSE server exiting at startup with
+         "Could not load file or assembly 'PicoDI, Version=2026.11.1.0'".
+         With it on, the float below is enforced for every project. -->
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- PicoHex ecosystem.
-         Floating policy (see the picohex-release skill): a version is
-         <year>.<x>.<y>, where an x bump means the public API changed and a
-         y bump means it did not. So `2026.<x>.*` is the only safe float — it
-         can move y but never x — and only for packages that ship NO analyzer:
+         Float shape: the LAST segment only, never less and never more.
+         picohex-release defines <year>.<x>.<y>, where an x bump means the
+         public API changed and a y bump means it did not, so a one party
+         package floats <year>.<x>.* and an upstream package floats <x>.<y>.*.
 
-           no analyzers/dotnet/*  -> float the y segment (`2026.11.*`)
-           has analyzers/dotnet/* -> pin exactly: a source generator binds to
-                                     the Roslyn band and to the API shape it
-                                     was compiled against
+         <year>.* is deliberately NOT used: it floats x, the one segment
+         defined as "the public API changed". A breaking upstream release would
+         then land with zero code change here, and the refresh PR would show
+         nothing but a moved lock line, so the adaptation that a breaking
+         release is supposed to force would never be scheduled.
 
-         PicoCfg.Abs / PicoDI.Abs / PicoLog.Abs ship Pico*Gen generators,
-         PicoJetson ships PicoJetson.Gen, PicoBench ships PicoBench.Generators —
-         all stay pinned. Never write `2026.*`: it would accept a new x
-         (breaking public API) silently. -->
-    <PackageVersion Include="PicoCfg" Version="2026.11.0" />
-    <PackageVersion Include="PicoCfg.Abs" Version="2026.11.0" />
-    <PackageVersion Include="PicoDI" Version="2026.11.0" />
-    <PackageVersion Include="PicoDI.Abs" Version="2026.11.0" />
-    <PackageVersion Include="PicoJetson" Version="2026.13.3" />
-    <PackageVersion Include="PicoLog" Version="2026.11.0" />
-    <PackageVersion Include="PicoLog.Abs" Version="2026.11.0" />
+         There is no analyzer exemption. PicoCfg.Abs / PicoDI.Abs /
+         PicoLog.Abs ship Pico*Gen generators, PicoJetson ships PicoJetson.Gen
+         and PicoBench ships PicoBench.Generators, and a y bump can change
+         generated code even though the package's public API did not. That risk
+         is real, and an exact pin is still the wrong answer, because a pin
+         guarantees nobody ever looks at it. packages.lock.json freezes today's
+         generator bytes and deps-refresh.yml surfaces tomorrow's as a diff
+         that runs the whole matrix, generator tests included. When that PR is
+         red, the fix goes in our code, not in a version ceiling.
 
-    <!-- PicoNode internal (conditional package refs for NuGet publish) -->
+         One owner, one answer: a floated base package and a pinned sibling
+         resolve to different patches and the mismatch is the failure above. -->
+    <PackageVersion Include="PicoCfg" Version="2026.11.*" />
+    <PackageVersion Include="PicoCfg.Abs" Version="2026.11.*" />
+    <PackageVersion Include="PicoDI" Version="2026.11.*" />
+    <PackageVersion Include="PicoDI.Abs" Version="2026.11.*" />
+    <PackageVersion Include="PicoJetson" Version="2026.13.*" />
+    <PackageVersion Include="PicoLog" Version="2026.11.*" />
+    <PackageVersion Include="PicoLog.Abs" Version="2026.11.*" />
+
+    <!-- PicoNode internal (conditional package refs for NuGet publish).
+         Version="$(Version)" is the one exemption from the float rule: these
+         are this repository's own packages, built from the same commit. -->
     <PackageVersion Include="PicoNode" Version="$(Version)" />
     <PackageVersion Include="PicoNode.Abs" Version="$(Version)" />
     <PackageVersion Include="PicoNode.Http" Version="$(Version)" />
     <PackageVersion Include="PicoNode.Web.Session.Abs" Version="$(Version)" />
     <PackageVersion Include="PicoNode.Web" Version="$(Version)" />
 
-    <!-- .NET / Roslyn infrastructure -->
-    <!-- Microsoft.CodeAnalysis.CSharp stays on the SDK 10.0.400 Roslyn band;
-         analyzers referencing a newer Roslyn than the compiler fail to load. -->
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="11.0.100" />
+    <!-- .NET / Roslyn infrastructure.
+         Microsoft.CodeAnalysis.CSharp keeps its float inside the SDK 10.0.400
+         Roslyn band: 5.9.* accepts a patch only, so it cannot walk past 5.9
+         and hand an analyzer a Roslyn newer than the compiler (which would be
+         skipped with CS9057 anyway). -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.*" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="11.0.*" />
 
     <!-- Testing -->
-    <PackageVersion Include="PicoBench" Version="2026.4.0" />
-    <PackageVersion Include="TUnit" Version="1.83.8" />
+    <PackageVersion Include="PicoBench" Version="2026.4.*" />
+    <PackageVersion Include="TUnit" Version="1.83.*" />
   </ItemGroup>
 </Project>

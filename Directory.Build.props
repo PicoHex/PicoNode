@@ -7,12 +7,13 @@
     <!-- Default version for local / non-CI builds -->
     <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
 
-    <!-- Central Package Management. The CPM switches themselves (including
-         CentralPackageFloatingVersionsEnabled) live in Directory.Packages.props,
-         next to the versions they govern, as in PicoActor / PicoSerDe / PicoUI. -->
-    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Central Package Management. All three CPM switches
+         (ManagePackageVersionsCentrally, CentralPackageFloatingVersionsEnabled
+         and CentralPackageTransitivePinningEnabled) are declared exactly once,
+         in Directory.Packages.props, next to the versions they govern, as in
+         PicoActor / PicoSerDe / PicoUI. This file holds the mechanism only. -->
 
-    <!-- Floating y-segments (see Directory.Packages.props) resolve to the
+    <!-- Floating dependencies (see Directory.Packages.props) resolve to the
          newest matching version on every restore, which makes a restore
          non-reproducible on its own. The lock files pin what actually
          resolved; CI restores with RestoreLockedMode=true so a dependency
