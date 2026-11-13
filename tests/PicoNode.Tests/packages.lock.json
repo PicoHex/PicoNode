@@ -16,7 +16,7 @@
       },
       "PicoCfg": {
         "type": "Direct",
-        "requested": "[2026.11.*, )",
+        "requested": "[2026.11.0, )",
         "resolved": "2026.11.0",
         "contentHash": "ar71Hyodi2PUgg2fhMbNGm8yzqJfrbPRycGBFM/QyOA1edlIIHRY/QaRs4YvtGro2littbIm6Uwqr5y+ih3IWQ==",
         "dependencies": {
@@ -166,7 +166,7 @@
       "picoweb": {
         "type": "Project",
         "dependencies": {
-          "PicoDI": "[2026.11.*, )",
+          "PicoDI": "[2026.11.0, )",
           "PicoJetson": "[2026.13.3, )",
           "PicoNode": "[0.0.0-dev, )",
           "PicoNode.Web": "[0.0.0-dev, )"
@@ -180,7 +180,7 @@
       },
       "PicoDI": {
         "type": "CentralTransitive",
-        "requested": "[2026.11.*, )",
+        "requested": "[2026.11.0, )",
         "resolved": "2026.11.0",
         "contentHash": "eIzGlzsMHx/xymxwFZspTO/BxWmxPoQSxcidC/NiULXnDMpBRKbgGmE32F3HcYQGzT1OUOolbmhGg3kNUcw+gQ==",
         "dependencies": {

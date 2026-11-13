@@ -139,7 +139,7 @@
       "piconode.samples.readme": {
         "type": "Project",
         "dependencies": {
-          "PicoLog": "[2026.11.*, )",
+          "PicoLog": "[2026.11.0, )",
           "PicoNode": "[0.0.0-dev, )",
           "PicoNode.Web": "[0.0.0-dev, )"
         }
@@ -171,7 +171,7 @@
       },
       "PicoLog": {
         "type": "CentralTransitive",
-        "requested": "[2026.11.*, )",
+        "requested": "[2026.11.0, )",
         "resolved": "2026.11.0",
         "contentHash": "IM8qNF1prDHf/fDujcZs/RGJ0ZCqI3XpEMwzeTHUzNGnws8rlNrOu/V91cUqwBz6akJ2twiJC91lu8iGP6Qlew==",
         "dependencies": {

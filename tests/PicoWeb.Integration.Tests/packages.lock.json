@@ -157,7 +157,7 @@
       "picoweb": {
         "type": "Project",
         "dependencies": {
-          "PicoDI": "[2026.11.*, )",
+          "PicoDI": "[2026.11.0, )",
           "PicoJetson": "[2026.13.3, )",
           "PicoNode": "[0.0.0-dev, )",
           "PicoNode.Web": "[0.0.0-dev, )"
@@ -177,7 +177,7 @@
       },
       "PicoDI": {
         "type": "CentralTransitive",
-        "requested": "[2026.11.*, )",
+        "requested": "[2026.11.0, )",
         "resolved": "2026.11.0",
         "contentHash": "eIzGlzsMHx/xymxwFZspTO/BxWmxPoQSxcidC/NiULXnDMpBRKbgGmE32F3HcYQGzT1OUOolbmhGg3kNUcw+gQ==",
         "dependencies": {

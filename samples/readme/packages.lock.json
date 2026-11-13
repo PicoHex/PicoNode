@@ -16,7 +16,7 @@
       },
       "PicoLog": {
         "type": "Direct",
-        "requested": "[2026.11.*, )",
+        "requested": "[2026.11.0, )",
         "resolved": "2026.11.0",
         "contentHash": "IM8qNF1prDHf/fDujcZs/RGJ0ZCqI3XpEMwzeTHUzNGnws8rlNrOu/V91cUqwBz6akJ2twiJC91lu8iGP6Qlew==",
         "dependencies": {
