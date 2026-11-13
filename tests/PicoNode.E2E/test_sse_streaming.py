@@ -230,16 +230,16 @@ def main():
     print("=" * 60, flush=True)
 
     print("\nBuilding test server...", flush=True)
-    # Locked mode, because the CI job restores with `--locked-mode` and this build used to
-    # restore again WITHOUT it: Directory.Packages.props floats the y-segment, so a patch
-    # published after the lock was written made the two restores disagree - the compile-time
-    # reference became PicoDI 2026.11.1.0 while the file copied next to the app was still
-    # 2026.11.0, and the server died at startup with
-    # "Could not load file or assembly 'PicoDI, Version=2026.11.1.0'".
-    # Honouring the lock keeps this build on the same graph the job restored; a stale lock
-    # now fails here loudly instead of producing a server that cannot start.
+    # --no-restore, because restoring twice is what broke this leg:
+    # Directory.Packages.props floats the y-segment (PicoDI 2026.11.*), the CI job restores the
+    # solution with -p:RestoreLockedMode=true, and this build then restored AGAIN without it -
+    # resolving a newly published 2026.11.1 while the rest of the build used 2026.11.0. The
+    # server came up expecting PicoDI 2026.11.1.0, found 2026.11.0 next to it, and died with
+    # "Could not load file or assembly". Locked mode is not the fix either: the lock file is
+    # RID-neutral while the job's restore is RID-parameterised, so it fails NU1004 instead.
+    # Not restoring at all keeps this build on the exact graph the job produced.
     r = subprocess.run(
-        ["dotnet", "build", SERVER_DIR, "-p:RestoreLockedMode=true"],
+        ["dotnet", "build", SERVER_DIR, "--no-restore"],
         capture_output=True, text=True, timeout=120,
     )
     if r.returncode != 0:
