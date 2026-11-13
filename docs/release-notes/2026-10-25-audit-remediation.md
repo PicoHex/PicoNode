@@ -28,6 +28,27 @@ format changed. Numbering follows the existing scheme; the point is that a `y` b
   same `Name`/`Payload` as before. **`UiEvent` is a record**, so its equality now includes the cursor — compare
   `Name`/`Payload` for content.
 
+## After v2026.6.0 (unreleased): the wire codec speaks PicoJetson, not System.Text.Json
+
+`PicoJetson` is PicoSerDe's JSON format, and the stack rule is that System.Text.Json is replaced by
+`picohex-picoserde`. Two files still used STJ (`JsonRpcWire`, `StreamCorrelation`); they now use
+`JsonWriter` / `JsonReader` / `PicoDocument`, so `src/` contains no `System.Text.Json` at all.
+
+- **The bytes did not move.** The golden snapshot `wire-v1.ndjson` is unchanged (sha256
+  `4e60e344…`, the same hash `release.ps1` printed for v2026.6.0). 4091 frames encoded byte-for-byte
+  equal to the previous implementation during the migration.
+- **Reading is stricter in one place:** an *escaped* lone surrogate (the JSON escape for U+D800) in an
+  inbound frame is now **rejected** with `FormatException: malformed JSON frame: Lone high surrogate
+  U+D800`. System.Text.Json accepted it. Emitting is unchanged (a lone surrogate in caller text is
+  still substituted with U+FFFD before it reaches the codec). Both directions are pinned by
+  `WireConformanceTests`.
+- `JsonWriter` is a `ref struct`: internal helpers take `ref JsonWriter` (a by-value copy silently
+  loses its bytes), and `Encode` uses `try/finally { writer.Dispose(); }` rather than `using`, because
+  a `using` variable cannot be passed by `ref` (CS1657).
+- **No public API change** (`scripts/api-surface diff`: added=0 removed=0). Consumers that build
+  `PicoJetson.JsonOptions` themselves must note that 2026.13 moved the ignore enum:
+  `PicoJetson.JsonIgnoreCondition` is gone, `PicoSerDe.Core.PicoIgnoreCondition` replaces it.
+
 ## Breaking changes
 
 | Change | Impact | Where |

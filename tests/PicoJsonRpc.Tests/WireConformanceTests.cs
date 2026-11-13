@@ -22,6 +22,31 @@ namespace PicoJsonRpc.Tests;
 public sealed class WireConformanceTests
 {
     /// <summary>The frame's wire line, without the NDJSON terminator.</summary>
+    /// <summary>
+    /// An <em>escaped</em> lone surrogate (the JSON escape for U+D800) makes the line invalid JSON
+    /// under RFC 8259, and the PicoJetson reader refuses it with
+    /// <c>FormatException: malformed JSON frame: Lone high surrogate U+D800</c>.
+    /// System.Text.Json accepted that shape, so reading got strictly stricter - the safe direction,
+    /// because nothing downstream then has to decide what a half-encoded pair meant.
+    /// <para>
+    /// The trap this test was written through: a C# literal with a SINGLE backslash is a raw
+    /// lone-surrogate code point, not the escape, and <c>Encoding.UTF8.GetBytes</c> then substitutes
+    /// U+FFFD before the codec ever sees it - so the frame is accepted and the test measures the
+    /// encoder, not the reader. Pin the escape (two backslashes in the C# literal) or the test
+    /// passes for the wrong reason - which it did, twice.
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task Escaped_lone_surrogate_in_an_inbound_frame_is_rejected()
+    {
+        var line = Encoding.UTF8.GetBytes(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"m\",\"params\":{\"text\":\"\\ud800\"}}"
+        );
+
+        var error = Assert.Throws<FormatException>(() => JsonRpcWire.ReadFrame(line));
+        await Assert.That(error!.Message).Contains("Lone high surrogate");
+    }
+
     private static string Line(JsonRpcFrame frame) =>
         Encoding.UTF8.GetString(NdjsonFramer.Encode(frame)).TrimEnd('\n');
 

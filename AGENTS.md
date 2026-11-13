@@ -129,6 +129,24 @@ A release whose diff is documented nowhere is not finished; it is just uploaded.
   head-room, and a single run is not a number (T1.7/T1.8/T1.9 measured 5x100 with a warm-up, and T4.5's
   floors scale by a measured calibration rather than trusting the wall clock).
 
+### Serialization belongs to PicoSerDe, and `PicoJetson` is its JSON format
+
+`PicoJetson` is not a parallel library to PicoSerDe - it **is** PicoSerDe's JSON format, so the
+`picohex-picoserde` rules and its shared `PicoSerDe.Core` types apply here. That is how
+`PicoJetson.JsonIgnoreCondition` disappearing in 2026.13 reached this repository: the enum moved to
+`PicoSerDe.Core.PicoIgnoreCondition`, and the bump did not compile until the reference followed it.
+
+- **No `System.Text.Json` in `src/`.** The grep is the gate:
+  `grep -rn "System.Text.Json\|Utf8JsonWriter\|Utf8JsonReader\|JsonDocument" src/ --include=*.cs`
+  must be empty. `picohex-picorpc` is described as "System.Text.Json-free IPC" precisely because the
+  wire codec is hand-written on `PicoJetson.JsonWriter`/`JsonReader`.
+- **`JsonWriter` is a `ref struct`**: a helper that takes it **by value** writes into a copy whose
+  commit never runs - the bytes are silently gone and nothing throws. Every helper takes
+  `ref JsonWriter`; `using var` cannot be used for it (CS1657), so commit with `try/finally` +
+  `Dispose()`, and remember that closing a container - not `Flush()` - is what closes the document.
+- Prefer `Write*Property(name, value)`: one call writes name + colon + value, so the "name written,
+  value pending" state cannot strand.
+
 ## Working rules
 
 - TDD, RED first: a behavioural fix needs a test that fails before the change and passes after.
