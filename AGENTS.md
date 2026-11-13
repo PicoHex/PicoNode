@@ -101,7 +101,33 @@ The API diff the script prints is also the list of documents that may now be wro
   changes, and the limitations left open.
 - **Analyzer release notes** - a new or changed `DiagnosticDescriptor` needs its `AnalyzerReleases.Unshipped.md` row.
 
+**The walk is a check, not a principle** (`picohex-release`, step 4 as of v2026.11). The delta the
+script prints is the checklist: every `+N`/`-M` line per package is one item, and the removals are the
+breaking ones.
+
+- **Forward `grep`:** each affected package's skill, for every changed member name. Not found ⇒ edit it;
+  found but worded differently ⇒ edit it.
+- **Reverse `grep`:** every API the skill *claims* exists. One this repository deleted or reshaped is the
+  dangerous case, because the reader codes against it. (Checked at v2026.6.0: `picohex-perf` cites
+  `ChunkTerminatorBytes` at `HttpResponseSerializer.cs:8`/used `:109` and `ContinueResponse` at
+  `Http1ConnectionProcessor.cs:5`/used `:121` - all four still true, so no reverse fix was owed.)
+- **Rule:** the API set a skill describes must equal what `api/<PackageId>.public.txt` exposes. An
+  unwritten addition and an unremoved removal are both stale.
+
 A release whose diff is documented nowhere is not finished; it is just uploaded.
+
+### Performance numbers are judged, not printed
+
+`picohex-perf` owns the rules (what to measure, when to stop, which optimisations actually paid) and
+`picohex-benchmark` owns the API. Two of them bind this repository's own measurements:
+
+- **Pre-register the prediction, and treat <15 % as no result.** A measurement that recovers less than
+  the noise band is not evidence of a win; say "no measurable difference" instead of a small percentage.
+- **`Speedup > 1` is not the verdict** - a ratio inside the 5 % dead band, or an interval containing
+  parity, is inconclusive. This repository's perf work does not use PicoBench (`PerfHarness` is
+  hand-rolled), so the equivalent discipline is: a floor is a *bound*, an allocation ceiling carries
+  head-room, and a single run is not a number (T1.7/T1.8/T1.9 measured 5x100 with a warm-up, and T4.5's
+  floors scale by a measured calibration rather than trusting the wall clock).
 
 ## Working rules
 
