@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Threading.Channels;
 
 namespace PicoJsonRpc;
@@ -23,7 +22,7 @@ namespace PicoJsonRpc;
 /// correlation both sides already have.
 /// </para>
 /// <para>
-/// Reading is a single <see cref="JsonDocument"/> parse of the payload text the
+/// Reading is a single pass of the PicoJetson token reader over the payload text the
 /// framer already produced (no serializer, no reflection — AOT safe), and it is
 /// deliberately lenient in the same spirit as the reader:
 /// <list type="bullet">
@@ -62,45 +61,85 @@ internal static class StreamCorrelation
     /// member (that would be a non-conforming frame).</summary>
     public const string MemberName = "_streamId";
 
-    /// <summary>Parser options for the correlation read. The depth limit is the
-    /// PAYLOAD limit the encoder inlines (<see cref="JsonRpcWire.MaxPayloadDepth"/>),
-    /// not System.Text.Json's default 64 — otherwise a legitimately deep chunk would
-    /// fail to parse here and be mistaken for "uncorrelated", i.e. routed by the
-    /// fallback instead of by the id it actually names.</summary>
-    private static readonly JsonDocumentOptions Options = new()
-    {
-        MaxDepth = JsonRpcWire.MaxPayloadDepth,
-    };
+    /// <summary>The correlation member as the UTF-8 span the payload parse compares
+    /// against, so the read allocates no key.</summary>
+    private static ReadOnlySpan<byte> MemberNameUtf8 => "_streamId"u8;
+
+    /// <summary>UTF-8 that REJECTS text it cannot transcode (an unpaired
+    /// surrogate) instead of substituting U+FFFD: the correlation read answers such
+    /// text with <c>null</c>, exactly as it always has.</summary>
+    private static readonly UTF8Encoding StrictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true
+    );
 
     /// <summary>
     /// The stream id a notification names, or <c>null</c> when it names none.
     /// <paramref name="paramsJson"/> is the raw payload text carried by
     /// <see cref="JsonRpcFrame.Params"/>.
+    /// <para>
+    /// A token walk, not a parsed document: the reader hands out the DECODED member
+    /// names (so a peer that spells the correlation member's characters as JSON
+    /// escapes still names a stream), and the walk validates
+    /// every value it passes over with the codec's own skip, so a payload with a
+    /// malformed member is uncorrelated rather than half-read.
+    /// </para>
+    /// <para>
+    /// The depth limit is the PAYLOAD limit the encoder inlines
+    /// (<see cref="JsonRpcWire.MaxPayloadDepth"/>), passed EXPLICITLY — never the
+    /// parser's own default of 64, or a legitimately deep chunk would fail to parse
+    /// here and be mistaken for "uncorrelated", i.e. routed by the fallback instead
+    /// of by the id it actually names.
+    /// </para>
     /// </summary>
     public static string? StreamIdOf(string? paramsJson)
     {
         if (paramsJson is null || paramsJson.Length == 0)
             return null;
+        byte[] utf8;
         try
         {
-            using var document = JsonDocument.Parse(paramsJson, Options);
-            return document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty(MemberName, out var value)
-                && value.ValueKind == JsonValueKind.String
-                ? value.GetString()
-                : null;
+            utf8 = StrictUtf8.GetBytes(paramsJson);
         }
-        catch (JsonException)
+        catch (ArgumentException)
+        {
+            // an unpaired surrogate cannot be transcoded to UTF-8, so the text is
+            // not a payload anybody can name a stream with — the answer this read
+            // has always given it
+            return null;
+        }
+        try
+        {
+            var reader = new JsonReader(utf8, JsonRpcWire.MaxPayloadDepth);
+            if (!reader.Read() || reader.TokenType != TokenType.ObjectStart)
+                return null;
+            string? found = null;
+            while (reader.Read())
+            {
+                if (reader.TokenType == TokenType.ObjectEnd)
+                    return found;
+                if (reader.TokenType != TokenType.PropertyName)
+                    return null;
+                // the reader decodes the name, so this is a byte compare of the text
+                // the peer meant, not of the escapes it chose
+                var isMember = reader.ValueSpan.SequenceEqual(MemberNameUtf8);
+                if (!reader.Read())
+                    return null;
+                if (isMember && reader.TokenType == TokenType.String)
+                {
+                    // the FIRST match wins, as a key lookup does
+                    found ??= Encoding.UTF8.GetString(reader.ValueSpan);
+                    continue;
+                }
+                JsonRpcWire.SkipValue(ref reader, utf8);
+            }
+            return null; // unterminated
+        }
+        catch (FormatException)
         {
             // a payload the framer could not parse (it degrades such text to a
             // JSON STRING on the wire, and that string is what arrives here) is
             // simply uncorrelated — the fallback decides, not an exception
-            return null;
-        }
-        catch (ArgumentException)
-        {
-            // same class as the JsonRpcWire encoder's ArgumentException: an
-            // unpaired surrogate in the payload text
             return null;
         }
     }
