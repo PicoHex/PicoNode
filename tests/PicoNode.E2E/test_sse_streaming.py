@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+import tempfile
 
 SERVER_PORT = 18789
 SERVER_URL = f"http://localhost:{SERVER_PORT}"
@@ -240,14 +241,33 @@ def main():
         return False
 
     print("Starting server...", flush=True)
+    # Keep the server's output: discarding it is why a CI failure here used to read
+    # "[FAIL] Server failed to start" with no cause at all, while the same server started
+    # fine on the developer machine. A startup crash is the one thing this harness cannot
+    # diagnose from the outside, so it must not throw the evidence away.
+    server_log_path = Path(tempfile.gettempdir()) / "piconode-sse-server.log"
+    server_log = open(server_log_path, "wb")
     proc = subprocess.Popen(
         ["dotnet", "run", "--project", SERVER_DIR, "--no-build"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdout=server_log, stderr=subprocess.STDOUT,
     )
+
+    def dump_server_log(reason):
+        server_log.flush()
+        try:
+            text = server_log_path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            text = f"<could not read {server_log_path}: {exc}>"
+        print(f"  {reason}; server log ({server_log_path}):", flush=True)
+        for line in text.splitlines()[-40:]:
+            print(f"    | {line}", flush=True)
+        if proc.poll() is not None:
+            print(f"    | exit code {proc.returncode}", flush=True)
 
     try:
         if not wait_for_server(f"{SERVER_URL}/sse/stream"):
             print("[FAIL] Server failed to start", flush=True)
+            dump_server_log("the server never answered")
             return False
         print(f"[OK] Server ready\n", flush=True)
 
@@ -268,6 +288,7 @@ def main():
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+        server_log.close()
 
 
 if __name__ == "__main__":
