@@ -138,7 +138,11 @@ public static class JsonRpcCodec
         // ExpectedVersion = 0 member vanishes from the wire otherwise) — null
         // presence must stay EXPLICIT for deterministic wire shape with all
         // members present.
-        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+        // PicoJetson 2026.13 moved the ignore enum into the shared core and deleted its own
+        // copy: JsonIgnoreCondition no longer exists, PicoSerDe.Core.PicoIgnoreCondition does
+        // (already in GlobalUsings). Same meaning, new owner - the package bump to 2026.13.3
+        // is what surfaced it.
+        DefaultIgnoreCondition = PicoIgnoreCondition.Never,
     };
 
     /// <summary>Serialize to JSON text. A <see cref="JsonRpcFrame"/> takes the

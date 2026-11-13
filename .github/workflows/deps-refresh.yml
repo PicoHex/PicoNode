@@ -1,0 +1,109 @@
+# Dependency refresh — re-evaluates the floating y-segments.
+#
+# Directory.Packages.props floats `2026.<x>.*` for the one-party packages that
+# ship no analyzer. A float only moves when a restore re-resolves it, and every
+# other pipeline restores in locked mode, so without this job the floats would
+# freeze at whatever the committed packages.lock.json files say and the policy
+# would be decoration. This runs weekly: `dotnet restore --force-evaluate`
+# re-resolves every float, and if the lock files moved it commits them to a
+# dedicated branch and opens (or updates) a PR. Deliberately does NOT build —
+# the PR's own ci run is the gate, and a refresh that breaks the build must fail
+# there, visibly, not be swept into a green commit by this job.
+
+name: deps-refresh
+
+on:
+  schedule:
+    # Mondays, 04:17 UTC. Off the hour on purpose: :00 is the cron stampede.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: deps-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    name: re-resolve floats
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # --force-evaluate is the whole point: a plain restore ignores an existing
+      # lock file and would report "up to date" forever.
+      - name: Re-resolve the floating y-segments
+        run: dotnet restore PicoNode.slnx --force-evaluate
+
+      - name: Detect what moved
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::the floats still resolve to the committed versions — nothing to do"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          git status --porcelain
+          # One line per resolved-version change, so the log says WHAT moved
+          # without unpacking 29 lock files by hand.
+          git diff --unified=0 -- '*packages.lock.json' \
+            | grep -E '^[+-].*"(resolved|requested)":' || true
+
+      - name: Commit the refreshed locks and open a PR
+        if: steps.diff.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch=chore/deps-refresh
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B "$branch"
+          git add -- '*packages.lock.json'
+          if git diff --cached --quiet; then
+            echo "::notice::lock files were touched but staged nothing — nothing to commit"
+            exit 0
+          fi
+          git commit -m "build(deps): refresh packages.lock.json"
+
+          # --force-with-lease: this branch belongs to the bot alone and is
+          # rebuilt from the default branch on every run.
+          git push --force-with-lease origin "$branch"
+
+          existing=$(gh pr list --head "$branch" --state open --json number --jq '.[].number')
+          if [ -n "$existing" ]; then
+            echo "::notice::PR #$existing already open for $branch — the refresh was pushed into it"
+            exit 0
+          fi
+
+          # Single-quoted strings so the markdown backticks stay literal and no
+          # line picks up the YAML indentation.
+          notes=$(printf '%s\n' \
+            'Automated re-resolution of the floating `2026.<x>.*` one-party packages in `Directory.Packages.props`.' \
+            '' \
+            '`dotnet restore --force-evaluate` moved at least one pinned version; the diff is the lock files and nothing else. A move is safe by construction — a `<year>.<x>.<y>` float accepts a y bump only, and a y bump means the public API did not change — but the build is the judge: this PR runs the normal `ci` matrix.' \
+            '' \
+            'Close without merging to keep the current pins until the next weekly run.')
+
+          gh pr create --head "$branch" --base main \
+            --title "build(deps): refresh packages.lock.json" \
+            --body "$notes"

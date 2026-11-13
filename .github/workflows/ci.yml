@@ -68,8 +68,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang zlib1g-dev
 
-      - name: Restore
-        run: dotnet restore PicoNode.slnx
+      # Locked mode: the y-segment floats in Directory.Packages.props are only
+      # allowed to move when a packages.lock.json moves with them, so CI
+      # restores exactly what was reviewed. deps-refresh.yml is the job that
+      # re-evaluates the floats (--force-evaluate) and opens a PR with the
+      # resulting lock diff.
+      #
+      # This restore is deliberately RID-NEUTRAL and must stay that way: the
+      # RuntimeIdentifiers injected by PublishAot's default publish RID are
+      # disabled in Directory.Build.props, which is what keeps a
+      # `net10.0/<host-rid>` section out of the committed lock files (otherwise
+      # a lock refreshed on win-x64 fails NU1004 on every other matrix leg).
+      # Consequence: this restore produces NO RID-specific assets, so a publish
+      # cannot use --no-restore here — each AOT publish below carries its own
+      # -r and lets publish restore that RID's assets.
+      - name: Restore (locked)
+        run: dotnet restore PicoNode.slnx -p:RestoreLockedMode=true
 
       - name: Build
         run: dotnet build PicoNode.slnx --no-restore -c Release
@@ -107,7 +121,7 @@ jobs:
       - name: AOT publish (sample HTTP server)
         run: >
           dotnet publish samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj
-          --no-restore -c Release -r ${{ matrix.rid }}
+          -c Release -r ${{ matrix.rid }}
           -p:PublishAot=true --self-contained
           -o publish/${{ matrix.rid }}
 
@@ -118,14 +132,14 @@ jobs:
       - name: AOT publish (Echo server)
         run: >
           dotnet publish samples/PicoNode.Samples.Echo/PicoNode.Samples.Echo.csproj
-          --no-restore -c Release -r ${{ matrix.rid }}
+          -c Release -r ${{ matrix.rid }}
           -p:PublishAot=true --self-contained
           -o publish-echo/${{ matrix.rid }}
 
       - name: AOT publish (PicoJsonRpc.Sample) + run smoke
         run: >
           dotnet publish samples/PicoJsonRpc.Sample/PicoJsonRpc.Sample.csproj
-          --no-restore -c Release -r ${{ matrix.rid }}
+          -c Release -r ${{ matrix.rid }}
           -p:PublishAot=true --self-contained
           -o publish-jsonrpc/${{ matrix.rid }}
 

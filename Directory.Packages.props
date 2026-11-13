@@ -4,15 +4,37 @@
        for all NuGet dependency versions in this solution.
        ═══════════════════════════════════════════════════════ -->
 
+  <PropertyGroup>
+    <!-- CPM refuses floating PackageVersion items (NU1011) unless this is on;
+         the float is deliberate and bounded to the y segment (policy below).
+         It lives here, beside the versions it governs, matching PicoActor /
+         PicoSerDe / PicoUI. -->
+    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
+  </PropertyGroup>
+
   <ItemGroup>
-    <!-- PicoHex ecosystem -->
-    <PackageVersion Include="PicoCfg" Version="2026.10.0" />
-    <PackageVersion Include="PicoCfg.Abs" Version="2026.10.0" />
-    <PackageVersion Include="PicoDI" Version="2026.10.1" />
-    <PackageVersion Include="PicoDI.Abs" Version="2026.10.1" />
-    <PackageVersion Include="PicoJetson" Version="2026.10.0" />
-    <PackageVersion Include="PicoLog" Version="2026.10.0" />
-    <PackageVersion Include="PicoLog.Abs" Version="2026.10.0" />
+    <!-- PicoHex ecosystem.
+         Floating policy (see the picohex-release skill): a version is
+         <year>.<x>.<y>, where an x bump means the public API changed and a
+         y bump means it did not. So `2026.<x>.*` is the only safe float — it
+         can move y but never x — and only for packages that ship NO analyzer:
+
+           no analyzers/dotnet/*  -> float the y segment (`2026.11.*`)
+           has analyzers/dotnet/* -> pin exactly: a source generator binds to
+                                     the Roslyn band and to the API shape it
+                                     was compiled against
+
+         PicoCfg.Abs / PicoDI.Abs / PicoLog.Abs ship Pico*Gen generators,
+         PicoJetson ships PicoJetson.Gen, PicoBench ships PicoBench.Generators —
+         all stay pinned. Never write `2026.*`: it would accept a new x
+         (breaking public API) silently. -->
+    <PackageVersion Include="PicoCfg" Version="2026.11.*" />
+    <PackageVersion Include="PicoCfg.Abs" Version="2026.11.0" />
+    <PackageVersion Include="PicoDI" Version="2026.11.*" />
+    <PackageVersion Include="PicoDI.Abs" Version="2026.11.0" />
+    <PackageVersion Include="PicoJetson" Version="2026.13.3" />
+    <PackageVersion Include="PicoLog" Version="2026.11.*" />
+    <PackageVersion Include="PicoLog.Abs" Version="2026.11.0" />
 
     <!-- PicoNode internal (conditional package refs for NuGet publish) -->
     <PackageVersion Include="PicoNode" Version="$(Version)" />
@@ -25,10 +47,10 @@
     <!-- Microsoft.CodeAnalysis.CSharp stays on the SDK 10.0.400 Roslyn band;
          analyzers referencing a newer Roslyn than the compiler fail to load. -->
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="11.0.100" />
 
     <!-- Testing -->
-    <PackageVersion Include="PicoBench" Version="2026.3.0" />
-    <PackageVersion Include="TUnit" Version="1.68.4" />
+    <PackageVersion Include="PicoBench" Version="2026.4.0" />
+    <PackageVersion Include="TUnit" Version="1.83.8" />
   </ItemGroup>
 </Project>

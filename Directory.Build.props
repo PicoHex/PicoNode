@@ -7,8 +7,17 @@
     <!-- Default version for local / non-CI builds -->
     <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
 
-    <!-- Central Package Management -->
+    <!-- Central Package Management. The CPM switches themselves (including
+         CentralPackageFloatingVersionsEnabled) live in Directory.Packages.props,
+         next to the versions they govern, as in PicoActor / PicoSerDe / PicoUI. -->
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+
+    <!-- Floating y-segments (see Directory.Packages.props) resolve to the
+         newest matching version on every restore, which makes a restore
+         non-reproducible on its own. The lock files pin what actually
+         resolved; CI restores with RestoreLockedMode=true so a dependency
+         only moves when a lock file moves (deps-refresh.yml re-evaluates). -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
     <!-- Deterministic builds when CI=true -->
     <Deterministic>true</Deterministic>
@@ -51,6 +60,25 @@
        ═══════════════════════════════════════════════════════ -->
   <PropertyGroup>
     <AotOptimizationLevel Condition="'$(AotOptimizationLevel)' == ''">minimal</AotOptimizationLevel>
+  </PropertyGroup>
+
+  <!-- Restore must be RID-neutral, or the lock files cannot be host-independent.
+       PublishAot=true makes the SDK infer PublishRuntimeIdentifier =
+       $(NETCoreSdkPortableRuntimeIdentifier) and append it to RuntimeIdentifiers
+       AT RESTORE TIME (Microsoft.NET.RuntimeIdentifierInference.targets), which
+       bakes a `net10.0/<host-rid>` section into every executable's
+       packages.lock.json — tests included, because the minimal AOT tier sets
+       PublishAot. A lock generated on win-x64 then fails NU1004 on the
+       linux/osx CI legs ("the project's runtime identifiers have changed"), and
+       the other way round, so the committed lock would record who last refreshed
+       it instead of what was resolved. Disabling the default keeps
+       RuntimeIdentifiers empty unless a RID is asked for: every `dotnet publish`
+       in this repo already passes an explicit -r (ci.yml's three AOT steps,
+       scripts/test-aot-publish.ps1), and a publish that passes -r still restores
+       that RID's assets. A publish WITHOUT -r on an AOT project now needs the -r
+       it always implied. -->
+  <PropertyGroup>
+    <UseDefaultPublishRuntimeIdentifier>false</UseDefaultPublishRuntimeIdentifier>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(AotOptimizationLevel)' == 'minimal'">
