@@ -244,8 +244,12 @@ def main():
     )
     if r.returncode != 0:
         print(f"[FAIL] Build failed (rc={r.returncode})", flush=True)
-        for line in (r.stderr or "").splitlines()[-5:]:
-            print(f"  {line}", flush=True)
+        # `dotnet build` writes its errors to STDOUT, not stderr: printing only stderr is why
+        # the previous failure read "Build failed (rc=1)" with nothing after it.
+        combined = ((r.stdout or "") + "
+" + (r.stderr or "")).strip()
+        for line in combined.splitlines()[-25:]:
+            print(f"  | {line}", flush=True)
         return False
 
     print("Starting server...", flush=True)
