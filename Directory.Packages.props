@@ -5,13 +5,27 @@
        ═══════════════════════════════════════════════════════ -->
 
   <ItemGroup>
-    <!-- PicoHex ecosystem -->
-    <PackageVersion Include="PicoCfg" Version="2026.11.0" />
+    <!-- PicoHex ecosystem.
+         Floating policy (see the picohex-release skill): a version is
+         <year>.<x>.<y>, where an x bump means the public API changed and a
+         y bump means it did not. So `2026.<x>.*` is the only safe float — it
+         can move y but never x — and only for packages that ship NO analyzer:
+
+           no analyzers/dotnet/*  -> float the y segment (`2026.11.*`)
+           has analyzers/dotnet/* -> pin exactly: a source generator binds to
+                                     the Roslyn band and to the API shape it
+                                     was compiled against
+
+         PicoCfg.Abs / PicoDI.Abs / PicoLog.Abs ship Pico*Gen generators,
+         PicoJetson ships PicoJetson.Gen, PicoBench ships PicoBench.Generators —
+         all stay pinned. Never write `2026.*`: it would accept a new x
+         (breaking public API) silently. -->
+    <PackageVersion Include="PicoCfg" Version="2026.11.*" />
     <PackageVersion Include="PicoCfg.Abs" Version="2026.11.0" />
-    <PackageVersion Include="PicoDI" Version="2026.11.0" />
+    <PackageVersion Include="PicoDI" Version="2026.11.*" />
     <PackageVersion Include="PicoDI.Abs" Version="2026.11.0" />
     <PackageVersion Include="PicoJetson" Version="2026.13.3" />
-    <PackageVersion Include="PicoLog" Version="2026.11.0" />
+    <PackageVersion Include="PicoLog" Version="2026.11.*" />
     <PackageVersion Include="PicoLog.Abs" Version="2026.11.0" />
 
     <!-- PicoNode internal (conditional package refs for NuGet publish) -->

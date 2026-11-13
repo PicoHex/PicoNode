@@ -9,6 +9,16 @@
 
     <!-- Central Package Management -->
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- CPM refuses floating PackageVersion items (NU1011) unless this is
+         on; the float is deliberate and bounded to the y segment. -->
+    <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
+
+    <!-- Floating y-segments (see Directory.Packages.props) resolve to the
+         newest matching version on every restore, which makes a restore
+         non-reproducible on its own. The lock files pin what actually
+         resolved; CI restores with RestoreLockedMode=true so a dependency
+         only moves when a lock file moves (deps-refresh.yml re-evaluates). -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
     <!-- Deterministic builds when CI=true -->
     <Deterministic>true</Deterministic>

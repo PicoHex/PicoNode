@@ -68,8 +68,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang zlib1g-dev
 
-      - name: Restore
-        run: dotnet restore PicoNode.slnx
+      # Locked mode: the y-segment floats in Directory.Packages.props are only
+      # allowed to move when a packages.lock.json moves with them, so CI
+      # restores exactly what was reviewed. deps-refresh.yml is the job that
+      # re-evaluates the floats (--force-evaluate) and opens a PR with the
+      # resulting lock diff.
+      - name: Restore (locked)
+        run: dotnet restore PicoNode.slnx -p:RestoreLockedMode=true
 
       - name: Build
         run: dotnet build PicoNode.slnx --no-restore -c Release

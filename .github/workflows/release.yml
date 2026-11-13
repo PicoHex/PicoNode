@@ -59,8 +59,10 @@ jobs:
           echo "$version" | grep -Eq '^[0-9]{4}\.[0-9]+\.[0-9]+$'
           echo "Release version: $version"
 
-      - name: Restore
-        run: dotnet restore PicoNode.slnx
+      # Locked restore, same contract as ci.yml: a release builds the exact
+      # dependency set recorded in the committed packages.lock.json files.
+      - name: Restore (locked)
+        run: dotnet restore PicoNode.slnx -p:RestoreLockedMode=true
 
       - name: Build
         run: dotnet build PicoNode.slnx --no-restore -c Release
