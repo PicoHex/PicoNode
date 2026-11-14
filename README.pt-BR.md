@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/picohex.svg" alt="PicoHex" width="120"></p>
+
 # PicoNode
 
 > Uma pilha de rede em camadas, nativa AOT para .NET — de sockets TCP/UDP brutos a um framework web HTTP completo.

@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/picohex.svg" alt="PicoHex" width="120"></p>
+
 # PicoNode
 
 > 一個分層式的 AOT 原生 .NET 網路堆疊 — 從原始 TCP/UDP 通訊端到功能完整的 HTTP 網頁框架。

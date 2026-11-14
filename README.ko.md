@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/picohex.svg" alt="PicoHex" width="120"></p>
+
 # PicoNode
 
 > .NET을 위한 계층형 AOT 네이티브 네트워킹 스택 — 원시 TCP/UDP 소켓부터 완전한 HTTP 웹 프레임워크까지.

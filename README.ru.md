@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/picohex.svg" alt="PicoHex" width="120"></p>
+
 # PicoNode
 
 > Многоуровневый AOT-совместимый сетевой стек для .NET — от сырых TCP/UDP сокетов до полнофункционального HTTP веб-фреймворка.

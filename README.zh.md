@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/picohex.svg" alt="PicoHex" width="120"></p>
+
 # PicoNode
 
 > 分层式、原生 AOT 的 .NET 网络栈 — 从裸 TCP/UDP 套接字到功能完备的 HTTP Web 框架。

@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/picohex.svg" alt="PicoHex" width="120"></p>
+
 # PicoNode
 
 > Un stack de networking nativo AOT y por capas para .NET — desde sockets TCP/UDP puros hasta un framework web HTTP completo.
