@@ -22,12 +22,12 @@
       "picojsonrpc": {
         "type": "Project",
         "dependencies": {
-          "PicoJetson": "[2026.13.3, )"
+          "PicoJetson": "[2026.13.*, )"
         }
       },
       "PicoJetson": {
         "type": "CentralTransitive",
-        "requested": "[2026.13.3, )",
+        "requested": "[2026.13.*, )",
         "resolved": "2026.13.3",
         "contentHash": "30znhEAHWUt72FJKkVqauQi4OCvDWamjM6PoAAilog9+LRtiDBJW0gp8+HgK+tKvLM7VSwTgGl1OZzfQ/NqfFA==",
         "dependencies": {

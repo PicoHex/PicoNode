@@ -4,7 +4,7 @@
 # ship no analyzer. A float only moves when a restore re-resolves it, and every
 # other pipeline restores in locked mode, so without this job the floats would
 # freeze at whatever the committed packages.lock.json files say and the policy
-# would be decoration. This runs weekly: `dotnet restore --force-evaluate`
+# would be decoration. This runs before a release: `dotnet restore --force-evaluate`
 # re-resolves every float, and if the lock files moved it commits them to a
 # dedicated branch and opens (or updates) a PR. Deliberately does NOT build —
 # the PR's own ci run is the gate, and a refresh that breaks the build must fail
@@ -13,9 +13,6 @@
 name: deps-refresh
 
 on:
-  schedule:
-    # Mondays, 04:17 UTC. Off the hour on purpose: :00 is the cron stampede.
-    - cron: "17 4 * * 1"
   workflow_dispatch:
 
 concurrency:
@@ -102,7 +99,7 @@ jobs:
             '' \
             '`dotnet restore --force-evaluate` moved at least one pinned version; the diff is the lock files and nothing else. A move is safe by construction — a `<year>.<x>.<y>` float accepts a y bump only, and a y bump means the public API did not change — but the build is the judge: this PR runs the normal `ci` matrix.' \
             '' \
-            'Close without merging to keep the current pins until the next weekly run.')
+            'Close without merging to keep the current pins until the next pre-release refresh.')
 
           gh pr create --head "$branch" --base main \
             --title "build(deps): refresh packages.lock.json" \
