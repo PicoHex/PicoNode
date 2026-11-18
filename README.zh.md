@@ -596,7 +596,7 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 | `PicoWeb.Samples` | 7004 | 带中间件和 DI 的完整 Web 应用 |
 
 ```bash
-dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj
+dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj -f net10.0
 ```
 
 ## 构建与测试
@@ -620,7 +620,7 @@ pwsh ./scripts/test-aot-publish.ps1 -RuntimeIdentifier win-x64
 微基准测试通过 [PicoBench](https://github.com/PicoHex/PicoBench) 提供：
 
 ```bash
-dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -c Release -- quick
+dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -f net10.0 -c Release -- quick
 ```
 
 基准覆盖 HTTP 解析、路由器分发（命中/未命中/405）、完整流水线以及 localhost 往返。

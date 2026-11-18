@@ -612,7 +612,7 @@ longer open, and an uncorrelated chunk while several streams are open. The packa
 | `PicoWeb.Samples` | 7004 | Full web app with middleware and DI |
 
 ```bash
-dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj
+dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj -f net10.0
 ```
 
 ## Building & Testing
@@ -636,7 +636,7 @@ pwsh ./scripts/test-aot-publish.ps1 -RuntimeIdentifier win-x64
 Microbenchmarks are provided via [PicoBench](https://github.com/PicoHex/PicoBench):
 
 ```bash
-dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -c Release -- quick
+dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -f net10.0 -c Release -- quick
 ```
 
 Benchmarks cover HTTP parsing, router dispatch (hit/miss/405), full pipeline, and localhost round-trips.

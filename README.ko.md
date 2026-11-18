@@ -596,7 +596,7 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 | `PicoWeb.Samples` | 7004 | 미들웨어와 DI를 갖춘 완전한 웹 앱 |
 
 ```bash
-dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj
+dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj -f net10.0
 ```
 
 ## 빌드와 테스트
@@ -620,7 +620,7 @@ pwsh ./scripts/test-aot-publish.ps1 -RuntimeIdentifier win-x64
 마이크로벤치마크는 [PicoBench](https://github.com/PicoHex/PicoBench)를 통해 제공됩니다:
 
 ```bash
-dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -c Release -- quick
+dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -f net10.0 -c Release -- quick
 ```
 
 벤치마크는 HTTP 파싱, 라우터 디스패치(hit/miss/405), 전체 파이프라인, localhost 왕복을 다룹니다.

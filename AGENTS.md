@@ -29,7 +29,7 @@ that must outlive the workspace belongs in a tracked doc (or in a commit message
 ## Public API
 
 - `api/<PackageId>.public.txt` is the contract, produced **only** by the tool:
-  `dotnet run --project scripts/api-surface -- dump <path/to/Assembly.dll> --out api/<PackageId>.public.txt`.
+  `dotnet run --project scripts/api-surface -f net10.0 -- dump <path/to/Assembly.dll> --out api/<PackageId>.public.txt`.
   Never hand-edit a baseline, and a dumper change must not alter unrelated baseline lines.
 - **A baseline holds the surface of the LAST RELEASE** and is refreshed as part of the release commit.
   Do not refresh it mid-cycle for an in-flight feature: the release gate derives the version by diffing the

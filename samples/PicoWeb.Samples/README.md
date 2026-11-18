@@ -15,7 +15,7 @@ The theme cookie demo is same-origin. The CORS configuration is exposed separate
 ## Run
 
 ```powershell
-dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj
+dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj -f net10.0
 ```
 
 Then open `http://127.0.0.1:7004/`.

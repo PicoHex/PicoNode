@@ -596,7 +596,7 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 | `PicoWeb.Samples` | 7004 | Aplicación web completa con middleware e DI |
 
 ```bash
-dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj
+dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj -f net10.0
 ```
 
 ## Compilación y Pruebas
@@ -620,7 +620,7 @@ pwsh ./scripts/test-aot-publish.ps1 -RuntimeIdentifier win-x64
 Los microbenchmarks se proporcionan a través de [PicoBench](https://github.com/PicoHex/PicoBench):
 
 ```bash
-dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -c Release -- quick
+dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -f net10.0 -c Release -- quick
 ```
 
 Los benchmarks cubren el análisis HTTP, el despacho del enrutador (acierto/fallo/405), el pipeline completo y los viajes de ida y vuelta en localhost.

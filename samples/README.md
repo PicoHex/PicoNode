@@ -14,6 +14,6 @@ PicoNode sample projects:
 ### Run
 
 ```powershell
-dotnet run --project samples/PicoNode.Samples.Echo/PicoNode.Samples.Echo.csproj
-dotnet run --project samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj
+dotnet run --project samples/PicoNode.Samples.Echo/PicoNode.Samples.Echo.csproj -f net10.0
+dotnet run --project samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj -f net10.0
 ```

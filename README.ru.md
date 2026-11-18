@@ -596,7 +596,7 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 | `PicoWeb.Samples` | 7004 | Полноценное веб-приложение с middleware и DI |
 
 ```bash
-dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj
+dotnet run --project samples/PicoWeb.Samples/PicoWeb.Samples.csproj -f net10.0
 ```
 
 ## Сборка и тестирование
@@ -620,7 +620,7 @@ pwsh ./scripts/test-aot-publish.ps1 -RuntimeIdentifier win-x64
 Микробенчмарки предоставляются через [PicoBench](https://github.com/PicoHex/PicoBench):
 
 ```bash
-dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -c Release -- quick
+dotnet run --project benchmarks/PicoNode.Http.Benchmarks/PicoNode.Http.Benchmarks.csproj -f net10.0 -c Release -- quick
 ```
 
 Бенчмарки охватывают разбор HTTP, диспетчеризацию маршрутизатора (попадание/промах/405), полный конвейер и локальные round-trips.
