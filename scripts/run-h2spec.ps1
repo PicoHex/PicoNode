@@ -93,6 +93,9 @@ $startArgs = @{
         "run",
         "--project", "$RepoRoot/samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj",
         "-c", "Release",
+        # The sample multi-targets net10.0;net11.0, and `dotnet run` refuses to pick one:
+        # "Your project targets multiple frameworks. Specify which framework to run."
+        "-f", "net10.0",
         "--no-build",
         "--", "--port", "$Port"
     )

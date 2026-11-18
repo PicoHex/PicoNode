@@ -259,7 +259,10 @@ def main():
     server_log_path = Path(tempfile.gettempdir()) / "piconode-sse-server.log"
     server_log = open(server_log_path, "wb")
     proc = subprocess.Popen(
-        ["dotnet", "run", "--project", SERVER_DIR, "--no-build"],
+        # -f net10.0: the server project multi-targets net10.0;net11.0 and `dotnet run`
+        # refuses to choose ("Your project targets multiple frameworks"), which is a startup
+        # failure the harness would otherwise report as "server never answered".
+        ["dotnet", "run", "--project", SERVER_DIR, "-f", "net10.0", "--no-build"],
         stdout=server_log, stderr=subprocess.STDOUT,
     )
 
