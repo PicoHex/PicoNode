@@ -95,7 +95,7 @@ jobs:
                        -not -path '*/ref/*'); do
             id=$(basename "$dll" .dll)
             [ -f "api/$id.public.txt" ] || continue
-            dotnet run --project scripts/api-surface -c Release -- dump "$dll" --out "/tmp/$id.public.txt"
+            dotnet run --project scripts/api-surface -f net10.0 -c Release -- dump "$dll" --out "/tmp/$id.public.txt"
             compared=$((compared + 1))
             if ! diff -q "api/$id.public.txt" "/tmp/$id.public.txt" >/dev/null; then
               echo "::warning::$id public surface differs from the last release — confirm an x bump"
