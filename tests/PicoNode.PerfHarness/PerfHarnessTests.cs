@@ -47,11 +47,18 @@ public sealed class PerfHarnessTests
     private const double UdpDatagramsFloor = 1_500;
     private const double UdpParallelDatagramsFloor = 3_000;
 
+    // No scenario names a port. Every node below binds IPAddress.Loopback:0 and the port the kernel
+    // handed out is read back from node.LocalEndPoint and used for the clients, because this assembly
+    // runs once per target framework (net10.0 and net11.0) and CI runs the two legs concurrently: a
+    // literal port means one process wins the bind and the other either throws AddressAlreadyInUse or
+    // -- worse -- connects to the *other* process's node and measures that one. A port picked before the
+    // node starts is the same TOCTOU one step earlier, so no helper here takes one.
+
     [Test]
     public async Task Tcp_throughput_succeeds()
     {
         var window = MachineCalibration.Start();
-        var metrics = await RunTcpThroughputAsync(port: 7201, messageCount: 200, payloadSize: 128);
+        var metrics = await RunTcpThroughputAsync(messageCount: 200, payloadSize: 128);
         await AssertFloorsAsync("tcp-throughput", metrics, TcpRoundTripsFloor, window.Worst());
     }
 
@@ -60,7 +67,6 @@ public sealed class PerfHarnessTests
     {
         var window = MachineCalibration.Start();
         var metrics = await RunTcpThroughputParallelAsync(
-            port: 7204,
             clients: 4,
             messagesPerClient: 150,
             payloadSize: 128
@@ -77,11 +83,7 @@ public sealed class PerfHarnessTests
     public async Task Tcp_throughput_sweep_succeeds()
     {
         var window = MachineCalibration.Start();
-        var metrics = await RunTcpThroughputSweepAsync(
-            port: 7210,
-            payloads: [64, 256],
-            messages: 120
-        );
+        var metrics = await RunTcpThroughputSweepAsync(payloads: [64, 256], messages: 120);
         var calibration = window.Worst();
         await Assert.That(metrics.Length).IsEqualTo(2);
         foreach (var point in metrics)
@@ -96,7 +98,7 @@ public sealed class PerfHarnessTests
     public async Task Tcp_churn_succeeds()
     {
         var window = MachineCalibration.Start();
-        var metrics = await RunTcpChurnAsync(port: 7202, connectionCount: 120, payloadSize: 8);
+        var metrics = await RunTcpChurnAsync(connectionCount: 120, payloadSize: 8);
         await AssertFloorsAsync("tcp-churn", metrics, TcpChangeoversFloor, window.Worst());
         await Assert.That(metrics.MiBPerSecond).IsGreaterThan(0d);
     }
@@ -106,7 +108,6 @@ public sealed class PerfHarnessTests
     {
         var window = MachineCalibration.Start();
         var metrics = await RunUdpRateAsync(
-            port: 7203,
             datagramCount: 250,
             payloadSize: 96,
             workers: 2
@@ -119,7 +120,6 @@ public sealed class PerfHarnessTests
     {
         var window = MachineCalibration.Start();
         var metrics = await RunUdpRateParallelAsync(
-            port: 7205,
             clients: 4,
             datagramsPerClient: 120,
             payloadSize: 96,
@@ -179,24 +179,21 @@ public sealed class PerfHarnessTests
             .Because($"{scenario} moved no bytes at all");
     }
 
-    private static async Task<PerfMetrics> RunTcpThroughputAsync(
-        int port,
-        int messageCount,
-        int payloadSize
-    )
+    private static async Task<PerfMetrics> RunTcpThroughputAsync(int messageCount, int payloadSize)
     {
         var payload = CreatePayload(payloadSize, 7);
 
         await using var node = new TcpNode(
             new TcpNodeOptions
             {
-                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                Endpoint = EphemeralEndpoint(),
                 ConnectionHandler = new TcpEchoHandler(),
                 MaxConnections = 64,
             }
         );
 
         await node.StartAsync();
+        var port = BoundPort(node.LocalEndPoint);
 
         using var client = new TcpClient();
         await client.ConnectAsync(IPAddress.Loopback, port);
@@ -227,7 +224,6 @@ public sealed class PerfHarnessTests
     }
 
     private static async Task<PerfMetrics> RunTcpThroughputParallelAsync(
-        int port,
         int clients,
         int messagesPerClient,
         int payloadSize
@@ -238,13 +234,14 @@ public sealed class PerfHarnessTests
         await using var node = new TcpNode(
             new TcpNodeOptions
             {
-                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                Endpoint = EphemeralEndpoint(),
                 ConnectionHandler = new TcpEchoHandler(),
                 MaxConnections = Math.Max(clients * 2, 64),
             }
         );
 
         await node.StartAsync();
+        var port = BoundPort(node.LocalEndPoint);
 
         var stopwatch = Stopwatch.StartNew();
         await Task.WhenAll(
@@ -269,7 +266,6 @@ public sealed class PerfHarnessTests
     }
 
     private static async Task<PerfMetrics[]> RunTcpThroughputSweepAsync(
-        int port,
         int[] payloads,
         int messages
     )
@@ -283,13 +279,14 @@ public sealed class PerfHarnessTests
             await using var node = new TcpNode(
                 new TcpNodeOptions
                 {
-                    Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                    Endpoint = EphemeralEndpoint(),
                     ConnectionHandler = new TcpEchoHandler(),
                     MaxConnections = 64,
                 }
             );
 
             await node.StartAsync();
+            var port = BoundPort(node.LocalEndPoint);
 
             using var client = new TcpClient();
             await client.ConnectAsync(IPAddress.Loopback, port);
@@ -317,14 +314,12 @@ public sealed class PerfHarnessTests
                 metrics
             );
             results.Add(metrics);
-            port++;
         }
 
         return results.ToArray();
     }
 
     private static async Task<PerfMetrics> RunTcpChurnAsync(
-        int port,
         int connectionCount,
         int payloadSize
     )
@@ -334,13 +329,14 @@ public sealed class PerfHarnessTests
         await using var node = new TcpNode(
             new TcpNodeOptions
             {
-                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                Endpoint = EphemeralEndpoint(),
                 ConnectionHandler = new TcpEchoHandler(),
                 MaxConnections = 128,
             }
         );
 
         await node.StartAsync();
+        var port = BoundPort(node.LocalEndPoint);
 
         var stopwatch = Stopwatch.StartNew();
         for (var i = 0; i < connectionCount; i++)
@@ -368,7 +364,6 @@ public sealed class PerfHarnessTests
     }
 
     private static async Task<PerfMetrics> RunUdpRateAsync(
-        int port,
         int datagramCount,
         int payloadSize,
         int workers
@@ -379,13 +374,14 @@ public sealed class PerfHarnessTests
         await using var node = new UdpNode(
             new UdpNodeOptions
             {
-                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                Endpoint = EphemeralEndpoint(),
                 DatagramHandler = new UdpEchoHandler(),
                 DispatchWorkerCount = workers,
             }
         );
 
         await node.StartAsync();
+        var port = BoundPort(node.LocalEndPoint);
 
         using var client = new UdpClient();
         client.Client.ReceiveTimeout = 5000;
@@ -415,7 +411,6 @@ public sealed class PerfHarnessTests
     }
 
     private static async Task<PerfMetrics> RunUdpRateParallelAsync(
-        int port,
         int clients,
         int datagramsPerClient,
         int payloadSize,
@@ -427,13 +422,14 @@ public sealed class PerfHarnessTests
         await using var node = new UdpNode(
             new UdpNodeOptions
             {
-                Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                Endpoint = EphemeralEndpoint(),
                 DatagramHandler = new UdpEchoHandler(),
                 DispatchWorkerCount = workers,
             }
         );
 
         await node.StartAsync();
+        var port = BoundPort(node.LocalEndPoint);
 
         var stopwatch = Stopwatch.StartNew();
         await Task.WhenAll(
@@ -509,6 +505,19 @@ public sealed class PerfHarnessTests
             await client.ReceiveAsync();
         }
     }
+
+    /// <summary>
+    /// The only endpoint any node in this assembly is given: port 0, i.e. "the kernel picks one".
+    /// </summary>
+    private static IPEndPoint EphemeralEndpoint() => new(IPAddress.Loopback, 0);
+
+    /// <summary>
+    /// The port the node actually bound, which is the only port a client may use. Reading it back after
+    /// <c>StartAsync</c> is what makes the two target frameworks independent: with a literal port they
+    /// raced for the same socket, and the loser either failed with <c>Address already in use</c> (UDP) or
+    /// was served by the winner's node until that node stopped (TCP, "Connection closed while reading").
+    /// </summary>
+    private static int BoundPort(EndPoint endPoint) => ((IPEndPoint)endPoint).Port;
 
     private static byte[] CreatePayload(int size, int seed)
     {

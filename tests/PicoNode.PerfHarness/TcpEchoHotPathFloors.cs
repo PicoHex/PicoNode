@@ -27,9 +27,7 @@ public sealed class TcpEchoHotPathFloors
 {
     static TcpEchoHotPathFloors() => PerfHarnessEnvironment.RaiseThreadPoolMinimum();
 
-    private const int Port = 7220;
     private const int PayloadSize = 128;
-
     /// <summary>
     /// The allocation budget is measured on a payload large enough that a per-message copy of the
     /// payload cannot hide inside the async plumbing: at 4 KiB a `ToArray()` or a clone costs 4096 B
@@ -64,7 +62,7 @@ public sealed class TcpEchoHotPathFloors
         var payload = CreatePayload();
         var readBuffer = new byte[payload.Length];
 
-        await using var harness = await EchoHarness.StartAsync(Port);
+        await using var harness = await EchoHarness.StartAsync();
         await using var client = await harness.ConnectAsync();
 
         await RoundTripsAsync(client.Stream, payload, readBuffer, WarmUpRoundTrips);
@@ -101,7 +99,7 @@ public sealed class TcpEchoHotPathFloors
         var payload = CreatePayload(AllocationPayloadSize);
         var readBuffer = new byte[payload.Length];
 
-        await using var harness = await EchoHarness.StartAsync(Port + 1);
+        await using var harness = await EchoHarness.StartAsync();
         await using var client = await harness.ConnectAsync();
 
         await RoundTripsAsync(client.Stream, payload, readBuffer, WarmUpRoundTrips);
@@ -169,19 +167,24 @@ public sealed class TcpEchoHotPathFloors
         return payload;
     }
 
-    /// <summary>A started node plus the single connection the rounds run over.</summary>
+    /// <summary>
+    /// A started node plus the single connection the rounds run over. The node binds port 0 and the
+    /// client connects to the port the node reports: this assembly runs once per target framework and
+    /// the two processes run concurrently, so a literal port would be a race between them rather than
+    /// a property of the hot path the floor is about.
+    /// </summary>
     private sealed class EchoHarness : IAsyncDisposable
     {
         private readonly TcpNode _node;
 
         private EchoHarness(TcpNode node) => _node = node;
 
-        internal static async Task<EchoHarness> StartAsync(int port)
+        internal static async Task<EchoHarness> StartAsync()
         {
             var node = new TcpNode(
                 new TcpNodeOptions
                 {
-                    Endpoint = new IPEndPoint(IPAddress.Loopback, port),
+                    Endpoint = new IPEndPoint(IPAddress.Loopback, 0),
                     ConnectionHandler = new EchoHandler(),
                     MaxConnections = 8,
                 }
