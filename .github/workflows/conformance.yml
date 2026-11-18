@@ -1,4 +1,13 @@
 # Protocol conformance gates — runs on every branch for fast iteration.
+#
+# DO NOT "de-duplicate" this file away. The h2spec/autobahn job bodies below are
+# byte-identical to the same jobs in ci.yml, but the two workflows never run the
+# same event:
+#   ci.yml           -> push to main, pull_request to main
+#   conformance.yml  -> push to any OTHER branch, workflow_dispatch
+# So there is no repeated run to delete - deleting this file would only remove
+# the single protocol gate a feature-branch push has. Change one copy, change
+# both (guard: tests/PicoNode.Tests/CiWorkflowTests.cs walks every workflow).
 # (The full ci.yml build matrix only runs on main.)
 
 name: conformance
