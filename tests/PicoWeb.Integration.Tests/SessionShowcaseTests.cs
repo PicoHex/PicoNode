@@ -133,7 +133,12 @@ public sealed class SessionShowcaseTests
         container.Build();
 
         // Create wwwroot for StaticFileMiddleware
-        var tempRoot = Path.Combine(Path.GetTempPath(), "PicoWebSessionTest");
+        // Unique per run: one process per target framework, run concurrently in CI, each deleting
+        // this tree in its own finally.
+        var tempRoot = Path.Combine(
+            Path.GetTempPath(),
+            "PicoWebSessionTest-" + Guid.NewGuid().ToString("N")
+        );
         Directory.CreateDirectory(Path.Combine(tempRoot, "wwwroot"));
         try
         {

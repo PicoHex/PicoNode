@@ -100,7 +100,13 @@ public sealed class SessionPageTests
         ));
         container.Build();
 
-        var tempRoot = Path.Combine(Path.GetTempPath(), "PicoWebSessionPageTest");
+        // Unique per run: this assembly now executes once per target framework and CI runs the two
+        // legs concurrently, so a fixed temp path means one process deletes the other's wwwroot
+        // mid-test ("DirectoryNotFoundException: Static file root directory not found").
+        var tempRoot = Path.Combine(
+            Path.GetTempPath(),
+            "PicoWebSessionPageTest-" + Guid.NewGuid().ToString("N")
+        );
         var wwwroot = Path.Combine(tempRoot, "wwwroot");
         Directory.CreateDirectory(wwwroot);
         try
