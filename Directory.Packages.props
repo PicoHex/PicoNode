@@ -46,10 +46,11 @@
          and PicoBench ships PicoBench.Generators, and a y bump can change
          generated code even though the package's public API did not. That risk
          is real, and an exact pin is still the wrong answer, because a pin
-         guarantees nobody ever looks at it. packages.lock.json freezes today's
-         generator bytes and deps-refresh.yml surfaces tomorrow's as a diff
-         that runs the whole matrix, generator tests included. When that PR is
-         red, the fix goes in our code, not in a version ceiling.
+         guarantees nobody ever looks at it. A plain restore takes the newest patch
+         inside the band on every run, so tomorrow's generator bytes arrive by
+         themselves and the full matrix, generator tests included, is what catches
+         a break. Whether a BAND should move is not something a restore can see:
+         upstream-watch.yml reports that, and a person decides it.
 
          One owner, one answer: a floated base package and a pinned sibling
          resolve to different patches and the mismatch is the failure above. -->

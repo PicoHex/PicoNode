@@ -68,25 +68,42 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang zlib1g-dev
 
-      # Locked mode: the y-segment floats in Directory.Packages.props are only
-      # allowed to move when a packages.lock.json moves with them, so CI
-      # restores exactly what was reviewed. deps-refresh.yml is the job that
-      # re-evaluates the floats (--force-evaluate) and opens a PR with the
-      # resulting lock diff.
+      # No locked mode: nothing is committed to lock AGAINST. The declarations in
+      # Directory.Packages.props float on purpose, and the packages.lock.json a
+      # restore writes is a local record of what this leg resolved -- gitignored,
+      # never reviewed, never replayed. The record still has to survive the run, so
+      # it leaves as the `resolved-versions` artifact uploaded below.
       #
       # This restore is deliberately RID-NEUTRAL and must stay that way: the
       # RuntimeIdentifiers injected by PublishAot's default publish RID are
-      # disabled in Directory.Build.props, which is what keeps a
-      # `net10.0/<host-rid>` section out of the committed lock files (otherwise
-      # a lock refreshed on win-x64 fails NU1004 on every other matrix leg).
+      # disabled in Directory.Build.props. Nothing is committed any more, so a
+      # `net10.0/<host-rid>` section cannot reach a review, but neutrality is what
+      # keeps this restore comparable with a restore on any other machine.
       # Consequence: this restore produces NO RID-specific assets, so a publish
       # cannot use --no-restore here — each AOT publish below carries its own
       # -r and lets publish restore that RID's assets.
-      - name: Restore (locked)
-        run: dotnet restore PicoNode.slnx -p:RestoreLockedMode=true
+      - name: Restore
+        run: dotnet restore PicoNode.slnx
 
       - name: Build
         run: dotnet build PicoNode.slnx --no-restore -c Release
+
+      # The resolved versions, as data instead of as a committed file. Restore writes
+      # `packages.lock.json` beside every project (RestorePackagesWithLockFile=true in
+      # Directory.Build.props) and .gitignore keeps it out of the tree; uploading it here
+      # is what makes "which exact versions did this build use" answerable after the
+      # runner is gone -- the one job the tracked lock used to do.
+      # `if: always()` on purpose: a leg that fails after restore still produced a
+      # resolution, and that is exactly the run somebody needs to inspect.
+      - name: Upload resolved versions (restore record)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resolved-versions-${{ matrix.rid }}
+          path: |
+            **/packages.lock.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Test PicoNode.Abs
         run: dotnet test --project tests/PicoNode.Tests/PicoNode.Tests.csproj --no-build -c Release

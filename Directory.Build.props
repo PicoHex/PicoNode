@@ -13,11 +13,19 @@
          in Directory.Packages.props, next to the versions they govern, as in
          PicoActor / PicoSerDe / PicoUI. This file holds the mechanism only. -->
 
-    <!-- Floating dependencies (see Directory.Packages.props) resolve to the
-         newest matching version on every restore, which makes a restore
-         non-reproducible on its own. The lock files pin what actually
-         resolved; CI restores with RestoreLockedMode=true so a dependency
-         only moves when a lock file moves (deps-refresh.yml re-evaluates). -->
+    <!-- packages.lock.json is a RECORD, not a pin, and this switch is what writes it.
+
+         Floating dependencies (see Directory.Packages.props) resolve to the newest
+         matching version inside their declared band on every restore. The lock file
+         beside each project records what THIS restore resolved: nothing is pinned
+         against it, CI does not replay it, and .gitignore keeps it out of the tree, so
+         `dotnet publish` writing RID-specific entries into it cannot dirty a release.
+         "Which versions did that build use" is answered by the `resolved-versions`
+         artifact ci.yml uploads (one per leg).
+
+         Deliberately still TRUE: with this off NuGet neither writes nor reads a lock
+         file, so a restore resolves silently and leaves nothing to inspect. Untracked
+         is not off. -->
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
 
     <!-- Deterministic builds when CI=true -->
