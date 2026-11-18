@@ -5,7 +5,7 @@ Session abstraction layer for PicoNode.Web. Defines the public interfaces for se
 ## Package Info
 
 - **NuGet**: `PicoNode.Web.Session.Abs`
-- **TFM**: `net10.0`
+- **TFM**: `net10.0, net11.0`
 - **Dependencies**: none (BCL only)
 
 ## Key Types

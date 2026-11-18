@@ -5,7 +5,7 @@ Core abstraction layer for PicoNode transport nodes. Defines the public interfac
 ## Package Info
 
 - **NuGet**: `PicoNode.Abs`
-- **TFM**: `net10.0`
+- **TFM**: `net10.0, net11.0`
 - **Dependencies**: none (zero-dependency abstraction layer)
 
 Only the Roslyn generator projects (`Controllers.Gen`, `PicoWeb.Gen`) remain on

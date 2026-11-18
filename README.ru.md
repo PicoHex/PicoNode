@@ -17,7 +17,7 @@
 │  ✓ Протоколы HTTP/1.1 + HTTP/2 + WebSocket                  │
 │  ✓ Веб-фреймворк с middleware, маршрутизацией, статикой     │
 │  ✓ Интеграция с экосистемой PicoHex (PicoDI/PicoLog/PicoCfg)│
-│  ✓ Нативная AOT-совместимость на всех уровнях net10.0       │
+│  ✓ Нативная AOT-совместимость на net10.0/net11.0            │
 │  ✓ Минимальные зависимости времени выполнения               │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -29,7 +29,7 @@
 | **Модель зависимостей** | Без зависимостей от фреймворка Microsoft (только нативные библиотеки PicoHex); выбирай уровень | Ссылка на `Microsoft.AspNetCore.App` |
 | **Разбор запросов** | Потоковый на основе Span, zero-copy `System.IO.Pipelines` | Строковый с адаптером `IO.Pipelines` |
 | **HTTP/2** | Встроенный HPACK-декодер, управление на уровне фреймов | Прозрачно через Kestrel; ограниченный низкоуровневый доступ |
-| **AOT-поддержка** | ✅ Нативно — все библиотеки net10.0 | ⚠️ Требует trimming |
+| **AOT-поддержка** | ✅ Нативно — все библиотеки net10.0/net11.0 | ⚠️ Требует trimming |
 | **DI / Логирование / Конфиг** | PicoDI + PicoLog + PicoCfg (родные PicoHex) | Microsoft.Extensions.* |
 | **WebSocket** | Кодек фреймов RFC 6455 с абстракцией обработчика сообщений | Прозрачно через middleware |
 | **Строк кода** | 25 125 строк C# (178 файлов в `src/`, без `bin/`/`obj/`) | в этом репозитории не измеряется |
@@ -47,16 +47,16 @@ PicoNode — часть семейства PicoHex и нативно интег�
 | [PicoCfg](https://github.com/PicoHex/PicoCfg) | Привязка конфигурации через source generation | `PicoCfg.Abs` |
 
 ```
-PicoNode.Abs        Базовые интерфейсы                       (net10.0, zero deps)
+PicoNode.Abs        Базовые интерфейсы                       (net10.0, net11.0, zero deps)
     ↓
-PicoNode             TCP и UDP транспорты + ILogger           (net10.0)
+PicoNode             TCP и UDP транспорты + ILogger           (net10.0, net11.0)
     ↓
-PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket            (net10.0)
+PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket            (net10.0, net11.0)
     ↓
-PicoNode.Web         Веб-фреймворк + PicoDI ISvcContainer     (net10.0)
+PicoNode.Web         Веб-фреймворк + PicoDI ISvcContainer     (net10.0, net11.0)
     ↓
-PicoWeb              Готовый к запуску веб-сервер + PicoCfg   (net10.0)
-PicoJsonRpc           JSON-RPC 2.0 через stdio (NDJSON)    (net10.0)
+PicoWeb              Готовый к запуску веб-сервер + PicoCfg   (net10.0, net11.0)
+PicoJsonRpc           JSON-RPC 2.0 через stdio (NDJSON)    (net10.0, net11.0)
 ```
 
 ## Быстрый старт
@@ -579,13 +579,13 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 
 | Project | Target | Description |
 |---------|--------|-------------|
-| **PicoNode.Abs** | net10.0 | Основные интерфейсы: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, коды ошибок, перечисления |
-| **PicoNode** | net10.0 | `TcpNode` и `UdpNode` — асинхронные сокетные транспорты production-уровня |
-| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
-| **PicoJsonRpc** | net10.0 | Ядро протокола JSON-RPC 2.0: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
-| **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, middleware, статические файлы, сжатие, CORS, DI |
-| **PicoNode.Web.Session.Abs** | net10.0 | Абстракции сессий: `ISession`, `ISessionStore` |
-| **PicoWeb** | net10.0 | `WebServer` — тонкий хост, подключающий `WebApp` к `TcpNode` |
+| **PicoNode.Abs** | net10.0, net11.0 | Основные интерфейсы: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, коды ошибок, перечисления |
+| **PicoNode** | net10.0, net11.0 | `TcpNode` и `UdpNode` — асинхронные сокетные транспорты production-уровня |
+| **PicoNode.Http** | net10.0, net11.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
+| **PicoJsonRpc** | net10.0, net11.0 | Ядро протокола JSON-RPC 2.0: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
+| **PicoNode.Web** | net10.0, net11.0 | `WebApp`, `WebRouter`, middleware, статические файлы, сжатие, CORS, DI |
+| **PicoNode.Web.Session.Abs** | net10.0, net11.0 | Абстракции сессий: `ISession`, `ISessionStore` |
+| **PicoWeb** | net10.0, net11.0 | `WebServer` — тонкий хост, подключающий `WebApp` к `TcpNode` |
 
 ## Примеры
 

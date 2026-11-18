@@ -17,7 +17,7 @@
 │  ✓ HTTP/1.1 + HTTP/2 + WebSocket protocols                  │
 │  ✓ Web framework with middleware, routing, static files      │
 │  ✓ Integrated with PicoHex ecosystem (PicoDI/PicoLog/PicoCfg)│
-│  ✓ Native AOT compatible across all net10.0 layers           │
+│  ✓ Native AOT compatible across all net10.0/net11.0 layers   │
 │  ✓ Minimal runtime dependencies                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -29,7 +29,7 @@
 | **相依模型** | 無 Microsoft 框架相依（僅 PicoHex 原生程式庫）；隨選分層使用 | 需要 `Microsoft.AspNetCore.App` 架構參考 |
 | **請求解析** | Span 基礎的串流處理，零複製 `System.IO.Pipelines` | 字串基礎搭配 `IO.Pipelines` 配接器 |
 | **HTTP/2** | 內建 HPACK 解碼器，框架層級控制 | 透過 Kestrel 透明處理；低階存取有限 |
-| **AOT 支援** | ✅ 原生支援 — 所有 net10.0 程式庫 | ⚠️ 需要修剪（trimming） |
+| **AOT 支援** | ✅ 原生支援 — 所有 net10.0/net11.0 程式庫 | ⚠️ 需要修剪（trimming） |
 | **DI / 紀錄 / 設定** | PicoDI + PicoLog + PicoCfg（PicoHex 原生） | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 框架編解碼器，訊息處理器抽象 | 透過中介軟體透明處理 |
 | **程式碼行數** | C# 25,125 行（`src/` 下 178 個檔案，不含 `bin/`/`obj/`） | 本儲存庫未測量 |
@@ -47,16 +47,16 @@ PicoNode 是 PicoHex 家族的一員，並與以下專案原生整合：
 | [PicoCfg](https://github.com/PicoHex/PicoCfg) | 原始碼產生的設定檔繫結 | `PicoCfg.Abs` |
 
 ```
-PicoNode.Abs        Core interfaces                          (net10.0, zero deps)
+PicoNode.Abs        Core interfaces                          (net10.0, net11.0, zero deps)
     ↓
-PicoNode             TCP & UDP transports + ILogger           (net10.0)
+PicoNode             TCP & UDP transports + ILogger           (net10.0, net11.0)
     ↓
-PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket            (net10.0)
+PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket            (net10.0, net11.0)
     ↓
-PicoNode.Web         Web framework + PicoDI ISvcContainer     (net10.0)
+PicoNode.Web         Web framework + PicoDI ISvcContainer     (net10.0, net11.0)
     ↓
-PicoWeb              Ready-to-run web server + PicoCfg        (net10.0)
-PicoJsonRpc           JSON-RPC 2.0 / stdio（NDJSON）        (net10.0)
+PicoWeb              Ready-to-run web server + PicoCfg        (net10.0, net11.0)
+PicoJsonRpc           JSON-RPC 2.0 / stdio（NDJSON）        (net10.0, net11.0)
 ```
 
 ## 快速入門
@@ -579,13 +579,13 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 
 | Project | Target | Description |
 |---------|--------|-------------|
-| **PicoNode.Abs** | net10.0 | 核心介面：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、故障碼、列舉 |
-| **PicoNode** | net10.0 | `TcpNode` 與 `UdpNode` — 生產級非同步 socket 傳輸 |
-| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
-| **PicoJsonRpc** | net10.0 | JSON-RPC 2.0 協定核心：`NdjsonFramer`、`JsonRpcClient`、`ProcessLifecycle` |
-| **PicoNode.Web** | net10.0 | `WebApp`、`WebRouter`、中介軟體、靜態檔案、壓縮、CORS、DI |
-| **PicoNode.Web.Session.Abs** | net10.0 | 工作階段抽象：`ISession`、`ISessionStore` |
-| **PicoWeb** | net10.0 | `WebServer` — 將 `WebApp` 接到 `TcpNode` 的輕量主機 |
+| **PicoNode.Abs** | net10.0, net11.0 | 核心介面：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、故障碼、列舉 |
+| **PicoNode** | net10.0, net11.0 | `TcpNode` 與 `UdpNode` — 生產級非同步 socket 傳輸 |
+| **PicoNode.Http** | net10.0, net11.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
+| **PicoJsonRpc** | net10.0, net11.0 | JSON-RPC 2.0 協定核心：`NdjsonFramer`、`JsonRpcClient`、`ProcessLifecycle` |
+| **PicoNode.Web** | net10.0, net11.0 | `WebApp`、`WebRouter`、中介軟體、靜態檔案、壓縮、CORS、DI |
+| **PicoNode.Web.Session.Abs** | net10.0, net11.0 | 工作階段抽象：`ISession`、`ISessionStore` |
+| **PicoWeb** | net10.0, net11.0 | `WebServer` — 將 `WebApp` 接到 `TcpNode` 的輕量主機 |
 
 ## 範例
 

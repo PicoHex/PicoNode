@@ -5,7 +5,7 @@ PicoNode Web hosting layer. Combines WebApp and TcpNode into a full WebServer wi
 ## Package Info
 
 - **NuGet**: `PicoWeb`
-- **TFM**: `net10.0`
+- **TFM**: `net10.0, net11.0`
 - **AOT**: ✅
 - **Dependencies**: `PicoNode`, `PicoNode.Web`, `PicoDI`, `PicoJetson`
 - **Embeds**: `Controllers.Gen` (source generator), `PicoWeb.Gen` (build-time diagnostics)

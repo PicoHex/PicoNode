@@ -5,7 +5,7 @@ PicoNode transport layer implementation. Provides TcpNode and UdpNode with TLS, 
 ## Package Info
 
 - **NuGet**: `PicoNode`
-- **TFM**: `net10.0`
+- **TFM**: `net10.0, net11.0`
 - **AOT**: ✅
 - **Dependencies**: `PicoNode.Abs`, `PicoCfg.Abs`, `PicoLog.Abs`
 

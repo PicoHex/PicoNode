@@ -69,21 +69,43 @@ public sealed class ReadmeAccuracyTests
 
     /// <summary>
     /// One project of <c>src/</c>, as its csproj declares it: the NuGet identity, the target
-    /// framework, whether it ships, and the projects/packages it references. This record is the
+    /// framework SET, whether it ships, and the projects/packages it references. This record is the
     /// only source of truth these rules read; nothing below restates a csproj value.
     /// </summary>
     private sealed record Project(
         string Name,
         string CsprojPath,
         string PackageId,
-        string Tfm,
+        string[] Frameworks,
         bool Packable,
         string[] Dependencies
     )
     {
+        /// <summary>
+        /// The target set in the form the docs write it: one TFM for a single-target project, the
+        /// comma-separated list for a multi-target one (<c>net10.0, net11.0</c>). Every doc
+        /// comparison below reads THIS, so a README that names one framework of a multi-targeted
+        /// project is describing half of it — which is exactly what the old single-value field
+        /// recorded as <c>&lt;none&gt;</c> for every project once the tree went multi-target.
+        /// </summary>
+        public string Tfm => string.Join(", ", Frameworks);
+
         public bool DependsOn(string other) =>
             Dependencies.Contains(other, StringComparer.Ordinal);
     }
+
+    /// <summary>
+    /// Two TFM lists name the same frameworks when they carry the same names in the same order,
+    /// whatever spacing the doc happens to use. Spacing is a typographic choice, not a claim: a
+    /// README may write <c>net10.0, net11.0</c> where the csproj writes <c>net10.0;net11.0</c>.
+    /// Nothing else is dropped — a missing, extra or reordered framework is still a finding.
+    /// </summary>
+    private static bool SameFrameworks(string documented, string measured) =>
+        string.Equals(
+            Regex.Replace(documented, @"\s+", ""),
+            Regex.Replace(measured, @"\s+", ""),
+            StringComparison.Ordinal
+        );
 
     private static Project[] MeasureProjects() =>
         Directory
@@ -148,10 +170,45 @@ public sealed class ReadmeAccuracyTests
             name,
             csprojPath,
             packageId,
-            Value("TargetFramework") ?? "<none>",
+            MeasureTargetFrameworks(csproj),
             string.Equals(Value("IsPackable"), "true", StringComparison.OrdinalIgnoreCase),
             dependencies
         );
+    }
+
+    /// <summary>
+    /// The target frameworks a csproj declares, plural first: a multi-target project declares
+    /// <c>&lt;TargetFrameworks&gt;net10.0;net11.0&lt;/TargetFrameworks&gt;</c> and no singular element
+    /// at all, so reading only <c>&lt;TargetFramework&gt;</c> measured every multi-targeted project in
+    /// this tree as <c>&lt;none&gt;</c> — and a measurement of nothing agrees with nothing.
+    /// <para>
+    /// The value is a semicolon-separated list that may be written with spaces and may arrive in
+    /// several conditioned elements, so every declaration is split and trimmed rather than the
+    /// first element's raw text being taken as one framework name.
+    /// </para>
+    /// </summary>
+    private static string[] MeasureTargetFrameworks(XDocument csproj)
+    {
+        foreach (var element in new[] { "TargetFrameworks", "TargetFramework" })
+        {
+            var frameworks = csproj
+                .Descendants(element)
+                .SelectMany(static x =>
+                    x.Value.Split(
+                        ';',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    )
+                )
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            if (frameworks.Length > 0)
+            {
+                return frameworks;
+            }
+        }
+
+        return ["<none>"];
     }
 
     /// <summary>
@@ -306,7 +363,7 @@ public sealed class ReadmeAccuracyTests
             {
                 findings.Add($"{project.Name}: README.md declares no '**TFM**: `…`' line");
             }
-            else if (tfm.Groups[1].Value != project.Tfm)
+            else if (!SameFrameworks(tfm.Groups[1].Value, project.Tfm))
             {
                 findings.Add(
                     $"{project.Name}: README TFM '{tfm.Groups[1].Value}' != csproj '{project.Tfm}'"
@@ -440,14 +497,17 @@ public sealed class ReadmeAccuracyTests
                 if (!byName.TryGetValue(firstToken, out var project))
                     continue;
 
-                var annotation = Regex.Match(line, @"\((net(?:standard)?\d+\.\d+)[,)]");
+                var annotation = Regex.Match(
+                    line,
+                    @"\((net(?:standard)?\d+\.\d+(?:,\s*net(?:standard)?\d+\.\d+)*)[,)]"
+                );
                 if (!annotation.Success)
                     continue;
 
                 found++;
                 annotations++;
 
-                if (annotation.Groups[1].Value != project.Tfm)
+                if (!SameFrameworks(annotation.Groups[1].Value, project.Tfm))
                 {
                     findings.Add(
                         $"{name}: '{firstToken}' is annotated {annotation.Groups[1].Value}, csproj says {project.Tfm}"
@@ -517,11 +577,15 @@ public sealed class ReadmeAccuracyTests
 
                     listed.Add(package);
 
-                    // A cell that is exactly a TFM is a TFM claim; compare it with the csproj.
+                    // A cell that is exactly a TFM (or a comma-separated set of them) is a TFM
+                    // claim; compare it with the csproj's whole target set.
                     var tfmCell = cells[2];
                     if (byPackage.TryGetValue(package, out var project)
-                        && Regex.IsMatch(tfmCell, @"^(net|netstandard)\d+\.\d+$")
-                        && tfmCell != project.Tfm)
+                        && Regex.IsMatch(
+                            tfmCell,
+                            @"^net(?:standard)?\d+\.\d+(?:,\s*net(?:standard)?\d+\.\d+)*$"
+                        )
+                        && !SameFrameworks(tfmCell, project.Tfm))
                     {
                         findings.Add($"{name}: '{package}' is listed as {tfmCell}, csproj says {project.Tfm}");
                     }
@@ -568,7 +632,11 @@ public sealed class ReadmeAccuracyTests
         // rule reads every line that mentions netstandard2.0 in the docs that live next to the code
         // and requires each project it names to actually be on netstandard2.0.
         var projects = MeasureProjects();
-        var netstandard = projects.Where(static project => project.Tfm != "net10.0").ToArray();
+        var netstandard = projects
+            .Where(static project =>
+                project.Frameworks.Contains("netstandard2.0", StringComparer.Ordinal)
+            )
+            .ToArray();
         var rootReadmes = Readmes;
         var moduleReadmes = projects
             .Select(static project => Path.Combine(Path.GetDirectoryName(project.CsprojPath)!, "README.md"))
@@ -595,7 +663,9 @@ public sealed class ReadmeAccuracyTests
                 mentions++;
 
                 var wrong = projects
-                    .Where(project => project.Tfm == "net10.0")
+                    .Where(static project =>
+                        !project.Frameworks.Contains("netstandard2.0", StringComparer.Ordinal)
+                    )
                     .Where(project => Regex.IsMatch(line, $@"(?<![\w.]){Regex.Escape(project.Name)}(?![\w.])"))
                     .Select(static project => project.Name)
                     .ToArray();

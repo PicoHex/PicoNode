@@ -17,7 +17,7 @@
 │  ✓ HTTP/1.1 + HTTP/2 + WebSocket-Protokolle                │
 │  ✓ Webframework mit Middleware, Routing, statischen Dateien │
 │  ✓ Integriert ins PicoHex-Ökosystem (PicoDI/PicoLog/PicoCfg)│
-│  ✓ Native AOT-Kompatibilität über alle net10.0-Ebenen       │
+│  ✓ Native AOT-Kompatibilität auf net10.0/net11.0-Ebenen     │
 │  ✓ Minimale Laufzeitabhängigkeiten                          │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -29,7 +29,7 @@
 | **Abhängigkeitsmodell** | Keine Microsoft-Framework-Abhängigkeiten (nur PicoHex-native Bibliotheken); Ebenen frei wählbar | `Microsoft.AspNetCore.App`-Frameworkreferenz |
 | **Request-Parsing** | Span-basiertes Streaming, Zero-Copy mit `System.IO.Pipelines` | String-basiert mit `IO.Pipelines`-Adapter |
 | **HTTP/2** | Integrierter HPACK-Decoder, Frame-Level-Steuerung | Transparent via Kestrel; eingeschränkter Low-Level-Zugriff |
-| **AOT-Support** | ✅ Nativ — alle net10.0-Bibliotheken | ⚠️ Erfordert Trimming |
+| **AOT-Support** | ✅ Nativ — alle net10.0/net11.0-Bibliotheken | ⚠️ Erfordert Trimming |
 | **DI / Logging / Config** | PicoDI + PicoLog + PicoCfg (PicoHex-nativ) | Microsoft.Extensions.* |
 | **WebSocket** | RFC-6455-Frame-Codec mit Message-Handler-Abstraktion | Transparent via Middleware |
 | **Codezeilen** | 25.125 Zeilen C# (178 Dateien in `src/`, ohne `bin/`/`obj/`) | in diesem Repository nicht gemessen |
@@ -47,16 +47,16 @@ PicoNode ist Teil der PicoHex-Familie und lässt sich nativ mit folgenden Biblio
 | [PicoCfg](https://github.com/PicoHex/PicoCfg) | Quellgenerierte Konfigurationsbindung | `PicoCfg.Abs` |
 
 ```
-PicoNode.Abs        Kernschnittstellen                      (net10.0, keine Dependencies)
+PicoNode.Abs        Kernschnittstellen                      (net10.0, net11.0, keine Dependencies)
     ↓
-PicoNode             TCP- & UDP-Transporte + ILogger         (net10.0)
+PicoNode             TCP- & UDP-Transporte + ILogger         (net10.0, net11.0)
     ↓
-PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket           (net10.0)
+PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket           (net10.0, net11.0)
     ↓
-PicoNode.Web         Webframework + PicoDI ISvcContainer     (net10.0)
+PicoNode.Web         Webframework + PicoDI ISvcContainer     (net10.0, net11.0)
     ↓
-PicoWeb              Startbereiter Webserver + PicoCfg       (net10.0)
-PicoJsonRpc           JSON-RPC 2.0 über stdio (NDJSON)     (net10.0)
+PicoWeb              Startbereiter Webserver + PicoCfg       (net10.0, net11.0)
+PicoJsonRpc           JSON-RPC 2.0 über stdio (NDJSON)     (net10.0, net11.0)
 ```
 
 ## Schnellstart
@@ -579,13 +579,13 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 
 | Project | Target | Description |
 |---------|--------|-------------|
-| **PicoNode.Abs** | net10.0 | Kern-Interfaces: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, Fehlercodes, Enums |
-| **PicoNode** | net10.0 | `TcpNode` und `UdpNode` — produktionsreife asynchrone Socket-Transporte |
-| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
-| **PicoJsonRpc** | net10.0 | JSON-RPC-2.0-Protokollkern: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
-| **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, Middleware, statische Dateien, Kompression, CORS, DI |
-| **PicoNode.Web.Session.Abs** | net10.0 | Session-Abstraktionen: `ISession`, `ISessionStore` |
-| **PicoWeb** | net10.0 | `WebServer` — schlanker Host, der `WebApp` mit `TcpNode` verbindet |
+| **PicoNode.Abs** | net10.0, net11.0 | Kern-Interfaces: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, Fehlercodes, Enums |
+| **PicoNode** | net10.0, net11.0 | `TcpNode` und `UdpNode` — produktionsreife asynchrone Socket-Transporte |
+| **PicoNode.Http** | net10.0, net11.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
+| **PicoJsonRpc** | net10.0, net11.0 | JSON-RPC-2.0-Protokollkern: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
+| **PicoNode.Web** | net10.0, net11.0 | `WebApp`, `WebRouter`, Middleware, statische Dateien, Kompression, CORS, DI |
+| **PicoNode.Web.Session.Abs** | net10.0, net11.0 | Session-Abstraktionen: `ISession`, `ISessionStore` |
+| **PicoWeb** | net10.0, net11.0 | `WebServer` — schlanker Host, der `WebApp` mit `TcpNode` verbindet |
 
 ## Beispiele
 

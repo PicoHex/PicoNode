@@ -17,7 +17,7 @@
 │  ✓ HTTP/1.1 + HTTP/2 + WebSocket protocols                  │
 │  ✓ Web framework with middleware, routing, static files      │
 │  ✓ Integrated with PicoHex ecosystem (PicoDI/PicoLog/PicoCfg)│
-│  ✓ Native AOT compatible across all net10.0 layers           │
+│  ✓ Native AOT compatible across all net10.0/net11.0 layers   │
 │  ✓ Minimal runtime dependencies                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -29,7 +29,7 @@
 | **依存モデル** | Microsoft フレームワーク依存なし（PicoHex ネイティブ ライブラリのみ）。レイヤを選択して組み合わせ可能 | `Microsoft.AspNetCore.App` フレームワーク参照 |
 | **リクエスト解析** | Spanベースのストリーミング、ゼロコピー `System.IO.Pipelines` | 文字列ベース + `IO.Pipelines` アダプタ |
 | **HTTP/2** | インラインHPACKデコーダ、フレームレベル制御 | Kestrel経由で透過的。低レベルアクセスは限定 |
-| **AOT対応** | ✅ ネイティブ — 全net10.0ライブラリで対応 | ⚠️ トリミングが必要 |
+| **AOT対応** | ✅ ネイティブ — 全net10.0/net11.0ライブラリで対応 | ⚠️ トリミングが必要 |
 | **DI / ログ / 設定** | PicoDI + PicoLog + PicoCfg (PicoHexネイティブ) | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 フレームコーデック + メッセージハンドラ抽象化 | ミドルウェア経由で透過的 |
 | **コード行数** | C# 25,125 行（`src/` 配下 178 ファイル、`bin/`/`obj/` を除く） | このリポジトリでは未計測 |
@@ -47,16 +47,16 @@ PicoNodeはPicoHexファミリーの一員であり、以下のライブラリ�
 | [PicoCfg](https://github.com/PicoHex/PicoCfg) | ソース生成による設定バインディング | `PicoCfg.Abs` |
 
 ```
-PicoNode.Abs        コアインターフェース                    (net10.0, 依存ゼロ)
+PicoNode.Abs        コアインターフェース                    (net10.0, net11.0, 依存ゼロ)
     ↓
-PicoNode            TCP & UDP トランスポート + ILogger        (net10.0)
+PicoNode            TCP & UDP トランスポート + ILogger        (net10.0, net11.0)
     ↓
-PicoNode.Http       HTTP/1.1 + HTTP/2 + WebSocket             (net10.0)
+PicoNode.Http       HTTP/1.1 + HTTP/2 + WebSocket             (net10.0, net11.0)
     ↓
-PicoNode.Web        Webフレームワーク + PicoDI ISvcContainer  (net10.0)
+PicoNode.Web        Webフレームワーク + PicoDI ISvcContainer  (net10.0, net11.0)
     ↓
-PicoWeb             即時実行可能なWebサーバー + PicoCfg        (net10.0)
-PicoJsonRpc           JSON-RPC 2.0 / stdio（NDJSON）        (net10.0)
+PicoWeb             即時実行可能なWebサーバー + PicoCfg        (net10.0, net11.0)
+PicoJsonRpc           JSON-RPC 2.0 / stdio（NDJSON）        (net10.0, net11.0)
 ```
 
 ## クイックスタート
@@ -579,13 +579,13 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 
 | Project | Target | Description |
 |---------|--------|-------------|
-| **PicoNode.Abs** | net10.0 | コアインターフェース：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、フォルトコード、列挙型 |
-| **PicoNode** | net10.0 | `TcpNode` と `UdpNode` — 本番品質の非同期ソケットトランスポート |
-| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
-| **PicoJsonRpc** | net10.0 | JSON-RPC 2.0 プロトコルコア: `NdjsonFramer`、`JsonRpcClient`、`ProcessLifecycle` |
-| **PicoNode.Web** | net10.0 | `WebApp`、`WebRouter`、ミドルウェア、静的ファイル、圧縮、CORS、DI |
-| **PicoNode.Web.Session.Abs** | net10.0 | セッション抽象化: `ISession`、`ISessionStore` |
-| **PicoWeb** | net10.0 | `WebServer` — `WebApp` を `TcpNode` に接続する軽量ホスト |
+| **PicoNode.Abs** | net10.0, net11.0 | コアインターフェース：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、フォルトコード、列挙型 |
+| **PicoNode** | net10.0, net11.0 | `TcpNode` と `UdpNode` — 本番品質の非同期ソケットトランスポート |
+| **PicoNode.Http** | net10.0, net11.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
+| **PicoJsonRpc** | net10.0, net11.0 | JSON-RPC 2.0 プロトコルコア: `NdjsonFramer`、`JsonRpcClient`、`ProcessLifecycle` |
+| **PicoNode.Web** | net10.0, net11.0 | `WebApp`、`WebRouter`、ミドルウェア、静的ファイル、圧縮、CORS、DI |
+| **PicoNode.Web.Session.Abs** | net10.0, net11.0 | セッション抽象化: `ISession`、`ISessionStore` |
+| **PicoWeb** | net10.0, net11.0 | `WebServer` — `WebApp` を `TcpNode` に接続する軽量ホスト |
 
 ## サンプル
 

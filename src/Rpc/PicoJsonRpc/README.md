@@ -9,7 +9,7 @@ PicoJetson *is* PicoSerDe's JSON format, so its writer/reader are the stack's JS
 ## Package Info
 
 - **NuGet**: `PicoJsonRpc`
-- **TFM**: `net10.0`
+- **TFM**: `net10.0, net11.0`
 - **AOT**: ✅ (`IsAotCompatible` + `IsTrimmable`)
 - **Dependencies**: `PicoJetson`
 

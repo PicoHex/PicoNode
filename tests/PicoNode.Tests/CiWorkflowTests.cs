@@ -6,7 +6,8 @@ namespace PicoNode.Tests;
 /// <summary>
 /// Contract tests for repository CI/build configuration: every test project
 /// must be executed by CI, no workflow step may silently lose a command to a
-/// duplicate YAML key, and the SDK must be pinned to the supported band.
+/// duplicate YAML key, and the SDK must not be nailed to one band (the tree
+/// targets net10.0 and net11.0, so global.json declares no `sdk` section).
 /// </summary>
 public sealed class CiWorkflowTests
 {
@@ -760,15 +761,140 @@ public sealed class CiWorkflowTests
         await Assert.That(ci).Contains("tests/PicoNode.E2E/test_sse_streaming.py");
     }
 
-    [Test]
-    public async Task Global_json_pins_sdk_10()
-    {
-        using var document = JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(RepoRoot, "global.json"))
-        );
+    private static string GlobalJsonPath => Path.Combine(RepoRoot, "global.json");
 
-        await Assert.That(document.RootElement.TryGetProperty("sdk", out var sdk)).IsTrue();
-        await Assert.That(sdk.GetProperty("version").GetString()).StartsWith("10.");
+    [Test]
+    public async Task Global_json_does_not_pin_a_concrete_sdk()
+    {
+        // The rule used to be the opposite: `sdk.version` had to exist and start with "10.". That
+        // pin is what made the tree single-SDK — the solution now multi-targets net10.0 and
+        // net11.0, and an SDK written down here (with the default roll-forward) turns "the SDK the
+        // runner installs" into "this one band, on this one machine". The guard therefore points
+        // the other way: NO `sdk` section at all, or — if one comes back — a FLOOR that carries
+        // `rollForward: latestMajor`, so a newer installed SDK still satisfies it.
+        var globalJson = File.ReadAllText(GlobalJsonPath);
+        var problem = SdkPinProblem(globalJson);
+
+        await Assert
+            .That(problem)
+            .IsNull()
+            .Because(
+                "global.json must not nail the SDK: a pinned band is exactly what a tree targeting "
+                    + "both net10.0 and net11.0 must not depend on"
+            );
+
+        // Non-vacuity: "no sdk section" is also satisfied by an emptied file, and global.json is
+        // still where the test runner is declared. Emptying it would lose that and stay green.
+        using var document = JsonDocument.Parse(globalJson);
+
+        await Assert
+            .That(
+                document.RootElement.TryGetProperty("test", out var test)
+                    && test.TryGetProperty("runner", out var runner)
+                    && (runner.GetString()?.Length ?? 0) > 0
+            )
+            .IsTrue()
+            .Because("global.json is not free to become empty: it declares the test runner");
+
+        // The same rule against JSON TEXT, because the repository has no `sdk` section today: the
+        // shape an `sdk` section may come back in would otherwise be an untested claim that can
+        // only ever fail on somebody else's machine.
+        await Assert
+            .That(SdkPinProblem("""{ "test": { "runner": "Microsoft.Testing.Platform" } }"""))
+            .IsNull()
+            .Because("no `sdk` section is the shape the repository uses: the runner's SDK wins");
+
+        await Assert
+            .That(
+                SdkPinProblem(
+                    """{ "sdk": { "version": "10.0.100", "rollForward": "latestMajor" } }"""
+                )
+            )
+            .IsNull()
+            .Because(
+                "a band floor plus latestMajor is a floor, not a pin: an installed SDK 11 still builds"
+            );
+
+        await Assert
+            .That(SdkPinProblem("""{ "sdk": { "version": "10.0.400" } }"""))
+            .IsNotNull()
+            .Because(
+                "a version with the default roll-forward is a pin — it is the shape that made a "
+                    + "net11.0 build depend on one patch band"
+            );
+
+        await Assert
+            .That(
+                SdkPinProblem(
+                    """{ "sdk": { "version": "10.0.417", "rollForward": "latestMajor" } }"""
+                )
+            )
+            .IsNotNull()
+            .Because(
+                "latestMajor does not turn a pinned patch into a floor; a floor is a band (x.y.B00)"
+            );
+
+        await Assert
+            .That(
+                SdkPinProblem(
+                    """{ "sdk": { "version": "10.0.100", "rollForward": "latestFeature" } }"""
+                )
+            )
+            .IsNotNull()
+            .Because(
+                "latestFeature cannot reach the next major, which is the whole point of the floor"
+            );
+    }
+
+    /// <summary>
+    /// Why <paramref name="globalJson"/> nails the SDK, or <see langword="null"/> when it does not.
+    /// Two shapes pass: no <c>sdk</c> section at all, and a FLOOR — a band-floor <c>version</c>
+    /// (<c>10.0.100</c>, never the servicing build <c>10.0.417</c>) that carries
+    /// <c>rollForward: latestMajor</c>, so an installed newer SDK satisfies it.
+    /// </summary>
+    private static string? SdkPinProblem(string globalJson)
+    {
+        using var document = JsonDocument.Parse(globalJson);
+
+        if (!document.RootElement.TryGetProperty("sdk", out var sdk))
+        {
+            return null;
+        }
+
+        var version = sdk.TryGetProperty("version", out var declared)
+            ? declared.GetString()
+            : null;
+
+        if (version is null || !IsSdkBandFloor(version))
+        {
+            return $"'sdk.version' must be a band floor such as 10.0.100, not '{version}'";
+        }
+
+        if (
+            !sdk.TryGetProperty("rollForward", out var rollForward)
+            || !string.Equals(rollForward.GetString(), "latestMajor", StringComparison.Ordinal)
+        )
+        {
+            return "an 'sdk' section must carry \"rollForward\": \"latestMajor\"; the default is a pin";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// True when <paramref name="version"/> is an SDK band floor: <c>major.minor.B00</c>, i.e. a
+    /// three-digit patch whose last two digits are <c>00</c> (<c>10.0.100</c>, <c>10.0.400</c>). A
+    /// patch inside a band (<c>10.0.417</c>) names the servicing build that happens to be installed
+    /// on one machine.
+    /// </summary>
+    private static bool IsSdkBandFloor(string version)
+    {
+        var parts = version.Split('.');
+
+        return parts.Length == 3
+            && parts.All(static part => part.Length > 0 && part.All(char.IsAsciiDigit))
+            && parts[2].Length == 3
+            && parts[2].EndsWith("00", StringComparison.Ordinal);
     }
 
     /// <summary>

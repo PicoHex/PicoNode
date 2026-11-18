@@ -17,7 +17,7 @@
 │  ✓ HTTP/1.1 + HTTP/2 + WebSocket protocols                  │
 │  ✓ Web framework with middleware, routing, static files      │
 │  ✓ Integrated with PicoHex ecosystem (PicoDI/PicoLog/PicoCfg)│
-│  ✓ Native AOT compatible across all net10.0 layers           │
+│  ✓ Native AOT compatible across all net10.0/net11.0 layers   │
 │  ✓ Minimal runtime dependencies                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -29,7 +29,7 @@
 | **Dependency model** | No Microsoft framework deps (PicoHex-native libraries only); layer pick-and-choose | `Microsoft.AspNetCore.App` framework reference |
 | **Request parsing** | Span-based streaming, zero-copy `System.IO.Pipelines` | String-based with `IO.Pipelines` adapter |
 | **HTTP/2** | Inline HPACK decoder, frame-level control | Transparent via Kestrel; limited low-level access |
-| **AOT Support** | ✅ Native — all net10.0 libraries | ⚠️ Requires trimming |
+| **AOT Support** | ✅ Native — all net10.0/net11.0 libraries | ⚠️ Requires trimming |
 | **DI / Logging / Config** | PicoDI + PicoLog + PicoCfg (PicoHex native) | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 frame codec with message handler abstraction | Transparent via middleware |
 | **Line count** | 25,125 lines of C# (178 files under `src/`, `bin/`/`obj/` excluded) | not measured in this repository |
@@ -47,16 +47,16 @@ PicoNode is part of the PicoHex family and integrates natively with:
 | [PicoCfg](https://github.com/PicoHex/PicoCfg) | Source-generated configuration binding | `PicoCfg.Abs` |
 
 ```
-PicoNode.Abs        Core interfaces                          (net10.0, zero deps)
+PicoNode.Abs        Core interfaces                          (net10.0, net11.0, zero deps)
     ↓
-PicoNode             TCP & UDP transports + ILogger           (net10.0)
+PicoNode             TCP & UDP transports + ILogger           (net10.0, net11.0)
     ↓
-PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket            (net10.0)
+PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket            (net10.0, net11.0)
     ↓
-PicoNode.Web         Web framework + PicoDI ISvcContainer     (net10.0)
+PicoNode.Web         Web framework + PicoDI ISvcContainer     (net10.0, net11.0)
     ↓
-PicoWeb              Ready-to-run web server + PicoCfg        (net10.0)
-PicoJsonRpc           JSON-RPC 2.0 over stdio (NDJSON)      (net10.0)
+PicoWeb              Ready-to-run web server + PicoCfg        (net10.0, net11.0)
+PicoJsonRpc           JSON-RPC 2.0 over stdio (NDJSON)      (net10.0, net11.0)
 ```
 
 ## Quick Start
@@ -595,13 +595,13 @@ longer open, and an uncorrelated chunk while several streams are open. The packa
 
 | Project | Target | Description |
 |---------|--------|-------------|
-| **PicoNode.Abs** | net10.0 | Core interfaces: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, fault codes, enums |
-| **PicoNode** | net10.0 | `TcpNode` and `UdpNode` — production-grade async socket transports |
-| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
-| **PicoJsonRpc** | net10.0 | JSON-RPC 2.0 protocol core: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
-| **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, middleware, static files, compression, CORS, DI |
-| **PicoNode.Web.Session.Abs** | net10.0 | Session abstractions: `ISession`, `ISessionStore` |
-| **PicoWeb** | net10.0 | `WebServer` — thin host wiring `WebApp` to `TcpNode` |
+| **PicoNode.Abs** | net10.0, net11.0 | Core interfaces: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, fault codes, enums |
+| **PicoNode** | net10.0, net11.0 | `TcpNode` and `UdpNode` — production-grade async socket transports |
+| **PicoNode.Http** | net10.0, net11.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
+| **PicoJsonRpc** | net10.0, net11.0 | JSON-RPC 2.0 protocol core: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
+| **PicoNode.Web** | net10.0, net11.0 | `WebApp`, `WebRouter`, middleware, static files, compression, CORS, DI |
+| **PicoNode.Web.Session.Abs** | net10.0, net11.0 | Session abstractions: `ISession`, `ISessionStore` |
+| **PicoWeb** | net10.0, net11.0 | `WebServer` — thin host wiring `WebApp` to `TcpNode` |
 
 ## Samples
 

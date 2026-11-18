@@ -17,7 +17,7 @@
 │  ✓ 支持 HTTP/1.1 + HTTP/2 + WebSocket 协议                    │
 │  ✓ 包含中间件、路由、静态文件的 Web 框架                        │
 │  ✓ 集成 PicoHex 生态（PicoDI / PicoLog / PicoCfg）             │
-│  ✓ 所有 net10.0 层均兼容原生 AOT                               │
+│  ✓ 所有 net10.0/net11.0 层均兼容原生 AOT                       │
 │  ✓ 最小化运行时依赖                                           │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -29,7 +29,7 @@
 | **依赖模型** | 无 Microsoft 框架依赖（仅 PicoHex 原生库）；分层按需选用 | `Microsoft.AspNetCore.App` 框架引用 |
 | **请求解析** | 基于 Span 的流式解析，`System.IO.Pipelines` 零拷贝 | 基于字符串，`IO.Pipelines` 适配器 |
 | **HTTP/2** | 内联 HPACK 解码器，帧级控制 | 通过 Kestrel 透明处理；底层访问能力有限 |
-| **AOT 支持** | ✅ 原生支持 — 所有 net10.0 库 | ⚠️ 需要裁剪 |
+| **AOT 支持** | ✅ 原生支持 — 所有 net10.0/net11.0 库 | ⚠️ 需要裁剪 |
 | **DI / 日志 / 配置** | PicoDI + PicoLog + PicoCfg（PicoHex 原生） | Microsoft.Extensions.* |
 | **WebSocket** | RFC 6455 帧编码器加消息处理器抽象 | 通过中间件透明处理 |
 | **代码行数** | C# 25,125 行（`src/` 下 178 个文件，不含 `bin/`/`obj/`） | 本仓库未测量 |
@@ -47,16 +47,16 @@ PicoNode 是 PicoHex 家族的一员，原生集成以下库：
 | [PicoCfg](https://github.com/PicoHex/PicoCfg) | 源代码生成的配置绑定 | `PicoCfg.Abs` |
 
 ```
-PicoNode.Abs        核心接口                                  (net10.0, zero deps)
+PicoNode.Abs        核心接口                                  (net10.0, net11.0, zero deps)
     ↓
-PicoNode             TCP & UDP 传输层 + ILogger               (net10.0)
+PicoNode             TCP & UDP 传输层 + ILogger               (net10.0, net11.0)
     ↓
-PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket            (net10.0)
+PicoNode.Http        HTTP/1.1 + HTTP/2 + WebSocket            (net10.0, net11.0)
     ↓
-PicoNode.Web         Web 框架 + PicoDI ISvcContainer          (net10.0)
+PicoNode.Web         Web 框架 + PicoDI ISvcContainer          (net10.0, net11.0)
     ↓
-PicoWeb              开箱即用的 Web 服务器 + PicoCfg            (net10.0)
-PicoJsonRpc           JSON-RPC 2.0 / stdio（NDJSON）        (net10.0)
+PicoWeb              开箱即用的 Web 服务器 + PicoCfg            (net10.0, net11.0)
+PicoJsonRpc           JSON-RPC 2.0 / stdio（NDJSON）        (net10.0, net11.0)
 ```
 
 ## 快速开始
@@ -579,13 +579,13 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 
 | Project | Target | Description |
 |---------|--------|-------------|
-| **PicoNode.Abs** | net10.0 | 核心接口：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、故障码、枚举 |
-| **PicoNode** | net10.0 | `TcpNode` 与 `UdpNode` — 生产级异步 socket 传输 |
-| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
-| **PicoJsonRpc** | net10.0 | JSON-RPC 2.0 协议核心：`NdjsonFramer`、`JsonRpcClient`、`ProcessLifecycle` |
-| **PicoNode.Web** | net10.0 | `WebApp`、`WebRouter`、中间件、静态文件、压缩、CORS、DI |
-| **PicoNode.Web.Session.Abs** | net10.0 | 会话抽象：`ISession`、`ISessionStore` |
-| **PicoWeb** | net10.0 | `WebServer` — 将 `WebApp` 接入 `TcpNode` 的轻量宿主 |
+| **PicoNode.Abs** | net10.0, net11.0 | 核心接口：`INode`、`ITcpConnectionHandler`、`IUdpDatagramHandler`、故障码、枚举 |
+| **PicoNode** | net10.0, net11.0 | `TcpNode` 与 `UdpNode` — 生产级异步 socket 传输 |
+| **PicoNode.Http** | net10.0, net11.0 | `HttpConnectionHandler`、`HttpRouter` — HTTP/1.1、HTTP/2、WebSocket |
+| **PicoJsonRpc** | net10.0, net11.0 | JSON-RPC 2.0 协议核心：`NdjsonFramer`、`JsonRpcClient`、`ProcessLifecycle` |
+| **PicoNode.Web** | net10.0, net11.0 | `WebApp`、`WebRouter`、中间件、静态文件、压缩、CORS、DI |
+| **PicoNode.Web.Session.Abs** | net10.0, net11.0 | 会话抽象：`ISession`、`ISessionStore` |
+| **PicoWeb** | net10.0, net11.0 | `WebServer` — 将 `WebApp` 接入 `TcpNode` 的轻量宿主 |
 
 ## 示例
 

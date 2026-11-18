@@ -17,7 +17,7 @@
 │  ✓ HTTP/1.1 + HTTP/2 + WebSocket 프로토콜                   │
 │  ✓ 미들웨어·라우팅·정적 파일을 갖춘 웹 프레임워크           │
 │  ✓ PicoHex 생태계 통합 (PicoDI/PicoLog/PicoCfg)             │
-│  ✓ 모든 net10.0 계층에서 네이티브 AOT 호환                  │
+│  ✓ 모든 net10.0/net11.0 계층에서 네이티브 AOT 호환          │
 │  ✓ 최소한의 런타임 의존성                                   │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -29,7 +29,7 @@
 | **의존성 모델** | Microsoft 프레임워크 의존성 없음(PicoHex 네이티브 라이브러리만 사용); 계층 선택 가능 | `Microsoft.AspNetCore.App` 프레임워크 참조 |
 | **요청 파싱** | Span 기반 스트리밍, 제로 카피 `System.IO.Pipelines` | 문자열 기반 + `IO.Pipelines` 어댑터 |
 | **HTTP/2** | 인라인 HPACK 디코더, 프레임 수준 제어 | Kestrel을 통한 투명 처리; 저수준 접근 제한 |
-| **AOT 지원** | ✅ 네이티브 — 모든 net10.0 라이브러리 | ⚠️ 트리밍 필요 |
+| **AOT 지원** | ✅ 네이티브 — 모든 net10.0/net11.0 라이브러리 | ⚠️ 트리밍 필요 |
 | **DI / 로깅 / 구성** | PicoDI + PicoLog + PicoCfg (PicoHex 네이티브) | Microsoft.Extensions.* |
 | **WebSocket** | 메시지 핸들러 추상화를 갖춘 RFC 6455 프레임 코덱 | 미들웨어를 통한 투명 처리 |
 | **코드 라인 수** | C# 25,125줄 (`src/` 178개 파일, `bin/`/`obj/` 제외) | 이 저장소에서는 측정하지 않음 |
@@ -47,16 +47,16 @@ PicoNode는 PicoHex 제품군의 일부이며 다음 라이브러리와 네이�
 | [PicoCfg](https://github.com/PicoHex/PicoCfg) | 소스 생성 구성 바인딩 | `PicoCfg.Abs` |
 
 ```
-PicoNode.Abs        코어 인터페이스                          (net10.0, 의존성 없음)
+PicoNode.Abs        코어 인터페이스                          (net10.0, net11.0, 의존성 없음)
     ↓
-PicoNode            TCP & UDP 전송 계층 + ILogger            (net10.0)
+PicoNode            TCP & UDP 전송 계층 + ILogger            (net10.0, net11.0)
     ↓
-PicoNode.Http       HTTP/1.1 + HTTP/2 + WebSocket            (net10.0)
+PicoNode.Http       HTTP/1.1 + HTTP/2 + WebSocket            (net10.0, net11.0)
     ↓
-PicoNode.Web        Web 프레임워크 + PicoDI ISvcContainer    (net10.0)
+PicoNode.Web        Web 프레임워크 + PicoDI ISvcContainer    (net10.0, net11.0)
     ↓
-PicoWeb             즉시 실행 가능한 웹 서버 + PicoCfg       (net10.0)
-PicoJsonRpc         JSON-RPC 2.0 over stdio (NDJSON)         (net10.0)
+PicoWeb             즉시 실행 가능한 웹 서버 + PicoCfg       (net10.0, net11.0)
+PicoJsonRpc         JSON-RPC 2.0 over stdio (NDJSON)         (net10.0, net11.0)
 ```
 
 ## 빠른 시작
@@ -579,13 +579,13 @@ Console.WriteLine($"Received: {udpMetrics.TotalBytesReceived}");
 
 | 프로젝트 | 대상 | 설명 |
 |---------|--------|-------------|
-| **PicoNode.Abs** | net10.0 | 코어 인터페이스: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, 폴트 코드, 열거형 |
-| **PicoNode** | net10.0 | `TcpNode`와 `UdpNode` — 프로덕션급 비동기 소켓 전송 |
-| **PicoNode.Http** | net10.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
-| **PicoJsonRpc** | net10.0 | JSON-RPC 2.0 프로토콜 코어: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
-| **PicoNode.Web** | net10.0 | `WebApp`, `WebRouter`, 미들웨어, 정적 파일, 압축, CORS, DI |
-| **PicoNode.Web.Session.Abs** | net10.0 | 세션 추상화: `ISession`, `ISessionStore` |
-| **PicoWeb** | net10.0 | `WebServer` — `WebApp`을 `TcpNode`에 연결하는 얇은 호스트 |
+| **PicoNode.Abs** | net10.0, net11.0 | 코어 인터페이스: `INode`, `ITcpConnectionHandler`, `IUdpDatagramHandler`, 폴트 코드, 열거형 |
+| **PicoNode** | net10.0, net11.0 | `TcpNode`와 `UdpNode` — 프로덕션급 비동기 소켓 전송 |
+| **PicoNode.Http** | net10.0, net11.0 | `HttpConnectionHandler`, `HttpRouter` — HTTP/1.1, HTTP/2, WebSocket |
+| **PicoJsonRpc** | net10.0, net11.0 | JSON-RPC 2.0 프로토콜 코어: `NdjsonFramer`, `JsonRpcClient`, `ProcessLifecycle` |
+| **PicoNode.Web** | net10.0, net11.0 | `WebApp`, `WebRouter`, 미들웨어, 정적 파일, 압축, CORS, DI |
+| **PicoNode.Web.Session.Abs** | net10.0, net11.0 | 세션 추상화: `ISession`, `ISessionStore` |
+| **PicoWeb** | net10.0, net11.0 | `WebServer` — `WebApp`을 `TcpNode`에 연결하는 얇은 호스트 |
 
 ## 샘플
 

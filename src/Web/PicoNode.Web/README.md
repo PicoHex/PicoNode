@@ -5,7 +5,7 @@ PicoNode Web middleware framework. Provides full web application capabilities on
 ## Package Info
 
 - **NuGet**: `PicoNode.Web`
-- **TFM**: `net10.0`
+- **TFM**: `net10.0, net11.0`
 - **AOT**: ✅
 - **Dependencies**: `PicoNode.Abs`, `PicoNode.Http`, `PicoNode.Web.Session.Abs`, `PicoDI.Abs`, `PicoLog.Abs`
 

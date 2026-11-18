@@ -5,7 +5,7 @@ PicoNode HTTP protocol layer. Implements HTTP/1.1, HTTP/2 (h2c upgrade), WebSock
 ## Package Info
 
 - **NuGet**: `PicoNode.Http`
-- **TFM**: `net10.0`
+- **TFM**: `net10.0, net11.0`
 - **AOT**: ✅
 - **Dependencies**: `PicoNode.Abs`, `PicoLog.Abs`
 
