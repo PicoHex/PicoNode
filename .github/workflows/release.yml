@@ -37,7 +37,7 @@ jobs:
         with: { fetch-depth: 0 }
 
       - uses: actions/setup-dotnet@v4
-        with: { dotnet-version: 10.0.x }
+        with: { dotnet-version: 11.0.x }
 
       # Same reason as ci.yml: the verify gate runs PicoJsonRpc.Tests, which needs
       # `node` for its 21 child-process tests. A release that skipped them while
@@ -124,7 +124,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Set version from the tag or the dispatch input
         env:

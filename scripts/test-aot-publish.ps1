@@ -59,7 +59,11 @@ Write-Host "AOT publish verification project: tests/PicoWeb.AotVerify ($RuntimeI
 # (a preserved type activates fine) while the publish names the offending line with
 # IL2026/IL3050. The baseline is ZERO such warnings, so one of them is a regression
 # and is reported with the line that caused it rather than left in a passing log.
-dotnet publish $projectPath -c Release -r $RuntimeIdentifier --self-contained 2>&1 |
+# -f net10.0 is REQUIRED: the verification project is multi-targeted
+# (net10.0;net11.0) and publishing a multi-targeted project without an
+# explicit framework fails with NETSDK1129. It also pins the output path
+# used to launch the native binary below (bin/Release/net10.0/<rid>/publish).
+dotnet publish $projectPath -f net10.0 -c Release -r $RuntimeIdentifier --self-contained 2>&1 |
     Tee-Object -Variable publishOutput
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed for $RuntimeIdentifier with exit code $LASTEXITCODE"

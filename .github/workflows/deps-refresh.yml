@@ -39,7 +39,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       # --force-evaluate is the whole point: a plain restore ignores an existing
       # lock file and would report "up to date" forever.

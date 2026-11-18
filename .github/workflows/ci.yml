@@ -49,7 +49,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       # PicoJsonRpc.Tests starts REAL children (`node <fixture>`). Without a runtime
       # the suite takes its loud-skip path and reports 21 skipped on every run —
@@ -118,9 +118,19 @@ jobs:
       - name: Test README samples
         run: dotnet test --project tests/PicoNode.Docs.Tests/PicoNode.Docs.Tests.csproj --no-build -c Release
 
+      # -f net10.0 is REQUIRED, not cosmetic: the samples are multi-targeted
+      # (net10.0;net11.0), and `dotnet publish` on a multi-targeted project
+      # without an explicit framework fails with NETSDK1129 "the project does
+      # not have a single target framework". Pinning the framework also keeps
+      # the published artifact byte-identical to the pre-multi-target one
+      # (net10.0 AOT), so the native smoke runs below still validate the same
+      # code path. The -r is still what makes publish restore that RID's
+      # assets (this restore is RID-neutral by design, see above), so no
+      # --no-restore here.
       - name: AOT publish (sample HTTP server)
         run: >
           dotnet publish samples/PicoNode.Samples.Http/PicoNode.Samples.Http.csproj
+          -f net10.0
           -c Release -r ${{ matrix.rid }}
           -p:PublishAot=true --self-contained
           -o publish/${{ matrix.rid }}
@@ -132,6 +142,7 @@ jobs:
       - name: AOT publish (Echo server)
         run: >
           dotnet publish samples/PicoNode.Samples.Echo/PicoNode.Samples.Echo.csproj
+          -f net10.0
           -c Release -r ${{ matrix.rid }}
           -p:PublishAot=true --self-contained
           -o publish-echo/${{ matrix.rid }}
@@ -139,6 +150,7 @@ jobs:
       - name: AOT publish (PicoJsonRpc.Sample) + run smoke
         run: >
           dotnet publish samples/PicoJsonRpc.Sample/PicoJsonRpc.Sample.csproj
+          -f net10.0
           -c Release -r ${{ matrix.rid }}
           -p:PublishAot=true --self-contained
           -o publish-jsonrpc/${{ matrix.rid }}
@@ -172,7 +184,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Run h2spec (strict)
         shell: pwsh
@@ -198,7 +210,7 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 11.0.x
 
       - name: Run Autobahn fuzzing client
         shell: pwsh
